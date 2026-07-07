@@ -1,0 +1,17 @@
+# 보안
+**/config.local*
+*.pem
+*.key
+*.crt
+*.csr
+.env
+
+# 데모 영상
+*.mp4
+*.mkv
+
+# 빌드 산출물
+build/
+*.o
+*.so
+*.ko
