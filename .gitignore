@@ -4,6 +4,7 @@
 *.key
 *.crt
 *.csr
+rtsp_credentials*
 .env
 
 # 데모 영상
@@ -15,3 +16,6 @@ build/
 *.o
 *.so
 *.ko
+
+# 로컬 개발 환경
+.venv/
