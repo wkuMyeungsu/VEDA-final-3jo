@@ -1,0 +1,38 @@
+cmake_minimum_required(VERSION 3.21)
+
+project(ForkliftSafetySystem LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC OFF)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
+option(SAFETY_BUILD_TESTS "Build unit tests for common services" ON)
+
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Multimedia Network)
+
+qt_standard_project_setup(REQUIRES 6.5)
+
+# Directory that holds the runtime JSON config files (cameras.json, control_center.json,
+# terminal.json). Both app targets copy this next to their executable after build so the
+# programs can be re-configured (e.g. real RTSP URLs) without rebuilding.
+set(SAFETY_CONFIG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/config")
+
+add_subdirectory(common)
+add_subdirectory(apps/control_center)
+
+# apps/operator_terminal은 다음 브랜치에서 추가될 예정이라, 이번 스캐폴드가
+# 단독으로 configure/build 되도록 존재 여부를 확인한 뒤에만 추가합니다.
+if(EXISTS "${CMAKE_SOURCE_DIR}/apps/operator_terminal/CMakeLists.txt")
+    add_subdirectory(apps/operator_terminal)
+endif()
+
+if(SAFETY_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
