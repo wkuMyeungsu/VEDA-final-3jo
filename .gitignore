@@ -19,3 +19,23 @@ build/
 
 # 로컬 개발 환경
 .venv/
+.claude/settings.local.json
+
+# Qt/CMake (operator-device)
+build-*/
+out/
+*.user
+*.user.*
+CMakeUserPresets.json
+.vs/
+.vscode/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.dll
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
