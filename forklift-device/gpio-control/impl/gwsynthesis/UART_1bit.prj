@@ -14,6 +14,7 @@
         <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\button_debounce.v" type="verilog"/>
         <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\estop_filter.v" type="verilog"/>
         <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\estop_latch.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\buzzer_ctrl.v" type="verilog"/>
     </FileList>
     <OptionList>
         <Option type="disable_insert_pad" value="0"/>

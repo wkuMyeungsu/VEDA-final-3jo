@@ -2,6 +2,22 @@
  "Device" : "GW1NSR-4C",
  "Files" : [
   {
+   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/button_debounce.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/buzzer_ctrl.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/estop_filter.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/estop_latch.v",
+   "Type" : "verilog"
+  },
+  {
    "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/led_pattern.v",
    "Type" : "verilog"
   },
@@ -27,22 +43,6 @@
   },
   {
    "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/watchdog.v",
-   "Type" : "verilog"
-  },
-  {
-   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/button_debounce.v",
-   "Type" : "verilog"
-  },
-  {
-   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/estop_filter.v",
-   "Type" : "verilog"
-  },
-  {
-   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/estop_latch.v",
-   "Type" : "verilog"
-  },
-  {
-   "Path" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/buzzer_ctrl.v",
    "Type" : "verilog"
   }
  ],
