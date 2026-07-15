@@ -10,7 +10,9 @@ module top #(
     input wire      estop_n,
     input wire      manual_reset_n,
 
-    output wire [1:0] led
+    output wire [1:0] led,
+
+    output wire buzzer_out
 );
 
     wire [7:0] rx_data;
@@ -35,6 +37,8 @@ module top #(
 
     wire [2:0] warning_state;
     wire [1:0] led_pattern_out;
+    
+    wire buzzer_enable;
 
    
     
@@ -160,5 +164,18 @@ module top #(
      * LED가 active-high일 때
      */
     assign led = led_pattern_out;
+
+    buzzer_ctrl #(
+        .CLK_FREQ_HZ (CLK_FREQ_HZ),
+        .TONE_FREQ_HZ(2000)
+    ) u_buzzer_ctrl (
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .warning_state(warning_state),
+        .buzzer_out   (buzzer_out),
+        .buzzer_enable(buzzer_enable)
+);
+
+    
 
 endmodule

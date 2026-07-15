@@ -9,7 +9,7 @@
   "SubInsts" : [
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 47,
+    "InstLine" : 51,
     "InstName" : "u_uart_rx",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/uart_rx.v",
     "ModuleLine" : 1,
@@ -17,7 +17,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 59,
+    "InstLine" : 63,
     "InstName" : "u_packet_parser",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/packet_parser.v",
     "ModuleLine" : 1,
@@ -25,7 +25,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 75,
+    "InstLine" : 79,
     "InstName" : "u_watchdog",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/watchdog.v",
     "ModuleLine" : 1,
@@ -33,7 +33,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 89,
+    "InstLine" : 93,
     "InstName" : "u_warning_latch",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/warning_latch.v",
     "ModuleLine" : 1,
@@ -41,7 +41,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 105,
+    "InstLine" : 109,
     "InstName" : "u_manual_reset_button",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/button_debounce.v",
     "ModuleLine" : 1,
@@ -49,7 +49,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 120,
+    "InstLine" : 124,
     "InstName" : "u_estop_filter",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/estop_filter.v",
     "ModuleLine" : 1,
@@ -57,7 +57,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 130,
+    "InstLine" : 134,
     "InstName" : "u_estop_latch",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/estop_latch.v",
     "ModuleLine" : 1,
@@ -65,7 +65,7 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 138,
+    "InstLine" : 142,
     "InstName" : "u_warning_fsm",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/wanrning_fsm.v",
     "ModuleLine" : 1,
@@ -73,11 +73,19 @@
    },
    {
     "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
-    "InstLine" : 152,
+    "InstLine" : 156,
     "InstName" : "u_led_pattern",
     "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/led_pattern.v",
     "ModuleLine" : 1,
     "ModuleName" : "led_pattern"
+   },
+   {
+    "InstFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/top.v",
+    "InstLine" : 171,
+    "InstName" : "u_buzzer_ctrl",
+    "ModuleFile" : "C:/Gowin/Gowin_V1.9.11.03_Education_x64/VEDA_project/UART_1bit/src/buzzer_ctrl.v",
+    "ModuleLine" : 1,
+    "ModuleName" : "buzzer_ctrl"
    }
   ]
  }
