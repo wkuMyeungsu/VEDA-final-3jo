@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gowin-synthesis-project>
+<Project>
+    <Version>beta</Version>
+    <Device id="GW1NSR-4C" package="QFN48P" speed="6" partNumber="GW1NSR-LV4CQN48PC6/I5"/>
+    <FileList>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\led_pattern.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\packet_parser.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\top.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\uart_rx.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\wanrning_fsm.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\warning_latch.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\watchdog.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\button_debounce.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\estop_filter.v" type="verilog"/>
+        <File path="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\src\estop_latch.v" type="verilog"/>
+    </FileList>
+    <OptionList>
+        <Option type="disable_insert_pad" value="0"/>
+        <Option type="global_freq" value="50.000"/>
+        <Option type="looplimit" value="2000"/>
+        <Option type="output_file" value="C:\Gowin\Gowin_V1.9.11.03_Education_x64\VEDA_project\UART_1bit\impl\gwsynthesis\UART_1bit.vg"/>
+        <Option type="print_all_synthesis_warning" value="0"/>
+        <Option type="ram_rw_check" value="0"/>
+        <Option type="vcc" value="1.2"/>
+        <Option type="verilog_language" value="verilog-2001"/>
+        <Option type="vhdl_language" value="vhdl-1993"/>
+    </OptionList>
+</Project>
