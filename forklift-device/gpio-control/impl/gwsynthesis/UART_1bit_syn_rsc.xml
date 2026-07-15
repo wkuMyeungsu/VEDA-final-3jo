@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module name="top" T_Register="215(0)" T_Lut="453(0)">
+ <SubModule name="u_uart_rx" Register="40" Lut="66" T_Register="40(40)" T_Lut="66(66)"/>
+ <SubModule name="u_packet_parser" Register="8" Lut="13" T_Register="8(8)" T_Lut="13(13)"/>
+ <SubModule name="u_watchdog" Register="33" Lut="72" T_Register="33(33)" T_Lut="72(72)"/>
+ <SubModule name="u_warning_latch" Register="37" Lut="96" T_Register="37(37)" T_Lut="96(96)"/>
+ <SubModule name="u_manual_reset_button" Register="24" Lut="45" T_Register="24(24)" T_Lut="45(45)"/>
+ <SubModule name="u_estop_filter" Register="23" Lut="52" T_Register="23(23)" T_Lut="52(52)"/>
+ <SubModule name="u_estop_latch" Register="1" Lut="1" T_Register="1(1)" T_Lut="1(1)"/>
+ <SubModule name="u_led_pattern" Register="49" Lut="108" T_Register="49(49)" T_Lut="108(108)"/>
+</Module>
