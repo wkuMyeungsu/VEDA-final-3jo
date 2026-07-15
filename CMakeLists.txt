@@ -24,15 +24,5 @@ qt_standard_project_setup(REQUIRES 6.5)
 set(SAFETY_CONFIG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/config")
 
 add_subdirectory(common)
-add_subdirectory(apps/control_center)
-
-# apps/operator_terminal은 다음 브랜치에서 추가될 예정이라, 이번 스캐폴드가
-# 단독으로 configure/build 되도록 존재 여부를 확인한 뒤에만 추가합니다.
-if(EXISTS "${CMAKE_SOURCE_DIR}/apps/operator_terminal/CMakeLists.txt")
-    add_subdirectory(apps/operator_terminal)
-endif()
-
-if(SAFETY_BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
+add_subdirectory(operator-device/apps/control_center)
+add_subdirectory(forklift-device/apps/operator_terminal)
