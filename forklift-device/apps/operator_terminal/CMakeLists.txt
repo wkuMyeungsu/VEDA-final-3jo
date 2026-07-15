@@ -18,12 +18,12 @@ target_link_libraries(operator_terminal PRIVATE
 )
 
 set(OPERATOR_TERMINAL_QML_FILES
-    ${CMAKE_SOURCE_DIR}/forklift-device/qml/operator_terminal/OperatorWindow.qml
-    ${CMAKE_SOURCE_DIR}/forklift-device/qml/operator_terminal/TopBar.qml
-    ${CMAKE_SOURCE_DIR}/forklift-device/qml/operator_terminal/StatusStrip.qml
-    ${CMAKE_SOURCE_DIR}/forklift-device/qml/operator_terminal/RiskHud.qml
-    ${CMAKE_SOURCE_DIR}/forklift-device/qml/operator_terminal/EdgeWarningFrame.qml
-    ${CMAKE_SOURCE_DIR}/forklift-device/qml/operator_terminal/DemoPanel.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/OperatorWindow.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/TopBar.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/StatusStrip.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/RiskHud.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/EdgeWarningFrame.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/DemoPanel.qml
 )
 foreach(qml_file ${OPERATOR_TERMINAL_QML_FILES})
     get_filename_component(qml_alias ${qml_file} NAME)

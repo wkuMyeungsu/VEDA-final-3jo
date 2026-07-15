@@ -96,13 +96,6 @@ qt_add_qml_module(safety_common
         network/IMetadataSource.h
         network/MockMetadataSource.h
         network/MockMetadataSource.cpp
-        network/TcpMetadataSource.h
-        network/TcpMetadataSource.cpp
-        network/NetworkClient.h
-        network/NetworkClient.cpp
-        network/IWarningDevice.h
-        network/NoopWarningDevice.h
-        network/NoopWarningDevice.cpp
 
         config/ConfigTypes.h
         config/ConfigLoader.h

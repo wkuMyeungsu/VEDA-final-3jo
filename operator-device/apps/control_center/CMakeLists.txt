@@ -14,16 +14,16 @@ target_link_libraries(control_center PRIVATE
 )
 
 set(CONTROL_CENTER_QML_FILES
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/ControlCenterWindow.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/AppBar.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/CameraGrid.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/CameraCard.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/ExpandedCameraView.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/RightPanel.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/AlertListView.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/CameraStatusList.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/EventLogPanel.qml
-    ${CMAKE_SOURCE_DIR}/operator-device/qml/control_center/DemoPanel.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/ControlCenterWindow.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/AppBar.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/CameraGrid.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/CameraCard.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/ExpandedCameraView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/RightPanel.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/AlertListView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/CameraStatusList.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/EventLogPanel.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/DemoPanel.qml
 )
 foreach(qml_file ${CONTROL_CENTER_QML_FILES})
     get_filename_component(qml_alias ${qml_file} NAME)
