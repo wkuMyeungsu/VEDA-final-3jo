@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(ForkliftSafetySystem LANGUAGES CXX)
+project(ForkliftControlCenter LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,11 +18,15 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Multi
 
 qt_standard_project_setup(REQUIRES 6.5)
 
-# Directory that holds the runtime JSON config files (cameras.json, control_center.json,
-# terminal.json). Both app targets copy this next to their executable after build so the
-# programs can be re-configured (e.g. real RTSP URLs) without rebuilding.
+# Directory that holds the runtime JSON config files (cameras.json, control_center.json).
+# The app target copies this next to its executable after build so the program
+# can be re-configured (e.g. real RTSP URLs) without rebuilding.
 set(SAFETY_CONFIG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/config")
 
 add_subdirectory(common)
-add_subdirectory(operator-device/apps/control_center)
-add_subdirectory(forklift-device/apps/operator_terminal)
+add_subdirectory(apps/control_center)
+
+if(SAFETY_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
