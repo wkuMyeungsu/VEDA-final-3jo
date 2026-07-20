@@ -23,8 +23,8 @@ Wisenet 카메라 앱. 채널별(최대 4개) ChArUco 보드 검출로 카메라
 | `/detect` | GET | 구현됨 | `?channel=1~4` 검출 미리보기, 저장 안 함 |
 | `/capture` | POST | 구현됨 | 캡처 세션에 누적 저장 |
 | `/status` | GET | 구현됨 | 채널별 누적 상태 조회 |
-| `/discard` | POST | 예정 | 캡처 프레임 삭제 |
-| `/reset` | POST | 예정 | 채널 세션 초기화 |
+| `/discard` | POST | 구현됨 | 캡처 프레임 삭제 (`channel`, `index`) |
+| `/reset` | POST | 구현됨 | 채널 세션 초기화 (`channel`) |
 | `/calibrate` | POST | 예정 | 캘리브레이션 계산 |
 | `/result` | GET | 예정 | 결과 조회 (재시작 후 유지) |
 | `/undistort` | GET | 예정 | 왜곡 보정 프리뷰 |
@@ -58,7 +58,13 @@ curl -X POST http://<CAM_IP>/<앱경로>/capture -d '{"channel": 1}'
 curl "http://<CAM_IP>/<앱경로>/status?channel=1"
 ```
 
-**5. `/calibrate`, `/result`, `/undistort`, `/discard`, `/reset`** — 미구현, API 표 참고.
+**5. 캡처 삭제/초기화**
+```bash
+curl -X POST http://<CAM_IP>/<앱경로>/discard -d '{"channel": 1, "index": 0}'   # index번째 캡처 삭제
+curl -X POST http://<CAM_IP>/<앱경로>/reset -d '{"channel": 1}'                 # 채널 캡처 전체 초기화
+```
+
+**6. `/calibrate`, `/result`, `/undistort`** — 미구현, API 표 참고.
 
 ## 로컬 설정
 
