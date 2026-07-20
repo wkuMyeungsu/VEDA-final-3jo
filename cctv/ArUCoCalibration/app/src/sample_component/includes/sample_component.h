@@ -45,8 +45,9 @@ class SampleComponent : public Component, public ISampleComponent {
   };
 
   struct ChannelSession {
-    std::vector<cv::Mat> charuco_corners;  // 캡처마다 하나씩 (Nx1 CV_32FC2)
-    std::vector<cv::Mat> charuco_ids;      // 캡처마다 하나씩 (Nx1 CV_32SC1)
+    std::vector<cv::Mat> charuco_corners;         // 캡처마다 하나씩 (Nx1 CV_32FC2)
+    std::vector<cv::Mat> charuco_ids;             // 캡처마다 하나씩 (Nx1 CV_32SC1)
+    std::vector<std::vector<uchar>> thumbnails;   // 캡처마다 하나씩, 축소 JPEG (히스토리 조회용)
     cv::Size image_size;
     CalibrationResult last_result;
   };
@@ -60,18 +61,21 @@ class SampleComponent : public Component, public ISampleComponent {
     std::vector<std::vector<cv::Point2f>> marker_corners;
     cv::Mat charuco_corners;
     cv::Mat charuco_ids;
+    std::vector<uchar> thumbnail_jpeg;  // 축소 JPEG (320px 폭), 캡처 시 히스토리로 저장됨
   };
 
   bool HandleHttpRequest(Event* event);
   void RegisterURI();
 
   void HandleSetBoard(OpenAppSerializable* oas);
+  void HandleGetBoard(OpenAppSerializable* oas);
   void HandleDetect(OpenAppSerializable* oas);
   void HandleCapture(OpenAppSerializable* oas);
   void HandleStatus(OpenAppSerializable* oas);
   void HandleDiscard(OpenAppSerializable* oas);
   void HandleReset(OpenAppSerializable* oas);
   void HandleCalibrate(OpenAppSerializable* oas);
+  void HandleCaptureImage(OpenAppSerializable* oas);
 
   bool RunDetection(int channel, DetectionOutcome& out);
   void WriteDetectionJson(JsonUtility::JsonDocument& doc, const DetectionOutcome& outcome);

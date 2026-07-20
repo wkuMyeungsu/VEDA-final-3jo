@@ -8,6 +8,7 @@
 #include <opencv2/aruco/charuco.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "camera_credentials.h"
 #include "dispatcher_serialize.h"
@@ -89,7 +90,11 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
   auto path_info = oas->GetFCGXParam("PATH_INFO");
 
   if (path_info == "/board") {
-    HandleSetBoard(oas);
+    if (oas->GetFCGXParam("REQUEST_METHOD") == "GET") {
+      HandleGetBoard(oas);
+    } else {
+      HandleSetBoard(oas);
+    }
   } else if (path_info == "/detect") {
     HandleDetect(oas);
   } else if (path_info == "/capture") {
@@ -102,6 +107,8 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleReset(oas);
   } else if (path_info == "/calibrate") {
     HandleCalibrate(oas);
+  } else if (path_info == "/captures/image") {
+    HandleCaptureImage(oas);
   } else {
     oas->SetStatusCode(404);
     oas->SetResponseBody("unsupported path");
@@ -118,7 +125,11 @@ void SampleComponent::RegisterURI() {
   Vector<String> post_methods;
   post_methods.push_back("POST");
 
-  auto* board_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/board"), GetInstanceName(), post_methods);
+  Vector<String> board_methods;
+  board_methods.push_back("GET");
+  board_methods.push_back("POST");
+
+  auto* board_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/board"), GetInstanceName(), board_methods);
   auto* detect_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detect"), GetInstanceName(), get_methods);
   auto* capture_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/capture"), GetInstanceName(), post_methods);
   auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), get_methods);
@@ -126,6 +137,8 @@ void SampleComponent::RegisterURI() {
   auto* reset_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/reset"), GetInstanceName(), post_methods);
   auto* calibrate_uri =
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/calibrate"), GetInstanceName(), post_methods);
+  auto* capture_image_uri =
+      new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/captures/image"), GetInstanceName(), get_methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, board_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detect_uri);
@@ -134,6 +147,8 @@ void SampleComponent::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, discard_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, reset_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, calibrate_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
+                    capture_image_uri);
 }
 
 // ---- 보드 설정 ----
@@ -169,6 +184,23 @@ void SampleComponent::HandleSetBoard(OpenAppSerializable* oas) {
   res.AddMember("squares_y", board_config_.squares_y, alloc);
   res.AddMember("square_length_mm", (double)(board_config_.square_length_m * 1000.0), alloc);
   res.AddMember("marker_length_mm", (double)(board_config_.marker_length_m * 1000.0), alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+void SampleComponent::HandleGetBoard(OpenAppSerializable* oas) {
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("configured", board_config_.configured, alloc);
+  if (board_config_.configured) {
+    res.AddMember("squares_x", board_config_.squares_x, alloc);
+    res.AddMember("squares_y", board_config_.squares_y, alloc);
+    res.AddMember("square_length_mm", (double)(board_config_.square_length_m * 1000.0), alloc);
+    res.AddMember("marker_length_mm", (double)(board_config_.marker_length_m * 1000.0), alloc);
+  }
 
   rapidjson::StringBuffer strbuf;
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
@@ -212,6 +244,12 @@ bool SampleComponent::RunDetection(int channel, DetectionOutcome& out) {
     return false;
   }
   out.image_size = gray.size();
+
+  // 히스토리 조회용 축소 썸네일 (원본 저장은 용량 부담이 커서 320px 폭으로 줄여서 인코딩).
+  cv::Mat thumb;
+  double scale = gray.cols > 320 ? 320.0 / gray.cols : 1.0;
+  cv::resize(gray, thumb, cv::Size(), scale, scale, cv::INTER_AREA);
+  cv::imencode(".jpg", thumb, out.thumbnail_jpeg);
 
   cv::aruco::detectMarkers(gray, dictionary_, out.marker_corners, out.marker_ids, params);
 
@@ -336,6 +374,7 @@ void SampleComponent::HandleCapture(OpenAppSerializable* oas) {
     session.image_size = outcome.image_size;
     session.charuco_corners.push_back(outcome.charuco_corners.clone());
     session.charuco_ids.push_back(outcome.charuco_ids.clone());
+    session.thumbnails.push_back(outcome.thumbnail_jpeg);
     session.last_result = CalibrationResult{};  // 새 데이터가 들어왔으니 이전 계산 결과는 무효
   }
 
@@ -420,6 +459,7 @@ void SampleComponent::HandleDiscard(OpenAppSerializable* oas) {
 
   session.charuco_corners.erase(session.charuco_corners.begin() + index);
   session.charuco_ids.erase(session.charuco_ids.begin() + index);
+  session.thumbnails.erase(session.thumbnails.begin() + index);
   session.last_result = CalibrationResult{};  // 데이터가 바뀌었으니 재계산 전까지 이전 결과는 무효
 
   JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
@@ -540,6 +580,32 @@ void SampleComponent::HandleCalibrate(OpenAppSerializable* oas) {
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
   res.Accept(writer);
   oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+// ---- 캡처 히스토리 ----
+
+void SampleComponent::HandleCaptureImage(OpenAppSerializable* oas) {
+  std::string query = oas->GetFCGXParam("QUERY_STRING");
+  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  int index = std::atoi(GetQueryParam(query, "index").c_str());
+  auto& session = sessions_[idx];
+  if (index < 0 || index >= (int)session.thumbnails.size()) {
+    oas->SetStatusCode(404);
+    oas->SetResponseBody("잘못된 index");
+    return;
+  }
+
+  const auto& jpeg = session.thumbnails[index];
+  std::string out_body(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
+  oas->AddResponseHeader("Content-Type", "image/jpeg");
+  oas->SetResponseBody(out_body, OpenAppResponseType::FILE);
 }
 
 // ---- 스냅샷 / 유틸 ----
