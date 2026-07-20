@@ -25,7 +25,7 @@ Wisenet 카메라 앱. 채널별(최대 4개) ChArUco 보드 검출로 카메라
 | `/status` | GET | 구현됨 | 채널별 누적 상태 조회 |
 | `/discard` | POST | 구현됨 | 캡처 프레임 삭제 (`channel`, `index`) |
 | `/reset` | POST | 구현됨 | 채널 세션 초기화 (`channel`) |
-| `/calibrate` | POST | 예정 | 캘리브레이션 계산 |
+| `/calibrate` | POST | 구현됨 | 캘리브레이션 계산 (결과는 메모리에만 유지, 재시작 시 소실 — 파일 저장은 예정) |
 | `/result` | GET | 예정 | 결과 조회 (재시작 후 유지) |
 | `/undistort` | GET | 예정 | 왜곡 보정 프리뷰 |
 
@@ -67,7 +67,15 @@ curl -X POST http://<CAM_IP>/<앱경로>/discard -d '{"channel": 1, "index": 0}'
 curl -X POST http://<CAM_IP>/<앱경로>/reset -d '{"channel": 1}'                 # 채널 캡처 전체 초기화
 ```
 
-**6. `/calibrate`, `/result`, `/undistort`** — 미구현, API 표 참고.
+**6. 캘리브레이션 계산** — 채널당 캡처 4장 이상(권장 10장 이상) 모인 뒤 호출. 이 시점에 처음으로 실제 계산이 실행됨.
+```bash
+curl -X POST http://<CAM_IP>/<앱경로>/calibrate -d '{"channel": 1}'
+```
+- `rational_model: true`를 body에 추가하면 왜곡 모델을 더 정밀하게(`CALIB_RATIONAL_MODEL`) 계산 (기본은 꺼짐)
+- 응답의 `rms`가 재투영 오차(작을수록 좋음), `camera_matrix`/`dist_coeffs`가 캘리브레이션 결과
+- **결과는 메모리에만 유지됨 — 앱 재시작하면 사라짐** (파일 저장은 예정)
+
+**7. `/result`, `/undistort`** — 미구현, API 표 참고.
 
 ## 로컬 설정
 
