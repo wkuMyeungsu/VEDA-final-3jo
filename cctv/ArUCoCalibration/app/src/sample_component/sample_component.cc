@@ -134,6 +134,11 @@ void SampleComponent::HandleSetBoard(OpenAppSerializable* oas) {
   board_config_.configured = true;
   board_ = cv::Ptr<cv::aruco::CharucoBoard>();  // 다음 GetBoard() 호출에서 새 사양으로 재생성
 
+  // 보드 사양이 바뀌면 이전에 모아둔 코너 데이터는 새 보드 좌표계와 안 맞으므로 전부 버림.
+  for (auto& session : sessions_) {
+    session = ChannelSession{};
+  }
+
   JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
   auto& alloc = res.GetAllocator();
   res.AddMember("ok", true, alloc);
