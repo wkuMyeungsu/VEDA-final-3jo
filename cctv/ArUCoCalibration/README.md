@@ -12,81 +12,48 @@ Wisenet 카메라 앱. 채널별(최대 4개) ChArUco 보드 검출로 카메라
 ## 통신 방식
 
 - 프로토콜: HTTP REST, Body: JSON
-- 라우팅: AppDispatcher → FastCGI → `PATH_INFO` 매칭 (`sample_component.cc`)
+- 라우팅: AppDispatcher → FastCGI → `PATH_INFO` (`sample_component.cc`)
 - Base URL: `http://<카메라 IP>/opensdk/<app_id>/<경로>`
+- 채널 지정 파라미터명은 `channel`이 아니라 `ch` (플랫폼이 `channel`이라는 이름을 자체적으로 가로채 검증하는 것으로 추정되어 회피)
 
 ## API
 
-| 경로 | 메서드 | 상태 | 설명 |
-|---|---|---|---|
-| `/board` | POST | 구현됨 | 보드 사양 설정 (`squares_x`, `squares_y`, `square_length_mm`, `marker_length_mm`) |
-| `/board` | GET | 구현됨 | 현재 등록된 보드 사양 조회 |
-| `/detect` | GET | 구현됨 | `?channel=1~4` 검출 미리보기, 저장 안 함 |
-| `/capture` | POST | 구현됨 | 캡처 세션에 누적 저장 |
-| `/status` | GET | 구현됨 | 채널별 누적 상태 조회 |
-| `/discard` | POST | 구현됨 | 캡처 프레임 삭제 (`channel`, `index`) |
-| `/reset` | POST | 구현됨 | 채널 세션 초기화 (`channel`) |
-| `/calibrate` | POST | 구현됨 | 캘리브레이션 계산, 결과 파일 저장(`calib_result_ch*.json`) |
-| `/captures/image` | GET | 구현됨 | `?channel=1~4&index=N` 캡처 당시 축소 썸네일(JPEG) 조회 |
-| `/result` | GET | 구현됨 | `?channel=1~4` 저장된 결과 조회 (재시작 후에도 유지) |
-| `/undistort` | GET | 구현됨 | `?channel=1~4` 왜곡 보정 프리뷰 (JPEG 이미지 응답) |
+| 경로 | 메서드 | 설명 |
+|---|---|---|
+| `/board` | POST | 보드 사양 설정 (`squares_x`, `squares_y`, `square_length_mm`, `marker_length_mm`). 전 채널 공통, 메모리 전용, 재등록 시 전 채널 캡처 초기화 |
+| `/board` | GET | 등록된 보드 사양 조회 |
+| `/detect` | GET | `?ch=1~4` 검출 미리보기 (저장 안 함) |
+| `/capture` | POST | `{ch}` 캡처 누적 (코너 4개 미만 거부, 세션 중 해상도 변경 시 거부) |
+| `/status` | GET | `?ch=1~4` 누적 캡처 수 / 결과 유무 조회 |
+| `/discard` | POST | `{ch, index}` 캡처 1건 삭제 |
+| `/reset` | POST | `{ch}` 채널 캡처 전체 초기화 |
+| `/calibrate` | POST | `{ch, rational_model?}` 계산 + `calib_result_ch<N>.json` 저장 (재계산 시 덮어씀) |
+| `/result` | GET | `?ch=1~4` 저장된 결과 조회 (재시작 후 유지) |
+| `/undistort` | GET | `?ch=1~4` 왜곡 보정 프리뷰 (JPEG), `/calibrate` 결과 필요 |
+| `/captures/image` | GET | `?ch=1~4&index=N` 캡처 당시 축소 썸네일(JPEG) |
+| `/preview/image` | GET | `?ch=1~4` 가장 최근 `/detect` 결과 이미지(JPEG), 저장 아님 |
 
 ## 사용법
 
-`<CAM_IP>`, `<앱경로>`는 실제 값으로 대체.
-
-**1. 보드 등록**
 ```bash
+# 1. 보드 등록 (1회)
 curl -X POST http://<CAM_IP>/<앱경로>/board \
   -d '{"squares_x": 7, "squares_y": 5, "square_length_mm": 30, "marker_length_mm": 22}'
-```
-- 채널별이 아니라 앱 전체에 공통으로 적용됨 (채널마다 따로 등록하는 게 아님)
-- 메모리에만 유지됨 — 디스크 저장 안 함, 앱 재시작(리부팅/재배포) 시 초기화되어 재등록 필요
-- 재등록(사양 변경) 시 4개 채널 전부의 누적 캡처가 함께 초기화됨 (이전 좌표계로 찍은 캡처는 새 보드와 안 맞으므로)
-- 현재 등록된 사양 확인: `curl http://<CAM_IP>/<앱경로>/board` (`configured: false`면 미등록)
 
-**2. 검출 미리보기** — 캡처 전 각도/거리 확인용, 저장 안 됨.
-```bash
-curl "http://<CAM_IP>/<앱경로>/detect?channel=1"
-```
-`charuco_corner_count`가 4 미만이면 `/capture`에서 거부됨.
+# 2~3. 위치 잡고(detect) 캡처(capture) 반복 — 각도 다양하게, 10장 이상 권장
+curl "http://<CAM_IP>/<앱경로>/detect?ch=1"
+curl -X POST http://<CAM_IP>/<앱경로>/capture -d '{"ch": 1}'
 
-**3. 캡처 누적** — 각도/거리 바꿔가며 반복 호출, 1회 = 1장.
-```bash
-curl -X POST http://<CAM_IP>/<앱경로>/capture -d '{"channel": 1}'
-```
-- ChArUco 코너 4개 미만 → `accepted: false` (재시도 가능, 에러 아님)
-- 첫 캡처 이후 해상도/줌 변경 시 이후 캡처 전부 거부
-- 권장: 10장 이상, 다양한 각도
-- 캡처마다 축소 썸네일(320px 폭 JPEG)도 같이 저장됨 — `/captures/image?channel=1&index=0`(0부터 시작, `/status`의 `corners_per_capture` 배열과 같은 인덱스)로 조회. `/discard`/`/reset` 시 코너 데이터와 함께 삭제됨
+# 4. 계산
+curl -X POST http://<CAM_IP>/<앱경로>/calibrate -d '{"ch": 1}'
 
-**4. 진행 상황** — `total_captured`, `has_result` 확인. `total_captured ≥ 10`이면 `/calibrate` 가능.
-```bash
-curl "http://<CAM_IP>/<앱경로>/status?channel=1"
+# 5. 조회
+curl "http://<CAM_IP>/<앱경로>/result?ch=1"
 ```
 
-**5. 캡처 삭제/초기화**
-```bash
-curl -X POST http://<CAM_IP>/<앱경로>/discard -d '{"channel": 1, "index": 0}'   # index번째 캡처 삭제
-curl -X POST http://<CAM_IP>/<앱경로>/reset -d '{"channel": 1}'                 # 채널 캡처 전체 초기화
-```
+캡처 좋은 기준: 코너 4개 이상 검출, 각도/위치 다양, 세션 내 해상도 고정.
 
-**6. 캘리브레이션 계산** — 채널당 캡처 4장 이상(권장 10장 이상) 모인 뒤 호출. 이 시점에 처음으로 실제 계산이 실행됨.
-```bash
-curl -X POST http://<CAM_IP>/<앱경로>/calibrate -d '{"channel": 1}'
-```
-- `rational_model: true`를 body에 추가하면 왜곡 모델을 더 정밀하게(`CALIB_RATIONAL_MODEL`) 계산 (기본은 꺼짐)
-- 응답의 `rms`가 재투영 오차(작을수록 좋음), `camera_matrix`/`dist_coeffs`가 캘리브레이션 결과
-- 계산과 동시에 `calib_result_ch<N>.json` 파일로 저장됨 — 앱 재시작 후에도 유지, 시작 시 자동으로 다시 불러옴
-
-**7. 결과 조회 / 왜곡 보정 프리뷰**
-```bash
-curl "http://<CAM_IP>/<앱경로>/result?channel=1"       # JSON (camera_matrix, dist_coeffs, rms)
-curl "http://<CAM_IP>/<앱경로>/undistort?channel=1" -o preview.jpg   # 왜곡 보정된 실시간 프리뷰
-```
-`/undistort`는 `/calibrate` 결과가 있어야 동작 (없으면 400).
-
-**다른 앱(예: ArUCo_Detection)에서 이 결과를 쓰려면**: 파일을 직접 읽는 게 아니라 `http://127.0.0.1/opensdk/<이 앱의 app_id>/result?channel=N`으로 HTTP 호출해서 가져가는 방식을 권장 (같은 카메라 안에서 앱끼리 로컬 HTTP로 통신, 파일 공유 경로에 의존 안 함).
+**앱 간 연동**: 다른 앱(예: ArUCo_Detection)은 파일을 직접 읽지 말고 `http://127.0.0.1/opensdk/<app_id>/result?ch=N`으로 HTTP 호출해서 가져갈 것.
 
 ## 로컬 설정
 
