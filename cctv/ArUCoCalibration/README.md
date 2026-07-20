@@ -20,12 +20,14 @@ Wisenet 카메라 앱. 채널별(최대 4개) ChArUco 보드 검출로 카메라
 | 경로 | 메서드 | 상태 | 설명 |
 |---|---|---|---|
 | `/board` | POST | 구현됨 | 보드 사양 설정 (`squares_x`, `squares_y`, `square_length_mm`, `marker_length_mm`) |
+| `/board` | GET | 구현됨 | 현재 등록된 보드 사양 조회 |
 | `/detect` | GET | 구현됨 | `?channel=1~4` 검출 미리보기, 저장 안 함 |
 | `/capture` | POST | 구현됨 | 캡처 세션에 누적 저장 |
 | `/status` | GET | 구현됨 | 채널별 누적 상태 조회 |
 | `/discard` | POST | 구현됨 | 캡처 프레임 삭제 (`channel`, `index`) |
 | `/reset` | POST | 구현됨 | 채널 세션 초기화 (`channel`) |
 | `/calibrate` | POST | 구현됨 | 캘리브레이션 계산 (결과는 메모리에만 유지, 재시작 시 소실 — 파일 저장은 예정) |
+| `/captures/image` | GET | 구현됨 | `?channel=1~4&index=N` 캡처 당시 축소 썸네일(JPEG) 조회 |
 | `/result` | GET | 예정 | 결과 조회 (재시작 후 유지) |
 | `/undistort` | GET | 예정 | 왜곡 보정 프리뷰 |
 
@@ -41,6 +43,7 @@ curl -X POST http://<CAM_IP>/<앱경로>/board \
 - 채널별이 아니라 앱 전체에 공통으로 적용됨 (채널마다 따로 등록하는 게 아님)
 - 메모리에만 유지됨 — 디스크 저장 안 함, 앱 재시작(리부팅/재배포) 시 초기화되어 재등록 필요
 - 재등록(사양 변경) 시 4개 채널 전부의 누적 캡처가 함께 초기화됨 (이전 좌표계로 찍은 캡처는 새 보드와 안 맞으므로)
+- 현재 등록된 사양 확인: `curl http://<CAM_IP>/<앱경로>/board` (`configured: false`면 미등록)
 
 **2. 검출 미리보기** — 캡처 전 각도/거리 확인용, 저장 안 됨.
 ```bash
@@ -55,6 +58,7 @@ curl -X POST http://<CAM_IP>/<앱경로>/capture -d '{"channel": 1}'
 - ChArUco 코너 4개 미만 → `accepted: false` (재시도 가능, 에러 아님)
 - 첫 캡처 이후 해상도/줌 변경 시 이후 캡처 전부 거부
 - 권장: 10장 이상, 다양한 각도
+- 캡처마다 축소 썸네일(320px 폭 JPEG)도 같이 저장됨 — `/captures/image?channel=1&index=0`(0부터 시작, `/status`의 `corners_per_capture` 배열과 같은 인덱스)로 조회. `/discard`/`/reset` 시 코너 데이터와 함께 삭제됨
 
 **4. 진행 상황** — `total_captured`, `has_result` 확인. `total_captured ≥ 10`이면 `/calibrate` 가능.
 ```bash
