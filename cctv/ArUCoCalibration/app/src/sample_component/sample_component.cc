@@ -74,6 +74,10 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleSetBoard(oas);
   } else if (path_info == "/detect") {
     HandleDetect(oas);
+  } else if (path_info == "/capture") {
+    HandleCapture(oas);
+  } else if (path_info == "/status") {
+    HandleStatus(oas);
   } else {
     oas->SetStatusCode(404);
     oas->SetResponseBody("unsupported path");
@@ -92,9 +96,13 @@ void SampleComponent::RegisterURI() {
 
   auto* board_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/board"), GetInstanceName(), post_methods);
   auto* detect_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detect"), GetInstanceName(), get_methods);
+  auto* capture_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/capture"), GetInstanceName(), post_methods);
+  auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), get_methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, board_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detect_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, capture_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, status_uri);
 }
 
 // ---- 보드 설정 ----
@@ -240,6 +248,107 @@ void SampleComponent::HandleDetect(OpenAppSerializable* oas) {
   res.AddMember("ok", true, alloc);
   res.AddMember("channel", channel, alloc);
   WriteDetectionJson(res, outcome);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+// ---- 캡처 (저장) ----
+
+void SampleComponent::HandleCapture(OpenAppSerializable* oas) {
+  auto body = oas->GetRequestBody();
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(body);
+  if (doc.HasParseError() || !doc.HasMember("channel")) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 파라미터 필요");
+    return;
+  }
+
+  int channel = doc["channel"].GetInt();
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  DetectionOutcome outcome;
+  if (!RunDetection(channel, outcome)) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody(outcome.error);
+    return;
+  }
+
+  auto& session = sessions_[idx];
+  int charuco_count = outcome.charuco_ids.empty() ? 0 : outcome.charuco_ids.rows;
+  bool accepted = charuco_count >= kMinCharucoCornersPerFrame;
+  std::string reject_reason;
+
+  if (!accepted) {
+    reject_reason = "ChArUco 코너가 부족합니다 (검출 " + std::to_string(charuco_count) + "개, 최소 " +
+                     std::to_string(kMinCharucoCornersPerFrame) + "개 필요). 보드를 화면에 더 크게/정면으로 놓고 다시 시도하세요.";
+  } else if (!session.charuco_corners.empty() && session.image_size != outcome.image_size) {
+    // 캡처 도중 해상도/줌이 바뀌면 캘리브레이션 전체가 깨지므로 거부.
+    accepted = false;
+    reject_reason = "이전 캡처와 해상도가 다릅니다 (해상도/줌 변경 금지). 필요하면 /reset 후 다시 시작하세요.";
+  }
+
+  if (accepted) {
+    session.image_size = outcome.image_size;
+    session.charuco_corners.push_back(outcome.charuco_corners.clone());
+    session.charuco_ids.push_back(outcome.charuco_ids.clone());
+    session.last_result = CalibrationResult{};  // 새 데이터가 들어왔으니 이전 계산 결과는 무효
+  }
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("ok", true, alloc);
+  res.AddMember("channel", channel, alloc);
+  res.AddMember("accepted", accepted, alloc);
+  if (!reject_reason.empty()) {
+    res.AddMember("reject_reason", reject_reason, alloc);
+  }
+  res.AddMember("total_captured", (int)session.charuco_corners.size(), alloc);
+  res.AddMember("min_recommended", kMinCapturesForCalibration, alloc);
+  WriteDetectionJson(res, outcome);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+void SampleComponent::HandleStatus(OpenAppSerializable* oas) {
+  std::string query = oas->GetFCGXParam("QUERY_STRING");
+  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  auto& session = sessions_[idx];
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("channel", channel, alloc);
+  res.AddMember("board_configured", board_config_.configured, alloc);
+  res.AddMember("total_captured", (int)session.charuco_corners.size(), alloc);
+  res.AddMember("min_recommended", kMinCapturesForCalibration, alloc);
+  res.AddMember("has_result", session.last_result.valid, alloc);
+  if (session.last_result.valid) {
+    res.AddMember("rms", session.last_result.rms, alloc);
+  }
+
+  auto counts = JsonUtility::ValueType(JsonUtility::Type::kArrayType);
+  for (const auto& ids : session.charuco_ids) {
+    counts.PushBack(ids.rows, alloc);
+  }
+  res.AddMember("corners_per_capture", counts, alloc);
 
   rapidjson::StringBuffer strbuf;
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
