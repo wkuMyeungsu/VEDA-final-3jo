@@ -1,0 +1,7 @@
+{
+  "system_name": "지게차 사각지대 충돌 방지 - 관제 센터",
+  "server_host": "127.0.0.1",
+  "server_port": 9000,
+  "metadata_source_type": "mock",
+  "event_log_max_entries": 200
+}
