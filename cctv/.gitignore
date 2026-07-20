@@ -20,6 +20,9 @@
 # 대용량 샘플/캡처 데이터
 **/*.cap
 
+# opensdk_packager 최종 배포 패키지 (docker-compose 빌드 산출물)
+**/*.tar.bz2
+
 # 기타
 **/__pycache__/
 **/*.pyc
