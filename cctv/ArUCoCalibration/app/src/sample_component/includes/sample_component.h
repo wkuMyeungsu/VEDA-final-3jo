@@ -75,6 +75,8 @@ class SampleComponent : public Component, public ISampleComponent {
   void HandleDiscard(OpenAppSerializable* oas);
   void HandleReset(OpenAppSerializable* oas);
   void HandleCalibrate(OpenAppSerializable* oas);
+  void HandleResult(OpenAppSerializable* oas);
+  void HandleUndistort(OpenAppSerializable* oas);
   void HandleCaptureImage(OpenAppSerializable* oas);
 
   bool RunDetection(int channel, DetectionOutcome& out);
@@ -85,6 +87,9 @@ class SampleComponent : public Component, public ISampleComponent {
 
   int ChannelIndex(int channel_number) const;
   std::string GetQueryParam(const std::string& query, const std::string& key);
+  std::string ResultFilePath(int channel) const;
+  void SaveResultToFile(int channel, const CalibrationResult& result);
+  void LoadResultFromFile(int channel);
 
  private:
   BoardConfig board_config_;

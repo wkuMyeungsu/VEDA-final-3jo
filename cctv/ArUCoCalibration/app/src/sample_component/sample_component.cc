@@ -2,6 +2,7 @@
 
 #include <curl/curl.h>
 
+#include <fstream>
 #include <sstream>
 
 #include <opencv2/aruco.hpp>
@@ -65,6 +66,11 @@ bool SampleComponent::Initialize() {
   dictionary_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
   camera_credentials_ = LoadCameraCredentials();
 
+  // 이전에 계산해둔 채널별 결과가 파일로 남아있으면 재시작 후에도 이어서 쓸 수 있게 불러옴.
+  for (int ch = 1; ch <= kChannelCount; ++ch) {
+    LoadResultFromFile(ch);
+  }
+
   return Component::Initialize();
 }
 
@@ -107,6 +113,10 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleReset(oas);
   } else if (path_info == "/calibrate") {
     HandleCalibrate(oas);
+  } else if (path_info == "/result") {
+    HandleResult(oas);
+  } else if (path_info == "/undistort") {
+    HandleUndistort(oas);
   } else if (path_info == "/captures/image") {
     HandleCaptureImage(oas);
   } else {
@@ -139,6 +149,9 @@ void SampleComponent::RegisterURI() {
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/calibrate"), GetInstanceName(), post_methods);
   auto* capture_image_uri =
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/captures/image"), GetInstanceName(), get_methods);
+  auto* result_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/result"), GetInstanceName(), get_methods);
+  auto* undistort_uri =
+      new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/undistort"), GetInstanceName(), get_methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, board_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detect_uri);
@@ -149,6 +162,9 @@ void SampleComponent::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, calibrate_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
                     capture_image_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, result_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
+                    undistort_uri);
 }
 
 // ---- 보드 설정 ----
@@ -565,6 +581,8 @@ void SampleComponent::HandleCalibrate(OpenAppSerializable* oas) {
   session.last_result.dist_coeffs = dist_coeffs;
   session.last_result.per_view_errors_px = per_view_errors;
 
+  SaveResultToFile(channel, session.last_result);
+
   JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
   auto& alloc = res.GetAllocator();
   res.AddMember("ok", true, alloc);
@@ -580,6 +598,160 @@ void SampleComponent::HandleCalibrate(OpenAppSerializable* oas) {
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
   res.Accept(writer);
   oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+void SampleComponent::HandleResult(OpenAppSerializable* oas) {
+  std::string query = oas->GetFCGXParam("QUERY_STRING");
+  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  if (!sessions_[idx].last_result.valid) {
+    LoadResultFromFile(channel);
+  }
+
+  auto& result = sessions_[idx].last_result;
+  if (!result.valid) {
+    oas->SetStatusCode(404);
+    oas->SetResponseBody("이 채널은 아직 캘리브레이션 결과가 없습니다");
+    return;
+  }
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("ok", true, alloc);
+  res.AddMember("channel", channel, alloc);
+  res.AddMember("rms", result.rms, alloc);
+  res.AddMember("image_width", result.image_size.width, alloc);
+  res.AddMember("image_height", result.image_size.height, alloc);
+  res.AddMember("camera_matrix", MatToJsonArray(result.camera_matrix, alloc), alloc);
+  res.AddMember("dist_coeffs", MatToJsonArray(result.dist_coeffs, alloc), alloc);
+  res.AddMember("per_view_errors_px", VectorToJsonArray(result.per_view_errors_px, alloc), alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+void SampleComponent::HandleUndistort(OpenAppSerializable* oas) {
+  std::string query = oas->GetFCGXParam("QUERY_STRING");
+  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  if (!sessions_[idx].last_result.valid) {
+    LoadResultFromFile(channel);
+  }
+  auto& result = sessions_[idx].last_result;
+  if (!result.valid) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("이 채널은 아직 캘리브레이션 결과가 없습니다. 먼저 /calibrate 필요");
+    return;
+  }
+
+  std::vector<unsigned char> jpeg;
+  std::string error;
+  if (!FetchSnapshot(channel, jpeg, error)) {
+    oas->SetStatusCode(502);
+    oas->SetResponseBody("스냅샷 요청 실패: " + error);
+    return;
+  }
+
+  cv::Mat img = cv::imdecode(jpeg, cv::IMREAD_COLOR);
+  if (img.empty()) {
+    oas->SetStatusCode(502);
+    oas->SetResponseBody("JPEG 디코딩 실패");
+    return;
+  }
+
+  cv::Mat undistorted;
+  cv::undistort(img, undistorted, result.camera_matrix, result.dist_coeffs);
+
+  std::vector<unsigned char> out_jpeg;
+  cv::imencode(".jpg", undistorted, out_jpeg);
+
+  std::string out_body(reinterpret_cast<const char*>(out_jpeg.data()), out_jpeg.size());
+  oas->AddResponseHeader("Content-Type", "image/jpeg");
+  oas->SetResponseBody(out_body, OpenAppResponseType::FILE);
+}
+
+std::string SampleComponent::ResultFilePath(int channel) const {
+  return "calib_result_ch" + std::to_string(channel) + ".json";
+}
+
+void SampleComponent::SaveResultToFile(int channel, const CalibrationResult& result) {
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  auto& alloc = doc.GetAllocator();
+  doc.AddMember("rms", result.rms, alloc);
+  doc.AddMember("image_width", result.image_size.width, alloc);
+  doc.AddMember("image_height", result.image_size.height, alloc);
+  doc.AddMember("camera_matrix", MatToJsonArray(result.camera_matrix, alloc), alloc);
+  doc.AddMember("dist_coeffs", MatToJsonArray(result.dist_coeffs, alloc), alloc);
+  doc.AddMember("per_view_errors_px", VectorToJsonArray(result.per_view_errors_px, alloc), alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  doc.Accept(writer);
+
+  std::ofstream ofs(ResultFilePath(channel));
+  ofs << strbuf.GetString();
+}
+
+void SampleComponent::LoadResultFromFile(int channel) {
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    return;
+  }
+
+  std::ifstream ifs(ResultFilePath(channel));
+  if (!ifs.is_open()) {
+    return;
+  }
+
+  std::stringstream ss;
+  ss << ifs.rdbuf();
+
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(ss.str());
+  if (doc.HasParseError() || !doc.HasMember("camera_matrix") || !doc.HasMember("dist_coeffs")) {
+    return;
+  }
+
+  CalibrationResult result;
+  result.valid = true;
+  result.rms = doc["rms"].GetDouble();
+  result.image_size = cv::Size(doc["image_width"].GetInt(), doc["image_height"].GetInt());
+
+  result.camera_matrix = cv::Mat(3, 3, CV_64F);
+  int k = 0;
+  for (auto& v : doc["camera_matrix"].GetArray()) {
+    result.camera_matrix.at<double>(k / 3, k % 3) = v.GetDouble();
+    ++k;
+  }
+
+  auto dc_array = doc["dist_coeffs"].GetArray();
+  result.dist_coeffs = cv::Mat(1, (int)dc_array.Size(), CV_64F);
+  int dc_i = 0;
+  for (auto& v : dc_array) {
+    result.dist_coeffs.at<double>(0, dc_i++) = v.GetDouble();
+  }
+
+  if (doc.HasMember("per_view_errors_px")) {
+    for (auto& v : doc["per_view_errors_px"].GetArray()) {
+      result.per_view_errors_px.push_back(v.GetDouble());
+    }
+  }
+
+  sessions_[idx].last_result = result;
 }
 
 // ---- 캡처 히스토리 ----
