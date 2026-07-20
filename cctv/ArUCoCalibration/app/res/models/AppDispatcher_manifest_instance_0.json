@@ -10,7 +10,7 @@
 		"SourceNames": [
 			{
 				"Source": "Stub::Dispatcher::OpenAPI",
-				"GroupName": "OpenSDK::ArUCo_Calibration::Dispatcher"
+				"GroupName": "OpenSDK::ArUCoCalibration::Dispatcher"
 			}
 		],
 		"Channel": 0,

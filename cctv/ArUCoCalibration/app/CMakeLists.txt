@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.2.2)
 
-project(ArUCo_Calibration)
+project(ArUCoCalibration)
 
 set(TARGET_EXE ${PROJECT_NAME})
 
@@ -21,6 +21,8 @@ message("WISENET_PLATFORM_RELEASE_PATH: ${WISENET_PLATFORM_RELEASE_PATH}")
 message("WISENET_PRODUCT_RELEASE_PATH: ${WISENET_PRODUCT_RELEASE_PATH}")
 message("APP_SUPPORT_PACKAGE: ${APP_SUPPORT_PACKAGE}")
 
+include_directories(${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include)
+include_directories(${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include/opencv4)
 include_directories(${WISENET_PRODUCT_RELEASE_PATH}/includes)
 include_directories(${WISENET_PRODUCT_RELEASE_PATH}/lib)
 include_directories(${WISENET_PLATFORM_RELEASE_PATH}/includes)
