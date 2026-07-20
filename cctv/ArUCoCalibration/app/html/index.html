@@ -57,6 +57,17 @@
     function onStatus() {
       getJson(`/status?channel=${currentChannel()}`, 'action_result');
     }
+
+    function onDiscard() {
+      postJson('/discard', {
+        channel: Number(currentChannel()),
+        index: Number(document.getElementById('discard_index').value),
+      }, 'action_result');
+    }
+
+    function onReset() {
+      postJson('/reset', { channel: Number(currentChannel()) }, 'action_result');
+    }
   </script>
 </head>
 
@@ -87,6 +98,12 @@
     <button type="button" onclick="onDetect()">Detect (미리보기)</button>
     <button type="button" onclick="onCapture()">Capture (누적 저장)</button>
     <button type="button" onclick="onStatus()">Status (진행 상황)</button>
+    <button type="button" onclick="onReset()">Reset (전체 초기화)</button>
+    <div>
+      <label for="discard_index">discard index</label>
+      <input type="number" id="discard_index" value="0" style="width: 60px;">
+      <button type="button" onclick="onDiscard()">Discard</button>
+    </div>
     <pre id="action_result"></pre>
   </fieldset>
 </body>
