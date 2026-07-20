@@ -1,6 +1,6 @@
 {
     "SkeletonPortNumber": "auto",
-    "ContainerName": "ArUCo_Calibration",
+    "ContainerName": "ArUCoCalibration",
     "SchedulerNames": [
         "EComponents::eScheduler1",
         "SampleComponentScheduler"
