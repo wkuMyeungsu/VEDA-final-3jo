@@ -263,6 +263,23 @@
       padding: 1px 4px;
       border-radius: 3px;
     }
+    .thumb .del {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(220,38,38,0.85);
+      color: #fff;
+      font-size: 11px;
+      line-height: 16px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .thumb .del:hover { background: #dc2626; }
   </style>
   <script>
     const paths = window.location.pathname.split('/');
@@ -316,11 +333,18 @@
       getJson(`/status?channel=${currentChannel()}`, 'action_result');
     }
 
-    function onDiscard() {
-      postJson('/discard', {
-        channel: Number(currentChannel()),
-        index: Number(document.getElementById('discard_index').value),
-      }, 'action_result');
+    function onDiscard(index) {
+      const channel = currentChannel();
+      fetch(`${base_uri}/discard`, {
+        method: 'POST',
+        body: JSON.stringify({ channel: Number(channel), index }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          showResult('action_result', data);
+          onLoadHistory();
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
     }
 
     function onReset() {
@@ -343,8 +367,15 @@
             const idx = document.createElement('span');
             idx.className = 'idx';
             idx.textContent = `#${i}`;
+            const del = document.createElement('button');
+            del.className = 'del';
+            del.type = 'button';
+            del.textContent = '×';
+            del.title = '이 캡처 삭제';
+            del.onclick = () => onDiscard(i);
             thumb.appendChild(img);
             thumb.appendChild(idx);
+            thumb.appendChild(del);
             gallery.appendChild(thumb);
           }
         })
@@ -356,6 +387,16 @@
         channel: Number(currentChannel()),
         rational_model: document.getElementById('rational_model').checked,
       }, 'calibrate_result');
+    }
+
+    function onGetResult() {
+      getJson(`/result?channel=${currentChannel()}`, 'calibrate_result');
+    }
+
+    function onUndistort() {
+      const img = document.getElementById('undistort_preview');
+      img.src = `${base_uri}/undistort?channel=${currentChannel()}&t=${Date.now()}`;
+      img.style.display = 'block';
     }
   </script>
 </head>
@@ -404,11 +445,6 @@
         <button class="ghost" onclick="onReset()">Reset</button>
         <button class="ghost" onclick="onLoadHistory()">히스토리</button>
       </div>
-      <div class="inline">
-        discard index
-        <input type="number" id="discard_index" value="0">
-        <button class="danger-ghost" onclick="onDiscard()">Discard</button>
-      </div>
       <div class="result" id="action_result"></div>
       <div class="gallery" id="gallery"></div>
     </div>
@@ -422,9 +458,11 @@
       <label class="checkbox-row"><input type="checkbox" id="rational_model"> rational_model 사용</label>
       <div class="btn-row">
         <button class="primary" onclick="onCalibrate()">Calibrate</button>
+        <button onclick="onGetResult()">Result 조회</button>
+        <button onclick="onUndistort()">Undistort 미리보기</button>
       </div>
-      <div class="hint">결과는 메모리에만 저장됨 — 앱 재시작 시 소실</div>
       <div class="result" id="calibrate_result"></div>
+      <img id="undistort_preview" style="display:none; width:100%; border-radius:6px; margin-top:8px; border:1px solid var(--border);">
     </div>
   </div>
 </body>
