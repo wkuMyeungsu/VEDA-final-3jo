@@ -23,6 +23,9 @@
 # opensdk_packager 최종 배포 패키지 (docker-compose 빌드 산출물)
 **/*.tar.bz2
 
+# 런타임에 앱이 생성하는 캘리브레이션 결과 파일 (디바이스 로컬 상태, 코드 아님)
+**/calib_result_ch*.json
+
 # 기타
 **/__pycache__/
 **/*.pyc
