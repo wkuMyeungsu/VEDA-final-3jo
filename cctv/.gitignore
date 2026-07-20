@@ -7,8 +7,12 @@
 **/app/includes/opencv2/
 **/app/3rd-party/
 
-# 정적 라이브러리 (빌드 산출물)
+# 빌드/설치(make install) 산출물 - 벤더 정적 라이브러리 + 설치된 .so/manifest 전부 포함
+**/app/libs/
 **/*.a
+
+# make install이 app/src/*/manifests/ 원본을 res/models/로 복제해 넣는 산출물
+**/app/res/models/SampleComponent_*.json
 
 # 자동 생성되는 빌드 메타데이터
 **/config/build_info.json
