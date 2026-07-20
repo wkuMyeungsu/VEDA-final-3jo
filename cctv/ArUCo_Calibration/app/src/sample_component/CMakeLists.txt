@@ -1,6 +1,6 @@
 set(TARGET_LIB sample_component)
 
-add_library(${TARGET_LIB} MODULE sample_component.cc)
+add_library(${TARGET_LIB} MODULE sample_component.cc camera_credentials.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/includes)
 
