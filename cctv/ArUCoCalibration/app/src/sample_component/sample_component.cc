@@ -78,6 +78,10 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleCapture(oas);
   } else if (path_info == "/status") {
     HandleStatus(oas);
+  } else if (path_info == "/discard") {
+    HandleDiscard(oas);
+  } else if (path_info == "/reset") {
+    HandleReset(oas);
   } else {
     oas->SetStatusCode(404);
     oas->SetResponseBody("unsupported path");
@@ -98,11 +102,15 @@ void SampleComponent::RegisterURI() {
   auto* detect_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detect"), GetInstanceName(), get_methods);
   auto* capture_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/capture"), GetInstanceName(), post_methods);
   auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), get_methods);
+  auto* discard_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/discard"), GetInstanceName(), post_methods);
+  auto* reset_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/reset"), GetInstanceName(), post_methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, board_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detect_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, capture_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, status_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, discard_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, reset_uri);
 }
 
 // ---- 보드 설정 ----
@@ -349,6 +357,72 @@ void SampleComponent::HandleStatus(OpenAppSerializable* oas) {
     counts.PushBack(ids.rows, alloc);
   }
   res.AddMember("corners_per_capture", counts, alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+void SampleComponent::HandleDiscard(OpenAppSerializable* oas) {
+  auto body = oas->GetRequestBody();
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(body);
+  if (doc.HasParseError() || !doc.HasMember("channel") || !doc.HasMember("index")) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel, index 파라미터 필요");
+    return;
+  }
+
+  int channel = doc["channel"].GetInt();
+  int index = doc["index"].GetInt();
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  auto& session = sessions_[idx];
+  if (index < 0 || index >= (int)session.charuco_corners.size()) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("잘못된 index");
+    return;
+  }
+
+  session.charuco_corners.erase(session.charuco_corners.begin() + index);
+  session.charuco_ids.erase(session.charuco_ids.begin() + index);
+  session.last_result = CalibrationResult{};  // 데이터가 바뀌었으니 재계산 전까지 이전 결과는 무효
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("ok", true, alloc);
+  res.AddMember("remaining", (int)session.charuco_corners.size(), alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+void SampleComponent::HandleReset(OpenAppSerializable* oas) {
+  auto body = oas->GetRequestBody();
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(body);
+  int channel = doc.HasMember("channel") ? doc["channel"].GetInt() : -1;
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  sessions_[idx] = ChannelSession{};
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("ok", true, alloc);
+  res.AddMember("channel", channel, alloc);
 
   rapidjson::StringBuffer strbuf;
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
