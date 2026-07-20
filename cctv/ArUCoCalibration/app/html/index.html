@@ -68,6 +68,13 @@
     function onReset() {
       postJson('/reset', { channel: Number(currentChannel()) }, 'action_result');
     }
+
+    function onCalibrate() {
+      postJson('/calibrate', {
+        channel: Number(currentChannel()),
+        rational_model: document.getElementById('rational_model').checked,
+      }, 'calibrate_result');
+    }
   </script>
 </head>
 
@@ -105,6 +112,17 @@
       <button type="button" onclick="onDiscard()">Discard</button>
     </div>
     <pre id="action_result"></pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>3. 캘리브레이션 계산 (캡처 4장 이상 필요, 권장 10장+)</legend>
+    <div>
+      <label for="rational_model">rational_model</label>
+      <input type="checkbox" id="rational_model">
+    </div>
+    <button type="button" onclick="onCalibrate()">Calibrate</button>
+    <p style="color: #b00; font-size: 0.9em;">결과는 메모리에만 저장됨 — 앱 재시작 시 소실 (파일 저장 예정)</p>
+    <pre id="calibrate_result"></pre>
   </fieldset>
 </body>
 
