@@ -26,10 +26,10 @@ Wisenet 카메라 앱. 채널별(최대 4개) ChArUco 보드 검출로 카메라
 | `/status` | GET | 구현됨 | 채널별 누적 상태 조회 |
 | `/discard` | POST | 구현됨 | 캡처 프레임 삭제 (`channel`, `index`) |
 | `/reset` | POST | 구현됨 | 채널 세션 초기화 (`channel`) |
-| `/calibrate` | POST | 구현됨 | 캘리브레이션 계산 (결과는 메모리에만 유지, 재시작 시 소실 — 파일 저장은 예정) |
+| `/calibrate` | POST | 구현됨 | 캘리브레이션 계산, 결과 파일 저장(`calib_result_ch*.json`) |
 | `/captures/image` | GET | 구현됨 | `?channel=1~4&index=N` 캡처 당시 축소 썸네일(JPEG) 조회 |
-| `/result` | GET | 예정 | 결과 조회 (재시작 후 유지) |
-| `/undistort` | GET | 예정 | 왜곡 보정 프리뷰 |
+| `/result` | GET | 구현됨 | `?channel=1~4` 저장된 결과 조회 (재시작 후에도 유지) |
+| `/undistort` | GET | 구현됨 | `?channel=1~4` 왜곡 보정 프리뷰 (JPEG 이미지 응답) |
 
 ## 사용법
 
@@ -77,9 +77,16 @@ curl -X POST http://<CAM_IP>/<앱경로>/calibrate -d '{"channel": 1}'
 ```
 - `rational_model: true`를 body에 추가하면 왜곡 모델을 더 정밀하게(`CALIB_RATIONAL_MODEL`) 계산 (기본은 꺼짐)
 - 응답의 `rms`가 재투영 오차(작을수록 좋음), `camera_matrix`/`dist_coeffs`가 캘리브레이션 결과
-- **결과는 메모리에만 유지됨 — 앱 재시작하면 사라짐** (파일 저장은 예정)
+- 계산과 동시에 `calib_result_ch<N>.json` 파일로 저장됨 — 앱 재시작 후에도 유지, 시작 시 자동으로 다시 불러옴
 
-**7. `/result`, `/undistort`** — 미구현, API 표 참고.
+**7. 결과 조회 / 왜곡 보정 프리뷰**
+```bash
+curl "http://<CAM_IP>/<앱경로>/result?channel=1"       # JSON (camera_matrix, dist_coeffs, rms)
+curl "http://<CAM_IP>/<앱경로>/undistort?channel=1" -o preview.jpg   # 왜곡 보정된 실시간 프리뷰
+```
+`/undistort`는 `/calibrate` 결과가 있어야 동작 (없으면 400).
+
+**다른 앱(예: ArUCo_Detection)에서 이 결과를 쓰려면**: 파일을 직접 읽는 게 아니라 `http://127.0.0.1/opensdk/<이 앱의 app_id>/result?channel=N`으로 HTTP 호출해서 가져가는 방식을 권장 (같은 카메라 안에서 앱끼리 로컬 HTTP로 통신, 파일 공유 경로에 의존 안 함).
 
 ## 로컬 설정
 
