@@ -22,17 +22,50 @@ size_t CurlWriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata) {
   return size * nmemb;
 }
 
+// /detect 응답에 미리보기 이미지를 바로 심어서(base64 data URI), 프론트가 /preview/image를
+// 따로 또 호출하는 왕복을 없애기 위한 인코더.
+std::string Base64Encode(const std::vector<uchar>& data) {
+  static const char kTable[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((data.size() + 2) / 3) * 4);
+
+  size_t i = 0;
+  for (; i + 2 < data.size(); i += 3) {
+    uint32_t n = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+    out.push_back(kTable[(n >> 18) & 0x3F]);
+    out.push_back(kTable[(n >> 12) & 0x3F]);
+    out.push_back(kTable[(n >> 6) & 0x3F]);
+    out.push_back(kTable[n & 0x3F]);
+  }
+  size_t remain = data.size() - i;
+  if (remain == 1) {
+    uint32_t n = data[i] << 16;
+    out.push_back(kTable[(n >> 18) & 0x3F]);
+    out.push_back(kTable[(n >> 12) & 0x3F]);
+    out.append("==");
+  } else if (remain == 2) {
+    uint32_t n = (data[i] << 16) | (data[i + 1] << 8);
+    out.push_back(kTable[(n >> 18) & 0x3F]);
+    out.push_back(kTable[(n >> 12) & 0x3F]);
+    out.push_back(kTable[(n >> 6) & 0x3F]);
+    out.push_back('=');
+  }
+  return out;
+}
+
 // 기본 파라미터는 인쇄물의 실내 조명/블러 조건에서 너무 엄격해서 마커를 놓치는 경우가 많아
 // adaptiveThresh 범위를 넓히고, 서브픽셀 코너 보정을 켬 (캘리브레이션 정확도는 코너 정밀도에 직결됨).
 cv::Ptr<cv::aruco::DetectorParameters> MakeDetectorParams() {
   auto params = cv::aruco::DetectorParameters::create();
   params->adaptiveThreshWinSizeMin = 3;
   params->adaptiveThreshWinSizeMax = 53;
-  params->adaptiveThreshWinSizeStep = 4;
-  params->minMarkerPerimeterRate = 0.02;
+  params->adaptiveThreshWinSizeStep = 8;  // 4->8: 반복 횟수 절반(13->7)으로 줄여서 임베디드 CPU 부담 완화
+  params->minMarkerPerimeterRate = 0.01;   // 더 작은/흐릿한 후보도 걸러내지 않도록 완화 (기본 0.03)
   params->maxMarkerPerimeterRate = 6.0;
-  params->polygonalApproxAccuracyRate = 0.06;
+  params->polygonalApproxAccuracyRate = 0.08;  // 사각형 근사 허용 오차 확대 (기본 0.03)
   params->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+  params->errorCorrectionRate = 0.8;       // 비트 디코딩 오차 허용치 확대, 블러/노이즈에 관대해짐 (기본 0.6)
+  params->perspectiveRemovePixelPerCell = 8;  // 마커 내부 비트 샘플링 해상도 상향 (기본 4)
   return params;
 }
 
@@ -119,6 +152,8 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleUndistort(oas);
   } else if (path_info == "/captures/image") {
     HandleCaptureImage(oas);
+  } else if (path_info == "/preview/image") {
+    HandlePreviewImage(oas);
   } else {
     oas->SetStatusCode(404);
     oas->SetResponseBody("unsupported path");
@@ -149,6 +184,8 @@ void SampleComponent::RegisterURI() {
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/calibrate"), GetInstanceName(), post_methods);
   auto* capture_image_uri =
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/captures/image"), GetInstanceName(), get_methods);
+  auto* preview_image_uri =
+      new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/preview/image"), GetInstanceName(), get_methods);
   auto* result_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/result"), GetInstanceName(), get_methods);
   auto* undistort_uri =
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/undistort"), GetInstanceName(), get_methods);
@@ -162,6 +199,8 @@ void SampleComponent::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, calibrate_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
                     capture_image_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
+                    preview_image_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, result_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
                     undistort_uri);
@@ -318,11 +357,11 @@ void SampleComponent::WriteDetectionJson(JsonUtility::JsonDocument& doc, const D
 
 void SampleComponent::HandleDetect(OpenAppSerializable* oas) {
   std::string query = oas->GetFCGXParam("QUERY_STRING");
-  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -333,10 +372,15 @@ void SampleComponent::HandleDetect(OpenAppSerializable* oas) {
     return;
   }
 
+  // 저장은 안 하지만, 방금 본 화면은 /preview/image로 바로 확인할 수 있게 캐시해둠.
+  sessions_[idx].last_preview_jpeg = outcome.thumbnail_jpeg;
+
   JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
   auto& alloc = res.GetAllocator();
   res.AddMember("ok", true, alloc);
   res.AddMember("channel", channel, alloc);
+  std::string preview_data_uri = "data:image/jpeg;base64," + Base64Encode(outcome.thumbnail_jpeg);
+  res.AddMember("preview_data_uri", preview_data_uri, alloc);
   WriteDetectionJson(res, outcome);
 
   rapidjson::StringBuffer strbuf;
@@ -351,17 +395,17 @@ void SampleComponent::HandleCapture(OpenAppSerializable* oas) {
   auto body = oas->GetRequestBody();
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   doc.Parse(body);
-  if (doc.HasParseError() || !doc.HasMember("channel")) {
+  if (doc.HasParseError() || !doc.HasMember("ch")) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 파라미터 필요");
+    oas->SetResponseBody("ch 파라미터 필요");
     return;
   }
 
-  int channel = doc["channel"].GetInt();
+  int channel = doc["ch"].GetInt();
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -414,11 +458,11 @@ void SampleComponent::HandleCapture(OpenAppSerializable* oas) {
 
 void SampleComponent::HandleStatus(OpenAppSerializable* oas) {
   std::string query = oas->GetFCGXParam("QUERY_STRING");
-  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -451,18 +495,18 @@ void SampleComponent::HandleDiscard(OpenAppSerializable* oas) {
   auto body = oas->GetRequestBody();
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   doc.Parse(body);
-  if (doc.HasParseError() || !doc.HasMember("channel") || !doc.HasMember("index")) {
+  if (doc.HasParseError() || !doc.HasMember("ch") || !doc.HasMember("index")) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel, index 파라미터 필요");
+    oas->SetResponseBody("ch, index 파라미터 필요");
     return;
   }
 
-  int channel = doc["channel"].GetInt();
+  int channel = doc["ch"].GetInt();
   int index = doc["index"].GetInt();
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -493,11 +537,11 @@ void SampleComponent::HandleReset(OpenAppSerializable* oas) {
   auto body = oas->GetRequestBody();
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   doc.Parse(body);
-  int channel = doc.HasMember("channel") ? doc["channel"].GetInt() : -1;
+  int channel = doc.HasMember("ch") ? doc["ch"].GetInt() : -1;
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -520,17 +564,17 @@ void SampleComponent::HandleCalibrate(OpenAppSerializable* oas) {
   auto body = oas->GetRequestBody();
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   doc.Parse(body);
-  if (doc.HasParseError() || !doc.HasMember("channel")) {
+  if (doc.HasParseError() || !doc.HasMember("ch")) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 파라미터 필요");
+    oas->SetResponseBody("ch 파라미터 필요");
     return;
   }
 
-  int channel = doc["channel"].GetInt();
+  int channel = doc["ch"].GetInt();
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -602,11 +646,11 @@ void SampleComponent::HandleCalibrate(OpenAppSerializable* oas) {
 
 void SampleComponent::HandleResult(OpenAppSerializable* oas) {
   std::string query = oas->GetFCGXParam("QUERY_STRING");
-  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -640,11 +684,11 @@ void SampleComponent::HandleResult(OpenAppSerializable* oas) {
 
 void SampleComponent::HandleUndistort(OpenAppSerializable* oas) {
   std::string query = oas->GetFCGXParam("QUERY_STRING");
-  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -758,11 +802,11 @@ void SampleComponent::LoadResultFromFile(int channel) {
 
 void SampleComponent::HandleCaptureImage(OpenAppSerializable* oas) {
   std::string query = oas->GetFCGXParam("QUERY_STRING");
-  int channel = std::atoi(GetQueryParam(query, "channel").c_str());
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
   int idx = ChannelIndex(channel);
   if (idx < 0) {
     oas->SetStatusCode(400);
-    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
     return;
   }
 
@@ -775,6 +819,28 @@ void SampleComponent::HandleCaptureImage(OpenAppSerializable* oas) {
   }
 
   const auto& jpeg = session.thumbnails[index];
+  std::string out_body(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
+  oas->AddResponseHeader("Content-Type", "image/jpeg");
+  oas->SetResponseBody(out_body, OpenAppResponseType::FILE);
+}
+
+void SampleComponent::HandlePreviewImage(OpenAppSerializable* oas) {
+  std::string query = oas->GetFCGXParam("QUERY_STRING");
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
+    return;
+  }
+
+  const auto& jpeg = sessions_[idx].last_preview_jpeg;
+  if (jpeg.empty()) {
+    oas->SetStatusCode(404);
+    oas->SetResponseBody("아직 /detect를 호출한 적이 없습니다");
+    return;
+  }
+
   std::string out_body(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
   oas->AddResponseHeader("Content-Type", "image/jpeg");
   oas->SetResponseBody(out_body, OpenAppResponseType::FILE);
@@ -794,8 +860,10 @@ bool SampleComponent::FetchSnapshot(int channel, std::vector<unsigned char>& out
     return false;
   }
 
+  // 이 앱의 채널 번호(1~4)는 사용자용 표기이고, stw-cgi의 Channel 파라미터는 0부터 시작함(0~3).
   std::ostringstream url;
-  url << "http://127.0.0.1/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Channel=" << channel << "&Profile=1";
+  // Profile=0: 고화질(메인 스트림), Profile=1: 저화질(서브 스트림) - 캘리브레이션 정확도를 위해 고화질 사용.
+  url << "http://127.0.0.1/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Channel=" << (channel - 1) << "&Profile=0";
 
   std::string response;
   std::string userpwd = camera_credentials_.admin_user + ":" + camera_credentials_.admin_pass;
@@ -805,6 +873,7 @@ bool SampleComponent::FetchSnapshot(int channel, std::vector<unsigned char>& out
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3L);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  // Basic으로 고정 시도했으나 401(카메라가 Basic이 아닌 다른 인증 방식을 요구) 발생해서 원복.
   curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
   curl_easy_setopt(curl, CURLOPT_USERPWD, userpwd.c_str());
 
