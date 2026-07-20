@@ -1,0 +1,21 @@
+# ArUCo 앱 전용 (루트 .gitignore에서 이미 다루는 build/, *.so, *.pem, *.crt 등은 중복 작성 안 함)
+
+# 빌드 시 생성되는 실행 바이너리/배포 산출물
+**/app/bin/
+
+# 벤더 제공 3rd-party SDK/라이브러리 (직접 작성한 코드 아님, SDK 패키지에서 복사해서 사용)
+**/app/includes/opencv2/
+**/app/3rd-party/
+
+# 정적 라이브러리 (빌드 산출물)
+**/*.a
+
+# 자동 생성되는 빌드 메타데이터
+**/config/build_info.json
+
+# 대용량 샘플/캡처 데이터
+**/*.cap
+
+# 기타
+**/__pycache__/
+**/*.pyc
