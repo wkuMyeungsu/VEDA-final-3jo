@@ -1,28 +1,41 @@
-# CMake 빌드 산출물
-**/app/build/
+# 보안
+**/config.local*
+*.pem
+*.key
+*.crt
+*.csr
+rtsp_credentials*
+.env
 
-# 빌드/배포 시 생성되는 실행 바이너리
-**/app/bin/
+# 데모 영상
+*.mp4
+*.mkv
 
-# 벤더 제공 3rd-party SDK/라이브러리 (직접 작성한 코드 아님, SDK 패키지에서 복사해서 사용)
-**/app/includes/opencv2/
-**/app/3rd-party/
+# 빌드 산출물
+build/
+*.o
+*.so
+*.ko
 
-# 컴파일된 라이브러리 (빌드 산출물).
-**/*.so
-**/*.a
+# 로컬 개발 환경
+.venv/
+.claude/settings.local.json
 
-# 자동 생성되는 빌드 메타데이터
-**/config/build_info.json
-
-# 개인키
-**/app/res/cert/*.pem
-
-# 대용량 샘플/캡처 데이터
-**/*.cap
-
-# 기타
-**/__pycache__/
-**/*.pyc
-.DS_Store
-Thumbs.db
+# Qt/CMake (operator-device)
+build-*/
+out/
+*.user
+*.user.*
+CMakeUserPresets.json
+.vs/
+.vscode/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.dll
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
