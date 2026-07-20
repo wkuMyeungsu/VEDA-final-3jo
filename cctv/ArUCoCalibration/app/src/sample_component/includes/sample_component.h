@@ -71,6 +71,7 @@ class SampleComponent : public Component, public ISampleComponent {
   void HandleStatus(OpenAppSerializable* oas);
   void HandleDiscard(OpenAppSerializable* oas);
   void HandleReset(OpenAppSerializable* oas);
+  void HandleCalibrate(OpenAppSerializable* oas);
 
   bool RunDetection(int channel, DetectionOutcome& out);
   void WriteDetectionJson(JsonUtility::JsonDocument& doc, const DetectionOutcome& outcome);
