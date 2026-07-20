@@ -20,67 +20,80 @@
       --radius: 10px;
     }
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
       margin: 0;
-      padding: 16px;
+      padding: 20px 28px;
+      font-size: 14px;
     }
     .app {
-      max-width: 460px;
+      max-width: 1600px;
       margin: 0 auto;
     }
     .app-header {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 14px;
+      gap: 10px;
+      margin-bottom: 18px;
     }
     .app-header .logo {
-      width: 30px; height: 30px;
+      width: 34px; height: 34px;
       border-radius: 8px;
       background: var(--primary);
       color: #fff;
       display: flex; align-items: center; justify-content: center;
-      font-size: 15px; font-weight: 700;
+      font-size: 17px; font-weight: 700;
     }
     .app-header h1 {
-      font-size: 16px;
+      font-size: 19px;
       margin: 0;
       font-weight: 700;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
 
     .card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 14px;
-      margin-bottom: 12px;
+      padding: 18px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
     .card-head {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
+      gap: 10px;
+      margin-bottom: 14px;
     }
     .step-badge {
-      width: 20px; height: 20px;
+      width: 24px; height: 24px;
       border-radius: 50%;
       background: var(--primary-bg);
       color: var(--primary);
-      font-size: 11px; font-weight: 700;
+      font-size: 13px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
     .card-head h2 {
-      font-size: 13px;
+      font-size: 15px;
       margin: 0;
       font-weight: 600;
     }
     .card-head .sub {
-      font-size: 11px;
+      font-size: 12.5px;
       color: var(--text-muted);
       margin-left: auto;
     }
@@ -88,19 +101,19 @@
     .field-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 10px;
+      gap: 10px;
+      margin-bottom: 12px;
     }
     .field label {
       display: block;
-      font-size: 10.5px;
+      font-size: 12px;
       color: var(--text-muted);
-      margin-bottom: 3px;
+      margin-bottom: 4px;
     }
     .field input[type="number"] {
       width: 100%;
-      padding: 6px 8px;
-      font-size: 13px;
+      padding: 8px 10px;
+      font-size: 14px;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: #fafafa;
@@ -113,17 +126,17 @@
 
     .channels {
       display: flex;
-      gap: 6px;
-      margin-bottom: 10px;
+      gap: 8px;
+      margin-bottom: 14px;
     }
     .channels input { display: none; }
     .channels label {
       flex: 1;
       text-align: center;
-      padding: 6px 0;
+      padding: 9px 0;
       border: 1px solid var(--border);
       border-radius: 6px;
-      font-size: 12px;
+      font-size: 13.5px;
       color: var(--text-muted);
       cursor: pointer;
       user-select: none;
@@ -138,13 +151,13 @@
     .btn-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 6px;
+      gap: 8px;
+      margin-bottom: 10px;
     }
     button {
       font-family: inherit;
-      font-size: 12.5px;
-      padding: 7px 12px;
+      font-size: 13.5px;
+      padding: 9px 16px;
       border-radius: 6px;
       border: 1px solid var(--border);
       background: #f9fafb;
@@ -170,56 +183,74 @@
       border-color: #fecaca;
     }
 
-    .inline {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 6px;
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .inline input[type="number"] {
-      width: 56px;
-      padding: 5px 6px;
-      font-size: 12px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-    }
     .checkbox-row {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
+      gap: 8px;
+      font-size: 13.5px;
       color: var(--text);
-      margin-bottom: 8px;
+      margin-bottom: 12px;
     }
 
     .hint {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 11px;
+      font-size: 12.5px;
       color: var(--danger);
       background: var(--danger-bg);
       border-radius: 6px;
-      padding: 6px 8px;
-      margin-bottom: 8px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+    }
+
+    .detect-body {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .detect-body { grid-template-columns: 1fr; }
+    }
+
+    .preview-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #eceef1;
+      min-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .preview-box img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .preview-box .placeholder {
+      color: #9ca3af;
+      font-size: 13px;
+      font-style: italic;
     }
 
     .result {
       background: #f9fafb;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px;
+      border-radius: 8px;
+      padding: 12px 14px;
       font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-      font-size: 11px;
-      line-height: 1.5;
-      max-height: 170px;
+      font-size: 13px;
+      line-height: 1.6;
+      height: 320px;
       overflow: auto;
       white-space: pre-wrap;
-      word-break: break-all;
+      word-break: break-word;
       color: #374151;
     }
+    .result.small { height: 220px; }
     .result:empty::before {
       content: "결과 없음";
       color: #9ca3af;
@@ -229,19 +260,19 @@
     .gallery {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 8px;
+      gap: 8px;
+      margin-top: 14px;
     }
     .gallery:empty::before {
       content: "히스토리 없음";
-      font-size: 11px;
+      font-size: 12.5px;
       color: #9ca3af;
       font-style: italic;
     }
     .thumb {
       position: relative;
-      width: 72px;
-      height: 54px;
+      width: 96px;
+      height: 72px;
       border-radius: 6px;
       overflow: hidden;
       border: 1px solid var(--border);
@@ -255,27 +286,27 @@
     }
     .thumb .idx {
       position: absolute;
-      bottom: 2px;
-      right: 3px;
+      bottom: 3px;
+      right: 4px;
       background: rgba(0,0,0,0.6);
       color: #fff;
-      font-size: 9px;
-      padding: 1px 4px;
+      font-size: 10px;
+      padding: 1px 5px;
       border-radius: 3px;
     }
     .thumb .del {
       position: absolute;
-      top: 2px;
-      right: 2px;
-      width: 16px;
-      height: 16px;
+      top: 3px;
+      right: 3px;
+      width: 19px;
+      height: 19px;
       padding: 0;
       border: none;
       border-radius: 50%;
       background: rgba(220,38,38,0.85);
       color: #fff;
-      font-size: 11px;
-      line-height: 16px;
+      font-size: 12px;
+      line-height: 19px;
       text-align: center;
       cursor: pointer;
     }
@@ -287,19 +318,35 @@
     const base_uri = `${window.location.protocol}//${window.location.hostname}:${window.location.port}/opensdk/${app_id}`;
 
     const showResult = (elId, data) => {
-      document.getElementById(elId).textContent = JSON.stringify(data, null, 2);
+      // preview_data_uri는 base64 통째라 로그에 그대로 찍으면 너무 길어지므로 축약해서 표시.
+      let display = data;
+      if (data && typeof data === 'object' && data.preview_data_uri) {
+        display = { ...data, preview_data_uri: `(생략됨, ${data.preview_data_uri.length}자 - 좌측 미리보기 참고)` };
+      }
+      document.getElementById(elId).textContent = JSON.stringify(display, null, 2);
     };
 
+    // 백엔드 에러 응답이 JSON이 아니라 평문 문자열인 경우가 있어(SDK 관례),
+    // JSON 파싱 실패 시 원문 텍스트를 그대로 감싸서 반환.
+    const parseResponse = (res) =>
+      res.text().then((text) => {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          return { status: res.status, message: text };
+        }
+      });
+
+    const requestJson = (path, options) => fetch(base_uri + path, options).then(parseResponse);
+
     const postJson = (path, body, elId) => {
-      fetch(base_uri + path, { method: 'POST', body: JSON.stringify(body) })
-        .then(res => res.json())
+      requestJson(path, { method: 'POST', body: JSON.stringify(body) })
         .then(data => showResult(elId, data))
         .catch(err => showResult(elId, { error: String(err) }));
     };
 
     const getJson = (path, elId) => {
-      fetch(base_uri + path)
-        .then(res => res.json())
+      requestJson(path)
         .then(data => showResult(elId, data))
         .catch(err => showResult(elId, { error: String(err) }));
     };
@@ -321,25 +368,46 @@
       return document.querySelector('input[name="channel"]:checked').value;
     }
 
+    function showPreview(src) {
+      const box = document.getElementById('preview_box');
+      box.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = src;
+      box.appendChild(img);
+    }
+
     function onDetect() {
-      getJson(`/detect?channel=${currentChannel()}`, 'action_result');
+      const channel = currentChannel();
+      requestJson(`/detect?ch=${channel}`)
+        .then(data => {
+          showResult('action_result', data);
+          if (data.preview_data_uri) {
+            showPreview(data.preview_data_uri);
+          }
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
     }
 
     function onCapture() {
-      postJson('/capture', { channel: Number(currentChannel()) }, 'action_result');
+      const channel = currentChannel();
+      requestJson('/capture', { method: 'POST', body: JSON.stringify({ ch: Number(channel) }) })
+        .then(data => {
+          showResult('action_result', data);
+          if (data.accepted) {
+            const savedIndex = data.total_captured - 1;
+            showPreview(`${base_uri}/captures/image?ch=${channel}&index=${savedIndex}&t=${Date.now()}`);
+          }
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
     }
 
     function onStatus() {
-      getJson(`/status?channel=${currentChannel()}`, 'action_result');
+      getJson(`/status?ch=${currentChannel()}`, 'action_result');
     }
 
     function onDiscard(index) {
       const channel = currentChannel();
-      fetch(`${base_uri}/discard`, {
-        method: 'POST',
-        body: JSON.stringify({ channel: Number(channel), index }),
-      })
-        .then(res => res.json())
+      requestJson('/discard', { method: 'POST', body: JSON.stringify({ ch: Number(channel), index }) })
         .then(data => {
           showResult('action_result', data);
           onLoadHistory();
@@ -348,13 +416,12 @@
     }
 
     function onReset() {
-      postJson('/reset', { channel: Number(currentChannel()) }, 'action_result');
+      postJson('/reset', { ch: Number(currentChannel()) }, 'action_result');
     }
 
     function onLoadHistory() {
       const channel = currentChannel();
-      fetch(`${base_uri}/status?channel=${channel}`)
-        .then(res => res.json())
+      requestJson(`/status?ch=${channel}`)
         .then(data => {
           const gallery = document.getElementById('gallery');
           gallery.innerHTML = '';
@@ -363,7 +430,7 @@
             const thumb = document.createElement('div');
             thumb.className = 'thumb';
             const img = document.createElement('img');
-            img.src = `${base_uri}/captures/image?channel=${channel}&index=${i}&t=${Date.now()}`;
+            img.src = `${base_uri}/captures/image?ch=${channel}&index=${i}&t=${Date.now()}`;
             const idx = document.createElement('span');
             idx.className = 'idx';
             idx.textContent = `#${i}`;
@@ -384,18 +451,18 @@
 
     function onCalibrate() {
       postJson('/calibrate', {
-        channel: Number(currentChannel()),
+        ch: Number(currentChannel()),
         rational_model: document.getElementById('rational_model').checked,
       }, 'calibrate_result');
     }
 
     function onGetResult() {
-      getJson(`/result?channel=${currentChannel()}`, 'calibrate_result');
+      getJson(`/result?ch=${currentChannel()}`, 'calibrate_result');
     }
 
     function onUndistort() {
       const img = document.getElementById('undistort_preview');
-      img.src = `${base_uri}/undistort?channel=${currentChannel()}&t=${Date.now()}`;
+      img.src = `${base_uri}/undistort?ch=${currentChannel()}&t=${Date.now()}`;
       img.style.display = 'block';
     }
   </script>
@@ -408,61 +475,70 @@
       <h1>ArUCoCalibration</h1>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <div class="step-badge">1</div>
-        <h2>보드 등록</h2>
-      </div>
-      <div class="field-grid">
-        <div class="field"><label for="squares_x">가로 칸 수</label><input type="number" id="squares_x" value="7"></div>
-        <div class="field"><label for="squares_y">세로 칸 수</label><input type="number" id="squares_y" value="5"></div>
-        <div class="field"><label for="square_length_mm">정사각형 (mm)</label><input type="number" id="square_length_mm" value="30"></div>
-        <div class="field"><label for="marker_length_mm">마커 (mm)</label><input type="number" id="marker_length_mm" value="22"></div>
-      </div>
-      <div class="btn-row">
-        <button class="primary" onclick="onSetBoard()">등록</button>
-        <button class="ghost" onclick="onGetBoard()">조회</button>
-      </div>
-      <div class="result" id="board_result"></div>
-    </div>
+    <div class="layout">
+      <div class="sidebar">
+        <div class="card">
+          <div class="card-head">
+            <div class="step-badge">1</div>
+            <h2>보드 등록</h2>
+          </div>
+          <div class="field-grid">
+            <div class="field"><label for="squares_x">가로 칸 수</label><input type="number" id="squares_x" value="7"></div>
+            <div class="field"><label for="squares_y">세로 칸 수</label><input type="number" id="squares_y" value="5"></div>
+            <div class="field"><label for="square_length_mm">정사각형 (mm)</label><input type="number" id="square_length_mm" value="30"></div>
+            <div class="field"><label for="marker_length_mm">마커 (mm)</label><input type="number" id="marker_length_mm" value="22"></div>
+          </div>
+          <div class="btn-row">
+            <button class="primary" onclick="onSetBoard()">등록</button>
+            <button class="ghost" onclick="onGetBoard()">조회</button>
+          </div>
+          <div class="result small" id="board_result"></div>
+        </div>
 
-    <div class="card">
-      <div class="card-head">
-        <div class="step-badge">2</div>
-        <h2>검출 · 캡처</h2>
-        <span class="sub">채널별</span>
+        <div class="card">
+          <div class="card-head">
+            <div class="step-badge">3</div>
+            <h2>캘리브레이션</h2>
+            <span class="sub">4장+ (권장 10장+)</span>
+          </div>
+          <label class="checkbox-row"><input type="checkbox" id="rational_model"> rational_model 사용</label>
+          <div class="btn-row">
+            <button class="primary" onclick="onCalibrate()">Calibrate</button>
+            <button onclick="onGetResult()">Result 조회</button>
+            <button onclick="onUndistort()">Undistort 미리보기</button>
+          </div>
+          <div class="result small" id="calibrate_result"></div>
+          <img id="undistort_preview" style="display:none; width:100%; border-radius:6px; margin-top:10px; border:1px solid var(--border);">
+        </div>
       </div>
-      <div class="channels">
-        <input type="radio" name="channel" id="ch1" value="1" checked><label for="ch1">CH 1</label>
-        <input type="radio" name="channel" id="ch2" value="2"><label for="ch2">CH 2</label>
-        <input type="radio" name="channel" id="ch3" value="3"><label for="ch3">CH 3</label>
-        <input type="radio" name="channel" id="ch4" value="4"><label for="ch4">CH 4</label>
-      </div>
-      <div class="btn-row">
-        <button onclick="onDetect()">Detect</button>
-        <button class="primary" onclick="onCapture()">Capture</button>
-        <button onclick="onStatus()">Status</button>
-        <button class="ghost" onclick="onReset()">Reset</button>
-        <button class="ghost" onclick="onLoadHistory()">히스토리</button>
-      </div>
-      <div class="result" id="action_result"></div>
-      <div class="gallery" id="gallery"></div>
-    </div>
 
-    <div class="card">
-      <div class="card-head">
-        <div class="step-badge">3</div>
-        <h2>캘리브레이션</h2>
-        <span class="sub">4장+ (권장 10장+)</span>
+      <div class="card">
+        <div class="card-head">
+          <div class="step-badge">2</div>
+          <h2>검출 · 캡처</h2>
+          <span class="sub">채널별</span>
+        </div>
+        <div class="channels">
+          <input type="radio" name="channel" id="ch1" value="1" checked><label for="ch1">CH 1</label>
+          <input type="radio" name="channel" id="ch2" value="2"><label for="ch2">CH 2</label>
+          <input type="radio" name="channel" id="ch3" value="3"><label for="ch3">CH 3</label>
+          <input type="radio" name="channel" id="ch4" value="4"><label for="ch4">CH 4</label>
+        </div>
+        <div class="btn-row">
+          <button onclick="onDetect()">Detect</button>
+          <button class="primary" onclick="onCapture()">Capture</button>
+          <button onclick="onStatus()">Status</button>
+          <button class="ghost" onclick="onReset()">Reset</button>
+          <button class="ghost" onclick="onLoadHistory()">히스토리</button>
+        </div>
+
+        <div class="detect-body">
+          <div class="preview-box" id="preview_box"><span class="placeholder">Detect/Capture 하면 여기 표시됨</span></div>
+          <div class="result" id="action_result"></div>
+        </div>
+
+        <div class="gallery" id="gallery"></div>
       </div>
-      <label class="checkbox-row"><input type="checkbox" id="rational_model"> rational_model 사용</label>
-      <div class="btn-row">
-        <button class="primary" onclick="onCalibrate()">Calibrate</button>
-        <button onclick="onGetResult()">Result 조회</button>
-        <button onclick="onUndistort()">Undistort 미리보기</button>
-      </div>
-      <div class="result" id="calibrate_result"></div>
-      <img id="undistort_preview" style="display:none; width:100%; border-radius:6px; margin-top:8px; border:1px solid var(--border);">
     </div>
   </div>
 </body>
