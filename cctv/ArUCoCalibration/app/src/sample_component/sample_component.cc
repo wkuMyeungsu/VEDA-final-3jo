@@ -33,6 +33,24 @@ cv::Ptr<cv::aruco::DetectorParameters> MakeDetectorParams() {
   params->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
   return params;
 }
+
+template <typename Allocator>
+JsonUtility::ValueType MatToJsonArray(const cv::Mat& mat, Allocator& alloc) {
+  auto arr = JsonUtility::ValueType(JsonUtility::Type::kArrayType);
+  for (int i = 0; i < (int)mat.total(); ++i) {
+    arr.PushBack(mat.at<double>(i), alloc);
+  }
+  return arr;
+}
+
+template <typename Allocator>
+JsonUtility::ValueType VectorToJsonArray(const std::vector<double>& values, Allocator& alloc) {
+  auto arr = JsonUtility::ValueType(JsonUtility::Type::kArrayType);
+  for (double v : values) {
+    arr.PushBack(v, alloc);
+  }
+  return arr;
+}
 }  // namespace
 
 SampleComponent::SampleComponent() : SampleComponent(_SampleComponent_Id, "SampleComponent") {}
@@ -82,6 +100,8 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleDiscard(oas);
   } else if (path_info == "/reset") {
     HandleReset(oas);
+  } else if (path_info == "/calibrate") {
+    HandleCalibrate(oas);
   } else {
     oas->SetStatusCode(404);
     oas->SetResponseBody("unsupported path");
@@ -104,6 +124,8 @@ void SampleComponent::RegisterURI() {
   auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), get_methods);
   auto* discard_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/discard"), GetInstanceName(), post_methods);
   auto* reset_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/reset"), GetInstanceName(), post_methods);
+  auto* calibrate_uri =
+      new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/calibrate"), GetInstanceName(), post_methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, board_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detect_uri);
@@ -111,6 +133,7 @@ void SampleComponent::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, status_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, discard_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, reset_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, calibrate_uri);
 }
 
 // ---- 보드 설정 ----
@@ -428,6 +451,90 @@ void SampleComponent::HandleReset(OpenAppSerializable* oas) {
   auto& alloc = res.GetAllocator();
   res.AddMember("ok", true, alloc);
   res.AddMember("channel", channel, alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+}
+
+// ---- 캘리브레이션 ----
+
+void SampleComponent::HandleCalibrate(OpenAppSerializable* oas) {
+  auto body = oas->GetRequestBody();
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(body);
+  if (doc.HasParseError() || !doc.HasMember("channel")) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 파라미터 필요");
+    return;
+  }
+
+  int channel = doc["channel"].GetInt();
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("channel 값은 1~4 이어야 함");
+    return;
+  }
+
+  bool rational_model = doc.HasMember("rational_model") && doc["rational_model"].GetBool();
+
+  auto board = GetBoard();
+  if (!board) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("먼저 /board 로 보드 사양을 설정해야 합니다");
+    return;
+  }
+
+  auto& session = sessions_[idx];
+  if (session.charuco_corners.size() < 4) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("캘리브레이션에는 최소 4장 이상의 캡처가 필요합니다 (권장 " +
+                          std::to_string(kMinCapturesForCalibration) + "장 이상, 다양한 각도/거리로)");
+    return;
+  }
+
+  cv::Mat camera_matrix, dist_coeffs, std_dev_intrinsics, std_dev_extrinsics, per_view_errors_mat;
+  std::vector<cv::Mat> rvecs, tvecs;
+  int flags = rational_model ? cv::CALIB_RATIONAL_MODEL : 0;
+
+  double rms = 0.0;
+  try {
+    // stdDeviations/perViewErrors까지 받는 확장 오버로드를 사용 — 캡처별 오차를 직접
+    // 재투영해서 계산하지 않고 OpenCV가 계산한 값을 그대로 신뢰함.
+    rms = cv::aruco::calibrateCameraCharuco(session.charuco_corners, session.charuco_ids, board, session.image_size,
+                                             camera_matrix, dist_coeffs, rvecs, tvecs, std_dev_intrinsics,
+                                             std_dev_extrinsics, per_view_errors_mat, flags);
+  } catch (const cv::Exception& e) {
+    oas->SetStatusCode(500);
+    oas->SetResponseBody(std::string("캘리브레이션 실패: ") + e.what());
+    return;
+  }
+
+  std::vector<double> per_view_errors;
+  per_view_errors.reserve(per_view_errors_mat.rows);
+  for (int i = 0; i < per_view_errors_mat.rows; ++i) {
+    per_view_errors.push_back(per_view_errors_mat.at<double>(i, 0));
+  }
+
+  session.last_result.valid = true;
+  session.last_result.rms = rms;
+  session.last_result.image_size = session.image_size;
+  session.last_result.camera_matrix = camera_matrix;
+  session.last_result.dist_coeffs = dist_coeffs;
+  session.last_result.per_view_errors_px = per_view_errors;
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("ok", true, alloc);
+  res.AddMember("channel", channel, alloc);
+  res.AddMember("rms", rms, alloc);
+  res.AddMember("image_width", session.image_size.width, alloc);
+  res.AddMember("image_height", session.image_size.height, alloc);
+  res.AddMember("camera_matrix", MatToJsonArray(camera_matrix, alloc), alloc);
+  res.AddMember("dist_coeffs", MatToJsonArray(dist_coeffs, alloc), alloc);
+  res.AddMember("per_view_errors_px", VectorToJsonArray(per_view_errors, alloc), alloc);
 
   rapidjson::StringBuffer strbuf;
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
