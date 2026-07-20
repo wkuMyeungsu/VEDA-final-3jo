@@ -50,6 +50,7 @@ class SampleComponent : public Component, public ISampleComponent {
     std::vector<std::vector<uchar>> thumbnails;   // 캡처마다 하나씩, 축소 JPEG (히스토리 조회용)
     cv::Size image_size;
     CalibrationResult last_result;
+    std::vector<uchar> last_preview_jpeg;  // 가장 최근 /detect 호출 시점의 축소 JPEG (저장은 안 됨)
   };
 
   // 한 번의 검출(스냅샷 요청 + 마커/ChArUco 코너 인식) 결과. 저장 여부와 무관하게 채워짐.
@@ -78,6 +79,7 @@ class SampleComponent : public Component, public ISampleComponent {
   void HandleResult(OpenAppSerializable* oas);
   void HandleUndistort(OpenAppSerializable* oas);
   void HandleCaptureImage(OpenAppSerializable* oas);
+  void HandlePreviewImage(OpenAppSerializable* oas);
 
   bool RunDetection(int channel, DetectionOutcome& out);
   void WriteDetectionJson(JsonUtility::JsonDocument& doc, const DetectionOutcome& outcome);
