@@ -3,6 +3,7 @@
 #include <curl/curl.h>
 
 #include <fstream>
+#include <map>
 #include <sstream>
 
 #include <opencv2/aruco.hpp>
@@ -302,18 +303,33 @@ bool SampleComponent::RunDetection(int channel, DetectionOutcome& out) {
   }
   out.image_size = gray.size();
 
-  // 히스토리 조회용 축소 썸네일 (원본 저장은 용량 부담이 커서 320px 폭으로 줄여서 인코딩).
-  cv::Mat thumb;
-  double scale = gray.cols > 320 ? 320.0 / gray.cols : 1.0;
-  cv::resize(gray, thumb, cv::Size(), scale, scale, cv::INTER_AREA);
-  cv::imencode(".jpg", thumb, out.thumbnail_jpeg);
-
-  cv::aruco::detectMarkers(gray, dictionary_, out.marker_corners, out.marker_ids, params);
+  // rejectedCandidates: 사각형처럼 생겨서 후보로는 잡혔지만 비트 디코딩(ID 매칭)에 실패해서
+  // 버려진 것들. 이 수가 많으면 "후보는 찾는데 못 읽음"(파라미터/블러 문제), 적으면
+  // "애초에 사각형 후보로도 안 잡힘"(왜곡/해상도 문제) 쪽으로 원인을 좁힐 수 있음.
+  std::vector<std::vector<cv::Point2f>> rejected_candidates;
+  cv::aruco::detectMarkers(gray, dictionary_, out.marker_corners, out.marker_ids, params, rejected_candidates);
+  out.rejected_count = (int)rejected_candidates.size();
 
   if (!out.marker_ids.empty()) {
     cv::aruco::interpolateCornersCharuco(out.marker_corners, out.marker_ids, gray, board, out.charuco_corners,
                                           out.charuco_ids);
   }
+
+  // 히스토리/미리보기용 축소 썸네일에 검출 결과(마커 테두리+ID, ChArUco 코너)를 그려서
+  // 실제로 뭘 어디서 인식했는지 눈으로 바로 확인할 수 있게 함.
+  cv::Mat annotated;
+  cv::cvtColor(gray, annotated, cv::COLOR_GRAY2BGR);
+  if (!out.marker_ids.empty()) {
+    cv::aruco::drawDetectedMarkers(annotated, out.marker_corners, out.marker_ids, cv::Scalar(0, 255, 0));
+  }
+  if (!out.charuco_ids.empty()) {
+    cv::aruco::drawDetectedCornersCharuco(annotated, out.charuco_corners, out.charuco_ids, cv::Scalar(0, 0, 255));
+  }
+
+  cv::Mat thumb;
+  double scale = annotated.cols > 320 ? 320.0 / annotated.cols : 1.0;
+  cv::resize(annotated, thumb, cv::Size(), scale, scale, cv::INTER_AREA);
+  cv::imencode(".jpg", thumb, out.thumbnail_jpeg);
 
   out.ok = true;
   return true;
@@ -325,6 +341,8 @@ void SampleComponent::WriteDetectionJson(JsonUtility::JsonDocument& doc, const D
   doc.AddMember("image_width", outcome.image_size.width, alloc);
   doc.AddMember("image_height", outcome.image_size.height, alloc);
   doc.AddMember("marker_count", (int)outcome.marker_ids.size(), alloc);
+  doc.AddMember("rejected_count", outcome.rejected_count, alloc);
+  doc.AddMember("opencv_version", std::string(CV_VERSION), alloc);
 
   auto markers = JsonUtility::ValueType(JsonUtility::Type::kArrayType);
   for (size_t i = 0; i < outcome.marker_ids.size(); ++i) {
@@ -846,6 +864,100 @@ void SampleComponent::HandlePreviewImage(OpenAppSerializable* oas) {
   std::string out_body(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
   oas->AddResponseHeader("Content-Type", "image/jpeg");
   oas->SetResponseBody(out_body, OpenAppResponseType::FILE);
+}
+
+// 디버그 전용: 딕셔너리 불일치 의심을 재빌드 없이 확인하기 위한 임시 엔드포인트.
+// ?ch=1&dict=DICT_5X5_100 형식. dict 생략 시 DICT_4X4_50(앱 기본값).
+void SampleComponent::HandleDebugDetectDict(OpenAppSerializable* oas) {
+  std::string query = oas->GetFCGXParam("QUERY_STRING");
+  int channel = std::atoi(GetQueryParam(query, "ch").c_str());
+  int idx = ChannelIndex(channel);
+  if (idx < 0) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("ch 값은 1~4 이어야 함");
+    return;
+  }
+
+  std::string dict_name = GetQueryParam(query, "dict");
+  if (dict_name.empty()) {
+    dict_name = "DICT_4X4_50";
+  }
+
+  static const std::map<std::string, cv::aruco::PREDEFINED_DICTIONARY_NAME> kDictMap = {
+      {"DICT_4X4_50", cv::aruco::DICT_4X4_50},     {"DICT_4X4_100", cv::aruco::DICT_4X4_100},
+      {"DICT_4X4_250", cv::aruco::DICT_4X4_250},   {"DICT_4X4_1000", cv::aruco::DICT_4X4_1000},
+      {"DICT_5X5_50", cv::aruco::DICT_5X5_50},     {"DICT_5X5_100", cv::aruco::DICT_5X5_100},
+      {"DICT_5X5_250", cv::aruco::DICT_5X5_250},   {"DICT_5X5_1000", cv::aruco::DICT_5X5_1000},
+      {"DICT_6X6_50", cv::aruco::DICT_6X6_50},     {"DICT_6X6_100", cv::aruco::DICT_6X6_100},
+      {"DICT_6X6_250", cv::aruco::DICT_6X6_250},   {"DICT_6X6_1000", cv::aruco::DICT_6X6_1000},
+      {"DICT_7X7_50", cv::aruco::DICT_7X7_50},     {"DICT_7X7_100", cv::aruco::DICT_7X7_100},
+      {"DICT_7X7_250", cv::aruco::DICT_7X7_250},   {"DICT_7X7_1000", cv::aruco::DICT_7X7_1000},
+      {"DICT_ARUCO_ORIGINAL", cv::aruco::DICT_ARUCO_ORIGINAL},
+  };
+
+  auto it = kDictMap.find(dict_name);
+  if (it == kDictMap.end()) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("알 수 없는 dict 이름: " + dict_name);
+    return;
+  }
+
+  std::vector<unsigned char> jpeg;
+  std::string fetch_error;
+  if (!FetchSnapshot(channel, jpeg, fetch_error)) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("스냅샷 요청 실패: " + fetch_error);
+    return;
+  }
+
+  cv::Mat gray = cv::imdecode(jpeg, cv::IMREAD_GRAYSCALE);
+  if (gray.empty()) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("JPEG 디코딩 실패");
+    return;
+  }
+
+  static const cv::Ptr<cv::aruco::DetectorParameters> params = MakeDetectorParams();
+  auto test_dictionary = cv::aruco::getPredefinedDictionary(it->second);
+
+  // 이 딕셔너리의 실제 비트 데이터(bytesList) 체크섬. Python(pip opencv-contrib-python, 최신 버전)
+  // 쪽에서 같은 방식으로 계산한 값이랑 대조해서, "같은 이름의 딕셔너리인데 버전 간에 실제
+  // 바이트가 다른가"를 직접 확인하기 위함.
+  uint64_t dict_checksum = 0;
+  cv::Mat bytes_list = test_dictionary->bytesList;
+  cv::Mat bytes_list_c = bytes_list.isContinuous() ? bytes_list : bytes_list.clone();
+  const uchar* bytes_data = bytes_list_c.ptr<uchar>(0);
+  size_t bytes_total = bytes_list_c.total() * bytes_list_c.elemSize();
+  for (size_t i = 0; i < bytes_total; ++i) {
+    dict_checksum = dict_checksum * 31 + bytes_data[i];
+  }
+
+  std::vector<int> marker_ids;
+  std::vector<std::vector<cv::Point2f>> marker_corners;
+  std::vector<std::vector<cv::Point2f>> rejected_candidates;
+  cv::aruco::detectMarkers(gray, test_dictionary, marker_corners, marker_ids, params, rejected_candidates);
+
+  JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
+  auto& alloc = res.GetAllocator();
+  res.AddMember("ok", true, alloc);
+  res.AddMember("dict", dict_name, alloc);
+  res.AddMember("dict_bytes_rows", bytes_list.rows, alloc);
+  res.AddMember("dict_bytes_cols", bytes_list.cols, alloc);
+  res.AddMember("dict_marker_size", test_dictionary->markerSize, alloc);
+  res.AddMember("dict_max_correction_bits", test_dictionary->maxCorrectionBits, alloc);
+  res.AddMember("dict_checksum", std::to_string(dict_checksum), alloc);
+  res.AddMember("marker_count", (int)marker_ids.size(), alloc);
+  res.AddMember("rejected_count", (int)rejected_candidates.size(), alloc);
+  auto ids_arr = JsonUtility::ValueType(JsonUtility::Type::kArrayType);
+  for (int id : marker_ids) {
+    ids_arr.PushBack(id, alloc);
+  }
+  res.AddMember("ids", ids_arr, alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  res.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
 }
 
 // ---- 스냅샷 / 유틸 ----

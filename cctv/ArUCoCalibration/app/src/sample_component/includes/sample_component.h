@@ -63,6 +63,7 @@ class SampleComponent : public Component, public ISampleComponent {
     cv::Mat charuco_corners;
     cv::Mat charuco_ids;
     std::vector<uchar> thumbnail_jpeg;  // 축소 JPEG (320px 폭), 캡처 시 히스토리로 저장됨
+    int rejected_count = 0;  // 사각형 후보였지만 비트 디코딩 실패로 버려진 개수 (디버그용)
   };
 
   bool HandleHttpRequest(Event* event);
