@@ -359,6 +359,7 @@
       height: 100%;
       object-fit: cover;
       display: block;
+      cursor: pointer;
     }
     .thumb .idx {
       position: absolute;
@@ -387,6 +388,23 @@
       cursor: pointer;
     }
     .thumb .del:hover { background: #dc2626; }
+    .thumb .dl {
+      position: absolute;
+      top: 3px;
+      right: 25px;
+      width: 19px;
+      height: 19px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(37,99,235,0.85);
+      color: #fff;
+      font-size: 11px;
+      line-height: 19px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .thumb .dl:hover { background: #2563eb; }
   </style>
   <script>
     const paths = window.location.pathname.split('/');
@@ -450,6 +468,17 @@
       const img = document.createElement('img');
       img.src = src;
       box.appendChild(img);
+    }
+
+    function resetPreview() {
+      const box = document.getElementById('preview_box');
+      box.innerHTML = '<span class="placeholder">Detect/Capture 하면 여기 표시됨</span>';
+    }
+
+    // 채널 라디오버튼이 바뀔 때: 그 채널의 미리보기 + 히스토리 갤러리를 통째로 새로고침해서
+    // "지금 어느 채널을 보고 있는지"를 눈으로 바로 알 수 있게 함.
+    function onChannelChange() {
+      onLoadHistory();
     }
 
     // marker_count/rejected_count/charuco_corner_count/accepted 등을 숫자 타일+배지로 보여줌.
@@ -522,7 +551,7 @@
           updateSummary(data);
           if (data.accepted) {
             const savedIndex = data.total_captured - 1;
-            showPreview(`${base_uri}/captures/image?ch=${channel}&index=${savedIndex}&t=${Date.now()}`);
+            showPreview(`${base_uri}/captures/image?ch=${channel}&index=${savedIndex}&full=1&t=${Date.now()}`);
           }
         })
         .catch(err => showResult('action_result', { error: String(err) }));
@@ -557,17 +586,43 @@
       requestJson(`/status?ch=${channel}`)
         .then(data => {
           updateSummary(data);
+          const count = (data.corners_per_capture || []).length;
+          // 그 채널에 기존 캡처가 있으면 가장 최근 캡처를 큰 미리보기에, 없으면 기본 화면으로.
+          if (count > 0) {
+            showPreview(`${base_uri}/captures/image?ch=${channel}&index=${count - 1}&full=1&t=${Date.now()}`);
+          } else {
+            resetPreview();
+          }
           const gallery = document.getElementById('gallery');
           gallery.innerHTML = '';
-          const count = (data.corners_per_capture || []).length;
           for (let i = 0; i < count; i++) {
             const thumb = document.createElement('div');
             thumb.className = 'thumb';
+            const img_url = `${base_uri}/captures/image?ch=${channel}&index=${i}&t=${Date.now()}`;
+            const full_url = `${img_url}&full=1`;  // 검출에 실제로 쓰인 원본 해상도
+            // 사진 클릭 → 위 큰 미리보기 화면에 "원본 해상도"로 그 캡처를 띄움 (다운로드 아님).
             const img = document.createElement('img');
-            img.src = `${base_uri}/captures/image?ch=${channel}&index=${i}&t=${Date.now()}`;
+            img.src = img_url;
+            img.title = '클릭해서 원본 해상도로 크게 보기';
+            img.onclick = () => showPreview(full_url);
             const idx = document.createElement('span');
             idx.className = 'idx';
             idx.textContent = `#${i}`;
+            // 다운로드는 별도 아이콘 버튼으로 분리 (역시 원본 해상도로 저장).
+            const dl = document.createElement('button');
+            dl.className = 'dl';
+            dl.type = 'button';
+            dl.innerHTML = '&#8681;';
+            dl.title = '다운로드 (원본 해상도)';
+            dl.onclick = (e) => {
+              e.stopPropagation();
+              const a = document.createElement('a');
+              a.href = full_url;
+              a.download = `capture_ch${channel}_${i}.jpg`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            };
             const del = document.createElement('button');
             del.className = 'del';
             del.type = 'button';
@@ -576,11 +631,15 @@
             del.onclick = () => onDiscard(i);
             thumb.appendChild(img);
             thumb.appendChild(idx);
+            thumb.appendChild(dl);
             thumb.appendChild(del);
             gallery.appendChild(thumb);
           }
         })
-        .catch(err => showResult('action_result', { error: String(err) }));
+        .catch(err => {
+          resetPreview();
+          showResult('action_result', { error: String(err) });
+        });
     }
 
     function onCalibrate() {
@@ -653,10 +712,10 @@
           <span class="sub">채널별</span>
         </div>
         <div class="channels">
-          <input type="radio" name="channel" id="ch1" value="1" checked><label for="ch1">CH 1</label>
-          <input type="radio" name="channel" id="ch2" value="2"><label for="ch2">CH 2</label>
-          <input type="radio" name="channel" id="ch3" value="3"><label for="ch3">CH 3</label>
-          <input type="radio" name="channel" id="ch4" value="4"><label for="ch4">CH 4</label>
+          <input type="radio" name="channel" id="ch1" value="1" checked onchange="onChannelChange()"><label for="ch1">CH 1</label>
+          <input type="radio" name="channel" id="ch2" value="2" onchange="onChannelChange()"><label for="ch2">CH 2</label>
+          <input type="radio" name="channel" id="ch3" value="3" onchange="onChannelChange()"><label for="ch3">CH 3</label>
+          <input type="radio" name="channel" id="ch4" value="4" onchange="onChannelChange()"><label for="ch4">CH 4</label>
         </div>
         <div class="btn-row">
           <button onclick="onDetect()">Detect</button>
