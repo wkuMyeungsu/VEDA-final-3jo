@@ -1,0 +1,34 @@
+# ArUCo 앱 전용 (루트 .gitignore에서 이미 다루는 build/, *.so, *.pem, *.crt 등은 중복 작성 안 함)
+
+# 빌드 시 생성되는 실행 바이너리/배포 산출물
+**/app/bin/
+
+# 벤더 제공 3rd-party SDK/라이브러리 (직접 작성한 코드 아님, SDK 패키지에서 복사해서 사용)
+**/app/includes/opencv2/
+**/app/3rd-party/
+
+# 빌드/설치(make install) 산출물 - 벤더 정적 라이브러리 + 설치된 .so/manifest 전부 포함
+**/app/libs/
+**/*.a
+
+# make install이 app/src/*/manifests/ 원본을 res/models/로 복제해 넣는 산출물
+**/app/res/models/SampleComponent_*.json
+
+# 자동 생성되는 빌드 메타데이터
+**/config/build_info.json
+
+# 대용량 샘플/캡처 데이터
+**/*.cap
+
+# opensdk_packager 최종 배포 패키지 (docker-compose 빌드 산출물)
+**/*.tar.bz2
+
+# 런타임에 앱이 생성하는 캘리브레이션 결과 파일 (디바이스 로컬 상태, 코드 아님)
+**/calib_result_ch*.json
+
+# 검출 디버그/테스트용 산출물 (생성 스크립트+결과 이미지, 저장소에 안 남김)
+**/tools/detecting/
+
+# 기타
+**/__pycache__/
+**/*.pyc
