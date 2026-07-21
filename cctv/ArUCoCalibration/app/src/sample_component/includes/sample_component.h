@@ -81,6 +81,9 @@ class SampleComponent : public Component, public ISampleComponent {
   void HandleUndistort(OpenAppSerializable* oas);
   void HandleCaptureImage(OpenAppSerializable* oas);
   void HandlePreviewImage(OpenAppSerializable* oas);
+  // 디버그 전용: ?ch=1&dict=DICT_5X5_100 처럼 다른 딕셔너리로 그 자리에서 재검출.
+  // 재빌드 없이 여러 딕셔너리를 빠르게 비교해보기 위한 임시 엔드포인트.
+  void HandleDebugDetectDict(OpenAppSerializable* oas);
 
   bool RunDetection(int channel, DetectionOutcome& out);
   void WriteDetectionJson(JsonUtility::JsonDocument& doc, const DetectionOutcome& outcome);

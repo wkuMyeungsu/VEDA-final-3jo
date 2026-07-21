@@ -157,6 +157,8 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
     HandleCaptureImage(oas);
   } else if (path_info == "/preview/image") {
     HandlePreviewImage(oas);
+  } else if (path_info == "/debug/detect_dict") {
+    HandleDebugDetectDict(oas);
   } else {
     oas->SetStatusCode(404);
     oas->SetResponseBody("unsupported path");
@@ -192,6 +194,8 @@ void SampleComponent::RegisterURI() {
   auto* result_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/result"), GetInstanceName(), get_methods);
   auto* undistort_uri =
       new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/undistort"), GetInstanceName(), get_methods);
+  auto* debug_detect_dict_uri =
+      new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/debug/detect_dict"), GetInstanceName(), get_methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, board_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detect_uri);
@@ -207,6 +211,8 @@ void SampleComponent::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, result_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
                     undistort_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0,
+                    debug_detect_dict_uri);
 }
 
 // ---- 보드 설정 ----
