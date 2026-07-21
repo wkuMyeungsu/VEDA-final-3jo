@@ -49,7 +49,7 @@ std::string BuildMarkerMetadataXml(int channel, const std::vector<int>& ids,
          "xmlns:tns1=\"http://www.onvif.org/ver10/topics\">";
   xml << "<tt:Event><wsnt:NotificationMessage>";
   xml << "<wsnt:Topic Dialect=\"http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet\">"
-         "tns1:OpenApp/Dummy_ArUCo_Metadata/MarkerDetected</wsnt:Topic>";
+         "tns1:OpenApp/ArUCoDummyMetadata/MarkerDetected</wsnt:Topic>";
   xml << "<wsnt:Message><tt:Message UtcTime=\"" << utc_time << "\">";
   xml << "<tt:Source><tt:SimpleItem Name=\"Channel\" Value=\"" << channel << "\"/></tt:Source>";
   xml << "<tt:Key></tt:Key>";
