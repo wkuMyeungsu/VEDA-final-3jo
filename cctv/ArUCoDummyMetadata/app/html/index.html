@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Dummy_ArUCo_Metadata</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Consolas", monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      padding: 18px;
+      max-width: 900px;
+    }
+    h1 { font-size: 16px; color: #e6edf3; margin: 0 0 4px; }
+    .sub { color: #8b949e; font-size: 12px; margin-bottom: 16px; }
+    section {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+    label { font-size: 12px; color: #8b949e; margin-right: 6px; }
+    input[type=number] {
+      background: #0d1117;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 12.5px;
+      font-family: inherit;
+      width: 80px;
+      margin-right: 10px;
+    }
+    button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-family: inherit;
+      cursor: pointer;
+      margin-right: 6px;
+    }
+    button:hover:not(:disabled) { background: #30363d; border-color: #484f58; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.primary { border-color: #388bfd; color: #58a6ff; }
+    button.danger { border-color: #6e2626; color: #ff7b72; }
+    .row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+    #test_log {
+      height: 320px;
+      overflow-y: auto;
+      background: #010409;
+      color: #7ee2a8;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+  <script>
+    const paths = window.location.pathname.split('/');
+    const app_id = paths[5];
+    const base_uri = `${window.location.protocol}//${window.location.hostname}:${window.location.port}/opensdk/${app_id}`;
+
+    let autoTimer = null;
+    let autoRunning = false;
+
+    function logLine(text) {
+      const box = document.getElementById('test_log');
+      const time = new Date().toLocaleTimeString();
+      box.textContent += `[${time}] ${text}\n`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('test_log').textContent = '';
+    }
+
+    async function sendOnce() {
+      const count = parseInt(document.getElementById('marker_count').value, 10) || 3;
+      try {
+        const res = await fetch(base_uri + '/testsend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ marker_count: count })
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
+
+        if (!res.ok) {
+          logLine(`전송 실패 (HTTP ${res.status}): ${data.raw || JSON.stringify(data)}`);
+          return;
+        }
+
+        const summary = data.markers.map(m => {
+          const cx = ((m.corners[0] + m.corners[4]) / 2).toFixed(1);
+          const cy = ((m.corners[1] + m.corners[5]) / 2).toFixed(1);
+          return `id${m.id}@(${cx},${cy})`;
+        }).join(', ');
+        logLine(`전송됨 (ch${data.channel}) — 마커 ${data.marker_ids.length}개: ${summary}`);
+      } catch (err) {
+        logLine(`요청 에러: ${err}`);
+      }
+    }
+
+    function startAuto() {
+      if (autoRunning) return;
+      autoRunning = true;
+      document.getElementById('auto_start_btn').disabled = true;
+      document.getElementById('auto_stop_btn').disabled = false;
+      const intervalMs = parseInt(document.getElementById('interval_ms').value, 10) || 1000;
+      logLine(`자동 반복 전송 시작 (간격 ${intervalMs}ms)`);
+      const tick = async () => {
+        if (!autoRunning) return;
+        await sendOnce();
+        if (autoRunning) autoTimer = setTimeout(tick, intervalMs);
+      };
+      tick();
+    }
+
+    function stopAuto() {
+      autoRunning = false;
+      if (autoTimer) clearTimeout(autoTimer);
+      document.getElementById('auto_start_btn').disabled = false;
+      document.getElementById('auto_stop_btn').disabled = true;
+      logLine('자동 반복 전송 중지');
+    }
+  </script>
+</head>
+
+<body>
+  <h1>Dummy_ArUCo_Metadata</h1>
+  <div class="sub">실물 카메라/마커 없이, ArUco_Detection과 같은 포맷의 메타데이터를 랜덤으로 만들어 실제 전송 경로(SendMetadata → MetadataManager)로 흘려보내는 테스트 전용 앱입니다.</div>
+
+  <section>
+    <div class="row">
+      <label>마커 개수</label>
+      <input type="number" id="marker_count" value="3" min="1" max="20">
+      <button class="primary" onclick="sendOnce()">1회 전송</button>
+    </div>
+    <div class="row">
+      <label>반복 간격(ms)</label>
+      <input type="number" id="interval_ms" value="1000" min="100" step="100">
+      <button class="primary" id="auto_start_btn" onclick="startAuto()">▶ 자동 반복 전송</button>
+      <button class="danger" id="auto_stop_btn" onclick="stopAuto()" disabled>⏹ 정지</button>
+      <button onclick="clearLog()">로그 지우기</button>
+    </div>
+    <div id="test_log"></div>
+  </section>
+</body>
+
+</html>
