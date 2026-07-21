@@ -332,6 +332,10 @@ bool SampleComponent::RunDetection(int channel, DetectionOutcome& out) {
     cv::aruco::drawDetectedCornersCharuco(annotated, out.charuco_corners, out.charuco_ids, cv::Scalar(0, 0, 255));
   }
 
+  // 원본 해상도 그대로도 인코딩해둠 (갤러리에서 "크게 보기" 눌렀을 때 축소본이 아니라
+  // 실제 검출에 쓰인 해상도로 보여주기 위함).
+  cv::imencode(".jpg", annotated, out.full_res_jpeg);
+
   cv::Mat thumb;
   double scale = annotated.cols > 320 ? 320.0 / annotated.cols : 1.0;
   cv::resize(annotated, thumb, cv::Size(), scale, scale, cv::INTER_AREA);
@@ -461,6 +465,7 @@ void SampleComponent::HandleCapture(OpenAppSerializable* oas) {
     session.charuco_corners.push_back(outcome.charuco_corners.clone());
     session.charuco_ids.push_back(outcome.charuco_ids.clone());
     session.thumbnails.push_back(outcome.thumbnail_jpeg);
+    session.full_res_images.push_back(outcome.full_res_jpeg);
     session.last_result = CalibrationResult{};  // 새 데이터가 들어왔으니 이전 계산 결과는 무효
   }
 
@@ -546,6 +551,7 @@ void SampleComponent::HandleDiscard(OpenAppSerializable* oas) {
   session.charuco_corners.erase(session.charuco_corners.begin() + index);
   session.charuco_ids.erase(session.charuco_ids.begin() + index);
   session.thumbnails.erase(session.thumbnails.begin() + index);
+  session.full_res_images.erase(session.full_res_images.begin() + index);
   session.last_result = CalibrationResult{};  // 데이터가 바뀌었으니 재계산 전까지 이전 결과는 무효
 
   JsonUtility::JsonDocument res(JsonUtility::Type::kObjectType);
@@ -844,7 +850,9 @@ void SampleComponent::HandleCaptureImage(OpenAppSerializable* oas) {
     return;
   }
 
-  const auto& jpeg = session.thumbnails[index];
+  // ?full=1 이면 축소 썸네일 대신 검출 당시 원본 해상도 이미지를 반환 (갤러리 "크게 보기"용).
+  bool want_full = GetQueryParam(query, "full") == "1";
+  const auto& jpeg = want_full ? session.full_res_images[index] : session.thumbnails[index];
   std::string out_body(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
   oas->AddResponseHeader("Content-Type", "image/jpeg");
   oas->SetResponseBody(out_body, OpenAppResponseType::FILE);

@@ -48,6 +48,7 @@ class SampleComponent : public Component, public ISampleComponent {
     std::vector<cv::Mat> charuco_corners;         // 캡처마다 하나씩 (Nx1 CV_32FC2)
     std::vector<cv::Mat> charuco_ids;             // 캡처마다 하나씩 (Nx1 CV_32SC1)
     std::vector<std::vector<uchar>> thumbnails;   // 캡처마다 하나씩, 축소 JPEG (히스토리 조회용)
+    std::vector<std::vector<uchar>> full_res_images;  // 캡처마다 하나씩, 원본 해상도 JPEG (thumbnails와 인덱스 1:1 대응)
     cv::Size image_size;
     CalibrationResult last_result;
     std::vector<uchar> last_preview_jpeg;  // 가장 최근 /detect 호출 시점의 축소 JPEG (저장은 안 됨)
@@ -62,7 +63,8 @@ class SampleComponent : public Component, public ISampleComponent {
     std::vector<std::vector<cv::Point2f>> marker_corners;
     cv::Mat charuco_corners;
     cv::Mat charuco_ids;
-    std::vector<uchar> thumbnail_jpeg;  // 축소 JPEG (320px 폭), 캡처 시 히스토리로 저장됨
+    std::vector<uchar> thumbnail_jpeg;   // 축소 JPEG (320px 폭), 캡처 시 히스토리로 저장됨
+    std::vector<uchar> full_res_jpeg;    // 검출 결과가 그려진 원본 해상도 JPEG (큰 미리보기용)
     int rejected_count = 0;  // 사각형 후보였지만 비트 디코딩 실패로 버려진 개수 (디버그용)
   };
 
