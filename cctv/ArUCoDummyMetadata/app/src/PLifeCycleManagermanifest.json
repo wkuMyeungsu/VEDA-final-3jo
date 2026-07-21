@@ -1,6 +1,6 @@
 {
     "SkeletonPortNumber": "auto",
-    "ContainerName": "Dummy_ArUCo_Metadata",
+    "ContainerName": "ArUCoDummyMetadata",
     "SchedulerNames": [
         "EComponents::eScheduler1",
         "SampleComponentScheduler"
