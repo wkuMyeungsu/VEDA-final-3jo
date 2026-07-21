@@ -33,3 +33,7 @@ file(RENAME ${APP_BIN}/life_cycle_manager ${APP_BIN}/${PROJECT_NAME})
 
 # install PLifeCycleManagermanifest.json
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/PLifeCycleManagermanifest.json DESTINATION ${APP_BIN})
+
+# 카메라 관리자 인증정보. git에는 안 올라가는 파일(.gitignore)이라 로컬에 없으면 빌드가 여기서
+# 실패함 - README대로 config.example.json을 config.local.json으로 복사해서 채워둬야 함.
+install (FILES ${CMAKE_HOME_DIRECTORY}/../config.local.json DESTINATION ${APP_BIN})
