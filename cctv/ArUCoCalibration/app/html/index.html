@@ -257,6 +257,82 @@
       font-style: italic;
     }
 
+    .summary {
+      margin-top: 16px;
+    }
+    .summary:empty { display: none; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .status-badge.ok { background: #dcfce7; color: #15803d; }
+    .status-badge.fail { background: var(--danger-bg); color: var(--danger); }
+    .status-badge.neutral { background: var(--primary-bg); color: var(--primary); }
+
+    .stat-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .stat-tile {
+      flex: 1;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: center;
+    }
+    .stat-tile .num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-tile .label {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .stat-tile.warn .num { color: #d97706; }
+    .stat-tile.good .num { color: #15803d; }
+
+    .progress-wrap {
+      margin-bottom: 6px;
+    }
+    .progress-wrap .top-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .progress-track {
+      background: #e5e7eb;
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      background: var(--primary);
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.2s;
+    }
+    .progress-fill.complete { background: #16a34a; }
+
+    .reject-reason {
+      font-size: 12.5px;
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
     .gallery {
       display: flex;
       flex-wrap: wrap;
@@ -376,11 +452,61 @@
       box.appendChild(img);
     }
 
+    // marker_count/rejected_count/charuco_corner_count/accepted 등을 숫자 타일+배지로 보여줌.
+    // 필드가 없는 응답(에러 등)이면 그냥 비워서 숨김.
+    function updateSummary(data) {
+      const el = document.getElementById('summary');
+      const hasDetection = data && typeof data === 'object' && data.marker_count !== undefined;
+      const hasProgress = data && typeof data === 'object' && data.total_captured !== undefined;
+      if (!hasDetection && !hasProgress) {
+        el.innerHTML = '';
+        return;
+      }
+
+      const parts = [];
+
+      if (hasDetection) {
+        const charuco = data.charuco_corner_count ?? 0;
+        if (data.accepted !== undefined) {
+          parts.push(data.accepted
+            ? `<div class="status-badge ok">✓ 캡처 저장됨</div>`
+            : `<div class="status-badge fail">✗ 캡처 거부됨</div>`);
+        } else {
+          parts.push(`<div class="status-badge neutral">검출 결과 (저장 안 함)</div>`);
+        }
+        parts.push(`
+          <div class="stat-row">
+            <div class="stat-tile"><div class="num">${data.marker_count}</div><div class="label">마커 검출</div></div>
+            <div class="stat-tile warn"><div class="num">${data.rejected_count ?? '-'}</div><div class="label">후보 탈락</div></div>
+            <div class="stat-tile ${charuco >= 4 ? 'good' : ''}"><div class="num">${charuco}</div><div class="label">ChArUco 코너</div></div>
+          </div>
+        `);
+      }
+
+      if (data.total_captured !== undefined) {
+        const min = data.min_recommended || 10;
+        const pct = Math.min(100, Math.round((data.total_captured / min) * 100));
+        parts.push(`
+          <div class="progress-wrap">
+            <div class="top-row"><span>캡처 진행</span><span>${data.total_captured} / ${min}</span></div>
+            <div class="progress-track"><div class="progress-fill ${pct >= 100 ? 'complete' : ''}" style="width:${pct}%"></div></div>
+          </div>
+        `);
+      }
+
+      if (data.reject_reason) {
+        parts.push(`<div class="reject-reason">${data.reject_reason}</div>`);
+      }
+
+      el.innerHTML = parts.join('');
+    }
+
     function onDetect() {
       const channel = currentChannel();
       requestJson(`/detect?ch=${channel}`)
         .then(data => {
           showResult('action_result', data);
+          updateSummary(data);
           if (data.preview_data_uri) {
             showPreview(data.preview_data_uri);
           }
@@ -393,6 +519,7 @@
       requestJson('/capture', { method: 'POST', body: JSON.stringify({ ch: Number(channel) }) })
         .then(data => {
           showResult('action_result', data);
+          updateSummary(data);
           if (data.accepted) {
             const savedIndex = data.total_captured - 1;
             showPreview(`${base_uri}/captures/image?ch=${channel}&index=${savedIndex}&t=${Date.now()}`);
@@ -402,7 +529,13 @@
     }
 
     function onStatus() {
-      getJson(`/status?ch=${currentChannel()}`, 'action_result');
+      const channel = currentChannel();
+      requestJson(`/status?ch=${channel}`)
+        .then(data => {
+          showResult('action_result', data);
+          updateSummary(data);
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
     }
 
     function onDiscard(index) {
@@ -423,6 +556,7 @@
       const channel = currentChannel();
       requestJson(`/status?ch=${channel}`)
         .then(data => {
+          updateSummary(data);
           const gallery = document.getElementById('gallery');
           gallery.innerHTML = '';
           const count = (data.corners_per_capture || []).length;
@@ -537,6 +671,7 @@
           <div class="result" id="action_result"></div>
         </div>
 
+        <div class="summary" id="summary"></div>
         <div class="gallery" id="gallery"></div>
       </div>
     </div>
