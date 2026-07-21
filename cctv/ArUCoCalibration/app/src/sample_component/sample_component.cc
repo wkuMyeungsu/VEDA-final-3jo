@@ -62,9 +62,11 @@ cv::Ptr<cv::aruco::DetectorParameters> MakeDetectorParams() {
   params->adaptiveThreshWinSizeStep = 8;  // 4->8: 반복 횟수 절반(13->7)으로 줄여서 임베디드 CPU 부담 완화
   params->minMarkerPerimeterRate = 0.01;   // 더 작은/흐릿한 후보도 걸러내지 않도록 완화 (기본 0.03)
   params->maxMarkerPerimeterRate = 6.0;
-  params->polygonalApproxAccuracyRate = 0.08;  // 사각형 근사 허용 오차 확대 (기본 0.03)
+  params->polygonalApproxAccuracyRate = 0.05;  // 기본값(0.03)에서 살짝만 완화. 0.08은 너무 관대해서
+                                                // 마커 아닌 후보까지 받아들일 위험이 있어 되돌림.
   params->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
-  params->errorCorrectionRate = 0.8;       // 비트 디코딩 오차 허용치 확대, 블러/노이즈에 관대해짐 (기본 0.6)
+  // errorCorrectionRate: 기본값(0.6)으로 원복. 0.8은 너무 관대해서 다른 마커를 8/9번으로
+  // 오인식했을 가능성이 있음 (인식 실패가 아니라 오인식일 수 있어서).
   params->perspectiveRemovePixelPerCell = 8;  // 마커 내부 비트 샘플링 해상도 상향 (기본 4)
   return params;
 }
