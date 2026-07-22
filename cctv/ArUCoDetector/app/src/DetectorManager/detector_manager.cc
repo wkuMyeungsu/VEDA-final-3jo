@@ -1,10 +1,13 @@
 #include "detector_manager.h"
 
 #include <unistd.h>
+#include <chrono>
 
 #include "dispatcher_serialize.h"
 #include "i_app_dispatcher.h"
 #include "i_log_manager.h"
+#include "i_metadata_manager.h"
+#include "i_p_metadata_manager.h"
 #include "i_p_open_platform_manager.h"
 
 namespace {
@@ -36,6 +39,10 @@ bool DetectorManager::ProcessAEvent(Event* event) {
     case static_cast<int32_t>(IPOpenPlatformManager::EAppEventType::eNetworkSettingChanged): {
       std::cout << "Network setting is changed!" << std::endl;
       setting_changed_time_ = GetCurrentTimeToString();
+      break;
+    }
+    case static_cast<int32_t>(IPMetadataManager::EEventType::eMetadataRequest): {
+      ProcessMetadata(event);
       break;
     }
     default:
@@ -104,6 +111,32 @@ std::string DetectorManager::GetCurrentTimeToString() {
   std::stringstream ss;
   ss << std::put_time(now_tm, "%FT%T");
   return ss.str();
+}
+
+void DetectorManager::SendMetadata(const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
+  auto now_ms = static_cast<uint64_t> (
+    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+
+  std::string xml = MarkerMetadataFormat::BuildMarkerMetadataXml(GetChannel(), ids, corners, now_ms);
+
+  auto metadata = StringMetadata(GetChannel(), now_ms);
+  metadata.Set(xml);
+
+  auto* req = new ("MetadataRequest") IPMetadataManager::StringMetadataRequest();
+  req->SetStringMetadata(std::move(metadata));
+
+  SendNoReplyEvent("MetadataManager", static_cast<int32_t>(IMetadataManager::EEventType::eRequestRawMetadata), 0, req);
+}
+
+void DetectorManager::ProcessMetadata(Event* event) {
+  if (event == nullptr || event->IsReply()) {
+    return;
+  }
+
+  auto attachment = event->GetAttachment<IPMetadataManager::MetadataOutput>();
+  if (attachment) {
+    std::cout << "[DetectorManager][MetadataEcho] channel=" << attachment->channel() << " output=" << attachment->output() << std::endl;
+  }
 }
 
 extern "C" {
