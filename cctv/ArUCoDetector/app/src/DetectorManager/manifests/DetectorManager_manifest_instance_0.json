@@ -1,9 +1,9 @@
 {
-  "LibraryFileName": "libsample_component.so",
+  "LibraryFileName": "libdetector_manager.so",
   "Instance": {
     "__comment__": "2009004 = LifeCycleManagerInterface::EReceivers::eLogManager",
-    "InstanceName": "SampleComponent",
-    "SchedulerName": "SampleComponentScheduler",
+    "InstanceName": "DetectorManager",
+    "SchedulerName": "DetectorManagerScheduler",
     "ReceiverNames": [
       "AppDispatcher",
       {

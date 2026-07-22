@@ -1,4 +1,4 @@
-#include "sample_component.h"
+#include "detector_manager.h"
 
 #include <unistd.h>
 
@@ -16,18 +16,18 @@ auto eventToArgumentBuffer = [](Event* event) {
 };
 }
 
-SampleComponent::SampleComponent() : SampleComponent(_SampleComponent_Id, "SampleComponent") {}
+DetectorManager::DetectorManager() : DetectorManager(_DetectorManager_Id, "DetectorManager") {}
 
-SampleComponent::SampleComponent(ClassID id, const char* name) : Component(id, name) {}
+DetectorManager::DetectorManager(ClassID id, const char* name) : Component(id, name) {}
 
-SampleComponent::~SampleComponent() {}
+DetectorManager::~DetectorManager() {}
 
-bool SampleComponent::Initialize() {
+bool DetectorManager::Initialize() {
   RegisterURI();
   return Component::Initialize();
 }
 
-bool SampleComponent::ProcessAEvent(Event* event) {
+bool DetectorManager::ProcessAEvent(Event* event) {
   switch (event->GetType()) {
     case (int32_t)IAppDispatcher::EEventType::eHttpRequest: {
       HandleHttpRequest(event);
@@ -45,7 +45,7 @@ bool SampleComponent::ProcessAEvent(Event* event) {
   return true;
 }
 
-bool SampleComponent::HandleHttpRequest(Event* event) {
+bool DetectorManager::HandleHttpRequest(Event* event) {
   if (event->IsReply()) {
   } else {
     auto* oas = reinterpret_cast<OpenAppSerializable*>(event->GetBaseObjectArgument());
@@ -82,8 +82,8 @@ bool SampleComponent::HandleHttpRequest(Event* event) {
   return true;
 }
 
-void SampleComponent::RegisterURI() {
-  printf("[SampleComponent] Register URI\n");
+void DetectorManager::RegisterURI() {
+  printf("[DetectorManager] Register URI\n");
 
   Vector<String> methods;
   methods.push_back("GET");
@@ -96,7 +96,7 @@ void SampleComponent::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
 }
 
-std::string SampleComponent::GetCurrentTimeToString() {
+std::string DetectorManager::GetCurrentTimeToString() {
   auto now = std::chrono::system_clock::now();
   auto now_time_t = std::chrono::system_clock::to_time_t(now);
   auto now_tm = ::gmtime(&now_time_t);
@@ -107,11 +107,11 @@ std::string SampleComponent::GetCurrentTimeToString() {
 }
 
 extern "C" {
-SampleComponent* create_component(void* mem_manager) {
+DetectorManager* create_component(void* mem_manager) {
   Component::allocator = decltype(Component::allocator)(mem_manager);
   Event::allocator = decltype(Event::allocator)(mem_manager);
-  return new ("SampleComponent") SampleComponent();
+  return new ("DetectorManager") DetectorManager();
 }
 
-void destroy_component(SampleComponent* ptr) { delete ptr; }
+void destroy_component(DetectorManager* ptr) { delete ptr; }
 }

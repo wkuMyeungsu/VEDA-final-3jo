@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.2.2)
 
-project(ArUCoDetection)
+project(ArUCoDetector)
 
 set(TARGET_EXE ${PROJECT_NAME})
 

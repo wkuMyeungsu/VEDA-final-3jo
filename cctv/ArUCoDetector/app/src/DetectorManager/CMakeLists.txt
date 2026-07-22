@@ -1,6 +1,6 @@
-set(TARGET_LIB sample_component)
+set(TARGET_LIB detector_manager)
 
-add_library(${TARGET_LIB} MODULE sample_component.cc)
+add_library(${TARGET_LIB} MODULE detector_manager.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/includes)
 target_link_libraries(${TARGET_LIB} PRIVATE stdlib)

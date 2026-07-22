@@ -3,6 +3,6 @@
 
 enum class _ELayer_Application {
   _eBegin = GET_LAYER_UID(_ELayer::_ePApplication),
-  _eSampleComponent,
+  _eDetectorManager,
   _eEnd,
 };
