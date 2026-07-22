@@ -1,6 +1,6 @@
 {
   "Version" : "1.0.0",
-  "Name": "SampleComponent",
+  "Name": "DetectorManager",
   "Attributes": [
     {
       "log": "Test Start Log!!!"

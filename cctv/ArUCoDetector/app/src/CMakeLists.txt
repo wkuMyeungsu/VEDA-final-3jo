@@ -1,4 +1,4 @@
-add_subdirectory(sample_component)
+add_subdirectory(DetectorManager)
 
 set(APP_DISPATCHER_SOURCE_DIR ${APP_SUPPORT_PACKAGE}/app_dispatcher)
 set(LCM_SOURCE_DIR ${APP_SUPPORT_PACKAGE}/life_cycle_manager)

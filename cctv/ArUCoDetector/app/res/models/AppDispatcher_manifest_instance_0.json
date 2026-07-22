@@ -5,12 +5,12 @@
 		"SchedulerName": "EComponents::eScheduler1",
 		"ReceiverNames": [
 			"Stub::Dispatcher::OpenAPI",
-			"SampleComponent"
+			"DetectorManager"
 		],
 		"SourceNames": [
 			{
 				"Source": "Stub::Dispatcher::OpenAPI",
-				"GroupName": "OpenSDK::ArUCoDetection::Dispatcher"
+				"GroupName": "OpenSDK::ArUCoDetector::Dispatcher"
 			}
 		],
 		"Channel": 0,
