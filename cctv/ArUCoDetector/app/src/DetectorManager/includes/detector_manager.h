@@ -1,13 +1,13 @@
 #pragma once
 
 #include "component.h"
-#include "i_sample_component.h"
+#include "i_detector_manager.h"
 
-class SampleComponent : public Component, public ISampleComponent {
+class DetectorManager : public Component, public IDetectorManager {
  public:
-  SampleComponent();
-  SampleComponent(ClassID id, const char* name);
-  virtual ~SampleComponent();
+  DetectorManager();
+  DetectorManager(ClassID id, const char* name);
+  virtual ~DetectorManager();
   bool ProcessAEvent(Event* event) override;
 
  protected:
