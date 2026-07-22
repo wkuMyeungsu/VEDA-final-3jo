@@ -1,6 +1,6 @@
 set(TARGET_LIB detector_manager)
 
-add_library(${TARGET_LIB} MODULE detector_manager.cc)
+add_library(${TARGET_LIB} MODULE detector_manager.cc aruco_detector.cc metadata_format.cc camera_credentials.cc camera_snapshot_client.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/includes)
 target_link_libraries(${TARGET_LIB} PRIVATE stdlib)
