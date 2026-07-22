@@ -1,9 +1,9 @@
 {
     "SkeletonPortNumber": "auto",
-    "ContainerName": "ArUCoDetection",
+    "ContainerName": "ArUCoDetector",
     "SchedulerNames": [
         "EComponents::eScheduler1",
-        "SampleComponentScheduler"
+        "DetectorManagerScheduler"
     ],
     "RemoteContainerNames": [
         {
