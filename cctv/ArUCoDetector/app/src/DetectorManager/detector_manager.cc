@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <chrono>
 
+#include "debug_detect_handler.h"  // 테스트 전용 (나중에 통째로 삭제)
 #include "dispatcher_serialize.h"
 #include "i_app_dispatcher.h"
 #include "i_log_manager.h"
@@ -84,6 +85,12 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
       doc.Accept(writer);
 
       oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
+    } else if (path_info == "/detectonce") {
+      // 테스트 전용 (나중에 통째로 삭제). SendMetadata를 콜백으로 주입해서 debug 핸들러가 호출.
+      DebugDetectHandler::HandleDetectOnce(
+          oas, [this](const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
+            SendMetadata(ids, corners);
+          });
     }
   }
   return true;
@@ -98,9 +105,11 @@ void DetectorManager::RegisterURI() {
 
   auto* write_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/writeeventlog"), GetInstanceName(), methods);
   auto* check_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/checksetting"), GetInstanceName(), methods);
+  auto* detectonce_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detectonce"), GetInstanceName(), methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, write_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detectonce_uri);
 }
 
 std::string DetectorManager::GetCurrentTimeToString() {

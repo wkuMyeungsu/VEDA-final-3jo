@@ -1,76 +1,166 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ArUCoDetector</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; }
+    section { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    section h2 { font-size: 15px; margin: 0 0 12px; }
+    label { font-size: 13px; margin-right: 6px; }
+    input[type="number"], input[type="text"] { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 6px 14px; border: 0; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #9ca3af; cursor: default; }
+    pre { background: #f6f8fa; border-radius: 4px; padding: 12px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; margin-top: 12px; min-height: 20px; }
+    .ok { color: #15803d; }
+    .fail { color: #b91c1c; }
+    .muted { color: #6b7280; font-size: 12px; }
+  </style>
   <script>
     const paths = window.location.pathname.split('/');
     const app_id = paths[5];
     const base_uri = `${window.location.protocol}//${window.location.hostname}:${window.location.port}/opensdk/${app_id}`;
 
+    // ---- /detectonce : 스냅샷 1장 → 검출 → 메타데이터 전송 (수동 트리거) ----
+    function onDetectOnce() {
+      const ch = document.getElementById('detect_ch').value;
+      const undistort = document.getElementById('detect_undistort').checked ? 1 : 0;
+      const btn = document.getElementById('detect_btn');
+      const out = document.getElementById('detect_result');
+
+      const uri = `${base_uri}/detectonce?ch=${ch}&undistort=${undistort}`;
+      out.textContent = `요청 중... (ch=${ch}, undistort=${undistort})`;
+      out.className = 'muted';
+      btn.disabled = true;
+
+      const preview = document.getElementById('detect_preview');
+      preview.style.display = 'none';
+
+      fetch(uri)
+        .then(response => response.text().then(text => ({ ok: response.ok, status: response.status, text })))
+        .then(({ ok, status, text }) => {
+          if (!ok) {
+            out.className = 'fail';
+            out.textContent = `실패 (HTTP ${status})\n${text}`;
+            return;
+          }
+          // 성공 시 JSON 예상: { channel, marker_count, rejected_count, undistorted, marker_ids, preview }
+          let data;
+          try { data = JSON.parse(text); } catch (e) {
+            out.className = 'fail';
+            out.textContent = '응답 파싱 실패\n' + text;
+            return;
+          }
+          out.className = 'ok';
+          const summary = {
+            channel: data.channel,
+            marker_count: data.marker_count,
+            rejected_count: data.rejected_count,
+            calibration_available: data.calibration_available,
+            undistort_requested: data.undistort_requested,
+            undistorted: data.undistorted,
+            marker_ids: data.marker_ids
+          };
+          out.textContent = JSON.stringify(summary, null, 2);
+
+          // 캘리브레이션 파일 유무를 안내
+          const note = document.getElementById('detect_note');
+          if (data.calibration_available === false) {
+            note.textContent = '※ 이 채널의 캘리브레이션 파일이 없어 왜곡보정을 적용할 수 없습니다 (원본 그대로).';
+            note.className = 'muted';
+          } else if (data.undistort_requested && !data.undistorted) {
+            note.textContent = '※ 캘리브레이션은 있으나 해상도가 스냅샷과 달라 보정을 건너뛰었습니다.';
+            note.className = 'fail';
+          } else if (data.undistorted) {
+            note.textContent = '※ 왜곡보정(undistort) 적용됨.';
+            note.className = 'ok';
+          } else {
+            note.textContent = '※ 왜곡보정 끔 — 원본 이미지.';
+            note.className = 'muted';
+          }
+
+          if (data.preview) {
+            preview.src = data.preview;
+            preview.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          out.className = 'fail';
+          out.textContent = '네트워크 오류: ' + error;
+        })
+        .finally(() => { btn.disabled = false; });
+    }
+
+    // ---- 기존: 이벤트 로그 쓰기 ----
     function onWriteEventLog() {
       var uri = base_uri + "/writeeventlog";
-      const req = {
-        log: document.getElementById("log").value,
-      };
+      const req = { log: document.getElementById("log").value };
       const res = document.getElementById('write_response');
       sendData(uri, 'POST', req, res);
     }
 
+    // ---- 기존: 네트워크 설정 변경 시각 확인 ----
     function onCheckTimeSetting() {
       var uri = base_uri + "/checksetting";
-      const res = document.getElementById('time_response');
       fetch(uri)
         .then(response => {
-          if (response.ok) {
-            return response.json();
-          }
+          if (response.ok) return response.json();
           throw new Error('Request error');
         })
         .then(data => {
-          console.log(data);
-          let str = `<tr><td>${data.latest_changed}</td></tr>`;
           const result = document.getElementById('result');
-          result.innerHTML = `<table><tr><th scope="col">LatestChanged</td></tr>${str}</table>`;
+          result.textContent = 'latest_changed: ' + data.latest_changed;
+          result.className = 'ok';
         }).catch(error => {
-        console.error('Error', error);
-      });
+          const result = document.getElementById('result');
+          result.textContent = 'Error: ' + error;
+          result.className = 'fail';
+        });
     }
 
     const sendData = (uri, method, req, res) => {
-      fetch(uri, {
-        method: method,
-        body: JSON.stringify(req)
-      }).then(response => {
-        if (response.ok) {
-          console.log(response.json());
-          res.textContent = 'Pass';
-        } else {
-          throw new Error('request failed');
-          res.textContent = 'Fail';
-        }
-      }).catch(error => {
-        console.error('Error', error);
-        res.textContent = 'Fail: ' + error;
-      });
+      fetch(uri, { method: method, body: JSON.stringify(req) })
+        .then(response => {
+          if (response.ok) {
+            res.textContent = 'Pass';
+            res.className = 'ok';
+          } else {
+            throw new Error('request failed');
+          }
+        }).catch(error => {
+          res.textContent = 'Fail: ' + error;
+          res.className = 'fail';
+        });
     }
   </script>
 </head>
 
 <body>
-  <p>Write Log</p>
-  <form>
-    <input type="text" id="log" placeholder="Log 입력 ex) message" value="Hello, World!"/>
-    <button type="button" onclick="onWriteEventLog()">Send</button>
-    <div id="write_response"></div>
-  </form>
+  <h1>ArUCoDetector</h1>
 
-  <p>Check Network Setting</p>
-  <form>
-    <button type="button" onclick="onCheckTimeSetting()">Check</button>
-    <div id="result"></div>
-  </form>
+  <section>
+    <h2>마커 검출 (수동 1회)</h2>
+    <p class="muted">지정 채널의 스냅샷을 1장 떠서 마커를 검출하고, 결과를 메타데이터로 전송합니다.</p>
+    <label for="detect_ch">채널</label>
+    <input type="number" id="detect_ch" value="1" min="1" max="4" style="width: 60px;">
+    <label style="margin-left: 16px;">
+      <input type="checkbox" id="detect_undistort" checked> 왜곡보정(undistort) 적용
+    </label>
+    <button type="button" id="detect_btn" onclick="onDetectOnce()" style="margin-left: 12px;">검출 실행</button>
+    <p class="muted" style="margin: 8px 0 0; font-size: 12px;">
+      카메라 펌웨어가 이미 렌즈 보정을 하는 경우 체크를 끄고 원본으로 비교해보세요.
+    </p>
+    <pre id="detect_result">여기에 결과가 표시됩니다.</pre>
+    <div id="detect_note" style="font-size: 12px; margin-bottom: 8px;"></div>
+    <img id="detect_preview" alt="검출 프리뷰" style="display:none; max-width:100%; margin-top:12px; border:1px solid #ddd; border-radius:4px;">
+  </section>
+
+  <!-- 데모 기능(이벤트 로그 쓰기 / 네트워크 설정 확인)은 스캐폴드 잔여물이라 UI에서 제거함.
+       엔드포인트 코드(/writeeventlog, /checksetting)는 나중에 데모 정리 시 함께 삭제 예정. -->
 </body>
 
 </html>
