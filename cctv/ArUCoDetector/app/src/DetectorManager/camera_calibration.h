@@ -17,3 +17,6 @@ struct CameraCalibration {
     // 렌즈 때문에 사진 가장자리로 갈수록 직선이 살짝 휘어 보이는 정도 (보정용 계수 5개)
     cv::Mat dist_coeffs;    // 1xN, CV_64F
 };
+
+// path는 ArUCoCalibration이 만든 calib_result_ch{채널}.json의 절대경로.
+CameraCalibration LoadCameraCalibration(const std::string& path);
