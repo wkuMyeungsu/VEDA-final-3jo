@@ -9,10 +9,17 @@
         <File path="src/buzzer_ctrl.v" type="file.verilog" enable="1"/>
         <File path="src/estop_filter.v" type="file.verilog" enable="1"/>
         <File path="src/estop_latch.v" type="file.verilog" enable="1"/>
+        <File path="src/event_detector.v" type="file.verilog" enable="1"/>
+        <File path="src/event_logger.v" type="file.verilog" enable="1"/>
         <File path="src/led_pattern.v" type="file.verilog" enable="1"/>
         <File path="src/packet_parser.v" type="file.verilog" enable="1"/>
+        <File path="src/self_test_controller.v" type="file.verilog" enable="1"/>
+        <File path="src/status_response.v" type="file.verilog" enable="0"/>
+        <File path="src/timestamp_counter.v" type="file.verilog" enable="1"/>
         <File path="src/top.v" type="file.verilog" enable="1"/>
+        <File path="src/uart_response_controller.v" type="file.verilog" enable="1"/>
         <File path="src/uart_rx.v" type="file.verilog" enable="1"/>
+        <File path="src/uart_tx.v" type="file.verilog" enable="1"/>
         <File path="src/wanrning_fsm.v" type="file.verilog" enable="1"/>
         <File path="src/warning_latch.v" type="file.verilog" enable="1"/>
         <File path="src/watchdog.v" type="file.verilog" enable="1"/>
