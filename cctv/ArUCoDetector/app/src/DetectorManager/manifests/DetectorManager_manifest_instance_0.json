@@ -9,12 +9,20 @@
       {
         "SymbolName": "LogManager",
         "RealName": "2009004"
+      },
+      {
+        "SymbolName": "MetadataManager",
+        "RealName": "MetadataManager_0"
       }
     ],
     "SourceNames": [
       {
         "Source": "OpenPlatform",
         "GroupName": "SettingChange"
+      },
+      {
+        "Source": "MetadataManager_0",
+        "GroupName": "Metadata::OpenApp"
       }
     ],
     "Channel": 0,
