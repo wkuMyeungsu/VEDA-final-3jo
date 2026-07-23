@@ -6,6 +6,8 @@
 *.csr
 rtsp_credentials*
 .env
+forklift-device/qt/config/cameras.json
+operator-device/qt/config/cameras.json
 
 # 데모 영상
 *.mp4
