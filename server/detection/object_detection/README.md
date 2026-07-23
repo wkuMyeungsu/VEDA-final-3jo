@@ -49,7 +49,7 @@ cmake --build build --config Debug
 
 .\build\Debug\rtp_metadata_receiver.exe "rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp"
 ```
-
+참고로 !는 %21과 같다.
 `rtp_metadata_receiver`는 RTSP URL 문자열 하나만 인자로 받는다. 파이프라인 문자열에
 `protocols=tcp`가 이미 고정되어 있어 별도로 설정할 옵션이 아니다.
 
