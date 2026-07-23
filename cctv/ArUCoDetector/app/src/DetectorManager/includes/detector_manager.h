@@ -3,6 +3,7 @@
 #include "component.h"
 #include "i_detector_manager.h"
 #include "metadata_format.h"
+#include "dispatcher_serialize.h"
 
 class DetectorManager : public Component, public IDetectorManager {
  public:
