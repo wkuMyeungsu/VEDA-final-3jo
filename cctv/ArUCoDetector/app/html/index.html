@@ -127,20 +127,15 @@
 
       <!-- ===================== 메인 > 상태 모니터링 (기본 화면) ===================== -->
       <div id="sub-main-status" class="sub-panel active">
-        <div class="wip">
-          ⚠ 상태 모니터링 <b>템플릿</b>입니다. 값은 나중에 GET /status 와 연결되어 채워집니다.
-        </div>
-
         <section>
           <h2>검출 엔진 상태</h2>
           <table>
             <tbody>
-              <tr><th>상태</th><td><span class="badge">준비 중</span></td></tr>
-              <tr><th>가동 시간</th><td>—</td></tr>
-              <tr><th>마지막 메타데이터 전송</th><td>—</td></tr>
+              <tr><th>상태</th><td id="st_state"><span class="badge">—</span></td></tr>
+              <tr><th>가동 시간</th><td id="st_uptime">—</td></tr>
+              <tr><th>마지막 메타데이터 전송</th><td id="st_last_sent">—</td></tr>
             </tbody>
           </table>
-          <p class="muted" style="margin-top: 10px;">채널별 폴링 워커가 구현되면 실행/중지 상태와 전송 시각이 여기에 표시됩니다.</p>
         </section>
 
         <section>
@@ -151,16 +146,14 @@
                 <tr><th>채널</th><th>상태</th><th>검출 마커수</th><th>지연(ms)</th><th>마지막 검출</th><th>캘리브레이션</th></tr>
               </thead>
               <tbody>
-                <tr><td>1</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-                <tr><td>2</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-                <tr><td>3</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-                <tr><td>4</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+                <tr><td>1</td><td id="ch_state_1">—</td><td id="ch_markers_1">—</td><td id="ch_latency_1">—</td><td id="ch_lastdetect_1">—</td><td id="ch_calib_1">—</td></tr>
+                <tr><td>2</td><td id="ch_state_2">—</td><td id="ch_markers_2">—</td><td id="ch_latency_2">—</td><td id="ch_lastdetect_2">—</td><td id="ch_calib_2">—</td></tr>
+                <tr><td>3</td><td id="ch_state_3">—</td><td id="ch_markers_3">—</td><td id="ch_latency_3">—</td><td id="ch_lastdetect_3">—</td><td id="ch_calib_3">—</td></tr>
+                <tr><td>4</td><td id="ch_state_4">—</td><td id="ch_markers_4">—</td><td id="ch_latency_4">—</td><td id="ch_lastdetect_4">—</td><td id="ch_calib_4">—</td></tr>
               </tbody>
             </table>
           </div>
-          <p class="muted" style="margin-top: 10px;">
-            채널별 실시간 상태 · 검출 개수 · 파이프라인 지연(ms) 표시 예정. 채널 On/Off는 [설정]에서 변경.
-          </p>
+          <p class="muted" style="margin-top: 10px;">2초마다 자동 갱신. 채널 On/Off는 [설정]에서 변경.</p>
         </section>
       </div>
 
@@ -316,6 +309,71 @@
       document.querySelectorAll('.sub-panel').forEach(p => p.classList.toggle('active', p.id === id));
       document.querySelectorAll('.side-group[data-parent="' + top + '"] .side-tab')
         .forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+      // 상태 모니터링 탭에 있을 때만 /status 주기 폴링
+      if (top === 'main' && sub === 'status') startStatusPolling();
+      else stopStatusPolling();
+    }
+
+    // ---- 상태 모니터링: GET /status 주기 폴링 ----
+    let statusTimer = null;
+
+    function startStatusPolling() {
+      loadStatus();                              // 진입 즉시 1회
+      if (statusTimer) return;                   // 이미 돌면 중복 방지
+      statusTimer = setInterval(loadStatus, 2000);
+    }
+    function stopStatusPolling() {
+      if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+    }
+
+    function setCellText(id, v) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = (v === undefined || v === null || v === '') ? '—' : v;
+    }
+
+    // ms → "1h 2m 3s"
+    function formatUptime(ms) {
+      const s = Math.floor(ms / 1000);
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + sec + 's';
+    }
+    // "2026-07-24T09:00:00Z" → "09:00:00" (시각만)
+    function formatTime(iso) {
+      const t = /T(\d{2}:\d{2}:\d{2})/.exec(iso || '');
+      return t ? t[1] : (iso || '—');
+    }
+
+    function loadStatus() {
+      fetch(base_uri + '/status')
+        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+        .then(d => {
+          // 검출 엔진 상태
+          const stateEl = document.getElementById('st_state');
+          if (stateEl) stateEl.innerHTML = '<span class="badge">' + (d.running ? '실행 중' : '정지') + '</span>';
+          setCellText('st_uptime', d.running && d.uptime_ms != null ? formatUptime(d.uptime_ms) : '—');
+          setCellText('st_last_sent', d.last_sent ? formatTime(d.last_sent) : '—');
+
+          // 채널 현황: 먼저 전부 비우고, 응답에 있는 채널만 채움
+          for (let ch = 1; ch <= 4; ch++) {
+            setCellText('ch_state_' + ch, '—');
+            setCellText('ch_markers_' + ch, '—');
+            setCellText('ch_latency_' + ch, '—');
+            setCellText('ch_lastdetect_' + ch, '—');
+            setCellText('ch_calib_' + ch, '—');
+          }
+          if (Array.isArray(d.channels)) {
+            for (const c of d.channels) {
+              const ch = c.channel;
+              if (ch < 1 || ch > 4) continue;
+              setCellText('ch_state_' + ch, c.state);
+              setCellText('ch_markers_' + ch, c.marker_count);
+              setCellText('ch_latency_' + ch, c.latency_ms);
+              setCellText('ch_lastdetect_' + ch, c.last_detect ? formatTime(c.last_detect) : '—');
+              setCellText('ch_calib_' + ch, c.calibration ? '있음' : '없음');
+            }
+          }
+        })
+        .catch(() => { /* 조용히 무시하고 다음 주기에 재시도 */ });
     }
 
     // ---- 설정 변경 모드: 버튼으로 토글 (켰을 때만 설정 변경 가능) ----
