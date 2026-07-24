@@ -99,6 +99,8 @@ qt_add_qml_module(safety_common
         network/IWarningDevice.h
         network/NoopWarningDevice.h
         network/NoopWarningDevice.cpp
+        network/NetworkClient.h
+        network/NetworkClient.cpp
 
         config/ConfigTypes.h
         config/ConfigLoader.h
