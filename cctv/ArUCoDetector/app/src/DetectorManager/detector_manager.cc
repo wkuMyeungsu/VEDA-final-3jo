@@ -134,6 +134,8 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
         oas->SetStatusCode(405);
         oas->SetResponseBody("method not allowed");
       }
+    } else if (path_info == "/status") {
+      HandleGetStatus(oas);
     }
   }
   return true;
@@ -151,12 +153,14 @@ void DetectorManager::RegisterURI() {
   auto* detectonce_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detectonce"), GetInstanceName(), methods);
   auto* settings_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings"), GetInstanceName(), methods);
   auto* settings_apply_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings/apply"), GetInstanceName(), methods);
+  auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, write_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detectonce_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_apply_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, status_uri);
 }
 
 std::string DetectorManager::GetCurrentTimeToString() {
@@ -234,6 +238,7 @@ void DetectorManager::RestartWorkers() {
                                         : settings.calibration_path;
 
   // 3) enabled 채널마다 워커 생성 + 시작
+  workers_start_time_ = std::chrono::steady_clock::now();   // uptime 기준 시각
   for (const auto& ch : settings.channels) {
     if (!ch.enabled) continue;
 
@@ -248,6 +253,49 @@ void DetectorManager::RestartWorkers() {
     worker->Start();
     workers_[ch.channel] = std::move(worker);
   }
+}
+
+void DetectorManager::HandleGetStatus(OpenAppSerializable* oas) {
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  auto& alloc = doc.GetAllocator();
+
+  bool running = !workers_.empty();
+  doc.AddMember("running", running, alloc);
+
+  uint64_t uptime_ms = 0;
+  if (running) {
+    uptime_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - workers_start_time_).count());
+  }
+  doc.AddMember("uptime_ms", uptime_ms, alloc);
+
+  std::string last_sent;  // 채널들의 last_detect 중 최신 (ISO8601 문자열 비교로 최대값)
+
+  JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
+  for (const auto& [ch, worker] : workers_) {
+    ChannelWorker::Status st = worker->GetStatus();
+
+    std::string state = !st.running ? "정지"
+                        : (!st.last_error.empty() ? "오류" : "검출중");
+    if (st.last_detect > last_sent) last_sent = st.last_detect;
+
+    JsonUtility::ValueType obj(JsonUtility::Type::kObjectType);
+    obj.AddMember("channel", ch, alloc);
+    obj.AddMember("state", state, alloc);
+    obj.AddMember("marker_count", st.marker_count, alloc);
+    obj.AddMember("latency_ms", st.latency_ms, alloc);
+    obj.AddMember("last_detect", st.last_detect, alloc);
+    obj.AddMember("last_error", st.last_error, alloc);
+    obj.AddMember("calibration", st.calibration, alloc);
+    channels_arr.PushBack(obj, alloc);
+  }
+  doc.AddMember("channels", channels_arr, alloc);
+  doc.AddMember("last_sent", last_sent, alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  doc.Accept(writer);
+  oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
 }
 
 extern "C" {

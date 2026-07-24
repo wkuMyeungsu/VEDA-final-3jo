@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <memory>
 
@@ -28,8 +29,10 @@ class DetectorManager : public Component, public IDetectorManager {
   void HandleGetSettings(OpenAppSerializable* oas);
   void HandlePostSettings(OpenAppSerializable* oas);
   void RestartWorkers();  // settings 로드 -> 워커 전부 정지 후 재생성/시작
+  void HandleGetStatus(OpenAppSerializable* oas);
 
  private:
   std::string setting_changed_time_;
   std::map<int, std::unique_ptr<ChannelWorker>> workers_; // 채널번호 -> 워커
+  std::chrono::steady_clock::time_point workers_start_time_;  // 워커 기동 시각 (uptime 계산용)
 };
