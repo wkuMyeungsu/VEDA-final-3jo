@@ -13,7 +13,7 @@ struct DetectionSettings {
     std::string dictionary_name = "DICT_4X4_50";
     int poll_interval_ms = 1000;
     std::vector<ChannelConfig> channels;    // 채널별 검출/왜곡보정 설정
-    std::string calibration_pattern;
+    std::string calibration_path;
 };
 
 // path는 settings.json 경로
