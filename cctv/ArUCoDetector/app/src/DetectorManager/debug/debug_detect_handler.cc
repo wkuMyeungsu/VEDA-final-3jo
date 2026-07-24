@@ -6,14 +6,13 @@
 #include <vector>
 
 #include <opencv2/aruco.hpp>       // cv::aruco::drawDetectedMarkers
-#include <opencv2/calib3d.hpp>     // cv::undistort
-#include <opencv2/imgcodecs.hpp>   // cv::imdecode, cv::imencode
-#include <opencv2/imgproc.hpp>     // cv::cvtColor
+#include <opencv2/imgcodecs.hpp>   // cv::imencode (프리뷰)
 
 #include "aruco_detector.h"
 #include "camera_calibration.h"
 #include "camera_credentials.h"
-#include "camera_snapshot_client.h"
+#include "frame_source.h"
+#include "frame_preprocessor.h"
 #include "dispatcher_serialize.h"
 #include "json_utility.h"
 
@@ -70,54 +69,41 @@ void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metad
     undistort_requested = (std::atoi(query.c_str() + upos + 10) != 0);
   }
 
-  // 1) 스냅샷
+  // 1) 스냅샷 + 디코딩 (FrameSource)
   CameraCredentials creds = LoadCameraCredentials();
-  std::vector<unsigned char> jpeg;
+  FrameSource source(creds);
   std::string error;
-  if (!FetchSnapshot(channel, creds, jpeg, error)) {
-    oas->SetStatusCode(502);
-    oas->SetResponseBody("스냅샷 실패: " + error);
-    return;
-  }
-
-  // 2) 디코딩
-  cv::Mat img = cv::imdecode(jpeg, cv::IMREAD_COLOR);
+  cv::Mat img = source.Acquire(channel, error);
   if (img.empty()) {
     oas->SetStatusCode(502);
-    oas->SetResponseBody("JPEG 디코딩 실패");
+    oas->SetResponseBody("스냅샷/디코딩 실패: " + error);
     return;
   }
 
-  // 3) 캘리브레이션이 있고(파일 존재) + 해상도 일치 + 요청 시에만 undistort
+  // 2) 캘리브레이션 로드 + 왜곡보정(옵션) + grayscale (파이프라인 조각 사용)
   std::string calib_path = "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch" + std::to_string(channel) + ".json";
   CameraCalibration calib = LoadCameraCalibration(calib_path);
   bool calibration_available = calib.valid;
   bool undistorted_applied = false;
-  if (undistort_requested && calib.valid && calib.image_width == img.cols && calib.image_height == img.rows) {
-    cv::Mat undistorted;
-    cv::undistort(img, undistorted, calib.camera_matrix, calib.dist_coeffs);
-    img = undistorted;
-    undistorted_applied = true;
-  }
+  cv::Mat corrected = TryUndistort(img, calib, undistort_requested, undistorted_applied);
+  cv::Mat gray = ConvertToGrayscale(corrected);
 
-  // 4) 그레이 스케일 변환 후 검출
-  cv::Mat gray;
-  cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+  // 3) 검출
   ArucoDetector detector;
   DetectionResult result = detector.Detect(gray);
 
-  // 5) 메타데이터 전송 (실제 운영 경로를 그대로 태워서 검증)
-  send_metadata(result.ids, result.corners);
+  // 4) 메타데이터 전송 (실제 운영 경로를 그대로 태워서 검증)
+  send_metadata(channel, result.ids, result.corners);
 
-  // 6) 프리뷰: 검출된 마커를 컬러 이미지에 그려서 base64 data URI로 인코딩
+  // 5) 프리뷰: corrected(보정본 or 원본)에 마커 그려서 base64 data URI로 인코딩
   if (!result.ids.empty()) {
-    cv::aruco::drawDetectedMarkers(img, result.corners, result.ids);
+    cv::aruco::drawDetectedMarkers(corrected, result.corners, result.ids);
   }
   std::vector<unsigned char> preview_jpeg;
-  cv::imencode(".jpg", img, preview_jpeg);
+  cv::imencode(".jpg", corrected, preview_jpeg);
   std::string preview_uri = "data:image/jpeg;base64," + Base64Encode(preview_jpeg);
 
-  // 7) 응답 JSON (검출 개수 + 프리뷰 이미지)
+  // 6) 응답 JSON (검출 개수 + 프리뷰 이미지)
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   auto& alloc = doc.GetAllocator();
   doc.AddMember("channel", channel, alloc);
@@ -140,5 +126,7 @@ void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metad
   doc.Accept(writer);
   oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
 }
+
+
 
 }  // namespace DebugDetectHandler

@@ -90,8 +90,8 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
     } else if (path_info == "/detectonce") {
       // 테스트 전용 (나중에 통째로 삭제). SendMetadata를 콜백으로 주입해서 debug 핸들러가 호출.
       DebugDetectHandler::HandleDetectOnce(
-          oas, [this](const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
-            SendMetadata(ids, corners);
+          oas, [this](int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
+            SendMetadata(channel, ids, corners);
           });
     } else if (path_info == "/settings") {
       auto method = oas->GetFCGXParam("REQUEST_METHOD");
@@ -136,13 +136,13 @@ std::string DetectorManager::GetCurrentTimeToString() {
   return ss.str();
 }
 
-void DetectorManager::SendMetadata(const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
+void DetectorManager::SendMetadata(int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
   auto now_ms = static_cast<uint64_t> (
     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 
-  std::string xml = MarkerMetadataFormat::BuildMarkerMetadataXml(GetChannel(), ids, corners, now_ms);
+  std::string xml = MarkerMetadataFormat::BuildMarkerMetadataXml(channel, ids, corners, now_ms);
 
-  auto metadata = StringMetadata(GetChannel(), now_ms);
+  auto metadata = StringMetadata(channel, now_ms);
   metadata.Set(xml);
 
   auto* req = new ("MetadataRequest") IPMetadataManager::StringMetadataRequest();
