@@ -1,10 +1,23 @@
 set(TARGET_LIB detector_manager)
 
-add_library(${TARGET_LIB} MODULE detector_manager.cc aruco_detector.cc metadata_format.cc camera_credentials.cc camera_snapshot_client.cc camera_calibration.cc detection_settings.cc debug_detect_handler.cc)
+add_library(${TARGET_LIB} MODULE 
+  detector_manager.cc
+  camera/camera_credentials.cc
+  camera/camera_snapshot_client.cc
+  camera/camera_calibration.cc
+  pipeline/aruco_detector.cc
+  metadata/metadata_format.cc
+  settings/detection_settings.cc
+  debug/debug_detect_handler.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/includes
+  ${CMAKE_CURRENT_SOURCE_DIR}/camera
+  ${CMAKE_CURRENT_SOURCE_DIR}/pipeline
+  ${CMAKE_CURRENT_SOURCE_DIR}/metadata
+  ${CMAKE_CURRENT_SOURCE_DIR}/settings
+  ${CMAKE_CURRENT_SOURCE_DIR}/debug
   ${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include
   ${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include/opencv4
   ${WISENET_PRODUCT_RELEASE_PATH}/includes/metadata)
