@@ -94,5 +94,17 @@ bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& se
   return true;
 }
 
+DetectionSettings DefaultDetectionSettings() {
+  DetectionSettings s;   // dictionary_name="DICT_4X4_50", poll_interval_ms=1000 (구조체 기본값)
+  for (int ch = 1; ch <= 4; ++ch) {
+    ChannelConfig c;
+    c.channel = ch;
+    c.enabled = true;
+    c.undistort = false;   // 왜곡보정은 기본 off (지연↓, 필요하면 채널별로 켬)
+    s.channels.push_back(c);
+  }
+  return s;
+}
+
 
 

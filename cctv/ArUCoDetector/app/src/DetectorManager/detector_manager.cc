@@ -229,8 +229,13 @@ void DetectorManager::RestartWorkers() {
   // 1) 기존 워커 전부 제거 -> 각 unique_ptr 소멸 -> ~ChannelWorker -> Stop()(notify+join)
   workers_.clear();
 
-  // 2) 설정 로드
+  // 2) 설정 로드. settings.json이 없거나 채널이 비어 있으면(=갓 설치) 기본값(4채널 ON)으로
+  //    시작하고 파일도 생성한다(best-effort). UI가 all-off 저장을 막으므로 빈 channels = 미설정.
   DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
+  if (settings.channels.empty()) {
+    settings = DefaultDetectionSettings();
+    SaveDetectionSettings(kSettingsPath, settings);
+  }
   cv::aruco::PREDEFINED_DICTIONARY_NAME dict = StringToDict(settings.dictionary_name);
   CameraCredentials creds = LoadCameraCredentials();
   std::string calib_path_template = settings.calibration_path.empty()

@@ -27,3 +27,6 @@ std::string SerializeDetectionSettings(const DetectionSettings& settings);
 // JSON 문자열 → 구조체. json에 있는 필드만 덮어씀(없는 필드는 인자 settings 값 유지).
 // "channels"가 있으면 기존 channels를 통째로 교체. 파싱 실패 시 false.
 bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& settings);
+
+// 기본 설정 (4채널 ON, undistort off). settings.json이 없을 때 초기값으로 사용.
+DetectionSettings DefaultDetectionSettings();
