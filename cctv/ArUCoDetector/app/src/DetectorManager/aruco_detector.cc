@@ -1,7 +1,25 @@
 // aruco_detector.cc
+
+#include <unordered_map>
+
 #include "aruco_detector.h"
 
-// 
+
+// 사전 이름 문자열 -> OpenCV 사전 enum.
+cv::aruco::PREDEFINED_DICTIONARY_NAME StringToDict(const std::string& name) {
+  static const std::unordered_map<std::string, cv::aruco::PREDEFINED_DICTIONARY_NAME> kMap = {
+    {"DICT_4X4_50",  cv::aruco::DICT_4X4_50},
+    {"DICT_4X4_100", cv::aruco::DICT_4X4_100},
+    {"DICT_4X4_250", cv::aruco::DICT_4X4_250},
+    {"DICT_5X5_50",  cv::aruco::DICT_5X5_50},
+    {"DICT_5X5_100", cv::aruco::DICT_5X5_100},
+    {"DICT_6X6_50",  cv::aruco::DICT_6X6_50},
+    {"DICT_6X6_250", cv::aruco::DICT_6X6_250},
+  };
+  auto it = kMap.find(name);
+  return it != kMap.end() ? it -> second : cv::aruco::DICT_4X4_50; // 모르는 값이면 DICT_4X4_50으로 폴백.
+}
+
 ArucoDetector::ArucoDetector(cv::aruco::PREDEFINED_DICTIONARY_NAME dictionary_name)
     
       // dictionary_name(DICT_4X4_50)에 해당하는 마커 사전을 한 번만 로드해서 저장.
