@@ -14,6 +14,7 @@
 
 namespace {
   constexpr const char* kSettingsPath = "settings.json"; // 실행 CWD(app/bin) 기준 경로. config.local.json과 동일 규약
+  constexpr const char* kDefaultCalibPath = "mnt"
   auto eventToArgumentBuffer = [](Event* event) {
     auto blob = event->GetBlobArgument();
     std::pair<std::variant<BaseObject*, char*>, uint64_t> ret((char*)blob.GetRawData(),  // variant
@@ -169,7 +170,7 @@ void DetectorManager::HandleGetSettings(OpenAppSerializable* oas) {
 }
 
 void DetectorManager::HandlePostSettings(OpenAppSerializable* oas) {
-  // 기존 설정을 먼저 로드 -> body에 없는 필드 (calibration_path_pattern 등)를 보존한다.
+  // 기존 설정을 먼저 로드 -> body에 없는 필드 (calibration_pattern 등)를 보존한다.
   DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
 
   std::string body = oas->GetRequestBody();
