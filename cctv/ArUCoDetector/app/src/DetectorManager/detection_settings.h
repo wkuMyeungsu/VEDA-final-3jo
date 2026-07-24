@@ -21,3 +21,9 @@ DetectionSettings LoadDetectionSettings(const std::string& path);
 
 // settings를 path에 JSON으로 저장. 성공 여부 반환.
 bool SaveDetectionSettings(const std::string& path, const DetectionSettings& settings);
+
+std::string SerializeDetectionSettings(const DetectionSettings& settings);
+
+// JSON 문자열 → 구조체. json에 있는 필드만 덮어씀(없는 필드는 인자 settings 값 유지).
+// "channels"가 있으면 기존 channels를 통째로 교체. 파싱 실패 시 false.
+bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& settings);

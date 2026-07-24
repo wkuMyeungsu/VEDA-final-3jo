@@ -1,4 +1,5 @@
 #include "detector_manager.h"
+#include "detection_settings.h"
 
 #include <unistd.h>
 #include <chrono>
@@ -12,12 +13,13 @@
 #include "i_p_open_platform_manager.h"
 
 namespace {
-auto eventToArgumentBuffer = [](Event* event) {
-  auto blob = event->GetBlobArgument();
-  std::pair<std::variant<BaseObject*, char*>, uint64_t> ret((char*)blob.GetRawData(),  // variant
-                                                            blob.GetSize());           // size
-  return ret;
-};
+  constexpr const char* kSettingsPath = "settings.json"; // 실행 CWD(app/bin) 기준 경로. config.local.json과 동일 규약
+  auto eventToArgumentBuffer = [](Event* event) {
+    auto blob = event->GetBlobArgument();
+    std::pair<std::variant<BaseObject*, char*>, uint64_t> ret((char*)blob.GetRawData(),  // variant
+                                                              blob.GetSize());           // size
+    return ret;
+  };
 }
 
 DetectorManager::DetectorManager() : DetectorManager(_DetectorManager_Id, "DetectorManager") {}
@@ -91,6 +93,16 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
           oas, [this](const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
             SendMetadata(ids, corners);
           });
+    } else if (path_info == "/settings") {
+      auto method = oas->GetFCGXParam("REQUEST_METHOD");
+      if(method == "GET") {
+        HandleGetSettings(oas);
+      } else if (method == "POST") {
+        HandlePostSettings(oas);
+      } else {
+        oas->SetStatusCode(405);
+        oas->SetResponseBody("method not allowed");
+      }
     }
   }
   return true;
@@ -106,10 +118,12 @@ void DetectorManager::RegisterURI() {
   auto* write_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/writeeventlog"), GetInstanceName(), methods);
   auto* check_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/checksetting"), GetInstanceName(), methods);
   auto* detectonce_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detectonce"), GetInstanceName(), methods);
+  auto* settings_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings"), GetInstanceName(), methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, write_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detectonce_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_uri);
 }
 
 std::string DetectorManager::GetCurrentTimeToString() {
@@ -146,6 +160,32 @@ void DetectorManager::ProcessMetadata(Event* event) {
   if (attachment) {
     std::cout << "[DetectorManager][MetadataEcho] channel=" << attachment->channel() << " output=" << attachment->output() << std::endl;
   }
+}
+
+void DetectorManager::HandleGetSettings(OpenAppSerializable* oas) {
+  DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
+  std::string json = SerializeDetectionSettings(settings);
+  oas->SetResponseBody(json.c_str(), json.size());
+}
+
+void DetectorManager::HandlePostSettings(OpenAppSerializable* oas) {
+  // 기존 설정을 먼저 로드 -> body에 없는 필드 (calibration_path_pattern 등)를 보존한다.
+  DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
+
+  std::string body = oas->GetRequestBody();
+  if (!DeserializeDetectionSettings(body, settings)) {
+    oas->SetStatusCode(400);
+    oas->SetResponseBody("request body parse error");
+    return;
+  }
+
+  if (!SaveDetectionSettings(kSettingsPath, settings)) {
+    oas->SetStatusCode(500);
+    oas->SetResponseBody("settings save failed");
+    return;
+  }
+
+  oas->SetResponseBody(std::string("{\"result\":\"ok\"}"));
 }
 
 extern "C" {

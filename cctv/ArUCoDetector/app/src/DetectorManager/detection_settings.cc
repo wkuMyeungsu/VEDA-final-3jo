@@ -25,22 +25,62 @@ DetectionSettings LoadDetectionSettings(const std::string& path) {
   std::stringstream ss;
   ss << ifs.rdbuf();
 
+  DeserializeDetectionSettings(ss.str(), settings);
+  return settings;
+}
+
+std::string SerializeDetectionSettings(const DetectionSettings& settings) {
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
-  doc.Parse(ss.str());
+  auto& alloc = doc.GetAllocator();
+
+  doc.AddMember("dictionary_name", settings.dictionary_name, alloc);
+  doc.AddMember("poll_interval_ms", settings.poll_interval_ms, alloc);
+  doc.AddMember("calibration_path_pattern", settings.calibration_path_pattern, alloc);
+  
+  JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
+  for (const auto& cc : settings.channels) {
+    JsonUtility::ValueType obj(JsonUtility::Type::kObjectType);
+    obj.AddMember("channel", cc.channel, alloc);
+    obj.AddMember("enabled", cc.enabled, alloc);
+    obj.AddMember("undistort", cc.undistort, alloc);
+    channels_arr.PushBack(obj, alloc);
+  }
+  doc.AddMember("channels", channels_arr, alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  doc.Accept(writer);
+  return strbuf.GetString();  
+}
+
+bool SaveDetectionSettings(const std::string& path, const DetectionSettings& settings) {
+  std::string json = SerializeDetectionSettings(settings);
+  std::ofstream ofs(path);
+  if (!ofs.is_open()) {
+    return false;
+  }
+  ofs << json;
+  return true;
+}
+
+bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& settings) {
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(json);
   if (doc.HasParseError()) {
-    return settings;
+    return false;
   }
 
-  if (doc.HasMember("dictionary_name")) {
+  if (doc.HasMember("dictionary_name") && doc["dictionary_name"].IsString()) {
     settings.dictionary_name = doc["dictionary_name"].GetString();
   }
-  if (doc.HasMember("poll_interval_ms")) {
+  if (doc.HasMember("poll_interval_ms") && doc["poll_interval_ms"].IsInt()) {
     settings.poll_interval_ms = doc["poll_interval_ms"].GetInt();
   }
-  if (doc.HasMember("calibration_path_pattern")) {
+  if (doc.HasMember("calibration_path_pattern") && doc["calibration_path_pattern"].IsString()) {
     settings.calibration_path_pattern = doc["calibration_path_pattern"].GetString();
   }
   if (doc.HasMember("channels") && doc["channels"].IsArray()) {
+    settings.channels.clear();
     for (auto& v : doc["channels"].GetArray()) {
         if (!v.IsObject()) continue;
         ChannelConfig cc;
@@ -51,36 +91,8 @@ DetectionSettings LoadDetectionSettings(const std::string& path) {
     }
   }
 
-  return settings;
+  return true;
 }
 
-bool SaveDetectionSettings(const std::string& path, const DetectionSettings& settings) {
-    JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
 
-    auto& alloc = doc.GetAllocator();
 
-    doc.AddMember("dictionary_name", settings.dictionary_name, alloc);
-    doc.AddMember("poll_interval_ms", settings.poll_interval_ms, alloc);
-    doc.AddMember("calibration_path_pattern", settings.calibration_path_pattern, alloc); 
-
-    JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
-    for (const auto& cc : settings.channels) {
-      JsonUtility::ValueType obj(JsonUtility::Type::kObjectType);
-      obj.AddMember("channel", cc.channel, alloc);
-      obj.AddMember("enabled", cc.enabled, alloc);
-      obj.AddMember("undistort", cc.undistort, alloc);
-      channels_arr.PushBack(obj, alloc);
-    }
-    doc.AddMember("channels", channels_arr, alloc);
-
-    rapidjson::StringBuffer strbuf;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
-    doc.Accept(writer);
-
-    std::ofstream ofs(path);
-    if (!ofs.is_open()) {
-        return false;
-    }
-    ofs << strbuf.GetString();
-    return true;
-}

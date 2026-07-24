@@ -21,6 +21,8 @@ class DetectorManager : public Component, public IDetectorManager {
   std::string GetCurrentTimeToString();
   void SendMetadata(const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners);
   void ProcessMetadata(Event* event);
+  void HandleGetSettings(OpenAppSerializable* oas);
+  void HandlePostSettings(OpenAppSerializable* oas);
 
  private:
   std::string setting_changed_time_;
