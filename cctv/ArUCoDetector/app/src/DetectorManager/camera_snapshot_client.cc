@@ -30,7 +30,8 @@ bool FetchSnapshot(int channel, const CameraCredentials& credentials, std::vecto
 
     std::ostringstream url;
 
-    // Profile=0: 고화질(메인 스트림), Profile=1: 저화질(서브 스트림) ㅡ 캘리브레이션 정확도를 위해 고화질 사용.
+    // Profile=0: 카메라 인코딩 스트림 번호. 검출 기준으로 Profile=0을 사용한다.
+    // 캘리브레이션 스냅샷도 Profile=0으로 떠서 만들어지므로, 같은 Profile을 써야 해상도가 일치해 undisort가 적용된다.
     url << "http://127.0.0.1/stw-cgi/video.cgi?msubmenu=snapshot&action=view&Channel=" << (channel - 1) << "&Profile=0";
 
     std::string response;
