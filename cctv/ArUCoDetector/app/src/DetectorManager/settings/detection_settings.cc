@@ -10,7 +10,7 @@
 //   "dictionary_name": "DICT_4X4_50",
 //   "poll_interval_ms": 1000,
 //   "channels": [{"channel":1,"enabled":true,"undistort":true}, ...]
-//   "calibration_path_pattern": "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch{channel}.json"
+//   "calibration_pattern": "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch{channel}.json"
 // }
 // 파일이 없거나 필드가 없으면 DetectionSettings의 기본값을 그대로 씀.
 
@@ -35,7 +35,7 @@ std::string SerializeDetectionSettings(const DetectionSettings& settings) {
 
   doc.AddMember("dictionary_name", settings.dictionary_name, alloc);
   doc.AddMember("poll_interval_ms", settings.poll_interval_ms, alloc);
-  doc.AddMember("calibration_path_pattern", settings.calibration_path_pattern, alloc);
+  doc.AddMember("calibration_pattern", settings.calibration_pattern, alloc);
   
   JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
   for (const auto& cc : settings.channels) {
@@ -76,8 +76,8 @@ bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& se
   if (doc.HasMember("poll_interval_ms") && doc["poll_interval_ms"].IsInt()) {
     settings.poll_interval_ms = doc["poll_interval_ms"].GetInt();
   }
-  if (doc.HasMember("calibration_path_pattern") && doc["calibration_path_pattern"].IsString()) {
-    settings.calibration_path_pattern = doc["calibration_path_pattern"].GetString();
+  if (doc.HasMember("calibration_pattern") && doc["calibration_pattern"].IsString()) {
+    settings.calibration_pattern = doc["calibration_pattern"].GetString();
   }
   if (doc.HasMember("channels") && doc["channels"].IsArray()) {
     settings.channels.clear();
