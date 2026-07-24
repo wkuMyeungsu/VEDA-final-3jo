@@ -19,7 +19,7 @@ class DetectorManager : public Component, public IDetectorManager {
   bool HandleHttpRequest(Event* event);
   void RegisterURI();
   std::string GetCurrentTimeToString();
-  void SendMetadata(const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners);
+  void SendMetadata(int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners);
   void ProcessMetadata(Event* event);
   void HandleGetSettings(OpenAppSerializable* oas);
   void HandlePostSettings(OpenAppSerializable* oas);

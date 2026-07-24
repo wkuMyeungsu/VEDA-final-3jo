@@ -17,8 +17,7 @@ namespace DebugDetectHandler {
 
 // 검출 결과를 메타데이터로 실제 전송하는 콜백. DetectorManager::SendMetadata를 감싼다
 // (SendNoReplyEvent가 컴포넌트 멤버라 debug 핸들러가 직접 못 부르므로 콜백으로 주입).
-using SendMetadataFn =
-    std::function<void(const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners)>;
+using SendMetadataFn = std::function<void(int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners)>;
 
 // 스냅샷 1장 → (해상도 맞으면 undistort) → 검출 → 메타데이터 전송
 // → 검출 오버레이를 그린 프리뷰 이미지(base64)를 포함한 JSON 응답.
