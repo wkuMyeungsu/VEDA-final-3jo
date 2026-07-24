@@ -3,10 +3,16 @@
 #include <string>
 #include <vector>
 
+struct ChannelConfig {
+    int channel = 0;
+    bool enabled = false;
+    bool undistort = false;
+};
+
 struct DetectionSettings {
     std::string dictionary_name = "DICT_4X4_50";
     int poll_interval_ms = 1000;
-    std::vector<int> channels;                      // 지금 검출 대상인 채널 목록 (안쓰는 채널은 여기서 빼면 됨.)
+    std::vector<ChannelConfig> channels;    // 채널별 검출/왜곡보정 설정
     std::string calibration_path_pattern;
 };
 

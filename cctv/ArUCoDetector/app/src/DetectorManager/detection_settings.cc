@@ -9,7 +9,7 @@
 // {
 //   "dictionary_name": "DICT_4X4_50",
 //   "poll_interval_ms": 1000,
-//   "channels": [1, 3, 4],
+//   "channels": [{"channel":1,"enabled":true,"undistort":true}, ...]
 //   "calibration_path_pattern": "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch{channel}.json"
 // }
 // 파일이 없거나 필드가 없으면 DetectionSettings의 기본값을 그대로 씀.
@@ -40,9 +40,14 @@ DetectionSettings LoadDetectionSettings(const std::string& path) {
   if (doc.HasMember("calibration_path_pattern")) {
     settings.calibration_path_pattern = doc["calibration_path_pattern"].GetString();
   }
-  if (doc.HasMember("channels")) {
+  if (doc.HasMember("channels") && doc["channels"].IsArray()) {
     for (auto& v : doc["channels"].GetArray()) {
-      settings.channels.push_back(v.GetInt());
+        if (!v.IsObject()) continue;
+        ChannelConfig cc;
+        if (v.HasMember("channel") && v["channel"].IsInt())       cc.channel    = v["channel"].GetInt();
+        if (v.HasMember("enabled") && v["enabled"].IsBool())      cc.enabled    = v["enabled"].GetBool();
+        if (v.HasMember("undistort") && v["undistort"].IsBool())  cc.undistort  = v["undistort"].GetBool();
+        settings.channels.push_back(cc);
     }
   }
 
@@ -59,8 +64,12 @@ bool SaveDetectionSettings(const std::string& path, const DetectionSettings& set
     doc.AddMember("calibration_path_pattern", settings.calibration_path_pattern, alloc); 
 
     JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
-    for (int ch : settings.channels) {
-        channels_arr.PushBack(ch, alloc);
+    for (const auto& cc : settings.channels) {
+      JsonUtility::ValueType obj(JsonUtility::Type::kObjectType);
+      obj.AddMember("channel", cc.channel, alloc);
+      obj.AddMember("enabled", cc.enabled, alloc);
+      obj.AddMember("undistort", cc.undistort, alloc);
+      channels_arr.PushBack(obj, alloc);
     }
     doc.AddMember("channels", channels_arr, alloc);
 
