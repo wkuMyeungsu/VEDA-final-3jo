@@ -1,0 +1,86 @@
+#pragma once
+
+// ── 표준 라이브러리 ──
+#include <condition_variable>  // std::condition_variable : 스레드를 재우고 신호로 깨우는 도구
+#include <functional>          // std::function           : 함수/람다(콜백)를 담는 타입
+#include <mutex>               // std::mutex, lock_guard   : 공유 데이터 보호용 잠금
+#include <string>
+#include <thread>              // std::thread              : OS 스레드 생성/관리
+#include <vector>
+
+#include <opencv2/core.hpp>    // cv::Mat, cv::Point2f
+
+#include "aruco_detector.h"     // ArucoDetector, DetectionResult, PREDEFINED_DICTIONARY_NAME
+#include "camera_calibration.h" // CameraCalibration, LoadCameraCalibration
+#include "camera_credentials.h" // CameraCredentials
+#include "frame_source.h"       // FrameSource
+
+// 채널 하나를 전담하는 폴링 워커.
+// 자기만의 std::thread 하나를 돌리면서 poll_interval_ms 주기로
+//   스냅샷 → (옵션)왜곡보정 → grayscale → ArUco 검출 → 전송 콜백
+// 을 반복한다. 채널마다 이 객체를 하나씩 만든다(채널 간 공유 상태 없음 → 채널 간 락 불필요).
+class ChannelWorker {
+    public:
+        // 검출 결과를 바깥으로 넘기는 콜백 타입.
+        // DetectorManager가 [this](ch,ids,corners){ SendMetadata(ch,ids,corners); } 를 주입한다.
+        // 워커는 "어떻게/어디로 전송하는지" 모른 채 이 함수만 호출 → 검출과 전송의 분리.
+        using SendFn = std::function<void(int channel, const std::vector<int>& ids,
+                                          const std::vector<std::vector<cv::Point2f>>& corners)>;
+
+        // GET /status 가 읽어갈 채널별 상태 스냅샷.
+        // 워커 스레드가 쓰고, DetectorManager 스레드가 읽으므로 status_mtx_ 로 보호한다.
+        struct Status {
+            bool running = false;       // 이 워커가 폴링 루프를 돌고 있는가
+            int marker_count = 0;       // 마지막 폴링에서 검출된 마커 개수
+            int latency_ms = 0;         // 마지막 폴링 1회 파이프라인 소요 시간(ms)
+            std::string last_detect;    // 마지막 검출 완료 시각 (ISO8601 UTC 문자열)
+            std::string last_error;     // 마지막 에러 (스냅샷/디코딩 실패 등). 성공하면 비움
+            bool calibration = false;   // 이 채널의 캘리브레이션 파일이 유효한가
+        };
+
+        // channel          : 담당 채널 번호(1~4)
+        // credentials      : 카메라 admin 계정 (FrameSource가 스냅샷 요청에 사용)
+        // calib_path       : 이 채널의 calib_result_chN.json 절대경로 (생성자에서 한 번 로드)
+        // dict             : 검출에 쓸 ArUco 사전 (StringToDict로 문자열→enum 변환한 값)
+        // undistort        : 이 채널에서 우리 왜곡보정을 적용할지 (설정의 채널별 토글)
+        // poll_interval_ms : 폴링 주기(ms)
+        // send             : 검출 결과 전송 콜백
+        ChannelWorker(int channel, const CameraCredentials& credentials, const std::string& calib_path,
+                      cv::aruco::PREDEFINED_DICTIONARY_NAME dict, bool undistort,
+                      int poll_interval_ms, SendFn send);
+
+        ~ChannelWorker();   // 소멸 시 반드시 Stop()으로 스레드 회수 (안 하면 crash/terminate)
+
+        // mutex/thread를 멤버로 들고 있어 복사·이동이 불가능한 타입이다.
+        // 그래서 DetectorManager는 이 객체를 unique_ptr(포인터)로 소유한다.
+        ChannelWorker(const ChannelWorker&) = delete;
+        ChannelWorker& operator=(const ChannelWorker&) = delete;
+
+        void Start();               // 워커 스레드를 만들어 폴링 루프 시작
+        void Stop();                // 루프를 멈추고 스레드가 끝날 때까지 대기(join)
+        Status GetStatus() const;   // 현재 상태를 복사해서 반환(스레드 안전)
+
+    private:
+        void Loop();        // 폴링 루프 본체 (워커 스레드에서 실행됨)
+        void RunOnce();     // 파이프라인 1회 (스냅샷→검출→전송→상태갱신)
+
+        // ── 생성 시 정해지고 이후 안 바뀌는 구성값들 ──
+        int channel_;                 // 담당 채널 번호
+        bool undistort_;              // 왜곡보정 on/off
+        int poll_interval_ms_;        // 폴링 주기
+        FrameSource source_;          // 스냅샷 획득기 (credentials 보유)
+        CameraCalibration calib_;     // 로드된 캘리브레이션 값
+        ArucoDetector detector_;      // 검출기 (사전 보유). 생성 후 상태 안 변함
+        SendFn send_;                 // 전송 콜백
+
+        // ── 루프 제어용 (mtx_ 가 보호) ──
+        std::thread thread_;          // 워커 스레드 핸들
+        std::mutex mtx_;              // running_ 과 cv_ 대기를 보호
+        std::condition_variable cv_;  // 주기 대기 + 즉시 깨우기(Stop)용
+        bool running_ = false;        // 루프를 계속 돌지 여부 (Stop이 false로 바꿈)
+
+        // ── 상태 공유용 (status_mtx_ 가 보호) ──
+        // mutable: GetStatus()가 const 함수인데도 이 mutex는 잠가야 하므로 mutable로 둔다.
+        mutable std::mutex status_mtx_;
+        Status status_;               // /status가 읽어갈 최신 상태
+};
