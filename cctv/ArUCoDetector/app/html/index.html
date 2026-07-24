@@ -469,6 +469,13 @@
         .then(d => {
           if (d.dictionary_name) document.getElementById('set_dict_sel').value = d.dictionary_name;
           if (d.poll_interval_ms != null) document.getElementById('set_poll').value = d.poll_interval_ms;
+          // 서버 상태를 그대로 반영: 먼저 전 채널 OFF로 초기화 후, 서버가 준 채널만 켠다.
+          // (settings.json 없으면 channels가 비어 옴 → 하드코딩 ON이 남는 버그 방지)
+          for (let ch = 1; ch <= 4; ch++) {
+            setBtnState(document.getElementById('ch_on_' + ch), false);
+            setBtnState(document.getElementById('ch_undist_' + ch), false);
+            updateUndistortEnabled(ch);
+          }
           if (Array.isArray(d.channels)) setChannelConfig(d.channels);
           if (!silent) showSettingsMsg('현재 설정을 불러왔습니다.', 'ok');
         })
