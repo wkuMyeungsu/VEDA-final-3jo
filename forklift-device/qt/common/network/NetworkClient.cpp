@@ -71,7 +71,7 @@ void NetworkClient::handleReadyRead()
     }
 }
 
-// Process a single line of input from the server. The line is expected to be a JSON object with a "type" field and a "camera_id" field. If the type is "camera_assignment", emit the cameraAssigned signal with the camera_id.
+// Process a single line of input from the server. The line is expected to be a JSON object with a "type" field and a "camera_id" field. If the type is "camera_assignment", emit the cameraHandoverRequested signal with the camera ID.
 void NetworkClient::processLine(const QByteArray &line)
 {
     const QJsonObject obj = QJsonDocument::fromJson(line).object();
