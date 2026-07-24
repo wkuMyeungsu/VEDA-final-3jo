@@ -12,9 +12,26 @@
 #include "i_p_metadata_manager.h"
 #include "i_p_open_platform_manager.h"
 
+#include "aruco_detector.h"      // StringToDict
+#include "camera_credentials.h"  // LoadCameraCredentials
+
 namespace {
   constexpr const char* kSettingsPath = "settings.json"; // 실행 CWD(app/bin) 기준 경로. config.local.json과 동일 규약
-  constexpr const char* kDefaultCalibPath = "mnt"
+
+  // calibration_path가 비어있을 때 쓸 기본 경로 ({channel} 은 채널 번호로 치환).
+  constexpr const char* kDefaultCalibPath = "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch{channel}.json";
+
+  // path 안의 "{channel}" 을 실제 채널 번호로 치환.
+  std::string ResolveCalibPath(const std::string& path, int channel) {
+    std::string out = path;
+    const std::string token = "{channel}";
+    auto pos = out.find(token);
+    if (pos != std::string::npos) {
+      out.replace(pos, token.size(), std::to_string(channel));
+    }
+    return out;
+  }
+
   auto eventToArgumentBuffer = [](Event* event) {
     auto blob = event->GetBlobArgument();
     std::pair<std::variant<BaseObject*, char*>, uint64_t> ret((char*)blob.GetRawData(),  // variant
@@ -27,11 +44,15 @@ DetectorManager::DetectorManager() : DetectorManager(_DetectorManager_Id, "Detec
 
 DetectorManager::DetectorManager(ClassID id, const char* name) : Component(id, name) {}
 
-DetectorManager::~DetectorManager() {}
+DetectorManager::~DetectorManager() {
+  workers_.clear();   // 워커 스레드 모두 정지·join (this가 유효한 동안)
+}
 
 bool DetectorManager::Initialize() {
   RegisterURI();
-  return Component::Initialize();
+  bool ok = Component::Initialize();
+  RestartWorkers();   // 저장된 settings대로 채널 워커 기동
+  return ok;
 }
 
 bool DetectorManager::ProcessAEvent(Event* event) {
@@ -170,7 +191,7 @@ void DetectorManager::HandleGetSettings(OpenAppSerializable* oas) {
 }
 
 void DetectorManager::HandlePostSettings(OpenAppSerializable* oas) {
-  // 기존 설정을 먼저 로드 -> body에 없는 필드 (calibration_pattern 등)를 보존한다.
+  // 기존 설정을 먼저 로드 -> body에 없는 필드 (calibration_path 등)를 보존한다.
   DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
 
   std::string body = oas->GetRequestBody();
@@ -187,6 +208,35 @@ void DetectorManager::HandlePostSettings(OpenAppSerializable* oas) {
   }
 
   oas->SetResponseBody(std::string("{\"result\":\"ok\"}"));
+}
+
+void DetectorManager::RestartWorkers() {
+  // 1) 기존 워커 전부 제거 -> 각 unique_ptr 소멸 -> ~ChannelWorker -> Stop()(notify+join)
+  workers_.clear();
+
+  // 2) 설정 로드
+  DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
+  cv::aruco::PREDEFINED_DICTIONARY_NAME dict = StringToDict(settings.dictionary_name);
+  CameraCredentials creds = LoadCameraCredentials();
+  std::string calib_path_template = settings.calibration_path.empty()
+                                        ? kDefaultCalibPath
+                                        : settings.calibration_path;
+
+  // 3) enabled 채널마다 워커 생성 + 시작
+  for (const auto& ch : settings.channels) {
+    if (!ch.enabled) continue;
+
+    std::string calib_path = ResolveCalibPath(calib_path_template, ch.channel);
+
+    auto worker = std::make_unique<ChannelWorker>(
+        ch.channel, creds, calib_path, dict, ch.undistort, settings.poll_interval_ms,
+        [this](int c, const std::vector<int>& ids,
+               const std::vector<std::vector<cv::Point2f>>& corners) {
+          SendMetadata(c, ids, corners);   // 워커 스레드 -> 콜백 -> SendNoReplyEvent
+        });
+    worker->Start();
+    workers_[ch.channel] = std::move(worker);
+  }
 }
 
 extern "C" {
