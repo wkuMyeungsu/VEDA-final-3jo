@@ -11,8 +11,12 @@
 **/app/libs/
 **/*.a
 
-# make install이 app/src/*/manifests/ 원본을 res/models/로 복제해 넣는 산출물
-**/app/res/models/SampleComponent_*.json
+# make install이 app/src/*/manifests/ 원본을 res/models/로 복제해 넣는 산출물.
+# AppDispatcher_*는 SDK 제공 컴포넌트라 손수 관리하는 파일이라 예외로 계속 추적함
+# (컴포넌트 이름이 뭐든 - SampleComponent/DetectorManager/Classification 등 -
+# 동작하도록 이름을 하드코딩하지 않고 AppDispatcher만 예외 처리).
+**/app/res/models/*
+!**/app/res/models/AppDispatcher_*
 
 # 자동 생성되는 빌드 메타데이터
 **/config/build_info.json

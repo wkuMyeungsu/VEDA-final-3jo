@@ -1,0 +1,9 @@
+{
+  "Version" : "1.0.0",
+  "Name": "DetectorManager",
+  "Attributes": [
+    {
+      "log": "Test Start Log!!!"
+    }
+  ]
+}
