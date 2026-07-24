@@ -125,6 +125,15 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
         oas->SetStatusCode(405);
         oas->SetResponseBody("method not allowed");
       }
+    } else if (path_info == "/settings/apply") {
+      auto method = oas->GetFCGXParam("REQUEST_METHOD");
+      if (method == "POST") {
+        RestartWorkers();   // 저장된 settings.json대로 워커 전부 재구성
+        oas->SetResponseBody(std::string("{\"result\":\"ok\"}"));
+      } else {
+        oas->SetStatusCode(405);
+        oas->SetResponseBody("method not allowed");
+      }
     }
   }
   return true;
@@ -141,11 +150,13 @@ void DetectorManager::RegisterURI() {
   auto* check_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/checksetting"), GetInstanceName(), methods);
   auto* detectonce_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detectonce"), GetInstanceName(), methods);
   auto* settings_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings"), GetInstanceName(), methods);
+  auto* settings_apply_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings/apply"), GetInstanceName(), methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, write_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detectonce_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_apply_uri);
 }
 
 std::string DetectorManager::GetCurrentTimeToString() {
