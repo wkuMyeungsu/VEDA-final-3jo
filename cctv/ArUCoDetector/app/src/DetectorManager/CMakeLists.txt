@@ -6,6 +6,8 @@ add_library(${TARGET_LIB} MODULE
   camera/camera_snapshot_client.cc
   camera/camera_calibration.cc
   pipeline/aruco_detector.cc
+  pipeline/frame_source.cc
+  pipeline/frame_preprocessor.cc
   metadata/metadata_format.cc
   settings/detection_settings.cc
   debug/debug_detect_handler.cc)
