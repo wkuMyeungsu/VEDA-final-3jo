@@ -20,15 +20,11 @@ module packet_parser #(
     output reg        risk_valid,
 
     /*
-     * READ_STATUS 요청
-     */
-    output reg        read_status_req,
-
-    /*
      * CLEAR_ERROR 요청
      */
     output reg        clear_error_req,
 
+    /*
     /*
      * SELF_TEST 요청
      */
@@ -36,7 +32,7 @@ module packet_parser #(
     output reg        self_test_valid,
 
     /*
-     * 1클럭 오류 펄스
+     * 1클럭 오류 펄스 (event_detector로 전달)
      */
     output reg        checksum_error,
     output reg        protocol_error,
@@ -45,31 +41,25 @@ module packet_parser #(
     /*
      * 오류 누적 플래그
      * CLEAR_ERROR 정상 패킷으로 초기화된다.
+     * heartbeat_gen의 상태 바이트에 실려 주기적으로 Pi에 보고된다.
      */
     output reg        checksum_error_latched,
     output reg        protocol_error_latched,
-    output reg        timeout_error_latched,
-
-        /*
-     * 이벤트 로그 명령
-     */
-    output reg        read_log_info_req,
-    output reg        read_log_req,
-    output reg  [3:0] read_log_index,
-    output reg        clear_log_req
+    output reg        timeout_error_latched
 );
 
     /*
      * Command 정의
+     *
+     * v2 프로토콜: FPGA는 "안전 최종 방어선" 역할에 필요한
+     * 명령만 받는다. 상태/로그 조회는 FPGA가 주기적으로
+     * push하므로(heartbeat_gen, event_uart_tx 참고) 더 이상
+     * Pi가 요청할 필요가 없다.
      */
     localparam [7:0]
         CMD_SET_RISK     = 8'h01,
-        CMD_READ_STATUS  = 8'h02,
-        CMD_CLEAR_ERROR  = 8'h03,
-        CMD_SELF_TEST    = 8'h04,
-        CMD_READ_LOG_INFO = 8'h05,
-        CMD_READ_LOG      = 8'h06,
-        CMD_CLEAR_LOG     = 8'h07;
+        CMD_CLEAR_ERROR  = 8'h02,
+        CMD_SELF_TEST    = 8'h03;
 
     /*
      * Parser 상태
@@ -110,13 +100,9 @@ module packet_parser #(
     wire command_is_valid;
 
      assign command_is_valid =
-        (rx_data == CMD_SET_RISK)      ||
-        (rx_data == CMD_READ_STATUS)   ||
-        (rx_data == CMD_CLEAR_ERROR)   ||
-        (rx_data == CMD_SELF_TEST)     ||
-        (rx_data == CMD_READ_LOG_INFO) ||
-        (rx_data == CMD_READ_LOG)      ||
-        (rx_data == CMD_CLEAR_LOG);
+        (rx_data == CMD_SET_RISK)    ||
+        (rx_data == CMD_CLEAR_ERROR) ||
+        (rx_data == CMD_SELF_TEST);
 
     /*
      * DATA 상태에서 command별 data 유효성 검사
@@ -130,37 +116,12 @@ module packet_parser #(
                 data_is_valid = (rx_data <= 8'd3);
             end
 
-            CMD_READ_STATUS: begin
-                data_is_valid = (rx_data == 8'h00);
-            end
-
             CMD_CLEAR_ERROR: begin
                 data_is_valid = (rx_data == 8'h00);
             end
 
             CMD_SELF_TEST: begin
                 data_is_valid = (rx_data <= 8'd3);
-            end
-
-            /*
-             * 로그 개수 조회
-             */
-            CMD_READ_LOG_INFO: begin
-                data_is_valid = (rx_data == 8'h00);
-            end
-
-            /*
-             * 16-entry 로그이므로 index 0~15 허용
-             */
-            CMD_READ_LOG: begin
-                data_is_valid = (rx_data <= 8'd15);
-            end
-
-            /*
-             * 로그 초기화
-             */
-            CMD_CLEAR_LOG: begin
-                data_is_valid = (rx_data == 8'h00);
             end
 
             default: begin
@@ -182,7 +143,6 @@ module packet_parser #(
             risk_level                <= 2'd0;
             risk_valid                <= 1'b0;
 
-            read_status_req           <= 1'b0;
             clear_error_req           <= 1'b0;
 
             self_test_mode            <= 2'd0;
@@ -195,30 +155,19 @@ module packet_parser #(
             checksum_error_latched    <= 1'b0;
             protocol_error_latched    <= 1'b0;
             timeout_error_latched     <= 1'b0;
-
-            read_log_info_req <= 1'b0;
-            read_log_req      <= 1'b0;
-            read_log_index    <= 4'd0;
-            clear_log_req     <= 1'b0;
-
         end
         else begin
             /*
              * 이벤트 출력은 모두 1클럭 펄스
              */
             packet_valid            <= 1'b0;
-            risk_valid              <= 1'b0;
-            read_status_req         <= 1'b0;
-            clear_error_req         <= 1'b0;
-            self_test_valid         <= 1'b0;
+            risk_valid               <= 1'b0;
+            clear_error_req          <= 1'b0;
+            self_test_valid          <= 1'b0;
 
-            checksum_error          <= 1'b0;
-            protocol_error          <= 1'b0;
-            interbyte_timeout_error <= 1'b0;
-
-            read_log_info_req <= 1'b0;
-            read_log_req      <= 1'b0;
-            clear_log_req     <= 1'b0;
+            checksum_error           <= 1'b0;
+            protocol_error           <= 1'b0;
+            interbyte_timeout_error  <= 1'b0;
 
             /*
              * 새 바이트 수신을 timeout보다 우선 처리한다.
@@ -300,10 +249,6 @@ module packet_parser #(
                                     risk_valid <= 1'b1;
                                 end
 
-                                CMD_READ_STATUS: begin
-                                    read_status_req <= 1'b1;
-                                end
-
                                 CMD_CLEAR_ERROR: begin
                                     clear_error_req <= 1'b1;
 
@@ -318,19 +263,6 @@ module packet_parser #(
                                 CMD_SELF_TEST: begin
                                     self_test_mode  <= data_reg[1:0];
                                     self_test_valid <= 1'b1;
-                                end
-                                
-                                CMD_READ_LOG_INFO: begin
-                                    read_log_info_req <= 1'b1;
-                                end
-
-                                CMD_READ_LOG: begin
-                                    read_log_index <= data_reg[3:0];
-                                    read_log_req   <= 1'b1;
-                                end
-
-                                CMD_CLEAR_LOG: begin
-                                    clear_log_req <= 1'b1;
                                 end
 
                                 default: begin
