@@ -1,6 +1,6 @@
 module top #(
-    parameter integer CLK_FREQ_HZ  = 27_000_000,
-    parameter integer BAUD_RATE    = 115200,
+    parameter integer CLK_FREQ_HZ    = 27_000_000,
+    parameter integer BAUD_RATE      = 115200,
     parameter integer LED_ACTIVE_LOW = 0
 )(
     input  wire       clk,
@@ -16,6 +16,27 @@ module top #(
     output wire       buzzer_out
 );
 
+    /*
+     * ------------------------------------------------------------
+     * v2 아키텍처 요약
+     *
+     * FPGA는 "Pi가 죽거나 통신이 끊겨도 하드웨어로 보장되어야 하는
+     * 안전 최종 방어선" 역할만 맡는다.
+     *
+     *   Pi -> FPGA : SET_RISK / CLEAR_ERROR / SELF_TEST 3개 명령만
+     *   FPGA -> Pi : 상태 조회 응답 없음. 상태 변화 이벤트와
+     *                200ms 주기 heartbeat(현재 상태 요약 포함)를
+     *                FPGA가 스스로 push한다.
+     *
+     * 이력 로그의 저장/조회는 Pi가 수신한 이벤트를 자체 DB에
+     * 기록하는 방식으로 이관했다. FPGA에는 더 이상 이력을
+     * 저장하지 않고, UART가 잠깐 바쁠 때 이벤트 순서를 보장하기
+     * 위한 8-depth 전송 FIFO만 남겼다(event_tx_fifo).
+     * ------------------------------------------------------------
+     */
+
+    localparam [7:0] EVENT_HEARTBEAT = 8'h0E;
+
     wire [7:0] rx_data;
     wire       rx_valid;
     wire       framing_error;
@@ -24,16 +45,10 @@ module top #(
     wire [1:0] risk_level;
     wire       risk_valid;
 
-    wire       read_status_req;
     wire       clear_error_req;
 
     wire [1:0] self_test_mode;
     wire       self_test_valid;
-
-    wire       read_log_info_req;
-    wire       read_log_req;
-    wire [3:0] read_log_index;
-    wire       clear_log_req;
 
     wire       checksum_error;
     wire       protocol_error;
@@ -58,7 +73,9 @@ module top #(
     wire [2:0] warning_state;
     wire [1:0] led_pattern_out;
 
+    wire       risk_is_safe;
     wire       safety_override;
+    wire       self_test_output_enable;
     wire [1:0] selected_led_pattern;
 
     wire       self_test_active;
@@ -73,20 +90,36 @@ module top #(
     wire       uart_tx_start;
     wire       uart_tx_busy;
     wire       uart_tx_done;
-    wire       uart_response_busy;
 
-    wire        tick_1ms;
-    wire [31:0] timestamp_ms;
+    /*
+     * 이벤트 소스 (상태 변화 이벤트 + 주기적 heartbeat)
+     */
+    wire        event_valid;
+    wire [7:0]  event_code;
+    wire [7:0]  event_detail;
 
-    wire       event_valid;
-    wire [7:0] event_code;
-    wire [7:0] event_detail;
+    wire        heartbeat_valid;
+    wire [7:0]  heartbeat_detail;
 
-    wire [63:0] event_log_read_data;
-    wire        event_log_read_valid;
-    wire [4:0]  event_log_count;
-    wire [3:0]  event_log_write_pointer;
-    wire        event_log_full;
+    wire        push_valid  = event_valid | heartbeat_valid;
+    wire [7:0]  push_code   = event_valid ? event_code   : EVENT_HEARTBEAT;
+    wire [7:0]  push_detail = event_valid ? event_detail : heartbeat_detail;
+
+    /*
+     * 전송 FIFO <-> event_uart_tx
+     */
+    wire        fifo_empty;
+    wire [7:0]  fifo_code;
+    wire [7:0]  fifo_detail;
+    wire [2:0]  fifo_seq;
+    wire        fifo_overflow;
+    wire        fifo_pop;
+
+    /*
+     * self_test_controller가 실제로 실행 중인 모드.
+     */
+    wire [1:0] self_test_active_mode;
+
 
     uart_rx #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
@@ -113,7 +146,6 @@ module top #(
         .risk_level              (risk_level),
         .risk_valid              (risk_valid),
 
-        .read_status_req         (read_status_req),
         .clear_error_req         (clear_error_req),
         .self_test_mode          (self_test_mode),
         .self_test_valid         (self_test_valid),
@@ -124,17 +156,12 @@ module top #(
 
         .checksum_error_latched  (checksum_error_latched),
         .protocol_error_latched  (protocol_error_latched),
-        .timeout_error_latched   (timeout_error_latched),
-
-        .read_log_info_req       (read_log_info_req),
-        .read_log_req            (read_log_req),
-        .read_log_index          (read_log_index),
-        .clear_log_req           (clear_log_req)
+        .timeout_error_latched   (timeout_error_latched)
     );
 
     /*
-     * SET_RISK만 heartbeat로 인정한다.
-     * READ_STATUS/READ_LOG만 반복해 watchdog이 해제되는 것을 방지한다.
+     * SET_RISK만 heartbeat(watchdog 리셋)로 인정한다.
+     * Pi -> FPGA 생존 감시.
      */
     watchdog #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
@@ -213,19 +240,31 @@ module top #(
         .rst_n              (rst_n),
         .self_test_mode     (self_test_mode),
         .self_test_valid    (self_test_valid),
+        .effective_risk     (effective_risk),
         .comm_error         (comm_error),
         .estop_active       (estop_active),
         .self_test_active   (self_test_active),
+        .active_mode        (self_test_active_mode),
         .test_led_out       (self_test_led_out),
         .test_buzzer_enable (self_test_buzzer_enable),
         .self_test_done     (self_test_done),
         .self_test_rejected (self_test_rejected)
     );
 
-    assign safety_override = estop_active || comm_error;
+    assign risk_is_safe =
+        (effective_risk == 2'd0);
+
+    assign safety_override =
+        estop_active ||
+        comm_error ||
+        !risk_is_safe;
+
+    assign self_test_output_enable =
+        self_test_active &&
+        !safety_override;
 
     assign selected_led_pattern =
-        (self_test_active && !safety_override)
+        self_test_output_enable
         ? self_test_led_out
         : led_pattern_out;
 
@@ -238,46 +277,81 @@ module top #(
     ) u_buzzer_ctrl (
         .clk           (clk),
         .rst_n         (rst_n),
-        .test_override (self_test_active && !safety_override),
+        .test_override (self_test_output_enable),
         .test_enable   (self_test_buzzer_enable),
         .warning_state (warning_state),
         .buzzer_out    (buzzer_out),
         .buzzer_enable (final_buzzer_active)
     );
 
-    uart_response_controller u_uart_response_controller (
-    .clk                    (clk),
-    .rst_n                  (rst_n),
+    event_detector u_event_detector (
+    .clk                     (clk),
+    .rst_n                   (rst_n),
+    .checksum_error          (checksum_error),
+    .protocol_error          (protocol_error),
+    .interbyte_timeout_error (interbyte_timeout_error),
+    .framing_error           (framing_error),
+    .comm_error              (comm_error),
+    .estop_active            (estop_active),
+    .effective_risk          (effective_risk),
+    .self_test_active        (self_test_active),
+    .self_test_active_mode   (self_test_active_mode),
+    .self_test_requested_mode(self_test_mode),
+    .self_test_rejected      (self_test_rejected),
+    .clear_error_req         (clear_error_req),
+    .event_valid             (event_valid),
+    .event_code              (event_code),
+    .event_detail            (event_detail)
+    );
 
-    .read_status_req        (read_status_req),
-    .read_log_info_req      (read_log_info_req),
-    .read_log_req           (read_log_req),
+    heartbeat_gen #(
+        .CLK_FREQ_HZ(CLK_FREQ_HZ),
+        .PERIOD_MS  (200)
+    ) u_heartbeat_gen (
+        .clk                    (clk),
+        .rst_n                  (rst_n),
+        .warning_state          (warning_state),
+        .self_test_active       (self_test_active),
+        .latch_active           (latch_active),
+        .checksum_error_latched (checksum_error_latched),
+        .protocol_error_latched (protocol_error_latched),
+        .timeout_error_latched  (timeout_error_latched),
+        .heartbeat_valid        (heartbeat_valid),
+        .heartbeat_detail       (heartbeat_detail)
+    );
 
-    .effective_risk         (effective_risk),
-    .comm_error             (comm_error),
-    .estop_active           (estop_active),
-    .latch_active           (latch_active),
+    event_tx_fifo u_event_tx_fifo (
+        .clk          (clk),
+        .rst_n        (rst_n),
 
-    .checksum_error_latched (checksum_error_latched),
-    .protocol_error_latched (protocol_error_latched),
-    .timeout_error_latched  (timeout_error_latched),
+        .push_valid   (push_valid),
+        .push_code    (push_code),
+        .push_detail  (push_detail),
 
-    .log_count              (event_log_count),
-    .log_full               (event_log_full),
+        .pop          (fifo_pop),
+        .pop_code     (fifo_code),
+        .pop_detail   (fifo_detail),
+        .fifo_empty   (fifo_empty),
+        .pop_seq      (fifo_seq),
+        .pop_overflow (fifo_overflow)
+    );
 
-    .log_read_index         (read_log_index),
-    .log_read_data          (event_log_read_data),
-    .log_read_valid         (event_log_read_valid),
+    event_uart_tx u_event_uart_tx (
+        .clk           (clk),
+        .rst_n         (rst_n),
 
-    .tx_busy                (uart_tx_busy),
-    .tx_done                (uart_tx_done),
+        .fifo_empty    (fifo_empty),
+        .fifo_code     (fifo_code),
+        .fifo_detail   (fifo_detail),
+        .fifo_seq      (fifo_seq),
+        .fifo_overflow (fifo_overflow),
+        .fifo_pop      (fifo_pop),
 
-    .tx_data                (uart_tx_data),
-    .tx_start               (uart_tx_start),
-
-    .response_busy          (uart_response_busy)
-);
-
+        .tx_busy       (uart_tx_busy),
+        .tx_done       (uart_tx_done),
+        .tx_data       (uart_tx_data),
+        .tx_start      (uart_tx_start)
+    );
 
     uart_tx #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
@@ -291,65 +365,5 @@ module top #(
         .tx_busy  (uart_tx_busy),
         .tx_done  (uart_tx_done)
     );
-
-    timestamp_counter #(
-        .CLK_FREQ_HZ(CLK_FREQ_HZ)
-    ) u_timestamp_counter (
-        .clk         (clk),
-        .rst_n       (rst_n),
-        .tick_1ms    (tick_1ms),
-        .timestamp_ms(timestamp_ms)
-    );
-
-    event_detector u_event_detector (
-        .clk                     (clk),
-        .rst_n                   (rst_n),
-        .checksum_error          (checksum_error),
-        .protocol_error          (protocol_error),
-        .interbyte_timeout_error (interbyte_timeout_error),
-        .framing_error           (framing_error),
-        .comm_error              (comm_error),
-        .estop_active            (estop_active),
-        .risk_level              (risk_level),
-        .self_test_active        (self_test_active),
-        .self_test_mode          (self_test_mode),
-        .self_test_rejected      (self_test_rejected),
-        .clear_error_req         (clear_error_req),
-        .event_valid             (event_valid),
-        .event_code              (event_code),
-        .event_detail            (event_detail)
-    );
-
-    event_logger u_event_logger (
-        .clk                    (clk),
-        .rst_n                  (rst_n),
-        .event_valid            (event_valid),
-        .event_code             (event_code),
-        .event_detail           (event_detail),
-        .timestamp_ms           (timestamp_ms),
-        .effective_risk         (effective_risk),
-        .warning_state          (warning_state),
-        .estop_active           (estop_active),
-        .comm_error             (comm_error),
-        .latch_active           (latch_active),
-        .checksum_error_latched (checksum_error_latched),
-        .protocol_error_latched (protocol_error_latched),
-        .timeout_error_latched  (timeout_error_latched),
-        .self_test_active       (self_test_active),
-        .led_active_pattern     (selected_led_pattern),
-        .buzzer_active          (final_buzzer_active),
-        .clear_log_req          (clear_log_req),
-        .read_index             (read_log_index),
-        .read_data              (event_log_read_data),
-        .read_valid             (event_log_read_valid),
-        .log_count              (event_log_count),
-        .write_pointer          (event_log_write_pointer),
-        .log_full               (event_log_full)
-    );
-
-    /*
-     * read_log_info_req/read_log_req는 다음 단계의 log_response에서 사용한다.
-     * 현재 단계에서는 parser와 event_logger의 read port까지만 연결된 상태다.
-     */
 
 endmodule
