@@ -1,6 +1,7 @@
 {
     "SkeletonPortNumber": "auto",
     "ContainerName": "ArUCoDetector",
+    "AcceptLocalOnly": false,
     "SchedulerNames": [
         "EComponents::eScheduler1",
         "DetectorManagerScheduler"
@@ -32,6 +33,11 @@
             "LocalComponentName": "MetadataManager_0",
             "ContainerName": "System",
             "RemoteComponentName": "MetadataManager_0"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_0",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_0"
         }
     ]
 }

@@ -11,6 +11,9 @@
 #include "i_metadata_manager.h"
 #include "i_p_metadata_manager.h"
 #include "i_p_open_platform_manager.h"
+#include "i_p_stream_provider_manager_video_raw.h"  // raw 비디오 구독/이벤트
+#include "i_pl_video_frame_raw.h"                   // IPLVideoFrameRaw
+#include "i_p_video_frame_raw.h"                    // IPVideoFrameRaw / RawImage
 
 #include "aruco_detector.h"      // StringToDict
 #include "camera_credentials.h"  // LoadCameraCredentials
@@ -51,7 +54,7 @@ DetectorManager::~DetectorManager() {
 bool DetectorManager::Initialize() {
   RegisterURI();
   bool ok = Component::Initialize();
-  RestartWorkers();   // 저장된 settings대로 채널 워커 기동
+  // RestartWorkers();   // [raw 테스트] HTTP 폴링 중지 — raw 비디오(eVideoRawData) 경로만 사용
   return ok;
 }
 
@@ -68,6 +71,10 @@ bool DetectorManager::ProcessAEvent(Event* event) {
     }
     case static_cast<int32_t>(IPMetadataManager::EEventType::eMetadataRequest): {
       ProcessMetadata(event);
+      break;
+    }
+    case static_cast<int32_t>(IPStreamProviderManagerVideoRaw::EEventType::eVideoRawData): {
+      ProcessRawVideo(event);
       break;
     }
     default:
@@ -197,6 +204,44 @@ void DetectorManager::ProcessMetadata(Event* event) {
   if (attachment) {
     std::cout << "[DetectorManager][MetadataEcho] channel=" << attachment->channel() << " output=" << attachment->output() << std::endl;
   }
+}
+
+// SPMgrVideoRaw가 밀어주는 raw 비디오 프레임(eVideoRawData)을 받아 ArUco를 검출한다.
+// HTTP 스냅샷 폴링(ChannelWorker)과 달리 push 방식이라 별도 폴링 루프가 없다.
+// 프레임 버퍼 수명관리 순서를 반드시 지켜야 한다(더블프리/OOM/use-after-free 방지).
+void DetectorManager::ProcessRawVideo(Event* event) {
+  if (event == nullptr || event->IsReply()) {
+    return;
+  }
+
+  // 스로틀: N프레임마다 1회만 검출한다 (cv5 SoC 부하 방지).
+  bool do_detect = (raw_frame_count_++ % raw_detect_every_ == 0);
+
+  // 1) 이벤트에서 프레임 blob을 떼어낸다(detach). 안 하면 이벤트 소멸 시 이중 해제된다.
+  auto blob = event->GetBlobArgument();
+  event->ClearBaseObjectArgument();
+
+  std::pair<std::variant<BaseObject*, char*>, uint64_t> ret((char*)blob.GetRawData(), blob.GetSize());
+
+  IPVideoFrameRaw* raw_frame = new ("GetImage") IPLVideoFrameRaw(this, GetChannel());
+  raw_frame->DeserializeBaseObject(raw_frame, ret);
+
+  std::shared_ptr<RawImage> img(raw_frame->GetRawImage());
+  if (img && do_detect) {
+    // 2) YUV의 Y평면 = grayscale. cvtColor 없이 참조로 cv::Mat을 감싼다(stride=pitch).
+    cv::Mat gray(static_cast<int>(img->height), static_cast<int>(img->width), CV_8UC1,
+                 reinterpret_cast<void*>(img->plane[0].vir_addr), static_cast<size_t>(img->pitch));
+
+    // 3) 검출은 반드시 blob.ClearResource() '이전'에 끝낸다.
+    //    gray가 SDK 버퍼를 복사 없이 참조하므로, 해제 후 사용하면 use-after-free.
+    DetectionResult r = raw_detector_.Detect(gray);
+    std::cout << "[RawVideo] frame " << img->width << "x" << img->height
+              << " pitch=" << img->pitch << " markers=" << r.ids.size() << std::endl;
+    SendMetadata(GetChannel() + 1, r.ids, r.corners);  // 앱 채널표기는 1-based
+  }
+
+  blob.ClearResource();   // 4) 프레임 버퍼 해제 (안 하면 고FPS라 금방 OOM)
+  delete raw_frame;       // 5) 프레임 객체 해제
 }
 
 void DetectorManager::HandleGetSettings(OpenAppSerializable* oas) {
