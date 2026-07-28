@@ -9,7 +9,7 @@
 
 // Draws person/forklift detection boxes, a connecting line, and the
 // reported distance on top of a CameraVideoView. Kept independent from
-// CameraVideoItem -- it only needs the same video-native size (bound from
+// VideoStream -- it only needs the same video-native size (bound from
 // QML) to letterbox-align itself with the frame underneath, via the same
 // AspectFit helper.
 class DetectionOverlay : public QQuickPaintedItem

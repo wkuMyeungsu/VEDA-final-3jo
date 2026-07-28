@@ -15,21 +15,16 @@
 1. `forklift-device/qt/config/cameras.json`에서 해당 카메라의 `source_type`을
    `"mock"` → `"rtsp"`로, `rtsp_url`을 실제 스트림 주소로 바꿉니다. (재빌드
    불필요 — 실행 파일 옆의 `config/` 디렉터리를 직접 수정하면 됩니다.)
-2. `forklift-device/qt/common/video/RtspVideoSource.cpp`의 `start()`를
-   구현합니다. 현재는 GStreamer 파이프라인이 없다는 경고를 남기고
-   `DISCONNECTED` 상태로 전환할 뿐입니다. 실제 구현 시:
-   - `rtspsrc location=<rtspUrl> ! decodebin ! videoconvert ! appsink` 형태의
-     파이프라인을 워커 스레드에서 구성합니다.
-   - appsink에서 받은 버퍼를 `QImage`로 변환해 `emit frameReady(image)`를
-     호출합니다.
-   - 파이프라인 상태 변화에 맞춰 `setConnectionState(Connecting/Connected/
-     Disconnected)`를 호출합니다(이 protected 헬퍼는 `IVideoSource`에 이미
-     있습니다).
+2. `forklift-device/qt/common/video/RtspVideoSource.cpp`: 구현 완료.
+   - 파이프라인: `rtspsrc ! rtph264depay ! h264parse ! avdec_h264 !
+     videoconvert ! appsink`
+   - 재연결: 버스 ERROR/EOS 감지 시 자동 재시도
+   - 실카메라 검증 완료. operator-device와 동일 구현체 — 수정 시 양쪽 반영
 3. `VideoSourceManager::createSource()`
    (`forklift-device/qt/common/video/VideoSourceManager.cpp`)는 이미
    `source_type == "rtsp"`일 때 `RtspVideoSource`를 생성하도록 되어 있으므로
    수정할 필요가 없습니다.
-4. `CameraVideoItem`, `DetectionOverlay`, operator_terminal의 QML은
+4. `VideoStream`, `DetectionOverlay`, operator_terminal의 QML은
    `IVideoSource` 인터페이스만 알고 있으므로 전혀 수정할 필요가 없습니다.
 
 ## 2. 중앙 서버 메타데이터 스트림 연동

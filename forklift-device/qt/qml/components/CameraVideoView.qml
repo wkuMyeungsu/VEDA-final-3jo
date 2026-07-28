@@ -1,7 +1,7 @@
 import QtQuick
 import Safety.Common
 
-// Composes the C++ CameraVideoItem (video surface) with a DetectionOverlay
+// Composes the C++ VideoStream (video surface) with a DetectionOverlay
 // on top. UI code just sets cameraId/personBBox/forkliftBBox/distanceM --
 // it never touches the video source directly, so it never knows whether
 // that camera is Mock, a local file, or RTSP.
@@ -17,7 +17,7 @@ Item {
     readonly property real fps: videoItem.fps
     readonly property size videoNativeSize: videoItem.videoSize
 
-    CameraVideoItem {
+    VideoStream {
         id: videoItem
         anchors.fill: parent
         cameraId: root.cameraId

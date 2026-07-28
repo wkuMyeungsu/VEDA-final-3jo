@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <gst/gst.h>
 
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
@@ -17,6 +18,9 @@
 
 int main(int argc, char *argv[])
 {
+    // RtspVideoSource가 GStreamer API를 쓰기 전에 반드시 한 번 필요
+    gst_init(&argc, &argv);
+
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyOperatorTerminal"));
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));

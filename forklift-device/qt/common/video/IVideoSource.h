@@ -6,7 +6,7 @@
 #include "../models/Types.h"
 
 // Abstraction over "however we get decoded video frames for one camera".
-// CameraVideoItem and the rest of the UI only ever talk to this interface;
+// VideoStream and the rest of the UI only ever talk to this interface;
 // VideoSourceManager decides which concrete implementation (Mock,
 // LocalFile, Rtsp) to instantiate based on config/cameras.json.
 class IVideoSource : public QObject
