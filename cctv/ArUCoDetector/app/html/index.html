@@ -155,6 +155,12 @@
           </div>
           <p class="muted" style="margin-top: 10px;">2초마다 자동 갱신. 채널 On/Off는 [설정]에서 변경.</p>
         </section>
+
+        <section>
+          <h2>실시간 로그 <span class="muted" style="font-weight:400;">(raw 검출)</span></h2>
+          <pre id="log_view" style="max-height: 320px; overflow-y: auto; margin-top: 0;">—</pre>
+          <p class="muted" style="margin-top: 8px;">2초마다 자동 갱신 · 최근 200줄</p>
+        </section>
       </div>
 
       <!-- ===================== 메인 > 설정 ===================== -->
@@ -318,9 +324,9 @@
     let statusTimer = null;
 
     function startStatusPolling() {
-      loadStatus();                              // 진입 즉시 1회
+      loadStatus(); loadLogs();                  // 진입 즉시 1회
       if (statusTimer) return;                   // 이미 돌면 중복 방지
-      statusTimer = setInterval(loadStatus, 2000);
+      statusTimer = setInterval(() => { loadStatus(); loadLogs(); }, 2000);
     }
     function stopStatusPolling() {
       if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
@@ -374,6 +380,21 @@
           }
         })
         .catch(() => { /* 조용히 무시하고 다음 주기에 재시도 */ });
+    }
+
+    // ---- 실시간 로그: GET /logs (plain text) 주기 폴링 ----
+    function loadLogs() {
+      fetch(base_uri + '/logs')
+        .then(r => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))
+        .then(text => {
+          const el = document.getElementById('log_view');
+          if (!el) return;
+          // 사용자가 하단을 보고 있었으면 새 로그를 따라 스크롤(위로 올려 읽는 중이면 방해 안 함)
+          const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+          el.textContent = text.trim() ? text : '(로그 없음)';
+          if (atBottom) el.scrollTop = el.scrollHeight;
+        })
+        .catch(() => {});
     }
 
     // ---- 설정 변경 모드: 버튼으로 토글 (켰을 때만 설정 변경 가능) ----

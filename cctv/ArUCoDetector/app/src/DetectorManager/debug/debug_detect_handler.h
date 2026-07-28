@@ -19,8 +19,12 @@ namespace DebugDetectHandler {
 // (SendNoReplyEvent가 컴포넌트 멤버라 debug 핸들러가 직접 못 부르므로 콜백으로 주입).
 using SendMetadataFn = std::function<void(int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners)>;
 
-// 스냅샷 1장 → (해상도 맞으면 undistort) → 검출 → 메타데이터 전송
+// 프레임 1장을 공급하는 콜백(주입). raw 비디오 경로가 캐시한 최신 프레임을 BGR로 돌려준다.
+// 실패(아직 프레임 없음 등) 시 빈 Mat + error 설정.
+using FrameProviderFn = std::function<cv::Mat(int channel, std::string& error)>;
+
+// 주입된 프레임 1장 → (해상도 맞으면 undistort) → 검출 → 메타데이터 전송
 // → 검출 오버레이를 그린 프리뷰 이미지(base64)를 포함한 JSON 응답.
-void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metadata);
+void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metadata, const FrameProviderFn& get_frame);
 
 }  // namespace DebugDetectHandler
