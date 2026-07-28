@@ -53,7 +53,7 @@ std::string Base64Encode(const std::vector<unsigned char>& data) {
 
 namespace DebugDetectHandler {
 
-void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metadata) {
+void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metadata, const FrameProviderFn& get_frame) {
   std::string query = oas->GetFCGXParam("QUERY_STRING");
   // ?ch=3 파싱
   int channel = 1;
@@ -69,14 +69,12 @@ void HandleDetectOnce(OpenAppSerializable* oas, const SendMetadataFn& send_metad
     undistort_requested = (std::atoi(query.c_str() + upos + 10) != 0);
   }
 
-  // 1) 스냅샷 + 디코딩 (FrameSource)
-  CameraCredentials creds = LoadCameraCredentials();
-  FrameSource source(creds);
+  // 1) 프레임 획득 — 주입된 provider(raw 비디오 최신 프레임)에서 1장 가져온다.
   std::string error;
-  cv::Mat img = source.Acquire(channel, error);
+  cv::Mat img = get_frame(channel, error);
   if (img.empty()) {
-    oas->SetStatusCode(502);
-    oas->SetResponseBody("스냅샷/디코딩 실패: " + error);
+    oas->SetStatusCode(503);
+    oas->SetResponseBody("프레임 없음: " + error);
     return;
   }
 
