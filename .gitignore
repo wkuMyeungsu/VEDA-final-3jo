@@ -6,6 +6,7 @@
 *.csr
 rtsp_credentials*
 .env
+operator-device/qt/config/cameras.json
 
 # 데모 영상
 *.mp4
