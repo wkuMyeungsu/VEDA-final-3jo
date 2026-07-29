@@ -16,3 +16,9 @@ add_executable(danger_engine
 
 # ResultPublisher.h는 헤더 온리이므로 소스 추가 없이 include 경로만 있으면 된다(같은 디렉터리).
 target_link_libraries(danger_engine PRIVATE Threads::Threads)
+
+# ResultPublisher 송신 큐 스트레스 테스트 (루프백 TCP 사용, 종료코드 0=성공)
+add_executable(test_result_publisher
+    test_result_publisher.cpp
+)
+target_link_libraries(test_result_publisher PRIVATE Threads::Threads)
