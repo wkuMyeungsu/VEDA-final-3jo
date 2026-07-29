@@ -18,6 +18,7 @@
 // 실행: ./test_result_publisher   (종료코드 0=성공, 1=실패)
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <thread>
@@ -174,6 +175,39 @@ void testDropsOldestOnOverflow() {
           "마지막 건은 150번");
 }
 
+// 드랍 로그 rate limit: 카운터는 매번 정확히 증가하되 stderr는 첫 1건 + 100건마다 요약.
+// publish()만 호출하므로(워커 미기동) 로그 줄 수가 결정적이다.
+void testDropLogRateLimit() {
+    std::cout << "\n[테스트 3] 드랍 로그 rate limit - 첫 1건 + 100건마다 요약\n";
+
+    risk_transport::ResultPublisher publisher("127.0.0.1", kTestPort);
+
+    // 큐 용량 100 + 드랍 250건 = 350건 publish
+    const int kCount = 350;
+    const std::size_t kExpectedDrops = 250;
+
+    std::ostringstream captured;
+    std::streambuf* saved = std::cerr.rdbuf(captured.rdbuf());
+    for (int i = 1; i <= kCount; ++i) publisher.publish(makeMessage(i));
+    std::cerr.rdbuf(saved);
+
+    std::size_t log_lines = 0;
+    for (char c : captured.str()) if (c == '\n') ++log_lines;
+
+    check(publisher.droppedCount() == kExpectedDrops,
+          "드랍 카운터는 매번 증가해 " + std::to_string(kExpectedDrops) +
+          " (실제: " + std::to_string(publisher.droppedCount()) + ")");
+    // 로그 시점: 1번째, 101번째, 201번째 -> 3줄
+    check(log_lines == 3,
+          "stderr 3줄만 출력 (실제: " + std::to_string(log_lines) + "줄, rate limit 없으면 " +
+          std::to_string(kExpectedDrops) + "줄)");
+
+    std::cout << "  --- 실제 stderr 출력 ---\n";
+    std::istringstream lines(captured.str());
+    std::string line;
+    while (std::getline(lines, line)) std::cout << "  | " << line << "\n";
+}
+
 } // namespace
 
 int main() {
@@ -181,6 +215,7 @@ int main() {
 
     testNoDropWithinCapacity();
     testDropsOldestOnOverflow();
+    testDropLogRateLimit();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";

@@ -55,9 +55,21 @@ public:
             std::lock_guard<std::mutex> lk(mtx_);
             if (queue_.size() >= max_queue_size_) {
                 queue_.pop_front();
+                // 카운터는 매 드랍마다 증가시키고(droppedCount()는 항상 정확),
+                // stderr 로그만 rate limit한다. 수신 측이 오래 느려지면 드랍이 연속으로
+                // 발생하는데, 건건이 찍으면 unbuffered stderr가 판정 루프까지 느리게 만든다.
                 std::size_t total = ++dropped_overflow_;
-                std::cerr << "[ResultPublisher] queue full (max=" << max_queue_size_
-                          << ") - 가장 오래된 결과 1건 드랍 (누적 드랍=" << total << ")\n";
+                if (total == 1) {
+                    // 첫 드랍은 즉시 (백프레셔가 시작됐다는 신호)
+                    std::cerr << "[ResultPublisher] queue full (max=" << max_queue_size_
+                              << ") - 가장 오래된 결과 1건 드랍 (누적 드랍=" << total << ")\n";
+                    last_logged_drop_total_ = total;
+                } else if (total - last_logged_drop_total_ >= drop_log_interval_) {
+                    // 이후로는 drop_log_interval_건마다 요약 1줄
+                    std::cerr << "[ResultPublisher] dropped " << (total - last_logged_drop_total_)
+                              << " more (total: " << total << ")\n";
+                    last_logged_drop_total_ = total;
+                }
             }
             queue_.push_back(json);
         }
@@ -198,6 +210,12 @@ private:
 
     std::atomic<std::size_t> dropped_overflow_{0};
     std::atomic<std::size_t> send_failures_{0};
+
+    // 드랍 로그 rate limit 상태 (publish() 안에서만 접근하므로 mtx_로 보호됨).
+    // 첫 1건은 즉시 찍고, 그 뒤로는 마지막 로그 이후 drop_log_interval_건이
+    // 쌓일 때마다 요약 1줄만 찍는다.
+    std::size_t last_logged_drop_total_ = 0;
+    std::size_t drop_log_interval_ = 100;
 
     std::function<void(LinkState)> onStateChange_;
 };
