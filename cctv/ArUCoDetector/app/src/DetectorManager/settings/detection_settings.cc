@@ -1,5 +1,6 @@
 #include "detection_settings.h"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -74,7 +75,8 @@ bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& se
     settings.dictionary_name = doc["dictionary_name"].GetString();
   }
   if (doc.HasMember("poll_interval_ms") && doc["poll_interval_ms"].IsInt()) {
-    settings.poll_interval_ms = doc["poll_interval_ms"].GetInt();
+    // UI든 직접 API 호출이든, 어느 경로로 와도 여기서 최종적으로 범위를 강제한다.
+    settings.poll_interval_ms = std::clamp(doc["poll_interval_ms"].GetInt(), kMinPollIntervalMs, kMaxPollIntervalMs);
   }
   if (doc.HasMember("calibration_path") && doc["calibration_path"].IsString()) {
     settings.calibration_path = doc["calibration_path"].GetString();
