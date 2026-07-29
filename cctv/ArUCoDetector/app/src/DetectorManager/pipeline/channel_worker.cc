@@ -4,57 +4,54 @@
 #include <ctime>     // std::time_t, std::gmtime
 #include <iomanip>   // std::put_time
 #include <sstream>   // std::ostringstream
-#include <time.h>    // clock_gettime, CLOCK_THREAD_CPUTIME_ID (순수 스레드 CPU 시간)
+#include <time.h>    // clock_gettime, CLOCK_THREAD_CPUTIME_ID (POSIX, 스레드별 CPU 시간)
 
-#include "frame_preprocessor.h" // TryUndistort, ConvertToGrayscale
+#include "frame_preprocessor.h" // TryUndistort
 
 namespace {
-    // 이 스레드가 실제로 CPU 코어에서 수행된 시간만 측정한다 (ms 단위).
-    // 다른 스레드/프로세스에 밀려 CPU를 뺏기고 대기한 시간(경합)은 포함되지 않는다.
-    // latency_ms(벽시계) - ThreadCpuTimeMs()(CPU시간) = 경합으로 소모된 대기시간.
-    int64_t ThreadCpuTimeMs() {
-        struct timespec ts;
-        if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
-            return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
-        }
-        return 0;
+    // 지금 시각(UTC)을 "2026-07-24T09:00:00.123Z" 같은 ISO8601(밀리초 포함) 문자열로 만든다.
+    // (이 파일 안에서만 쓰는 헬퍼라 익명 namespace에 둠 → 바깥에 이름 노출 안 됨)
+    // 밀리초가 꼭 필요함: 채널당 검출 주기가 1초보다 짧으면 같은 초 안에 검출이 2번 이상
+    // 끝날 수 있는데, 초 단위까지만 찍으면 문자열이 똑같아져서(예: 지연 측정 UI가
+    // "last_detect가 바뀌었는지"로 새 표본을 판단) 뒤 검출이 조용히 유실된다.
+    std::string NowIso8601() {
+        auto now = std::chrono::system_clock::now();               // 현재 벽시계 시각
+        std::time_t t = std::chrono::system_clock::to_time_t(now); // C 스타일 time_t로 변환
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+        std::tm tm = *std::gmtime(&t);                             // time_t → UTC 분해시각(년/월/일/시…)
+        std::ostringstream ss;
+        ss << std::put_time(&tm, "%FT%T.")                         // %F=날짜, T, %T=시:분:초
+           << std::setfill('0') << std::setw(3) << ms.count() << "Z";
+        return ss.str();
     }
 
-    // 지금 시각(UTC)을 "2026-07-24T09:00:00.123Z" 같은 밀리초 해상도 ISO8601 문자열로 만든다.
-    std::string NowIso8601() {
-        auto now = std::chrono::system_clock::now();
-        std::time_t t = std::chrono::system_clock::to_time_t(now);
-        std::tm tm = *std::gmtime(&t);
-
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      now.time_since_epoch()) % 1000;
-
-        std::ostringstream ss;
-        ss << std::put_time(&tm, "%T") << '.'
-           << std::setfill('0') << std::setw(3) << ms.count() << 'Z';
-        // 날짜 포함 예: 2026-07-24T09:00:00.123Z
-        char date_buf[16];
-        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%dT", &tm);
-        return std::string(date_buf) + ss.str();
+    // 호출 스레드가 "실제로 CPU에서 실행된" 누적 시간(ms). CLOCK_THREAD_CPUTIME_ID는
+    // 이 스레드가 CPU를 점유한 시간만 세고, 다른 스레드에게 밀려 대기(경합)한 시간은
+    // 세지 않는다 — steady_clock(벽시계)과 대조해서 "경합으로 날아간 시간"을 가려내는 데 쓴다.
+    long long ThreadCpuTimeMs() {
+        struct timespec ts;
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+        return static_cast<long long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
     }
 } // namespace
 
 // 생성자: 구성값을 멤버에 저장하고, 캘리브레이션 파일을 한 번 로드한다.
 // (멤버는 헤더의 "선언 순서"대로 초기화됨 — 아래 초기화 리스트에 적은 순서가 아니라)
-ChannelWorker::ChannelWorker(int channel, const CameraCredentials& credentials,
+ChannelWorker::ChannelWorker(int channel, RawFrameStore* store,
                              const std::string& calib_path,
                              cv::aruco::PREDEFINED_DICTIONARY_NAME dict, bool undistort,
                              int poll_interval_ms, SendFn send)
     : channel_(channel),
       undistort_(undistort),
       poll_interval_ms_(poll_interval_ms),
-      source_(credentials),                       // credentials를 FrameSource 안에 값복사
+      source_(store),                             // raw 프레임 저장소 포인터를 FrameSource에 전달
       calib_(LoadCameraCalibration(calib_path)),  // 파일을 지금 한 번 읽어 결과 저장
       detector_(dict),                            // dict로 ArUco 사전 로드
       send_(std::move(send))                      // 콜백을 move로 가져옴(내부 클로저 복사 안 함)
 {
     // 이 시점엔 아직 워커 스레드가 없다(단일 스레드) → 락 없이 status_ 써도 안전.
     status_.calibration = calib_.valid;
+    status_.undistort_enabled = undistort_;  // 설정값(채널별 왜곡보정 토글) 그대로 노출
 }
 
 // 소멸자: 스레드를 반드시 정리한다. 안 하면
@@ -120,6 +117,18 @@ ChannelWorker::Status ChannelWorker::GetStatus() const
 // 폴링 루프. Start가 만든 워커 스레드 위에서 계속 돈다.
 void ChannelWorker::Loop()
 {
+    // 채널마다 첫 실행 시각을 살짝 어긋나게 한다(검출 알고리즘/정확도는 그대로,
+    // 여러 채널의 무거운 검출이 같은 순간에 몰려 CPU를 다투지 않도록 "타이밍만" 분산).
+    // 채널 4개 기준 poll_interval을 4등분해 0/4, 1/4, 2/4, 3/4 지점에서 시작하게 함.
+    {
+        std::unique_lock<std::mutex> lk(mtx_);
+        int stagger_ms = ((channel_ - 1) % 4) * (poll_interval_ms_ / 4);
+        if (stagger_ms > 0) {
+            cv_.wait_for(lk, std::chrono::milliseconds(stagger_ms), [this] { return !running_; });
+        }
+        if (!running_) return;   // 대기 중 Stop되면 루프 진입 전에 바로 종료
+    }
+
     while(true)
     {
         {
@@ -142,15 +151,15 @@ void ChannelWorker::Loop()
 // 파이프라인 1회. 무거운 일은 락 없이 하고, 마지막에 status_ 갱신할 때만 짧게 잠근다.
 void ChannelWorker::RunOnce()
 {
-    // 지연 측정 시작. steady_clock = 단조 증가 시계(구간 측정 전용, NTP 등에 안 튐).
-    // cpu0 = 순수 CPU 시간(CLOCK_THREAD_CPUTIME_ID). 코어 경합 분리용.
+    // 지연 측정 시작. steady_clock(벽시계, 경합 포함) + 스레드 CPU 시간(경합 미포함)을
+    // 나란히 잰다 — 둘의 차이가 "다른 채널에게 밀려 대기한 시간(경합)"이다.
     auto t0 = std::chrono::steady_clock::now();
-    int64_t cpu0 = ThreadCpuTimeMs();
+    long long cpu0 = ThreadCpuTimeMs();
 
-    // 1) 스냅샷 요청 + JPEG 디코딩. 실패하면 빈 Mat + error 문자열.
+    // 1) raw 저장소에서 이 채널의 최신 프레임(grayscale)을 가져온다. 실패하면 빈 Mat + error 문자열.
     std::string error;
-    cv::Mat color = source_.Acquire(channel_, error);
-    if (color.empty())
+    cv::Mat gray = source_.Acquire(channel_, error);
+    if (gray.empty())
     {
         // 이번 폴은 스킵(전송 안 함). 상태에 에러만 남긴다.
         std::lock_guard<std::mutex> lk(status_mtx_);
@@ -158,21 +167,21 @@ void ChannelWorker::RunOnce()
         return;
     }
 
-    // 2) (옵션) 왜곡보정 → grayscale.
-    //    undistort_가 false이거나 캘리브레이션 무효/해상도 불일치면 원본 그대로 gray.
-    bool undistorted; // 실제 보정 적용 여부(현재 상태엔 안 씀. 필요하면 /status에 추가 가능)
-    cv::Mat corrected = TryUndistort(color, calib_, undistort_, undistorted);
-    cv::Mat gray = ConvertToGrayscale(corrected);
+    // 2) (옵션) 왜곡보정. undistort_가 false이거나 캘리브레이션 무효/해상도 불일치면 원본 그대로.
+    //    raw는 이미 grayscale이라 BGR로 부풀렸다 되돌리는 왕복 변환 없이 gray에 바로 적용한다
+    //    (cv::undistort는 채널 수와 무관하게 동작 — grayscale이 컬러보다 3배 가볍다).
+    bool undistorted; // 실제 보정 적용 여부 (calib 유효 + 토글 on + 해상도 일치를 모두 만족해야 true) -> status_.undistort_applied로 노출
+    cv::Mat corrected = TryUndistort(gray, calib_, undistort_, undistorted);
 
     // 3) ArUco 검출 (detector_는 자기 상태를 안 바꾸는 const 연산)
-    DetectionResult result = detector_.Detect(gray);
+    DetectionResult result = detector_.Detect(corrected);
 
     // 4) 결과 전송. 검출 0개여도 매 폴링마다 보낸다(서버가 "마커 사라짐"도 알아야 하므로).
     //    send_는 DetectorManager::SendMetadata를 감싼 콜백 → 내부는 SendNoReplyEvent(논블로킹).
     send_(channel_, result.ids, result.corners);
 
     auto t1 = std::chrono::steady_clock::now();
-    int64_t cpu1 = ThreadCpuTimeMs();
+    long long cpu1 = ThreadCpuTimeMs();
     // t1-t0 = 시계 틱 단위 duration → ms로 변환 → .count()로 정수 추출
     int latency = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
     int cpu_latency = static_cast<int>(cpu1 - cpu0);
@@ -183,9 +192,8 @@ void ChannelWorker::RunOnce()
         status_.marker_count = static_cast<int>(result.ids.size());
         status_.latency_ms = latency;
         status_.cpu_latency_ms = cpu_latency;
-        status_.undistort_enabled = undistort_;
-        status_.undistort_applied = undistorted;
         status_.last_detect = NowIso8601(); // 이번 검출 완료 시각 기록
         status_.last_error.clear();         // 성공했으니 이전 에러 기록 제거
+        status_.undistort_applied = undistorted; // 이번 폴링에서 실제로 보정이 적용됐는지
     }
 }

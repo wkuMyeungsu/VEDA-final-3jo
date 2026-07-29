@@ -1,9 +1,7 @@
 set(TARGET_LIB detector_manager)
 
-add_library(${TARGET_LIB} MODULE 
+add_library(${TARGET_LIB} MODULE
   detector_manager.cc
-  camera/camera_credentials.cc
-  camera/camera_snapshot_client.cc
   camera/camera_calibration.cc
   pipeline/aruco_detector.cc
   pipeline/frame_source.cc
@@ -32,7 +30,7 @@ target_link_directories(${TARGET_LIB} PRIVATE ${CMAKE_HOME_DIRECTORY}/libs ${WIS
 # raw 비디오(SPMgrVideoRaw) 런타임 .so — 타겟 보드에 없어 앱 libs로 복사
 file(COPY ${WISENET_PRODUCT_RELEASE_PATH}/lib/npu_api/libs/ DESTINATION ${CMAKE_HOME_DIRECTORY}/libs/ PATTERN "*.so")
 
-target_link_libraries(${TARGET_LIB} PRIVATE opencv_aruco opencv_calib3d opencv_features2d opencv_flann opencv_imgcodecs opencv_imgproc opencv_core libjpeg-turbo libpng libjasper zlib ittnotify quirc curl)
+target_link_libraries(${TARGET_LIB} PRIVATE opencv_aruco opencv_calib3d opencv_features2d opencv_flann opencv_imgcodecs opencv_imgproc opencv_core libjpeg-turbo libpng libjasper zlib ittnotify quirc)
 target_link_libraries(${TARGET_LIB} PRIVATE metadata_manager stdlib pthread)
 # raw 비디오(SPMgrVideoRaw) 프레임 처리 라이브러리 (cv5) — IPLVideoFrameRaw/RawImage 심볼
 target_link_libraries(${TARGET_LIB} PRIVATE sdk_cv5_video cv5_technical_streamingService_sharedBuffer npu_api)

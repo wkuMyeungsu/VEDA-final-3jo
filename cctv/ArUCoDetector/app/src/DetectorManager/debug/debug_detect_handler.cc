@@ -10,8 +10,6 @@
 
 #include "aruco_detector.h"
 #include "camera_calibration.h"
-#include "camera_credentials.h"
-#include "frame_source.h"
 #include "frame_preprocessor.h"
 #include "dispatcher_serialize.h"
 #include "json_utility.h"

@@ -14,7 +14,10 @@
       "MetadataManager_1",
       "MetadataManager_2",
       "MetadataManager_3",
-      "SPMgrVideoRaw_0"
+      "SPMgrVideoRaw_0",
+      "SPMgrVideoRaw_1",
+      "SPMgrVideoRaw_2",
+      "SPMgrVideoRaw_3"
     ],
     "SourceNames": [
       {
@@ -39,6 +42,18 @@
       },
       {
         "Source": "SPMgrVideoRaw_0",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      },
+      {
+        "Source": "SPMgrVideoRaw_1",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      },
+      {
+        "Source": "SPMgrVideoRaw_2",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      },
+      {
+        "Source": "SPMgrVideoRaw_3",
         "GroupName": "GroupSPMgrVideoRaw2"
       }
     ],

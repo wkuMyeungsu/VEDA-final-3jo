@@ -17,7 +17,6 @@
 
 #include <opencv2/imgproc.hpp>   // cvtColor (GRAY -> BGR, /detectonce 프리뷰용)
 #include "aruco_detector.h"      // StringToDict
-#include "camera_credentials.h"  // LoadCameraCredentials
 
 namespace {
   constexpr const char* kSettingsPath = "settings.json"; // 실행 CWD(app/bin) 기준 경로. config.local.json과 동일 규약
@@ -55,7 +54,7 @@ DetectorManager::~DetectorManager() {
 bool DetectorManager::Initialize() {
   RegisterURI();
   bool ok = Component::Initialize();
-  // RestartWorkers();   // [raw 테스트] HTTP 폴링 중지 — raw 비디오(eVideoRawData) 경로만 사용
+  RestartWorkers();   // 저장된 settings대로 채널 워커 기동 (프레임은 raw_store_에서 받음)
   return ok;
 }
 
@@ -141,14 +140,14 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
           [this](int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
             SendMetadata(channel, ids, corners);
           },
-          [this](int /*channel*/, std::string& error) -> cv::Mat {
-            std::lock_guard<std::mutex> lk(raw_frame_mtx_);
-            if (latest_raw_gray_.empty()) {
-              error = "아직 raw 프레임 수신 전";
+          [this](int channel, std::string& error) -> cv::Mat {
+            cv::Mat gray = raw_store_.Get(channel);   // 해당 채널의 최신 raw 프레임
+            if (gray.empty()) {
+              error = "아직 raw 프레임 수신 전 (ch " + std::to_string(channel) + ")";
               return cv::Mat();
             }
             cv::Mat bgr;
-            cv::cvtColor(latest_raw_gray_, bgr, cv::COLOR_GRAY2BGR);  // 파이프라인/프리뷰가 컬러를 기대
+            cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);  // 파이프라인/프리뷰가 컬러를 기대
             return bgr;
           });
     } else if (path_info == "/settings") {
@@ -247,19 +246,13 @@ void DetectorManager::ProcessMetadata(Event* event) {
   }
 }
 
-// SPMgrVideoRaw가 밀어주는 raw 비디오 프레임(eVideoRawData)을 받아 ArUco를 검출한다.
-// HTTP 스냅샷 폴링(ChannelWorker)과 달리 push 방식이라 별도 폴링 루프가 없다.
+// SPMgrVideoRaw가 밀어주는 raw 비디오 프레임(eVideoRawData)을 받아, 채널별 최신 프레임으로 저장한다.
+// 검출은 여기서 하지 않는다 — 각 채널의 ChannelWorker가 poll 주기마다 raw_store_에서 프레임을 꺼내 검출한다.
 // 프레임 버퍼 수명관리 순서를 반드시 지켜야 한다(더블프리/OOM/use-after-free 방지).
 void DetectorManager::ProcessRawVideo(Event* event) {
   if (event == nullptr || event->IsReply()) {
     return;
   }
-
-  // 스로틀: N프레임마다 1회만 검출한다 (cv5 SoC 부하 방지).
-  bool do_detect = (raw_frame_count_++ % raw_detect_every_ == 0);
-
-  // 지연 측정 시작 (프레임 수신 → 디코딩 → 검출 → 전송 enqueue). steady_clock=구간측정용.
-  auto t0 = std::chrono::steady_clock::now();
 
   // 1) 이벤트에서 프레임 blob을 떼어낸다(detach). 안 하면 이벤트 소멸 시 이중 해제된다.
   auto blob = event->GetBlobArgument();
@@ -271,35 +264,14 @@ void DetectorManager::ProcessRawVideo(Event* event) {
   raw_frame->DeserializeBaseObject(raw_frame, ret);
 
   std::shared_ptr<RawImage> img(raw_frame->GetRawImage());
-  // [진단] 프레임 수신은 되는데 이미지가 null인지 확인 (do_detect 프레임에서만)
-  if (do_detect && !img) {
-    AppendLog(GetCurrentTimeToString() + " [RawVideo] 프레임 수신 but GetRawImage()=null");
-  }
-  if (img && do_detect) {
-    // 2) YUV의 Y평면 = grayscale. cvtColor 없이 참조로 cv::Mat을 감싼다(stride=pitch).
+  if (img) {
+    // 2) Y평면(=grayscale)을 stride(pitch) 유지해 cv::Mat으로 감싼다. (SDK 버퍼 참조)
     cv::Mat gray(static_cast<int>(img->height), static_cast<int>(img->width), CV_8UC1,
                  reinterpret_cast<void*>(img->plane[0].vir_addr), static_cast<size_t>(img->pitch));
 
-    // /detectonce 테스트가 쓸 수 있게 최신 프레임을 복사해 둔다 (SDK 버퍼는 곧 해제되므로 clone 필수).
-    {
-      std::lock_guard<std::mutex> lk(raw_frame_mtx_);
-      latest_raw_gray_ = gray.clone();
-    }
-
-    // 3) 검출은 반드시 blob.ClearResource() '이전'에 끝낸다.
-    //    gray가 SDK 버퍼를 복사 없이 참조하므로, 해제 후 사용하면 use-after-free.
-    DetectionResult r = raw_detector_.Detect(gray);
-    SendMetadata(GetChannel() + 1, r.ids, r.corners);  // 앱 채널표기는 1-based
-
-    // 지연 측정 끝 (전송은 논블로킹이라 제외).
-    auto t1 = std::chrono::steady_clock::now();
-    int latency = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
-
-    std::ostringstream logline;
-    logline << GetCurrentTimeToString() << " [RawVideo] " << img->width << "x" << img->height
-            << " markers=" << r.ids.size() << " latency=" << latency << "ms";
-    std::cout << logline.str() << std::endl;
-    AppendLog(logline.str());          // 상태 모니터링 UI(GET /logs)에 노출
+    // 3) 프레임이 실린 채널(chan_id, 0-based)로 저장. 앱 채널표기는 1-based.
+    //    Put이 clone하므로 아래 blob 해제 후에도 안전하다.
+    raw_store_.Put(static_cast<int>(img->chan_id) + 1, gray);
   }
 
   blob.ClearResource();   // 4) 프레임 버퍼 해제 (안 하면 고FPS라 금방 OOM)
@@ -361,7 +333,6 @@ void DetectorManager::RestartWorkers() {
     SaveDetectionSettings(kSettingsPath, settings);
   }
   cv::aruco::PREDEFINED_DICTIONARY_NAME dict = StringToDict(settings.dictionary_name);
-  CameraCredentials creds = LoadCameraCredentials();
   std::string calib_path_template = settings.calibration_path.empty()
                                         ? kDefaultCalibPath
                                         : settings.calibration_path;
@@ -374,7 +345,7 @@ void DetectorManager::RestartWorkers() {
     std::string calib_path = ResolveCalibPath(calib_path_template, ch.channel);
 
     auto worker = std::make_unique<ChannelWorker>(
-        ch.channel, creds, calib_path, dict, ch.undistort, settings.poll_interval_ms,
+        ch.channel, &raw_store_, calib_path, dict, ch.undistort, settings.poll_interval_ms,
         [this](int c, const std::vector<int>& ids,
                const std::vector<std::vector<cv::Point2f>>& corners) {
           SendMetadata(c, ids, corners);   // 워커 스레드 -> 콜백 -> SendNoReplyEvent
