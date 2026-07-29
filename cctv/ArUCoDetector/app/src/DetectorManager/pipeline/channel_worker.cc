@@ -20,15 +20,22 @@ namespace {
         return 0;
     }
 
-    // 지금 시각(UTC)을 "2026-07-24T09:00:00Z" 같은 ISO8601 문자열로 만든다.
-    // (이 파일 안에서만 쓰는 헬퍼라 익명 namespace에 둠 → 바깥에 이름 노출 안 됨)
+    // 지금 시각(UTC)을 "2026-07-24T09:00:00.123Z" 같은 밀리초 해상도 ISO8601 문자열로 만든다.
     std::string NowIso8601() {
-        auto now = std::chrono::system_clock::now();               // 현재 벽시계 시각
-        std::time_t t = std::chrono::system_clock::to_time_t(now); // C 스타일 time_t로 변환
-        std::tm tm = *std::gmtime(&t);                             // time_t → UTC 분해시각(년/월/일/시…)
+        auto now = std::chrono::system_clock::now();
+        std::time_t t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm = *std::gmtime(&t);
+
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      now.time_since_epoch()) % 1000;
+
         std::ostringstream ss;
-        ss << std::put_time(&tm, "%FT%TZ");                        // %F=날짜, T, %T=시간, Z=UTC 표기
-        return ss.str();
+        ss << std::put_time(&tm, "%T") << '.'
+           << std::setfill('0') << std::setw(3) << ms.count() << 'Z';
+        // 날짜 포함 예: 2026-07-24T09:00:00.123Z
+        char date_buf[16];
+        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%dT", &tm);
+        return std::string(date_buf) + ss.str();
     }
 } // namespace
 

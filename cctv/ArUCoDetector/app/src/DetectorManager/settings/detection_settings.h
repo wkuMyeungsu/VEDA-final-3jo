@@ -3,6 +3,14 @@
 #include <string>
 #include <vector>
 
+// poll_interval_ms 허용 범위. raw 파이프라인에서 이 값은 "채널별로 최신 raw 프레임에
+// 검출을 실행하는 주기"다 (프레임 획득 자체는 카메라가 계속 push하므로 이 값과 무관).
+//   하한 500ms : 채널당 검출(4MP ArUco) 실측 소요시간(~300~440ms, 4채널 동시 실행 시 더 걸림)보다
+//                짧게 잡아도 실제로 더 빨라지지 않고 CPU만 계속 태운다.
+//   상한 3000ms: 사각지대 충돌방지 용도상 반응 지연 상한. 안전 요구사항에 따라 조정 필요.
+constexpr int kMinPollIntervalMs = 500;
+constexpr int kMaxPollIntervalMs = 3000;
+
 struct ChannelConfig {
     int channel = 0;
     bool enabled = false;
