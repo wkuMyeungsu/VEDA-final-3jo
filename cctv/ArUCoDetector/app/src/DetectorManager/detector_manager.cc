@@ -417,6 +417,8 @@ void DetectorManager::HandleGetStatus(OpenAppSerializable* oas) {
     obj.AddMember("last_detect", st.last_detect, alloc);
     obj.AddMember("last_error", st.last_error, alloc);
     obj.AddMember("calibration", st.calibration, alloc);
+    obj.AddMember("undistort_enabled", st.undistort_enabled, alloc);
+    obj.AddMember("undistort_applied", st.undistort_applied, alloc);
     channels_arr.PushBack(obj, alloc);
   }
   doc.AddMember("channels", channels_arr, alloc);

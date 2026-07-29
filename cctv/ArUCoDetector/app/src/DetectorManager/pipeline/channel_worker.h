@@ -39,7 +39,10 @@ class ChannelWorker {
                                          // latency_ms - cpu_latency_ms = 경합 때문에 날아간 시간.
             std::string last_detect;    // 마지막 검출 완료 시각 (ISO8601 UTC 문자열)
             std::string last_error;     // 마지막 에러 (스냅샷/디코딩 실패 등). 성공하면 비움
-            bool calibration = false;   // 이 채널의 캘리브레이션 파일이 유효한가
+            bool calibration = false;        // 이 채널의 캘리브레이션 파일이 유효한가 (파일 존재+파싱 성공 여부일 뿐, 적용 여부와 무관)
+            bool undistort_enabled = false;  // 설정(채널별 왜곡보정 토글)이 켜져 있는가
+            bool undistort_applied = false;  // 마지막 폴링에서 실제로 왜곡보정이 적용됐는가
+                                              // (calibration && undistort_enabled && 해상도 일치 모두 만족해야 true)
         };
 
         // channel          : 담당 채널 번호(1~4)
