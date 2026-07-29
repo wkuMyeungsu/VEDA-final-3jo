@@ -12,6 +12,7 @@
 #include "dispatcher_serialize.h"
 #include "channel_worker.h"
 #include "aruco_detector.h"
+#include "raw_frame_store.h"
 
 class DetectorManager : public Component, public IDetectorManager {
  public:
@@ -42,14 +43,8 @@ class DetectorManager : public Component, public IDetectorManager {
   std::map<int, std::unique_ptr<ChannelWorker>> workers_; // 채널번호 -> 워커
   std::chrono::steady_clock::time_point workers_start_time_;  // 워커 기동 시각 (uptime 계산용)
 
-  // raw 비디오(push) 경로 전용 — ChannelWorker(폴링)를 거치지 않고 직접 검출한다.
-  ArucoDetector raw_detector_;          // 기본 DICT_4X4_50
-  uint64_t      raw_frame_count_ = 0;   // 스로틀 카운터
-  int           raw_detect_every_ = 5;  // N프레임마다 1회만 검출 (cv5 부하 방지)
-
-  // /detectonce(테스트) 전용 — 최신 raw 프레임 사본. raw는 push라 프레임을 붙잡아 둔다.
-  std::mutex    raw_frame_mtx_;         // latest_raw_gray_ 보호
-  cv::Mat       latest_raw_gray_;       // 최신 raw 프레임(grayscale 사본, clone)
+  // raw 비디오(push) 프레임을 채널별로 보관 → 각 ChannelWorker의 FrameSource가 여기서 읽는다.
+  RawFrameStore raw_store_;
 
   // 상태 모니터링 UI에 띄울 최근 로그 (링버퍼). GET /logs 로 노출.
   std::mutex               logs_mtx_;

@@ -1,24 +1,15 @@
 #include "frame_source.h"
 
-#include <vector>
+#include "raw_frame_store.h"
 
-#include <opencv2/imgcodecs.hpp>    // cv::imdecode
-
-#include "camera_snapshot_client.h"
-
-FrameSource::FrameSource(const CameraCredentials& credentials) 
-    : credentials_(credentials) {}
+FrameSource::FrameSource(RawFrameStore* store)
+    : store_(store) {}
 
 cv::Mat FrameSource::Acquire(int channel, std::string& out_error) const {
-    std::vector<unsigned char> jpeg;
-    if (!FetchSnapshot(channel, credentials_, jpeg, out_error)) {
-        return cv::Mat();   // out_error는 FetchSnapshot이 채움.
-    }
-
-    cv::Mat img = cv::imdecode(jpeg, cv::IMREAD_COLOR);
-    if (img.empty()) {
-        out_error = "JPEG 디코딩 실패";
+    cv::Mat gray = store_->Get(channel);   // 채널별 최신 raw 프레임(grayscale)
+    if (gray.empty()) {
+        out_error = "아직 raw 프레임 수신 전 (ch " + std::to_string(channel) + ")";
         return cv::Mat();
     }
-    return img;
+    return gray;   // BGR로 안 부풀림 — 이후 파이프라인(undistort)이 gray를 그대로 다룬다.
 }

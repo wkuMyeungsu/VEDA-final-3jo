@@ -53,6 +53,21 @@
             "LocalComponentName": "SPMgrVideoRaw_0",
             "ContainerName": "System",
             "RemoteComponentName": "SPMgrVideoRaw_0"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_1",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_1"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_2",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_2"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_3",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_3"
         }
     ]
 }
