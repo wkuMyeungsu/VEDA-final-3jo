@@ -42,6 +42,7 @@ struct Track {
 struct NearestPersonResult {
     bool       found = false;
     int        track_id = -1;
+    int        camera_id = -1;   // 선택된 트랙을 보고 있던 카메라 (found=false면 -1 유지)
     WorldPoint position;
     double     distance_m = std::numeric_limits<double>::max();
 };
@@ -68,6 +69,7 @@ NearestPersonResult selectNearestPerson(const WorldPoint& forklift,
         if (d < result.distance_m) {
             result.found      = true;
             result.track_id   = t.track_id;
+            result.camera_id  = t.camera_id;  // 선택된 트랙의 값을 그대로 통과시킴 (판정 로직과 무관)
             result.position   = t.last_world;
             result.distance_m = d;
         }
@@ -85,6 +87,7 @@ void printResult(const std::string& scenario, const WorldPoint& forklift,
     std::cout << "  지게차 위치: (" << forklift.x << ", " << forklift.y << ")\n";
     if (r.found) {
         std::cout << "  -> 최근접 사람: track_id=" << r.track_id
+                  << " | camera_id=" << r.camera_id
                   << " | 위치=(" << r.position.x << ", " << r.position.y << ")"
                   << " | 거리=" << std::fixed << std::setprecision(2) << r.distance_m << "m\n";
     } else {
