@@ -176,6 +176,8 @@ void ChannelWorker::RunOnce()
         status_.marker_count = static_cast<int>(result.ids.size());
         status_.latency_ms = latency;
         status_.cpu_latency_ms = cpu_latency;
+        status_.undistort_enabled = undistort_;
+        status_.undistort_applied = undistorted;
         status_.last_detect = NowIso8601(); // 이번 검출 완료 시각 기록
         status_.last_error.clear();         // 성공했으니 이전 에러 기록 제거
     }
