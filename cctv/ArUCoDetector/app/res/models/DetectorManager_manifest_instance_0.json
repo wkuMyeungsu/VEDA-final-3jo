@@ -10,10 +10,7 @@
         "SymbolName": "LogManager",
         "RealName": "2009004"
       },
-      {
-        "SymbolName": "MetadataManager",
-        "RealName": "MetadataManager_0"
-      },
+      "MetadataManager_0",
       "MetadataManager_1",
       "MetadataManager_2",
       "MetadataManager_3",

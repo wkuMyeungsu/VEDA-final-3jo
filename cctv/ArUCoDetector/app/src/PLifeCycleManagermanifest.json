@@ -35,6 +35,21 @@
             "RemoteComponentName": "MetadataManager_0"
         },
         {
+            "LocalComponentName": "MetadataManager_1",
+            "ContainerName": "System",
+            "RemoteComponentName": "MetadataManager_1"
+        },
+        {
+            "LocalComponentName": "MetadataManager_2",
+            "ContainerName": "System",
+            "RemoteComponentName": "MetadataManager_2"
+        },
+        {
+            "LocalComponentName": "MetadataManager_3",
+            "ContainerName": "System",
+            "RemoteComponentName": "MetadataManager_3"
+        },
+        {
             "LocalComponentName": "SPMgrVideoRaw_0",
             "ContainerName": "System",
             "RemoteComponentName": "SPMgrVideoRaw_0"

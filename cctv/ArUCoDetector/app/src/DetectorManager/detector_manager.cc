@@ -225,7 +225,15 @@ void DetectorManager::SendMetadata(int channel, const std::vector<int>& ids, con
   auto* req = new ("MetadataRequest") IPMetadataManager::StringMetadataRequest();
   req->SetStringMetadata(std::move(metadata));
 
-  SendNoReplyEvent("MetadataManager", static_cast<int32_t>(IMetadataManager::EEventType::eRequestRawMetadata), 0, req);
+  // MetadataManager는 SPMgrVideoRaw처럼 채널마다 별도 인스턴스로 존재한다
+  // (SDK 문서: "MetadataManager_0 ~ MetadataManager_#"). 항상 "MetadataManager"(-> MetadataManager_0)로만
+  // 보내면 모든 채널의 메타데이터가 채널 0 하나로 몰린다 — 채널별로 정확한 인스턴스를 타겟해야 한다.
+  // 앱 채널표기(1~4)는 1-based, MetadataManager_N은 SPMgrVideoRaw_N과 같은 0-based라 -1 해서 맞춘다.
+  std::string target = "MetadataManager_" + std::to_string(channel - 1);
+  SendNoReplyEvent(target, static_cast<int32_t>(IMetadataManager::EEventType::eRequestRawMetadata), 0, req);
+
+  // 상태 모니터링 UI(GET /logs)에 채널별 검출 결과 노출
+  AppendLog(GetCurrentTimeToString() + " [ch" + std::to_string(channel) + "] markers=" + std::to_string(ids.size()));
 }
 
 void DetectorManager::ProcessMetadata(Event* event) {
