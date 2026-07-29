@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArUCoCalibration</title>
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-bg: #eff6ff;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px 28px;
+      font-size: 14px;
+    }
+    .app {
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .app-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .app-header .logo {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; font-weight: 700;
+    }
+    .app-header h1 {
+      font-size: 19px;
+      margin: 0;
+      font-weight: 700;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .step-badge {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--primary-bg);
+      color: var(--primary);
+      font-size: 13px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .card-head h2 {
+      font-size: 15px;
+      margin: 0;
+      font-weight: 600;
+    }
+    .card-head .sub {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .field input[type="number"] {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .field input[type="number"]:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #fff;
+    }
+
+    .channels {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .channels input { display: none; }
+    .channels label {
+      flex: 1;
+      text-align: center;
+      padding: 9px 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .channels input:checked + label {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    button {
+      font-family: inherit;
+      font-size: 13.5px;
+      padding: 9px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #f9fafb;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    button:hover { background: #f0f1f3; }
+    button.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      font-weight: 600;
+    }
+    button.primary:hover { background: var(--primary-hover); }
+    button.ghost {
+      background: transparent;
+      color: var(--text-muted);
+    }
+    button.danger-ghost {
+      background: transparent;
+      color: var(--danger);
+      border-color: #fecaca;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+    }
+
+    .detect-body {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .detect-body { grid-template-columns: 1fr; }
+    }
+
+    .preview-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #eceef1;
+      min-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .preview-box img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .preview-box .placeholder {
+      color: #9ca3af;
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    .result {
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #374151;
+    }
+    .result.small { height: 220px; }
+    .result:empty::before {
+      content: "결과 없음";
+      color: #9ca3af;
+      font-style: italic;
+    }
+
+    .summary {
+      margin-top: 16px;
+    }
+    .summary:empty { display: none; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .status-badge.ok { background: #dcfce7; color: #15803d; }
+    .status-badge.fail { background: var(--danger-bg); color: var(--danger); }
+    .status-badge.neutral { background: var(--primary-bg); color: var(--primary); }
+
+    .stat-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .stat-tile {
+      flex: 1;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: center;
+    }
+    .stat-tile .num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-tile .label {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .stat-tile.warn .num { color: #d97706; }
+    .stat-tile.good .num { color: #15803d; }
+
+    .progress-wrap {
+      margin-bottom: 6px;
+    }
+    .progress-wrap .top-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .progress-track {
+      background: #e5e7eb;
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      background: var(--primary);
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.2s;
+    }
+    .progress-fill.complete { background: #16a34a; }
+
+    .reject-reason {
+      font-size: 12.5px;
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .gallery {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .gallery:empty::before {
+      content: "히스토리 없음";
+      font-size: 12.5px;
+      color: #9ca3af;
+      font-style: italic;
+    }
+    .thumb {
+      position: relative;
+      width: 96px;
+      height: 72px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #e5e7eb;
+    }
+    .thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      cursor: pointer;
+    }
+    .thumb .idx {
+      position: absolute;
+      bottom: 3px;
+      right: 4px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .thumb .del {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 19px;
+      height: 19px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(220,38,38,0.85);
+      color: #fff;
+      font-size: 12px;
+      line-height: 19px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .thumb .del:hover { background: #dc2626; }
+    .thumb .dl {
+      position: absolute;
+      top: 3px;
+      right: 25px;
+      width: 19px;
+      height: 19px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(37,99,235,0.85);
+      color: #fff;
+      font-size: 11px;
+      line-height: 19px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .thumb .dl:hover { background: #2563eb; }
+  </style>
+  <script>
+    const paths = window.location.pathname.split('/');
+    const app_id = paths[5];
+    const base_uri = `${window.location.protocol}//${window.location.hostname}:${window.location.port}/opensdk/${app_id}`;
+
+    const showResult = (elId, data) => {
+      // preview_data_uri는 base64 통째라 로그에 그대로 찍으면 너무 길어지므로 축약해서 표시.
+      let display = data;
+      if (data && typeof data === 'object' && data.preview_data_uri) {
+        display = { ...data, preview_data_uri: `(생략됨, ${data.preview_data_uri.length}자 - 좌측 미리보기 참고)` };
+      }
+      document.getElementById(elId).textContent = JSON.stringify(display, null, 2);
+    };
+
+    // 백엔드 에러 응답이 JSON이 아니라 평문 문자열인 경우가 있어(SDK 관례),
+    // JSON 파싱 실패 시 원문 텍스트를 그대로 감싸서 반환.
+    const parseResponse = (res) =>
+      res.text().then((text) => {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          return { status: res.status, message: text };
+        }
+      });
+
+    const requestJson = (path, options) => fetch(base_uri + path, options).then(parseResponse);
+
+    const postJson = (path, body, elId) => {
+      requestJson(path, { method: 'POST', body: JSON.stringify(body) })
+        .then(data => showResult(elId, data))
+        .catch(err => showResult(elId, { error: String(err) }));
+    };
+
+    const getJson = (path, elId) => {
+      requestJson(path)
+        .then(data => showResult(elId, data))
+        .catch(err => showResult(elId, { error: String(err) }));
+    };
+
+    function onSetBoard() {
+      postJson('/board', {
+        squares_x: Number(document.getElementById('squares_x').value),
+        squares_y: Number(document.getElementById('squares_y').value),
+        square_length_mm: Number(document.getElementById('square_length_mm').value),
+        marker_length_mm: Number(document.getElementById('marker_length_mm').value),
+      }, 'board_result');
+    }
+
+    function onGetBoard() {
+      getJson('/board', 'board_result');
+    }
+
+    function currentChannel() {
+      return document.querySelector('input[name="channel"]:checked').value;
+    }
+
+    function showPreview(src) {
+      const box = document.getElementById('preview_box');
+      box.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = src;
+      box.appendChild(img);
+    }
+
+    function resetPreview() {
+      const box = document.getElementById('preview_box');
+      box.innerHTML = '<span class="placeholder">Detect/Capture 하면 여기 표시됨</span>';
+    }
+
+    // 채널 라디오버튼이 바뀔 때: 그 채널의 미리보기 + 히스토리 갤러리를 통째로 새로고침해서
+    // "지금 어느 채널을 보고 있는지"를 눈으로 바로 알 수 있게 함.
+    function onChannelChange() {
+      onLoadHistory();
+    }
+
+    // marker_count/rejected_count/charuco_corner_count/accepted 등을 숫자 타일+배지로 보여줌.
+    // 필드가 없는 응답(에러 등)이면 그냥 비워서 숨김.
+    function updateSummary(data) {
+      const el = document.getElementById('summary');
+      const hasDetection = data && typeof data === 'object' && data.marker_count !== undefined;
+      const hasProgress = data && typeof data === 'object' && data.total_captured !== undefined;
+      if (!hasDetection && !hasProgress) {
+        el.innerHTML = '';
+        return;
+      }
+
+      const parts = [];
+
+      if (hasDetection) {
+        const charuco = data.charuco_corner_count ?? 0;
+        if (data.accepted !== undefined) {
+          parts.push(data.accepted
+            ? `<div class="status-badge ok">✓ 캡처 저장됨</div>`
+            : `<div class="status-badge fail">✗ 캡처 거부됨</div>`);
+        } else {
+          parts.push(`<div class="status-badge neutral">검출 결과 (저장 안 함)</div>`);
+        }
+        parts.push(`
+          <div class="stat-row">
+            <div class="stat-tile"><div class="num">${data.marker_count}</div><div class="label">마커 검출</div></div>
+            <div class="stat-tile warn"><div class="num">${data.rejected_count ?? '-'}</div><div class="label">후보 탈락</div></div>
+            <div class="stat-tile ${charuco >= 4 ? 'good' : ''}"><div class="num">${charuco}</div><div class="label">ChArUco 코너</div></div>
+          </div>
+        `);
+      }
+
+      if (data.total_captured !== undefined) {
+        const min = data.min_recommended || 10;
+        const pct = Math.min(100, Math.round((data.total_captured / min) * 100));
+        parts.push(`
+          <div class="progress-wrap">
+            <div class="top-row"><span>캡처 진행</span><span>${data.total_captured} / ${min}</span></div>
+            <div class="progress-track"><div class="progress-fill ${pct >= 100 ? 'complete' : ''}" style="width:${pct}%"></div></div>
+          </div>
+        `);
+      }
+
+      if (data.reject_reason) {
+        parts.push(`<div class="reject-reason">${data.reject_reason}</div>`);
+      }
+
+      el.innerHTML = parts.join('');
+    }
+
+    function onDetect() {
+      const channel = currentChannel();
+      requestJson(`/detect?ch=${channel}`)
+        .then(data => {
+          showResult('action_result', data);
+          updateSummary(data);
+          if (data.preview_data_uri) {
+            showPreview(data.preview_data_uri);
+          }
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
+    }
+
+    function onCapture() {
+      const channel = currentChannel();
+      requestJson('/capture', { method: 'POST', body: JSON.stringify({ ch: Number(channel) }) })
+        .then(data => {
+          showResult('action_result', data);
+          updateSummary(data);
+          if (data.accepted) {
+            const savedIndex = data.total_captured - 1;
+            showPreview(`${base_uri}/captures/image?ch=${channel}&index=${savedIndex}&full=1&t=${Date.now()}`);
+          }
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
+    }
+
+    function onStatus() {
+      const channel = currentChannel();
+      requestJson(`/status?ch=${channel}`)
+        .then(data => {
+          showResult('action_result', data);
+          updateSummary(data);
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
+    }
+
+    function onDiscard(index) {
+      const channel = currentChannel();
+      requestJson('/discard', { method: 'POST', body: JSON.stringify({ ch: Number(channel), index }) })
+        .then(data => {
+          showResult('action_result', data);
+          onLoadHistory();
+        })
+        .catch(err => showResult('action_result', { error: String(err) }));
+    }
+
+    function onReset() {
+      postJson('/reset', { ch: Number(currentChannel()) }, 'action_result');
+    }
+
+    function onLoadHistory() {
+      const channel = currentChannel();
+      requestJson(`/status?ch=${channel}`)
+        .then(data => {
+          updateSummary(data);
+          const count = (data.corners_per_capture || []).length;
+          // 그 채널에 기존 캡처가 있으면 가장 최근 캡처를 큰 미리보기에, 없으면 기본 화면으로.
+          if (count > 0) {
+            showPreview(`${base_uri}/captures/image?ch=${channel}&index=${count - 1}&full=1&t=${Date.now()}`);
+          } else {
+            resetPreview();
+          }
+          const gallery = document.getElementById('gallery');
+          gallery.innerHTML = '';
+          for (let i = 0; i < count; i++) {
+            const thumb = document.createElement('div');
+            thumb.className = 'thumb';
+            const img_url = `${base_uri}/captures/image?ch=${channel}&index=${i}&t=${Date.now()}`;
+            const full_url = `${img_url}&full=1`;  // 검출에 실제로 쓰인 원본 해상도
+            // 사진 클릭 → 위 큰 미리보기 화면에 "원본 해상도"로 그 캡처를 띄움 (다운로드 아님).
+            const img = document.createElement('img');
+            img.src = img_url;
+            img.title = '클릭해서 원본 해상도로 크게 보기';
+            img.onclick = () => showPreview(full_url);
+            const idx = document.createElement('span');
+            idx.className = 'idx';
+            idx.textContent = `#${i}`;
+            // 다운로드는 별도 아이콘 버튼으로 분리 (역시 원본 해상도로 저장).
+            const dl = document.createElement('button');
+            dl.className = 'dl';
+            dl.type = 'button';
+            dl.innerHTML = '&#8681;';
+            dl.title = '다운로드 (원본 해상도)';
+            dl.onclick = (e) => {
+              e.stopPropagation();
+              const a = document.createElement('a');
+              a.href = full_url;
+              a.download = `capture_ch${channel}_${i}.jpg`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            };
+            const del = document.createElement('button');
+            del.className = 'del';
+            del.type = 'button';
+            del.textContent = '×';
+            del.title = '이 캡처 삭제';
+            del.onclick = () => onDiscard(i);
+            thumb.appendChild(img);
+            thumb.appendChild(idx);
+            thumb.appendChild(dl);
+            thumb.appendChild(del);
+            gallery.appendChild(thumb);
+          }
+        })
+        .catch(err => {
+          resetPreview();
+          showResult('action_result', { error: String(err) });
+        });
+    }
+
+    function onCalibrate() {
+      postJson('/calibrate', {
+        ch: Number(currentChannel()),
+        rational_model: document.getElementById('rational_model').checked,
+      }, 'calibrate_result');
+    }
+
+    function onGetResult() {
+      getJson(`/result?ch=${currentChannel()}`, 'calibrate_result');
+    }
+
+    function onUndistort() {
+      const img = document.getElementById('undistort_preview');
+      img.src = `${base_uri}/undistort?ch=${currentChannel()}&t=${Date.now()}`;
+      img.style.display = 'block';
+    }
+  </script>
+</head>
+
+<body>
+  <div class="app">
+    <div class="app-header">
+      <div class="logo">A</div>
+      <h1>ArUCoCalibration</h1>
+    </div>
+
+    <div class="layout">
+      <div class="sidebar">
+        <div class="card">
+          <div class="card-head">
+            <div class="step-badge">1</div>
+            <h2>보드 등록</h2>
+          </div>
+          <div class="field-grid">
+            <div class="field"><label for="squares_x">가로 칸 수</label><input type="number" id="squares_x" value="7"></div>
+            <div class="field"><label for="squares_y">세로 칸 수</label><input type="number" id="squares_y" value="5"></div>
+            <div class="field"><label for="square_length_mm">정사각형 (mm)</label><input type="number" id="square_length_mm" value="30"></div>
+            <div class="field"><label for="marker_length_mm">마커 (mm)</label><input type="number" id="marker_length_mm" value="22"></div>
+          </div>
+          <div class="btn-row">
+            <button class="primary" onclick="onSetBoard()">등록</button>
+            <button class="ghost" onclick="onGetBoard()">조회</button>
+          </div>
+          <div class="result small" id="board_result"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="step-badge">3</div>
+            <h2>캘리브레이션</h2>
+            <span class="sub">4장+ (권장 10장+)</span>
+          </div>
+          <label class="checkbox-row"><input type="checkbox" id="rational_model"> rational_model 사용</label>
+          <div class="btn-row">
+            <button class="primary" onclick="onCalibrate()">Calibrate</button>
+            <button onclick="onGetResult()">Result 조회</button>
+            <button onclick="onUndistort()">Undistort 미리보기</button>
+          </div>
+          <div class="result small" id="calibrate_result"></div>
+          <img id="undistort_preview" style="display:none; width:100%; border-radius:6px; margin-top:10px; border:1px solid var(--border);">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="step-badge">2</div>
+          <h2>검출 · 캡처</h2>
+          <span class="sub">채널별</span>
+        </div>
+        <div class="channels">
+          <input type="radio" name="channel" id="ch1" value="1" checked onchange="onChannelChange()"><label for="ch1">CH 1</label>
+          <input type="radio" name="channel" id="ch2" value="2" onchange="onChannelChange()"><label for="ch2">CH 2</label>
+          <input type="radio" name="channel" id="ch3" value="3" onchange="onChannelChange()"><label for="ch3">CH 3</label>
+          <input type="radio" name="channel" id="ch4" value="4" onchange="onChannelChange()"><label for="ch4">CH 4</label>
+        </div>
+        <div class="btn-row">
+          <button onclick="onDetect()">Detect</button>
+          <button class="primary" onclick="onCapture()">Capture</button>
+          <button onclick="onStatus()">Status</button>
+          <button class="ghost" onclick="onReset()">Reset</button>
+          <button class="ghost" onclick="onLoadHistory()">히스토리</button>
+        </div>
+
+        <div class="detect-body">
+          <div class="preview-box" id="preview_box"><span class="placeholder">Detect/Capture 하면 여기 표시됨</span></div>
+          <div class="result" id="action_result"></div>
+        </div>
+
+        <div class="summary" id="summary"></div>
+        <div class="gallery" id="gallery"></div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

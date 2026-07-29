@@ -23,6 +23,9 @@ build/
 .venv/
 .claude/settings.local.json
 
+# IntelliSense용으로 로컬에 복사해둔 SDK 헤더 (도커 이미지에서 추출, 빌드엔 안 씀)
+.sdk_stub/
+
 # Qt/CMake (operator-device)
 build-*/
 out/
