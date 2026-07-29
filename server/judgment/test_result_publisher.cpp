@@ -208,6 +208,56 @@ void testDropLogRateLimit() {
     while (std::getline(lines, line)) std::cout << "  | " << line << "\n";
 }
 
+// 종료 시 잔여 드랍 요약: rate limit 때문에 아직 안 찍힌 분량이 stop()/소멸자에서
+// 1줄로 정리되는지, 그리고 stop() 후 소멸자가 또 불려도 중복 출력되지 않는지 확인.
+void testResidualDropSummaryOnStop() {
+    std::cout << "\n[테스트 4] 종료 시 잔여 드랍 요약 (stop() / 소멸자 경로)\n";
+
+    // 큐 용량 100 + 드랍 50건 -> 첫 1건만 로그, 잔여 49건은 로그에 안 남은 상태
+    const int kCount = 150;
+
+    // (1) 명시적 stop() 경로 + stop() 뒤 소멸자 중복 호출
+    std::ostringstream captured;
+    std::streambuf* saved = std::cerr.rdbuf(captured.rdbuf());
+    std::size_t lines_after_stop = 0;
+    {
+        risk_transport::ResultPublisher publisher("127.0.0.1", kTestPort);
+        for (int i = 1; i <= kCount; ++i) publisher.publish(makeMessage(i));
+        publisher.stop();   // start() 없이 publish만 한 경우에도 잔여 요약이 나와야 함
+        for (char c : captured.str()) if (c == '\n') ++lines_after_stop;
+    }   // 여기서 소멸자 -> stop() 재호출: 잔여분이 없으므로 추가 출력이 없어야 함
+    std::cerr.rdbuf(saved);
+
+    std::size_t lines_after_dtor = 0;
+    for (char c : captured.str()) if (c == '\n') ++lines_after_dtor;
+
+    check(lines_after_stop == 2,
+          "stop() 시점에 2줄 (첫 드랍 + 잔여 요약) (실제: " +
+          std::to_string(lines_after_stop) + "줄)");
+    check(captured.str().find("dropped 49 more (total: 50)") != std::string::npos,
+          "잔여 49건이 요약 1줄로 출력됨");
+    check(lines_after_dtor == lines_after_stop,
+          "소멸자에서 stop()이 또 불려도 중복 출력 없음 (실제: " +
+          std::to_string(lines_after_dtor) + "줄)");
+
+    // (2) 명시적 stop() 없이 소멸자만으로 잔여 요약이 나오는지
+    std::ostringstream captured2;
+    saved = std::cerr.rdbuf(captured2.rdbuf());
+    {
+        risk_transport::ResultPublisher publisher("127.0.0.1", kTestPort);
+        for (int i = 1; i <= kCount; ++i) publisher.publish(makeMessage(i));
+    }   // stop() 호출 없이 소멸자만
+    std::cerr.rdbuf(saved);
+
+    check(captured2.str().find("dropped 49 more (total: 50)") != std::string::npos,
+          "소멸자 경로에서도 잔여 요약 출력됨");
+
+    std::cout << "  --- 실제 stderr 출력 (소멸자 경로) ---\n";
+    std::istringstream lines(captured2.str());
+    std::string line;
+    while (std::getline(lines, line)) std::cout << "  | " << line << "\n";
+}
+
 } // namespace
 
 int main() {
@@ -216,6 +266,7 @@ int main() {
     testNoDropWithinCapacity();
     testDropsOldestOnOverflow();
     testDropLogRateLimit();
+    testResidualDropSummaryOnStop();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";

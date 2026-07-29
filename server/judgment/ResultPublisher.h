@@ -39,10 +39,18 @@ public:
     }
 
     void stop() {
-        if (!running_.exchange(false)) return;
-        cv_.notify_all();
-        if (worker_.joinable()) worker_.join();
-        closeSocket();
+        // 워커 정리는 실제로 돌고 있을 때만 (중복 stop()/join() 방지).
+        if (running_.exchange(false)) {
+            cv_.notify_all();
+            if (worker_.joinable()) worker_.join();
+            closeSocket();
+        }
+        // rate limit 때문에 아직 안 찍힌 잔여 드랍을 종료 시점에 한 줄로 요약한다.
+        // start() 없이 publish만 한 경우에도(위 if를 안 타도) 잔여분은 남길 수 있게
+        // early return 하지 않고 항상 호출한다.
+        // 찍은 뒤 last_logged_drop_total_을 갱신하므로 소멸자에서 stop()이 한 번 더
+        // 불려도 잔여분이 0이라 중복 출력되지 않는다.
+        flushDropLogSummary();
     }
 
     // 판정 결과 한 건을 송신 큐에 넣는다.
@@ -87,6 +95,18 @@ public:
     std::size_t sendFailureCount() const { return send_failures_.load(); }
 
 private:
+    // 종료 시점에 아직 로그로 안 남은 드랍 잔여분을 요약 1줄로 남긴다.
+    // 잔여분이 없으면 아무것도 찍지 않으므로 여러 번 불려도 안전하다.
+    void flushDropLogSummary() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        std::size_t total = dropped_overflow_.load();
+        if (total > last_logged_drop_total_) {
+            std::cerr << "[ResultPublisher] dropped " << (total - last_logged_drop_total_)
+                      << " more (total: " << total << ") - 종료 시 잔여 요약\n";
+            last_logged_drop_total_ = total;
+        }
+    }
+
     void setState(LinkState s) {
         if (state_.exchange(s) != s && onStateChange_) onStateChange_(s);
     }
