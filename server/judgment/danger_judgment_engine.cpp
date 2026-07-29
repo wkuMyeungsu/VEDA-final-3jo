@@ -26,6 +26,8 @@
 #include <sstream>
 #include <chrono>
 #include <ctime>
+#include <thread>   // main()의 std::this_thread::sleep_for용
+                    // (지금까지는 ResultPublisher.h가 간접 include해줘서 우연히 컴파일됐음)
 
 #include "ResultPublisher.h"  // 판정 결과를 TCP로 하류(단말/서버)에 송신
 
@@ -66,8 +68,18 @@ struct CameraInput {
     // 뭉뚱그려져 있어서 분리함.
     bool       forklift_localized = true;  // 지게차 world 좌표를 이번 프레임에 얻었는지 (false=마커 폐색)
     bool       person_detected = true;     // 이번 프레임에 사람이 검출됐는지 (false=화면에 없음/미검출)
+    // world 좌표는 하류로 내보내지 않고(팀 협의로 JSON에서 제외됨) 내부 거리 계산에만 쓴다.
     WorldPoint forklift;                   // 지게차 world 좌표 (forklift_localized=false면 stale/무의미)
     WorldPoint person;                     // 사람 world 좌표 (person_detected=false면 stale/무의미)
+
+    // camera_id 표기 방식: nearest_person_selector.cpp의 int를 std::to_string()으로 단순 변환.
+    // 라벨링(cam_01 등) 필요 시 여기서 변경.
+    // [TODO] 현재 이 값을 채워주는 통합 지점이 아직 없다(각 파일이 독립 main으로 동작 중).
+    //        값을 임의로 만들지 않고 빈 문자열로 둔다.
+    std::string camera_id;
+
+    // [TODO] zone 매핑 미확정(김진석) — 값 확정 전까지 항상 null
+    std::string zone;
 };
 
 // IMU/ToF 센서 기반 입력 (I2C로 직접 읽음)
@@ -89,13 +101,11 @@ struct JudgmentResult {
     ExceptionState exception;
     double         distance_m;      // 참고용 (카메라 기준 유클리드 거리, 폐색/미검출 시 -1)
 
-    // 하류(단말/로그)에서 위치 시각화·검증에 쓸 수 있도록 world 좌표도 함께 실어 보낸다.
-    // 좌표가 stale/무의미한 상황(폐색/미검출)에도 값 자체는 그대로 담고,
-    // *_valid 플래그로 신뢰도를 구분한다.
-    WorldPoint     forklift;        // 지게차 world 좌표
-    WorldPoint     person;          // 사람 world 좌표
-    bool           forklift_valid;  // cam.forklift_localized 값을 그대로 반영
-    bool           person_valid;    // cam.person_detected 값을 그대로 반영
+    // world 좌표/bbox는 단말로 내보내지 않기로 팀 협의됨 -> 결과 구조체에서도 제거.
+    // (거리 계산에 필요한 원본 좌표는 CameraInput에만 남아 있다.)
+
+    std::string    camera_id;       // cam.camera_id 그대로 전달 (현재는 상류 미연결 -> 빈 문자열)
+    std::string    zone;            // cam.zone 그대로 전달 (매핑 미확정 -> 빈 문자열 -> JSON null)
 };
 
 // ============================================================
@@ -119,12 +129,9 @@ public:
     JudgmentResult evaluate(const CameraInput& cam, const SensorInput& sen) const {
         JudgmentResult result;
 
-        // ── 0) 원본 world 좌표/유효성 그대로 전달 ────────
-        // 좌표가 무의미한 경우(폐색/미검출)에도 값은 담되, valid 플래그로 신뢰도를 구분한다.
-        result.forklift       = cam.forklift;
-        result.person         = cam.person;
-        result.forklift_valid = cam.forklift_localized;
-        result.person_valid   = cam.person_detected;
+        // ── 0) 판정에 관여하지 않는 식별 정보는 그대로 통과시킨다 ────────
+        result.camera_id = cam.camera_id;
+        result.zone      = cam.zone;
 
         // ── 1) 카메라 기반 판정 ──────────────────────────
         // 지게차 좌표가 없거나(마커 폐색) 사람이 안 잡히면 카메라 기준 거리 계산 자체가 불가능
@@ -278,36 +285,36 @@ std::string nowIso8601Ms() {
     return os.str();
 }
 
-// WorldPoint 하나를 JSON 객체 문자열로 직렬화 (예: {"x":1.00,"y":2.00}).
-// valid=false면 좌표가 무의미하므로 null을 반환한다.
-std::string toJson(const WorldPoint& p, bool valid) {
-    if (!valid) return "null";
-    std::ostringstream os;
-    os << std::fixed << std::setprecision(2)
-       << "{\"x\":" << p.x << ",\"y\":" << p.y << '}';
-    return os.str();
+// "미확정/미연결이면 null"로 나가야 하는 문자열 필드(camera_id, zone)를 직렬화한다.
+// 빈 문자열("")과 값 없음을 하류에서 구분할 수 있도록 빈 값은 null로 통일한다.
+std::string toJsonOrNull(const std::string& s) {
+    if (s.empty()) return "null";
+    return '"' + s + '"';
 }
 
 // 판정 결과를 JSON 한 줄(line-delimited)로 직렬화.
 // ResultPublisher::publish()가 const std::string&를 받으므로 반환 타입은 std::string.
 // 외부 JSON 라이브러리 없이 표준 C++17만으로 수동 직렬화한다.
-std::string toJson(const std::string& scenario, const JudgmentResult& r) {
+//
+// 필드명·구성은 네트워크·단말 파트(Qt RiskMetadata::fromJson)와 확정된 스키마를 따른다.
+// 확정된 출력 필드는 아래 6개가 전부다:
+//   utc_time / camera_id / zone / exception_state / distance_m / risk_level
+// - world 좌표·bbox는 단말에서 쓰지 않기로 협의되어 제외.
+// - camera_risk / tof_risk는 서버 내부 디버깅용이므로 콘솔 로그(printResult)에만 남기고 제외.
+// - 테스트 시나리오 이름표도 프로덕션 스키마에 없으므로 제외.
+std::string toJson(const JudgmentResult& r) {
     std::ostringstream os;
     os << std::fixed << std::setprecision(2);
     os << '{'
-       << "\"timestamp\":\"" << nowIso8601Ms() << "\","
-       << "\"scenario\":\"" << scenario << "\",";
-    // distance_m도 좌표와 동일 원칙: sentinel(-1)을 유효 측정값으로 오독하지 않도록
-    // 음수면 null, 아니면 숫자 그대로.
+       << "\"utc_time\":\"" << nowIso8601Ms() << "\","
+       << "\"camera_id\":" << toJsonOrNull(r.camera_id) << ','
+       << "\"zone\":" << toJsonOrNull(r.zone) << ','
+       << "\"exception_state\":\"" << toString(r.exception) << "\",";
+    // distance_m은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
     os << "\"distance_m\":";
     if (r.distance_m < 0) os << "null"; else os << r.distance_m;
     os << ','
-       << "\"camera_risk\":\"" << toString(r.camera_risk) << "\","
-       << "\"tof_risk\":\"" << toString(r.tof_risk) << "\","
-       << "\"exception\":\"" << toString(r.exception) << "\","
-       << "\"final_risk\":\"" << toString(r.final_risk) << "\","
-       << "\"forklift\":" << toJson(r.forklift, r.forklift_valid) << ','
-       << "\"person\":" << toJson(r.person, r.person_valid)
+       << "\"risk_level\":\"" << toString(r.final_risk) << "\""
        << '}';
     return os.str();
 }
@@ -333,59 +340,64 @@ int main() {
 
     // 판정 루프 한 스텝: 평가 -> 콘솔 출력 -> JSON 직렬화 후 TCP 송신.
     // (수신 서버가 없어도 publisher는 백그라운드에서 재접속을 시도하며 논블로킹으로 동작)
+    // 시나리오 이름(name)은 콘솔 로그에만 쓰고, JSON 본문에는 넣지 않는다(프로덕션 스키마에 없음).
     auto step = [&](const std::string& name, const CameraInput& cam, const SensorInput& sen) {
         JudgmentResult r = engine.evaluate(cam, sen);
         printResult(name, r);
-        publisher.publish(toJson(name, r));
+        publisher.publish(toJson(r));
     };
 
     std::cout << "=== 위험 판정 엔진 - 더미 데이터 테스트 (v2) ===\n\n";
 
+    // CameraInput 인자 순서:
+    //   forklift_localized, person_detected, forklift, person, camera_id, zone
+    // camera_id/zone은 아직 상류 배선이 없어 전 시나리오 공통으로 빈 문자열이다.
+
     // 시나리오 1: 정상 - 안전 거리
     step("1. 정상-안전",
-         CameraInput{true, true, {0.0, 0.0}, {5.0, 5.0}},   // 거리 약 7.07m
+         CameraInput{true, true, {0.0, 0.0}, {5.0, 5.0}, "", ""},   // 거리 약 7.07m
          SensorInput{true, true, 5.0, 0.1, false});
 
     // 시나리오 2: 정상 - 주의 거리
     step("2. 정상-주의",
-         CameraInput{true, true, {0.0, 0.0}, {2.0, 1.5}},   // 거리 약 2.50m
+         CameraInput{true, true, {0.0, 0.0}, {2.0, 1.5}, "", ""},   // 거리 약 2.50m
          SensorInput{true, true, 3.0, 0.1, false});
 
     // 시나리오 3: 정상 - 위험 거리
     step("3. 정상-위험",
-         CameraInput{true, true, {0.0, 0.0}, {1.0, 1.0}},   // 거리 약 1.41m
+         CameraInput{true, true, {0.0, 0.0}, {1.0, 1.0}, "", ""},   // 거리 약 1.41m
          SensorInput{true, true, 2.0, 0.1, false});
 
     // 시나리오 4: 카메라는 안전인데 ToF는 위험 -> worst-case로 위험 채택
     step("4. 카메라SAFE/ToF위험",
-         CameraInput{true, true, {0.0, 0.0}, {10.0, 10.0}}, // 카메라 거리 멀어서 SAFE
+         CameraInput{true, true, {0.0, 0.0}, {10.0, 10.0}, "", ""}, // 카메라 거리 멀어서 SAFE
          SensorInput{true, true, 0.3, 0.1, false});          // ToF 근접 -> DANGER
 
     // 시나리오 5: 센서 고장 (ToF 응답 없음) -> 최소 CAUTION 유지
     step("5. ToF 고장",
-         CameraInput{true, true, {0.0, 0.0}, {8.0, 8.0}},   // 카메라 상 안전
+         CameraInput{true, true, {0.0, 0.0}, {8.0, 8.0}, "", ""},   // 카메라 상 안전
          SensorInput{true, false, 0.0, 0.1, false});         // ToF 고장
 
     // 시나리오 6: 마커 폐색 -> dead-reckoning 모드, 최소 CAUTION 유지
     step("6. 마커폐색(DR)",
-         CameraInput{false, true, {0.0, 0.0}, {0.0, 0.0}},  // 지게차 좌표 없음(폐색)
+         CameraInput{false, true, {0.0, 0.0}, {0.0, 0.0}, "", ""},  // 지게차 좌표 없음(폐색)
          SensorInput{true, true, 4.0, 0.1, true});           // IMU 추정 모드
 
     // 시나리오 7: 급정지/충돌 의심 -> 카메라·ToF와 무관하게 무조건 DANGER
     step("7. 충돌의심(급가속도)",
-         CameraInput{true, true, {0.0, 0.0}, {9.0, 9.0}},   // 카메라 상 안전
+         CameraInput{true, true, {0.0, 0.0}, {9.0, 9.0}, "", ""},   // 카메라 상 안전
          SensorInput{true, true, 5.0, 3.5, false});          // 급격한 가속도 변화
 
     // 시나리오 8 [신규]: 지게차 좌표는 정상인데 사람이 카메라에 안 잡힘 + ToF만 근접 경보
     //                    -> UNCONFIRMED_PROXIMITY, 최종 위험도는 ToF 기준으로 DANGER 유지
     step("8. 사람미검출+ToF근접",
-         CameraInput{true, false, {0.0, 0.0}, {0.0, 0.0}},  // person_detected=false
+         CameraInput{true, false, {0.0, 0.0}, {0.0, 0.0}, "", ""},  // person_detected=false
          SensorInput{true, true, 0.4, 0.1, false});          // ToF 근접(0.4m) -> DANGER
 
     // 시나리오 9 [신규]: 지게차 좌표 정상, 사람도 안 잡히고, ToF도 멀리(SAFE) -> 그냥 정상 SAFE
     //                    (진짜로 주변에 아무도 없는 정상 상황과 구분되어야 함)
     step("9. 사람미검출+ToF안전",
-         CameraInput{true, false, {0.0, 0.0}, {0.0, 0.0}},
+         CameraInput{true, false, {0.0, 0.0}, {0.0, 0.0}, "", ""},
          SensorInput{true, true, 5.0, 0.1, false});          // ToF도 멀리 -> SAFE
 
     std::cout << "\n=== 테스트 종료 ===\n";
