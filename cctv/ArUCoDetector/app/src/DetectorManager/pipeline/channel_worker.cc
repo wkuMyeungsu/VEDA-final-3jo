@@ -4,10 +4,22 @@
 #include <ctime>     // std::time_t, std::gmtime
 #include <iomanip>   // std::put_time
 #include <sstream>   // std::ostringstream
+#include <time.h>    // clock_gettime, CLOCK_THREAD_CPUTIME_ID (순수 스레드 CPU 시간)
 
 #include "frame_preprocessor.h" // TryUndistort, ConvertToGrayscale
 
 namespace {
+    // 이 스레드가 실제로 CPU 코어에서 수행된 시간만 측정한다 (ms 단위).
+    // 다른 스레드/프로세스에 밀려 CPU를 뺏기고 대기한 시간(경합)은 포함되지 않는다.
+    // latency_ms(벽시계) - ThreadCpuTimeMs()(CPU시간) = 경합으로 소모된 대기시간.
+    int64_t ThreadCpuTimeMs() {
+        struct timespec ts;
+        if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+            return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+        }
+        return 0;
+    }
+
     // 지금 시각(UTC)을 "2026-07-24T09:00:00Z" 같은 ISO8601 문자열로 만든다.
     // (이 파일 안에서만 쓰는 헬퍼라 익명 namespace에 둠 → 바깥에 이름 노출 안 됨)
     std::string NowIso8601() {
@@ -124,7 +136,9 @@ void ChannelWorker::Loop()
 void ChannelWorker::RunOnce()
 {
     // 지연 측정 시작. steady_clock = 단조 증가 시계(구간 측정 전용, NTP 등에 안 튐).
+    // cpu0 = 순수 CPU 시간(CLOCK_THREAD_CPUTIME_ID). 코어 경합 분리용.
     auto t0 = std::chrono::steady_clock::now();
+    int64_t cpu0 = ThreadCpuTimeMs();
 
     // 1) 스냅샷 요청 + JPEG 디코딩. 실패하면 빈 Mat + error 문자열.
     std::string error;
@@ -151,14 +165,17 @@ void ChannelWorker::RunOnce()
     send_(channel_, result.ids, result.corners);
 
     auto t1 = std::chrono::steady_clock::now();
+    int64_t cpu1 = ThreadCpuTimeMs();
     // t1-t0 = 시계 틱 단위 duration → ms로 변환 → .count()로 정수 추출
     int latency = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+    int cpu_latency = static_cast<int>(cpu1 - cpu0);
 
     // 5) 상태 갱신. GET /status가 읽는 데이터라 status_mtx_로 보호.
     {
         std::lock_guard<std::mutex> lk(status_mtx_);
         status_.marker_count = static_cast<int>(result.ids.size());
         status_.latency_ms = latency;
+        status_.cpu_latency_ms = cpu_latency;
         status_.last_detect = NowIso8601(); // 이번 검출 완료 시각 기록
         status_.last_error.clear();         // 성공했으니 이전 에러 기록 제거
     }

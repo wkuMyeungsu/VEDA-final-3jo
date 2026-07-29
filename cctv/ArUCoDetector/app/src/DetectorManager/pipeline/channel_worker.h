@@ -32,7 +32,11 @@ class ChannelWorker {
         struct Status {
             bool running = false;       // 이 워커가 폴링 루프를 돌고 있는가
             int marker_count = 0;       // 마지막 폴링에서 검출된 마커 개수
-            int latency_ms = 0;         // 마지막 폴링 1회 파이프라인 소요 시간(ms)
+            int latency_ms = 0;         // 마지막 폴링 1회 소요 시간(ms) — 벽시계(체감 지연). 다른 채널에게
+                                         // 밀려 CPU를 못 받고 대기한 시간(경합)도 그대로 포함된다.
+            int cpu_latency_ms = 0;     // 같은 구간에서 "이 스레드가 실제로 CPU에서 실행된" 시간만(ms).
+                                         // 경합으로 대기한 시간은 빠짐 → 파이프라인 자체의 순수 비용.
+                                         // latency_ms - cpu_latency_ms = 경합 때문에 날아간 시간.
             std::string last_detect;    // 마지막 검출 완료 시각 (ISO8601 UTC 문자열)
             std::string last_error;     // 마지막 에러 (스냅샷/디코딩 실패 등). 성공하면 비움
             bool calibration = false;   // 이 채널의 캘리브레이션 파일이 유효한가
