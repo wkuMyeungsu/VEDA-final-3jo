@@ -1,11 +1,14 @@
 #pragma once
 #include <string>
+#include <deque>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstring>
+#include <iostream>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -42,11 +45,21 @@ public:
         closeSocket();
     }
 
+    // 판정 결과 한 건을 송신 큐에 넣는다.
+    // 이 채널의 확정 스펙은 "값 변화 시 즉시 전송"이므로 모든 변화가 전달돼야 한다.
+    // -> 예전처럼 마지막 값만 덮어쓰지(last-write-wins) 않고 FIFO 큐에 쌓는다.
+    // 큐가 가득 차면 백프레셔 정책상 "가장 오래된 항목부터" 버린다
+    // (최신 위험도가 더 중요하므로 신규 항목을 버리지 않는다).
     void publish(const std::string& json) {
         {
             std::lock_guard<std::mutex> lk(mtx_);
-            pending_ = json;
-            has_pending_ = true;
+            if (queue_.size() >= max_queue_size_) {
+                queue_.pop_front();
+                std::size_t total = ++dropped_overflow_;
+                std::cerr << "[ResultPublisher] queue full (max=" << max_queue_size_
+                          << ") - 가장 오래된 결과 1건 드랍 (누적 드랍=" << total << ")\n";
+            }
+            queue_.push_back(json);
         }
         cv_.notify_one();
     }
@@ -54,6 +67,12 @@ public:
     LinkState state() const { return state_.load(); }
 
     void onStateChange(std::function<void(LinkState)> cb) { onStateChange_ = std::move(cb); }
+
+    // 큐 넘침으로 버려진 누적 건수 (백프레셔 발생 여부 추적용)
+    std::size_t droppedCount() const { return dropped_overflow_.load(); }
+
+    // 전송 실패(연결 끊김 등)로 버려진 누적 건수. 큐 넘침과 원인이 달라 따로 센다.
+    std::size_t sendFailureCount() const { return send_failures_.load(); }
 
 private:
     void setState(LinkState s) {
@@ -134,17 +153,25 @@ private:
                 }
             }
 
+            // 큐에서 가장 오래된 항목 하나를 꺼내 전송한다 (FIFO 순서 보장).
             std::string toSend;
             {
                 std::unique_lock<std::mutex> lk(mtx_);
-                cv_.wait_for(lk, std::chrono::milliseconds(100), [this] { return has_pending_ || !running_; });
+                cv_.wait_for(lk, std::chrono::milliseconds(100), [this] { return !queue_.empty() || !running_; });
                 if (!running_) break;
-                if (!has_pending_) continue;
-                toSend = pending_;
-                has_pending_ = false;
+                if (queue_.empty()) continue;
+                toSend = std::move(queue_.front());
+                queue_.pop_front();
             }
 
             if (!sendLine(toSend)) {
+                // 이미 큐에서 꺼낸 뒤라 이 한 건은 유실된다. 재큐잉하지 않는 이유:
+                // sendLine()이 일부 바이트만 보내고 실패했을 수 있어서 그대로 재전송하면
+                // 수신 측에 잘린 줄 + 온전한 줄이 겹쳐 들어간다.
+                // 재연결 후 다음 판정 결과부터 정상 전송된다.
+                std::size_t total = ++send_failures_;
+                std::cerr << "[ResultPublisher] 전송 실패로 결과 1건 드랍 (누적 전송실패="
+                          << total << ")\n";
                 closeSocket();
             }
         }
@@ -160,10 +187,17 @@ private:
     std::atomic<LinkState> state_{LinkState::DISCONNECTED};
     std::thread worker_;
 
+    // 송신 대기 큐 (FIFO). mtx_로 보호된다.
     std::mutex mtx_;
     std::condition_variable cv_;
-    std::string pending_;
-    bool has_pending_ = false;
+    std::deque<std::string> queue_;
+
+    // 큐 최대 길이. 초과 시 가장 오래된 항목부터 버린다.
+    // 100건 = 판정 주기를 고려하면 수 초 분량 버퍼로, 수신 측이 잠시 느려져도 흡수 가능.
+    std::size_t max_queue_size_ = 100;
+
+    std::atomic<std::size_t> dropped_overflow_{0};
+    std::atomic<std::size_t> send_failures_{0};
 
     std::function<void(LinkState)> onStateChange_;
 };
