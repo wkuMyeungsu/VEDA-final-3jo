@@ -4,7 +4,7 @@
 #include <QRectF>
 #include <QSizeF>
 
-// Shared letterbox/pillarbox math. CameraVideoItem uses fitRect() to know
+// Shared letterbox/pillarbox math. VideoStream uses fitRect() to know
 // where to draw the video image; DetectionOverlay uses the same function
 // (with the same video-native size) so bounding boxes always line up with
 // the frame underneath, regardless of the camera's aspect ratio.

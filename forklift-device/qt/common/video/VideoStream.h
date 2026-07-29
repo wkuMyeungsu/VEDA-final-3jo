@@ -18,7 +18,7 @@ class IVideoSource;
 // source disconnects, so the screen never goes black; a translucent
 // "switching" veil is drawn on top until the first frame of a new source
 // arrives.
-class CameraVideoItem : public QQuickPaintedItem
+class VideoStream : public QQuickPaintedItem
 {
     Q_OBJECT
     QML_ELEMENT
@@ -30,7 +30,7 @@ class CameraVideoItem : public QQuickPaintedItem
     Q_PROPERTY(QColor placeholderColor READ placeholderColor WRITE setPlaceholderColor NOTIFY placeholderColorChanged)
 
 public:
-    explicit CameraVideoItem(QQuickItem *parent = nullptr);
+    explicit VideoStream(QQuickItem *parent = nullptr);
 
     void paint(QPainter *painter) override;
 

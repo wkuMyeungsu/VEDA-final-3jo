@@ -4,19 +4,25 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <gst/gst.h>
 
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
 #include "network/NoopWarningDevice.h"
+#include "network/NetworkClient.h"
 #include "services/MetadataService.h"
 #include "services/ServerConnectionService.h"
 #include "video/VideoSourceManager.h"
+
 
 #include "ActiveCameraController.h"
 #include "OperatorDemoController.h"
 
 int main(int argc, char *argv[])
 {
+    // RtspVideoSource가 GStreamer API를 쓰기 전에 반드시 한 번 필요
+    gst_init(&argc, &argv);
+
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyOperatorTerminal"));
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));
@@ -54,14 +60,21 @@ int main(int argc, char *argv[])
     // Stand-in for the physical warning device (buzzer/light/vibration).
     // Swap for a real SerialWarningDevice once UART hardware is connected
     // -- see docs/INTEGRATION.md.
+    NetworkClient networkClient;
+    QObject::connect(&networkClient, &NetworkClient::connectionStateChanged, &serverConnection,
+                     &ServerConnectionService::setConnectionState);
+    
     NoopWarningDevice warningDevice;
 
     ActiveCameraController activeCamera(cameras, &metadataService, &videoManager, &warningDevice);
+    QObject::connect(&networkClient, &NetworkClient::cameraHandoverRequested, &activeCamera,
+                  &ActiveCameraController::setActiveCameraId);
 
     OperatorDemoController demoController(&metadataSource, &videoManager, &serverConnection, &activeCamera);
     demoController.setDemoModeEnabled(parser.isSet(demoOption));
 
     videoManager.startAll();
+    networkClient.connectToServer(appConfig.serverHost, appConfig.serverPort);
     metadataService.start();
 
     QString initialCameraId = parser.value(cameraOption);

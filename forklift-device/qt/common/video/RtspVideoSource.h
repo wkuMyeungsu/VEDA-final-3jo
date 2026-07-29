@@ -1,32 +1,37 @@
 #pragma once
 
 #include <QUrl>
-
+#include <atomic>
+#include <thread>
 #include "IVideoSource.h"
 
-// Skeleton for a future GStreamer-based RTSP source. This is the intended
-// integration point for real cameras -- see docs/INTEGRATION.md. Until the
-// pipeline below is implemented, start() simply reports DISCONNECTED so the
-// rest of the app degrades gracefully instead of crashing or hanging.
+typedef struct _GstElement GstElement;
+typedef struct _GstBus GstBus;
+
+
 class RtspVideoSource : public IVideoSource
 {
     Q_OBJECT
 
 public:
     RtspVideoSource(QString cameraId, QUrl rtspUrl, QObject *parent = nullptr);
+    ~RtspVideoSource() override;    
 
     void start() override;
     void stop() override;
 
 private:
+
+    void busLoop(); //워커 스레드에서 실행되는 함수
+    void scheduleReconnect();
+
     QString m_cameraId;
     QUrl m_rtspUrl;
 
-    // TODO(RTSP integration): build and run a GStreamer pipeline such as
-    //   rtspsrc location=<rtspUrl> latency=200 ! decodebin ! videoconvert !
-    //   appsink
-    // on a worker thread, pull decoded buffers from the appsink, convert
-    // each to QImage, and emit frameReady(). Call setConnectionState(...)
-    // to reflect the actual pipeline state (Connecting while negotiating,
-    // Connected once frames flow, Disconnected on pipeline error/EOS).
+    GstElement *m_pipeline = nullptr;
+    GstBus *m_bus = nullptr;
+
+    std::thread m_busThread;
+    std::atomic_bool m_stopRequested{false};
+
 };

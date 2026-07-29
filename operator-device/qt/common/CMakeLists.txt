@@ -98,8 +98,8 @@ qt_add_qml_module(safety_common
         video/RtspVideoSource.cpp
         video/VideoSourceManager.h
         video/VideoSourceManager.cpp
-        video/CameraVideoItem.h
-        video/CameraVideoItem.cpp
+        video/VideoStream.h
+        video/VideoStream.cpp
         video/DetectionOverlay.h
         video/DetectionOverlay.cpp
 
