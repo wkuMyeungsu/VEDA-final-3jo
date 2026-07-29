@@ -9,11 +9,11 @@
 
 // Owns one IVideoSource per configured camera and hands out pointers by
 // camera_id. This is the single place that decides which concrete source
-// class to instantiate based on CameraInfo::sourceType -- CameraVideoItem
+// class to instantiate based on CameraInfo::sourceType -- VideoStream
 // (and therefore QML) never constructs a video source directly, so it
 // never knows whether a camera is Mock, a local file, or RTSP.
 //
-// One instance is created in each app's main.cpp; CameraVideoItem reaches
+// One instance is created in each app's main.cpp; VideoStream reaches
 // it through VideoSourceManager::instance().
 class VideoSourceManager : public QObject
 {

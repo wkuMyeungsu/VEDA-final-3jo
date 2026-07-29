@@ -1,4 +1,4 @@
-#include "CameraVideoItem.h"
+#include "VideoStream.h"
 
 #include <QPainter>
 
@@ -6,14 +6,14 @@
 #include "IVideoSource.h"
 #include "VideoSourceManager.h"
 
-CameraVideoItem::CameraVideoItem(QQuickItem *parent)
+VideoStream::VideoStream(QQuickItem *parent)
     : QQuickPaintedItem(parent)
 {
     setFillColor(Qt::transparent);
     setAntialiasing(true);
 }
 
-void CameraVideoItem::setCameraId(const QString &id)
+void VideoStream::setCameraId(const QString &id)
 {
     if (m_cameraId == id)
         return;
@@ -31,7 +31,7 @@ void CameraVideoItem::setCameraId(const QString &id)
     update();
 }
 
-void CameraVideoItem::setPlaceholderColor(const QColor &color)
+void VideoStream::setPlaceholderColor(const QColor &color)
 {
     if (m_placeholderColor == color)
         return;
@@ -40,7 +40,7 @@ void CameraVideoItem::setPlaceholderColor(const QColor &color)
     update();
 }
 
-void CameraVideoItem::attachToSource()
+void VideoStream::attachToSource()
 {
     if (m_cameraId.isEmpty())
         return;
@@ -53,20 +53,20 @@ void CameraVideoItem::attachToSource()
         return;
     }
 
-    connect(m_source, &IVideoSource::frameReady, this, &CameraVideoItem::handleFrame, Qt::UniqueConnection);
+    connect(m_source, &IVideoSource::frameReady, this, &VideoStream::handleFrame, Qt::UniqueConnection);
     connect(m_source, &IVideoSource::connectionStateChanged, this,
-            &CameraVideoItem::handleConnectionStateChanged, Qt::UniqueConnection);
+            &VideoStream::handleConnectionStateChanged, Qt::UniqueConnection);
     handleConnectionStateChanged(m_source->connectionState());
 }
 
-void CameraVideoItem::detachFromSource()
+void VideoStream::detachFromSource()
 {
     if (m_source)
         disconnect(m_source, nullptr, this, nullptr);
     m_source = nullptr;
 }
 
-void CameraVideoItem::setSwitching(bool switching)
+void VideoStream::setSwitching(bool switching)
 {
     if (m_switching == switching)
         return;
@@ -74,13 +74,13 @@ void CameraVideoItem::setSwitching(bool switching)
     emit switchingChanged();
 }
 
-void CameraVideoItem::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
+void VideoStream::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
 {
     QQuickPaintedItem::geometryChange(newGeometry, oldGeometry);
     update();
 }
 
-void CameraVideoItem::handleFrame(const QImage &frame)
+void VideoStream::handleFrame(const QImage &frame)
 {
     if (frame.isNull())
         return;
@@ -97,7 +97,7 @@ void CameraVideoItem::handleFrame(const QImage &frame)
     update();
 }
 
-void CameraVideoItem::handleConnectionStateChanged(RiskTypes::ConnectionState state)
+void VideoStream::handleConnectionStateChanged(RiskTypes::ConnectionState state)
 {
     if (m_connectionState == state)
         return;
@@ -106,7 +106,7 @@ void CameraVideoItem::handleConnectionStateChanged(RiskTypes::ConnectionState st
     update();
 }
 
-void CameraVideoItem::updateFpsCounter()
+void VideoStream::updateFpsCounter()
 {
     if (!m_fpsClock.isValid()) {
         m_fpsClock.start();
@@ -124,7 +124,7 @@ void CameraVideoItem::updateFpsCounter()
     }
 }
 
-void CameraVideoItem::paint(QPainter *painter)
+void VideoStream::paint(QPainter *painter)
 {
     const QRectF bounds(0, 0, width(), height());
     if (bounds.isEmpty())
@@ -150,7 +150,7 @@ void CameraVideoItem::paint(QPainter *painter)
     }
 }
 
-void CameraVideoItem::paintPlaceholder(QPainter *painter, const QRectF &bounds) const
+void VideoStream::paintPlaceholder(QPainter *painter, const QRectF &bounds) const
 {
     painter->setPen(QPen(QColor(255, 255, 255, 18), 1));
     for (int x = -static_cast<int>(bounds.height()); x < static_cast<int>(bounds.width()); x += 28)

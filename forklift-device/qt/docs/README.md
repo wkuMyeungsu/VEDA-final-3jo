@@ -15,7 +15,7 @@ CMakeLists.txt / CMakePresets.json   최상위 빌드 설정
 common/                              C++ 백엔드 + QML 테마/컴포넌트 (Safety.Common 모듈)
                                      operator-device/qt/common과는 독립된 사본
   models/     RiskMetadata, BBox, CameraInfo, 공용 enum(RiskTypes)
-  video/      IVideoSource 및 Mock/LocalFile/Rtsp 구현, CameraVideoItem, DetectionOverlay
+  video/      IVideoSource 및 Mock/LocalFile/Rtsp 구현, VideoStream, DetectionOverlay
   network/    IMetadataSource 및 Mock 구현, IWarningDevice 및 Noop 구현
   config/     ConfigLoader (JSON 설정 파싱)
   services/   MetadataService, ServerConnectionService, 각종 QML 모델, DemoController
@@ -92,8 +92,8 @@ cmake --build build
 
 `config/cameras.json`에 카메라를 추가하면(예: `CAM_05`) 재빌드 없이
 `--camera` 옵션이나 서버발 핸드오버로 선택 가능한 카메라 목록에 추가됩니다.
-`source_type`을 `"mock"` → `"rtsp"`로 바꾸고 `rtsp_url`을 채우면
-(RtspVideoSource 구현 완료 후) 실카메라로 전환됩니다. 자세한 절차는
+`source_type`을 `"mock"` → `"rtsp"`로 바꾸고 `rtsp_url`을 채우면 실카메라로
+전환됩니다(`RtspVideoSource` 구현 완료, 실카메라 검증됨). 자세한 절차는
 [INTEGRATION.md](INTEGRATION.md) 참고.
 
 ## 테스트
@@ -112,17 +112,15 @@ ctest --preset windows-mingw --output-on-failure
 
 ## 향후 연동용 Claude Code 프롬프트
 
-현재 버전은 Mock 영상 및 Mock 위험 이벤트를 기준으로 구현되어 있습니다.
-실제 장비가 준비되면 아래 프롬프트를 Claude Code에 순서대로 입력해 연동을
-진행합니다.
+- RTSP 카메라 연동: **완료** (`RtspVideoSource`, 실카메라 검증됨). 아래 1번
+  프롬프트는 완료된 작업의 기록으로 남겨둠.
+- 중앙 서버 JSON 메타데이터 연동: 미완료. 아래 2번 프롬프트로 진행.
 
-> 권장 순서: **실제 RTSP 카메라 연동 → 중앙 서버 JSON 메타데이터 연동**
->
 > 작업 전에는 반드시 새 Git 브랜치를 만들고, 기존 Mock 구현은 삭제하지 않은
 > 상태에서 실제 구현을 추가하세요.
 
 <details>
-<summary><strong>1. 실제 카메라 준비 후 RTSP 연동 프롬프트</strong></summary>
+<summary><strong>1. 실제 카메라 준비 후 RTSP 연동 프롬프트 (완료됨)</strong></summary>
 
 ```text
 현재 MockVideoSource로 동작하는 Qt 프로젝트에 실제 한화비전 카메라 RTSP 수신 기능을 추가해줘.
@@ -360,10 +358,8 @@ GStreamer 요구사항:
   중복), 아래 RTSP·서버 메타데이터 연동도 두 프로젝트에서 각각 별도로
   구현해야 한다(한쪽만 고치고 끝나지 않음).
   - RTSP 카메라 연동 (`forklift-device/qt/common/video/RtspVideoSource.cpp`):
-    브랜치 하나로 진행. 위치 트랙 이름은 Git 규칙 문서에 정해진 이름이 없어
-    임의로 정하지 않았다 — 팀 확인 후 결정 (가칭
-    `feature/forklift-device/rtsp-integration`). operator-device 쪽은 별도
-    브랜치로 동일 작업 필요.
+    **완료**. forklift-device·operator-device 양쪽 다 구현 완료, 실카메라
+    검증됨.
   - 서버 메타데이터 연동
     (`forklift-device/qt/common/network/TcpMetadataSource.cpp`): 위와 동일한
     사유로 브랜치 하나, 트랙명은 팀 확인 필요 (가칭

@@ -2,6 +2,16 @@
 # QML theme and component library, both exposed to the app targets as a
 # single "Safety.Common" QML module + safety_common link target.
 
+# RtspVideoSource가 실제 GStreamer 파이프라인을 쓰므로 링크 필요. server/detection과
+# 동일한 pkg-config 패턴 사용 (PKG_CONFIG_PATH가 GStreamer 설치본의 pkgconfig
+# 폴더를 가리키고 있어야 함).
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GST REQUIRED IMPORTED_TARGET
+    gstreamer-1.0
+    gstreamer-app-1.0
+)
+
+
 qt_add_library(safety_common STATIC)
 
 target_include_directories(safety_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -88,8 +98,8 @@ qt_add_qml_module(safety_common
         video/RtspVideoSource.cpp
         video/VideoSourceManager.h
         video/VideoSourceManager.cpp
-        video/CameraVideoItem.h
-        video/CameraVideoItem.cpp
+        video/VideoStream.h
+        video/VideoStream.cpp
         video/DetectionOverlay.h
         video/DetectionOverlay.cpp
 
@@ -115,4 +125,4 @@ qt_add_qml_module(safety_common
         services/DemoController.cpp
 )
 
-target_link_libraries(safety_common PRIVATE Qt6::QuickControls2)
+target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST)
