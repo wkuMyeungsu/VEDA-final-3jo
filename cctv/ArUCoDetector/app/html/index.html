@@ -143,13 +143,13 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>채널</th><th>상태</th><th>검출 마커수</th><th>지연(ms)</th><th>CPU지연(ms)</th><th>마지막 검출</th><th>왜곡보정</th></tr>
+                <tr><th>채널</th><th>상태</th><th>검출 마커수</th><th>탈락 후보수</th><th>지연(ms)</th><th>CPU지연(ms)</th><th>마지막 검출</th><th>왜곡보정</th></tr>
               </thead>
               <tbody>
-                <tr><td>1</td><td id="ch_state_1">—</td><td id="ch_markers_1">—</td><td id="ch_latency_1">—</td><td id="ch_cpulatency_1">—</td><td id="ch_lastdetect_1">—</td><td id="ch_calib_1">—</td></tr>
-                <tr><td>2</td><td id="ch_state_2">—</td><td id="ch_markers_2">—</td><td id="ch_latency_2">—</td><td id="ch_cpulatency_2">—</td><td id="ch_lastdetect_2">—</td><td id="ch_calib_2">—</td></tr>
-                <tr><td>3</td><td id="ch_state_3">—</td><td id="ch_markers_3">—</td><td id="ch_latency_3">—</td><td id="ch_cpulatency_3">—</td><td id="ch_lastdetect_3">—</td><td id="ch_calib_3">—</td></tr>
-                <tr><td>4</td><td id="ch_state_4">—</td><td id="ch_markers_4">—</td><td id="ch_latency_4">—</td><td id="ch_cpulatency_4">—</td><td id="ch_lastdetect_4">—</td><td id="ch_calib_4">—</td></tr>
+                <tr><td>1</td><td id="ch_state_1">—</td><td id="ch_markers_1">—</td><td id="ch_rejected_1">—</td><td id="ch_latency_1">—</td><td id="ch_cpulatency_1">—</td><td id="ch_lastdetect_1">—</td><td id="ch_calib_1">—</td></tr>
+                <tr><td>2</td><td id="ch_state_2">—</td><td id="ch_markers_2">—</td><td id="ch_rejected_2">—</td><td id="ch_latency_2">—</td><td id="ch_cpulatency_2">—</td><td id="ch_lastdetect_2">—</td><td id="ch_calib_2">—</td></tr>
+                <tr><td>3</td><td id="ch_state_3">—</td><td id="ch_markers_3">—</td><td id="ch_rejected_3">—</td><td id="ch_latency_3">—</td><td id="ch_cpulatency_3">—</td><td id="ch_lastdetect_3">—</td><td id="ch_calib_3">—</td></tr>
+                <tr><td>4</td><td id="ch_state_4">—</td><td id="ch_markers_4">—</td><td id="ch_rejected_4">—</td><td id="ch_latency_4">—</td><td id="ch_cpulatency_4">—</td><td id="ch_lastdetect_4">—</td><td id="ch_calib_4">—</td></tr>
               </tbody>
             </table>
           </div>
@@ -157,6 +157,8 @@
             2초마다 자동 갱신. 채널 On/Off는 [설정]에서 변경.
             <b>지연(ms)</b>=체감 지연(경합 포함) · <b>CPU지연(ms)</b>=파이프라인 순수 계산 시간(경합 미포함).
             둘의 차이가 크면 다른 채널과의 CPU 경합 때문입니다.
+            <b>탈락 후보수</b>=사각형처럼 보였지만 사전과 안 맞아 버려진 후보 개수 — 마커 유무와 무관하게 이 값이 크면
+            장면이 복잡(컨투어 많음)해 CPU지연이 늘어난다는 신호입니다.
           </p>
         </section>
 
@@ -350,7 +352,7 @@
                   <tr>
                     <th>항목</th><th>활성채널</th><th>표본수</th>
                     <th>평균지연(wall)</th><th>평균CPU지연</th>
-                    <th>경합손실(ms)</th><th>경합비율(%)</th><th>변동폭(ms)</th>
+                    <th>경합손실(ms)</th><th>경합비율(%)</th><th>변동폭(ms)</th><th>평균 탈락후보</th>
                   </tr>
                 </thead>
                 <tbody id="cmp_summary_tbody"></tbody>
@@ -370,6 +372,7 @@
                   <th rowspan="2">채널</th><th rowspan="2">표본 수</th>
                   <th colspan="4">지연(ms) · 체감 (경합 포함)</th>
                   <th colspan="4">CPU지연(ms) · 파이프라인 (경합 제외)</th>
+                  <th rowspan="2">탈락후보<br>(평균)</th>
                 </tr>
                 <tr>
                   <th>최소</th><th>평균</th><th>p95</th><th>최대</th>
@@ -381,26 +384,34 @@
                   <td>1</td><td id="lat_n_1">—</td>
                   <td id="lat_wall_min_1">—</td><td id="lat_wall_avg_1">—</td><td id="lat_wall_p95_1">—</td><td id="lat_wall_max_1">—</td>
                   <td id="lat_cpu_min_1">—</td><td id="lat_cpu_avg_1">—</td><td id="lat_cpu_p95_1">—</td><td id="lat_cpu_max_1">—</td>
+                  <td id="lat_rejected_avg_1">—</td>
                 </tr>
                 <tr>
                   <td>2</td><td id="lat_n_2">—</td>
                   <td id="lat_wall_min_2">—</td><td id="lat_wall_avg_2">—</td><td id="lat_wall_p95_2">—</td><td id="lat_wall_max_2">—</td>
                   <td id="lat_cpu_min_2">—</td><td id="lat_cpu_avg_2">—</td><td id="lat_cpu_p95_2">—</td><td id="lat_cpu_max_2">—</td>
+                  <td id="lat_rejected_avg_2">—</td>
                 </tr>
                 <tr>
                   <td>3</td><td id="lat_n_3">—</td>
                   <td id="lat_wall_min_3">—</td><td id="lat_wall_avg_3">—</td><td id="lat_wall_p95_3">—</td><td id="lat_wall_max_3">—</td>
                   <td id="lat_cpu_min_3">—</td><td id="lat_cpu_avg_3">—</td><td id="lat_cpu_p95_3">—</td><td id="lat_cpu_max_3">—</td>
+                  <td id="lat_rejected_avg_3">—</td>
                 </tr>
                 <tr>
                   <td>4</td><td id="lat_n_4">—</td>
                   <td id="lat_wall_min_4">—</td><td id="lat_wall_avg_4">—</td><td id="lat_wall_p95_4">—</td><td id="lat_wall_max_4">—</td>
                   <td id="lat_cpu_min_4">—</td><td id="lat_cpu_avg_4">—</td><td id="lat_cpu_p95_4">—</td><td id="lat_cpu_max_4">—</td>
+                  <td id="lat_rejected_avg_4">—</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <p class="muted" style="margin-top: 10px;">1초마다 갱신 · [측정 종료] 시 마지막 값에서 고정</p>
+          <p class="muted" style="margin-top: 10px;">
+            1초마다 갱신 · [측정 종료] 시 마지막 값에서 고정.
+            <b>탈락후보(평균)</b>는 사전과 안 맞아 버려진 후보 수 — 마커 개수와 무관하게 이 값이 높은 채널은
+            장면이 복잡해 CPU지연이 늘어난다는 신호입니다.
+          </p>
         </section>
       </div>
       <!-- ===================== [TEST-ONLY] 지연 측정 끝 ===================== -->
@@ -498,6 +509,7 @@
           for (let ch = 1; ch <= 4; ch++) {
             setCellText('ch_state_' + ch, '—');
             setCellText('ch_markers_' + ch, '—');
+            setCellText('ch_rejected_' + ch, '—');
             setCellText('ch_latency_' + ch, '—');
             setCellText('ch_cpulatency_' + ch, '—');
             setCellText('ch_lastdetect_' + ch, '—');
@@ -509,6 +521,7 @@
               if (ch < 1 || ch > 4) continue;
               setCellText('ch_state_' + ch, c.state);
               setCellText('ch_markers_' + ch, c.marker_count);
+              setCellText('ch_rejected_' + ch, c.rejected_count);
               setCellText('ch_latency_' + ch, c.latency_ms);
               setCellText('ch_cpulatency_' + ch, c.cpu_latency_ms);
               setCellText('ch_lastdetect_' + ch, c.last_detect ? formatTime(c.last_detect) : '—');
@@ -543,6 +556,7 @@
     // 같은 검출 이벤트에서 동시에 뽑은 값이라 표본 수(n)는 항상 서로 같다.
     let latencyStatsWall = {};       // { 채널: { samples:[], n, sum, min, max } }
     let latencyStatsCpu = {};        // { 채널: { samples:[], n, sum, min, max } }
+    let latencyStatsRejected = {};   // { 채널: { samples:[], n, sum, min, max } } -- 탈락 후보 수 (장면 복잡도 신호)
     let latencyLastDetect = {};      // { 채널: 마지막으로 표본 채택한 last_detect 값 } (중복 집계 방지)
     const kLatencySampleIntervalMs = 500;
     const kLatencyDisplayIntervalMs = 1000;
@@ -558,6 +572,7 @@
       latencyStartTime = Date.now();
       latencyStatsWall = makeEmptyStatStore();
       latencyStatsCpu = makeEmptyStatStore();
+      latencyStatsRejected = makeEmptyStatStore();
       latencyLastDetect = {};
       document.getElementById('latency_start_btn').disabled = true;
       document.getElementById('latency_stop_btn').disabled = false;
@@ -566,6 +581,7 @@
         for (const p of ['wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max']) {
           setCellText('lat_' + p + '_' + ch, '—');
         }
+        setCellText('lat_rejected_avg_' + ch, '—');
       }
       sampleLatencyOnce();
       updateLatencyDisplay();
@@ -586,6 +602,7 @@
               latencyLastDetect[ch] = c.last_detect;
               if (typeof c.latency_ms === 'number') addSample(latencyStatsWall, ch, c.latency_ms);
               if (typeof c.cpu_latency_ms === 'number') addSample(latencyStatsCpu, ch, c.cpu_latency_ms);
+              if (typeof c.rejected_count === 'number') addSample(latencyStatsRejected, ch, c.rejected_count);
             }
           }
         })
@@ -626,6 +643,7 @@
       for (let ch = 1; ch <= 4; ch++) {
         const w = computeStatsFrom(latencyStatsWall, ch);
         const c = computeStatsFrom(latencyStatsCpu, ch);
+        const rj = computeStatsFrom(latencyStatsRejected, ch);
         setCellText('lat_n_' + ch, w ? w.n : 0);   // wall/cpu 표본 수는 항상 동일하므로 wall 기준
         setCellText('lat_wall_min_' + ch, w ? w.min : '—');
         setCellText('lat_wall_avg_' + ch, w ? w.avg : '—');
@@ -635,6 +653,7 @@
         setCellText('lat_cpu_avg_' + ch, c ? c.avg : '—');
         setCellText('lat_cpu_p95_' + ch, c ? c.p95 : '—');
         setCellText('lat_cpu_max_' + ch, c ? c.max : '—');
+        setCellText('lat_rejected_avg_' + ch, rj ? rj.avg : '—');
       }
     }
 
@@ -678,7 +697,25 @@
     let cmpRoundDetail = [];   // 항목x회차x채널 상세 결과 (CSV용)
     let cmpSlotCounter = 0;
 
-    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+    // 취소 가능한 대기. delay(ms) 후 자동으로 resolve 되거나, cancelCompareTest()가
+    // cmpPendingTimer/cmpPendingResolve를 통해 즉시 resolve 시킬 수 있다.
+    // (기존엔 setTimeout이 끝날 때까지 무조건 기다려야 해서 [중단]을 눌러도
+    //  남은 웜업/측정 시간만큼은 계속 대기하는 문제가 있었음)
+    let cmpPendingTimer = null;
+    let cmpPendingResolve = null;
+
+    function cancellableWait(ms) {
+      return new Promise(resolve => {
+        cmpPendingResolve = resolve;
+        cmpPendingTimer = setTimeout(() => {
+          cmpPendingTimer = null;
+          cmpPendingResolve = null;
+          resolve();
+        }, ms);
+      });
+    }
+
+    function sleep(ms) { return cancellableWait(ms); }
 
     // ---- 비교 항목(슬롯) 관리 ----
     function addCompareSlot(label, defaultChannels) {
@@ -714,28 +751,28 @@
 
     // ---- 라운드 1회 실행 (기존 수동 측정과 동일한 전역 상태를 재사용) ----
     function runCompareRound(round, totalRounds, durationSec, label) {
-      return new Promise(resolve => {
-        latencyStatsWall = makeEmptyStatStore();
-        latencyStatsCpu = makeEmptyStatStore();
-        latencyLastDetect = {};
-        latencyMeasuring = true;
-        latencyStartTime = Date.now();
-        sampleLatencyOnce();
+      latencyStatsWall = makeEmptyStatStore();
+      latencyStatsCpu = makeEmptyStatStore();
+      latencyStatsRejected = makeEmptyStatStore();
+      latencyLastDetect = {};
+      latencyMeasuring = true;
+      latencyStartTime = Date.now();
+      sampleLatencyOnce();
+      updateLatencyDisplay();
+      latencySampleTimer = setInterval(sampleLatencyOnce, kLatencySampleIntervalMs);
+      latencyDisplayTimer = setInterval(() => {
         updateLatencyDisplay();
-        latencySampleTimer = setInterval(sampleLatencyOnce, kLatencySampleIntervalMs);
-        latencyDisplayTimer = setInterval(() => {
-          updateLatencyDisplay();
-          const elapsed = Math.floor((Date.now() - latencyStartTime) / 1000);
-          setCmpStatus(`[${label}] ${round}/${totalRounds}회차 측정 중... (${elapsed}/${durationSec}s)`);
-        }, kLatencyDisplayIntervalMs);
+        const elapsed = Math.floor((Date.now() - latencyStartTime) / 1000);
+        setCmpStatus(`[${label}] ${round}/${totalRounds}회차 측정 중... (${elapsed}/${durationSec}s)`);
+      }, kLatencyDisplayIntervalMs);
 
-        setTimeout(() => {
-          clearInterval(latencySampleTimer); latencySampleTimer = null;
-          clearInterval(latencyDisplayTimer); latencyDisplayTimer = null;
-          latencyMeasuring = false;
-          updateLatencyDisplay();
-          resolve();
-        }, durationSec * 1000);
+      // durationSec만큼 기다리되, [중단]이 눌리면 cancellableWait가 즉시 resolve 되면서
+      // 아래 정리(interval clear)가 바로 실행된다 — 남은 시간을 기다릴 필요 없음.
+      return cancellableWait(durationSec * 1000).then(() => {
+        clearInterval(latencySampleTimer); latencySampleTimer = null;
+        clearInterval(latencyDisplayTimer); latencyDisplayTimer = null;
+        latencyMeasuring = false;
+        updateLatencyDisplay();
       });
     }
 
@@ -803,6 +840,7 @@
 
         const slotPoolWall = makeEmptyStatStore();
         const slotPoolCpu = makeEmptyStatStore();
+        const slotPoolRejected = makeEmptyStatStore();
 
         for (let round = 1; round <= repeatCount && !cmpCancelled; round++) {
           setCmpStatus(`[${slot.label}] ${round}/${repeatCount}회차 측정 중... (0/${durationSec}s)`);
@@ -811,23 +849,27 @@
           for (let ch = 1; ch <= 4; ch++) {
             mergeIntoPool(slotPoolWall, ch, latencyStatsWall[ch]);
             mergeIntoPool(slotPoolCpu, ch, latencyStatsCpu[ch]);
+            mergeIntoPool(slotPoolRejected, ch, latencyStatsRejected[ch]);
             const w = computeStatsFrom(latencyStatsWall, ch);
             const c = computeStatsFrom(latencyStatsCpu, ch);
+            const rj = computeStatsFrom(latencyStatsRejected, ch);
             cmpRoundDetail.push({
               slot: slot.label, round, channel: ch,
               n: w ? w.n : 0,
               wall_min: w ? w.min : '', wall_avg: w ? w.avg : '', wall_p95: w ? w.p95 : '', wall_max: w ? w.max : '',
-              cpu_min: c ? c.min : '', cpu_avg: c ? c.avg : '', cpu_p95: c ? c.p95 : '', cpu_max: c ? c.max : ''
+              cpu_min: c ? c.min : '', cpu_avg: c ? c.avg : '', cpu_p95: c ? c.p95 : '', cpu_max: c ? c.max : '',
+              rejected_avg: rj ? rj.avg : ''
             });
           }
         }
 
         // 항목 요약 계산 — 라운드 전체를 풀링한 표본 기준 (개별 라운드 p95 평균보다 통계적으로 안정적)
-        let sumRatio = 0, ratioCount = 0, totalN = 0, sumWallWeighted = 0, sumCpuWeighted = 0;
+        let sumRatio = 0, ratioCount = 0, totalN = 0, sumWallWeighted = 0, sumCpuWeighted = 0, sumRejectedWeighted = 0;
         const perChannel = [];
         for (const ch of slot.channels) {
           const w = computeStatsFrom(slotPoolWall, ch);
           const c = computeStatsFrom(slotPoolCpu, ch);
+          const rj = computeStatsFrom(slotPoolRejected, ch);
           if (!w || !c) continue;
           const loss = w.avg - c.avg;
           const ratio = c.avg > 0 ? (loss / c.avg) * 100 : 0;
@@ -837,6 +879,7 @@
           totalN += w.n;
           sumWallWeighted += w.avg * w.n;
           sumCpuWeighted += c.avg * w.n;
+          sumRejectedWeighted += (rj ? rj.avg : 0) * w.n;
         }
         cmpSlotResults.push({
           label: slot.label,
@@ -846,7 +889,8 @@
           avgCpu: totalN > 0 ? Math.round(sumCpuWeighted / totalN) : 0,
           avgLoss: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) : 0,
           avgRatio: ratioCount > 0 ? Math.round((sumRatio / ratioCount) * 10) / 10 : 0,
-          avgSpread: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.spread, 0) / perChannel.length) : 0
+          avgSpread: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.spread, 0) / perChannel.length) : 0,
+          avgRejected: totalN > 0 ? Math.round(sumRejectedWeighted / totalN) : 0
         });
       }
 
@@ -870,6 +914,10 @@
     function cancelCompareTest() {
       cmpCancelled = true;
       document.getElementById('cmp_cancel_btn').disabled = true;
+      setCmpStatus('중단 처리 중...');
+      // 지금 웜업/라운드 대기 중이면 남은 시간을 기다리지 않고 그 자리에서 바로 깨운다.
+      if (cmpPendingTimer) { clearTimeout(cmpPendingTimer); cmpPendingTimer = null; }
+      if (cmpPendingResolve) { const r = cmpPendingResolve; cmpPendingResolve = null; r(); }
     }
 
     function renderCompareSummary() {
@@ -878,17 +926,26 @@
       for (const r of cmpSlotResults) {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalN}</td>` +
-          `<td>${r.avgWall}</td><td>${r.avgCpu}</td><td>${r.avgLoss}</td><td>${r.avgRatio}%</td><td>${r.avgSpread}</td>`;
+          `<td>${r.avgWall}</td><td>${r.avgCpu}</td><td>${r.avgLoss}</td><td>${r.avgRatio}%</td><td>${r.avgSpread}</td><td>${r.avgRejected}</td>`;
         tbody.appendChild(tr);
       }
       document.getElementById('cmp_summary_wrap').style.display = cmpSlotResults.length ? 'block' : 'none';
       document.getElementById('cmp_download_row').style.display = cmpSlotResults.length ? 'flex' : 'none';
     }
 
+    // 필드에 CSV 구분자(,)나 따옴표, 줄바꿈이 섞여 있으면 RFC4180대로 큰따옴표로 감싼다.
+    // (안 하면 예: 항목명에 콤마가 들어있을 때 그 콤마가 열 구분자로 오인돼 뒤 셀들이 밀려서 표가 깨짐)
+    function csvEscape(v) {
+      const s = (v === undefined || v === null) ? '' : String(v);
+      if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+
     function downloadCsvGeneric(filenamePrefix, header, rows) {
-      const lines = [header.join(',')];
-      for (const r of rows) lines.push(header.map(k => r[k]).join(','));
-      const csv = lines.join('\n');
+      const lines = [header.map(csvEscape).join(',')];
+      for (const r of rows) lines.push(header.map(k => csvEscape(r[k])).join(','));
+      // 맨 앞 BOM(U+FEFF): 없으면 엑셀이 한글을 시스템 기본 인코딩으로 잘못 읽어 깨져 보인다.
+      const csv = '﻿' + lines.join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -903,11 +960,11 @@
 
     function downloadCompareSummaryCsv() {
       downloadCsvGeneric('compare_summary',
-        ['label', 'channels', 'totalN', 'avgWall', 'avgCpu', 'avgLoss', 'avgRatio', 'avgSpread'], cmpSlotResults);
+        ['label', 'channels', 'totalN', 'avgWall', 'avgCpu', 'avgLoss', 'avgRatio', 'avgSpread', 'avgRejected'], cmpSlotResults);
     }
     function downloadCompareDetailCsv() {
       downloadCsvGeneric('compare_detail',
-        ['slot', 'round', 'channel', 'n', 'wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max'],
+        ['slot', 'round', 'channel', 'n', 'wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max', 'rejected_avg'],
         cmpRoundDetail);
     }
     // ========================================================================
