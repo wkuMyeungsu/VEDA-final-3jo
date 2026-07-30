@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <chrono>
 
-#include "debug_detect_handler.h"  // 테스트 전용 (나중에 통째로 삭제)
 #include "dispatcher_serialize.h"
 #include "i_app_dispatcher.h"
 #include "i_log_manager.h"
@@ -15,7 +14,6 @@
 #include "i_pl_video_frame_raw.h"                   // IPLVideoFrameRaw
 #include "i_p_video_frame_raw.h"                    // IPVideoFrameRaw / RawImage
 
-#include <opencv2/imgproc.hpp>   // cvtColor (GRAY -> BGR, /detectonce 프리뷰용)
 #include "aruco_detector.h"      // StringToDict
 
 namespace {
@@ -133,23 +131,6 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
       doc.Accept(writer);
 
       oas->SetResponseBody(strbuf.GetString(), strbuf.GetLength());
-    } else if (path_info == "/detectonce") {
-      // 테스트 전용 (나중에 통째로 삭제). raw 비디오 최신 프레임을 provider로 주입해 검출한다.
-      DebugDetectHandler::HandleDetectOnce(
-          oas,
-          [this](int channel, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners) {
-            SendMetadata(channel, ids, corners);
-          },
-          [this](int channel, std::string& error) -> cv::Mat {
-            cv::Mat gray = raw_store_.Get(channel);   // 해당 채널의 최신 raw 프레임
-            if (gray.empty()) {
-              error = "아직 raw 프레임 수신 전 (ch " + std::to_string(channel) + ")";
-              return cv::Mat();
-            }
-            cv::Mat bgr;
-            cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);  // 파이프라인/프리뷰가 컬러를 기대
-            return bgr;
-          });
     } else if (path_info == "/settings") {
       auto method = oas->GetFCGXParam("REQUEST_METHOD");
       if(method == "GET") {
@@ -187,7 +168,6 @@ void DetectorManager::RegisterURI() {
 
   auto* write_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/writeeventlog"), GetInstanceName(), methods);
   auto* check_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/checksetting"), GetInstanceName(), methods);
-  auto* detectonce_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/detectonce"), GetInstanceName(), methods);
   auto* settings_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings"), GetInstanceName(), methods);
   auto* settings_apply_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings/apply"), GetInstanceName(), methods);
   auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), methods);
@@ -195,7 +175,6 @@ void DetectorManager::RegisterURI() {
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, write_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
-  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, detectonce_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_apply_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, status_uri);
