@@ -22,3 +22,11 @@ add_executable(test_result_publisher
     test_result_publisher.cpp
 )
 target_link_libraries(test_result_publisher PRIVATE Threads::Threads)
+
+# 예외처리 트리거 검증 테스트 (경계값 + 우선순위 매트릭스, 종료코드 0=성공)
+# danger_judgment_engine.cpp를 include해서 엔진을 그대로 쓰므로 소스 추가는 필요 없다.
+# (엔진 쪽 main()은 토큰 치환으로 비활성화된다 - 테스트 파일 주석 참고)
+add_executable(test_exception_trigger
+    test_exception_trigger.cpp
+)
+target_link_libraries(test_exception_trigger PRIVATE Threads::Threads)
