@@ -17,6 +17,16 @@ add_library(danger_judgment_engine STATIC
 )
 target_include_directories(danger_judgment_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+# 상류(nearest_person_selector 결과) -> CameraInput 배선 glue.
+# 판정 로직 없이 매핑 + evaluate() 호출만 하므로 엔진 라이브러리에만 의존한다.
+# (nearest_person_selector.cpp는 아직 헤더가 없고 자체 main()을 갖고 있어 링크하지 않는다.
+#  결과 타입은 judgment_pipeline.h가 미러링해 둔 상태다.)
+add_library(judgment_pipeline STATIC
+    judgment_pipeline.cpp
+)
+target_include_directories(judgment_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(judgment_pipeline PUBLIC danger_judgment_engine)
+
 # 실행파일은 main()만 갖고 엔진은 라이브러리로 링크한다.
 # ResultPublisher.h는 헤더 온리이므로 소스 추가 없이 include 경로만 있으면 된다(같은 디렉터리).
 add_executable(danger_engine
