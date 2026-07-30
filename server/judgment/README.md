@@ -2,13 +2,25 @@
 
 지게차-사람 위험 판정 엔진 + 단말(Qt) 결과 송신
 
+## 파일 구성
+
+| 파일 | 내용 |
+|---|---|
+| `danger_judgment_engine.h` | 데이터 구조·enum·`DangerJudgmentEngine` 선언 + 출력/직렬화 헬퍼 선언 (표준 헤더만 의존) |
+| `danger_judgment_engine.cpp` | 엔진 구현 + 헬퍼 구현 (`nowIso8601Ms()`가 `gmtime_r`을 쓰므로 POSIX 전용) |
+| `danger_judgment_engine_main.cpp` | 실행파일 `danger_engine`의 `main()` — 더미 시나리오 9종 + TCP 송신 |
+| `ResultPublisher.h` | 헤더 온리 TCP 송신기 (POSIX 소켓 + `std::thread`) |
+| `test_exception_trigger.cpp` | 예외처리 트리거 검증 테스트 (헤더만 include, 엔진 구현은 링크) |
+| `test_result_publisher.cpp` | 송신 큐 스트레스 테스트 |
+
 ## 빌드
 
 ```bash
-g++ -std=c++17 danger_judgment_engine.cpp -o danger_engine -pthread
+g++ -std=c++17 danger_judgment_engine.cpp danger_judgment_engine_main.cpp \
+    -o danger_engine -pthread
 ```
 
-또는:
+또는 (테스트 실행파일까지 함께 빌드):
 
 ```bash
 cmake -S . -B build && cmake --build build
