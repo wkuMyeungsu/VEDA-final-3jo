@@ -3,7 +3,7 @@
 // 담당: 검출·추적 & IMU·ToF 센서 (박수빈) / 트랙: forklift-device
 //
 // [상태] 실제 센서는 VL53L1X로 교체됐고, 커널 캐릭터 디바이스 드라이버
-//   (forklift-device/kernel/vl53l1x_driver.c)로 라즈베리파이에서 실측 검증까지 끝남.
+//   (forklift-device/sensors/kernel/vl53l1x_driver.c)로 라즈베리파이에서 실측 검증까지 끝남.
 //   /dev/vl53l1x0에서 거리값(mm)을 read()로 가져올 수 있고, 실제 구현체는
 //   VL53L1XKernelDriver (vl53l1x_kernel_driver.hpp)이니 그쪽을 참고하면 됨.
 //

@@ -16,7 +16,7 @@
  * 빌드 전 확인:
  *   i2cdetect -y 1     # 0x29에 디바이스 잡히는지 확인
  *
- * 빌드/실행 (forklift-device/kernel/Makefile, 표준 Kbuild out-of-tree 모듈):
+ * 빌드/실행 (forklift-device/sensors/kernel/Makefile, 표준 Kbuild out-of-tree 모듈):
  *   make                       # vl53l1x_driver.ko 빌드
  *   sudo make install          # insmod
  *   cat /dev/vl53l1x0          # 측정값(mm) 출력

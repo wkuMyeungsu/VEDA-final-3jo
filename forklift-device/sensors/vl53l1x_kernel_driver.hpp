@@ -1,5 +1,5 @@
 // vl53l1x_kernel_driver.hpp
-// VL53L1XKernelDriver: forklift-device/kernel/vl53l1x_driver.c 캐릭터 디바이스를
+// VL53L1XKernelDriver: forklift-device/sensors/kernel/vl53l1x_driver.c 캐릭터 디바이스를
 // 읽어서 ITofSensor로 노출하는 얇은 유저스페이스 어댑터.
 // 담당: 검출·추적 & IMU·ToF 센서 (박수빈) / 트랙: forklift-device
 //
