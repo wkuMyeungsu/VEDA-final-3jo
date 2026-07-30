@@ -345,7 +345,12 @@ void DetectorManager::RestartWorkers() {
     std::string calib_path = ResolveCalibPath(calib_path_template, ch.channel);
 
     auto worker = std::make_unique<ChannelWorker>(
-        ch.channel, &raw_store_, calib_path, dict, ch.undistort, settings.poll_interval_ms,
+        ch.channel,
+        &raw_store_,
+        calib_path, dict,
+        ch.undistort,
+        settings.poll_interval_ms,
+        &slot_limiter_,
         [this](int c, const std::vector<int>& ids,
                const std::vector<std::vector<cv::Point2f>>& corners) {
           SendMetadata(c, ids, corners);   // 워커 스레드 -> 콜백 -> SendNoReplyEvent
@@ -383,6 +388,7 @@ void DetectorManager::HandleGetStatus(OpenAppSerializable* oas) {
     obj.AddMember("channel", ch, alloc);
     obj.AddMember("state", state, alloc);
     obj.AddMember("marker_count", st.marker_count, alloc);
+    obj.AddMember("rejected_count", st.rejected_count, alloc);
     obj.AddMember("latency_ms", st.latency_ms, alloc);
     obj.AddMember("cpu_latency_ms", st.cpu_latency_ms, alloc);
     obj.AddMember("last_detect", st.last_detect, alloc);

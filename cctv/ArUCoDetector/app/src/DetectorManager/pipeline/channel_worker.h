@@ -1,20 +1,22 @@
 #pragma once
 
 // ── 표준 라이브러리 ──
-#include <condition_variable>  // std::condition_variable : 스레드를 재우고 신호로 깨우는 도구
-#include <functional>          // std::function           : 함수/람다(콜백)를 담는 타입
-#include <mutex>               // std::mutex, lock_guard   : 공유 데이터 보호용 잠금
+#include <condition_variable>           // std::condition_variable : 스레드를 재우고 신호로 깨우는 도구
+#include <functional>                   // std::function           : 함수/람다(콜백)를 담는 타입
+#include <mutex>                        // std::mutex, lock_guard   : 공유 데이터 보호용 잠금
 #include <string>
-#include <thread>              // std::thread              : OS 스레드 생성/관리
+#include <thread>                       // std::thread              : OS 스레드 생성/관리
 #include <vector>
 
-#include <opencv2/core.hpp>    // cv::Mat, cv::Point2f
+#include <opencv2/core.hpp>             // cv::Mat, cv::Point2f
 
-#include "aruco_detector.h"     // ArucoDetector, DetectionResult, PREDEFINED_DICTIONARY_NAME
-#include "camera_calibration.h" // CameraCalibration, LoadCameraCalibration
-#include "frame_source.h"       // FrameSource
+#include "aruco_detector.h"             // ArucoDetector, DetectionResult, PREDEFINED_DICTIONARY_NAME
+#include "camera_calibration.h"         // CameraCalibration, LoadCameraCalibration
+#include "frame_source.h"               // FrameSource
+#include "detection_slot_limiter.h"     // DetectionSlotLimiter
 
-class RawFrameStore;  // 채널별 최신 raw 프레임 저장소 (FrameSource가 여기서 읽음)
+class RawFrameStore;        // 채널별 최신 raw 프레임 저장소 (FrameSource가 여기서 읽음)
+class DetectionSlotLimiter; 
 
 // 채널 하나를 전담하는 폴링 워커.
 // 자기만의 std::thread 하나를 돌리면서 poll_interval_ms 주기로
@@ -33,6 +35,8 @@ class ChannelWorker {
         struct Status {
             bool running = false;       // 이 워커가 폴링 루프를 돌고 있는가
             int marker_count = 0;       // 마지막 폴링에서 검출된 마커 개수
+            int rejected_count = 0;     // 마지막 폴링에서 사각형처럼 보였지만 사전과 안 맞아 탈락한 후보 개수.
+                                         // 마커 유무와 무관하게 이 값이 크면 장면(컨투어)이 복잡해 검출 비용이 늘어난다는 신호.
             int latency_ms = 0;         // 마지막 폴링 1회 소요 시간(ms) — 벽시계(체감 지연). 다른 채널에게
                                          // 밀려 CPU를 못 받고 대기한 시간(경합)도 그대로 포함된다.
             int cpu_latency_ms = 0;     // 같은 구간에서 "이 스레드가 실제로 CPU에서 실행된" 시간만(ms).
@@ -55,7 +59,7 @@ class ChannelWorker {
         // send             : 검출 결과 전송 콜백
         ChannelWorker(int channel, RawFrameStore* store, const std::string& calib_path,
                       cv::aruco::PREDEFINED_DICTIONARY_NAME dict, bool undistort,
-                      int poll_interval_ms, SendFn send);
+                      int poll_interval_ms, DetectionSlotLimiter* slot_limiter,SendFn send);
 
         ~ChannelWorker();   // 소멸 시 반드시 Stop()으로 스레드 회수 (안 하면 crash/terminate)
 
@@ -73,13 +77,14 @@ class ChannelWorker {
         void RunOnce();     // 파이프라인 1회 (스냅샷→검출→전송→상태갱신)
 
         // ── 생성 시 정해지고 이후 안 바뀌는 구성값들 ──
-        int channel_;                 // 담당 채널 번호
-        bool undistort_;              // 왜곡보정 on/off
-        int poll_interval_ms_;        // 폴링 주기
-        FrameSource source_;          // 프레임 획득기 (raw store에서 채널별 최신 프레임을 읽음)
-        CameraCalibration calib_;     // 로드된 캘리브레이션 값
-        ArucoDetector detector_;      // 검출기 (사전 보유). 생성 후 상태 안 변함
-        SendFn send_;                 // 전송 콜백
+        int channel_;                       // 담당 채널 번호
+        bool undistort_;                    // 왜곡보정 on/off
+        int poll_interval_ms_;              // 폴링 주기
+        FrameSource source_;                // 프레임 획득기 (raw store에서 채널별 최신 프레임을 읽음)
+        CameraCalibration calib_;           // 로드된 캘리브레이션 값
+        ArucoDetector detector_;            // 검출기 (사전 보유). 생성 후 상태 안 변함
+        DetectionSlotLimiter* slot_limiter_; // 비소유 포인터. 수명은 DetectorManager가 관리
+        SendFn send_;                       // 전송 콜백
 
         // ── 루프 제어용 (mtx_ 가 보호) ──
         std::thread thread_;          // 워커 스레드 핸들

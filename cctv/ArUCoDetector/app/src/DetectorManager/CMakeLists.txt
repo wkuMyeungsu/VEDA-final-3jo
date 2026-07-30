@@ -7,6 +7,7 @@ add_library(${TARGET_LIB} MODULE
   pipeline/frame_source.cc
   pipeline/frame_preprocessor.cc
   pipeline/channel_worker.cc
+  pipeline/detection_slot_limiter.cc
   metadata/metadata_format.cc
   settings/detection_settings.cc
   debug/debug_detect_handler.cc)
