@@ -15,7 +15,10 @@
 
 #pragma once
 #include "i2c_bus.hpp"
+#include "imu_sensor.hpp"
 #include <cstdint>
+#include <chrono>
+#include <thread>
 
 namespace mpu6050 {
 
@@ -33,15 +36,11 @@ constexpr float kAccelScale_g_per_lsb = 1.0f / 16384.0f;   // g 단위
 constexpr float kGyroScale_dps_per_lsb = 1.0f / 131.0f;    // deg/s 단위
 constexpr float kGravity_ms2 = 9.80665f;
 
-struct ImuSample {
-    // 물리 단위로 변환된 값
-    float accel_x_g, accel_y_g, accel_z_g;      // 단위: g
-    float accel_x_ms2, accel_y_ms2, accel_z_ms2; // 단위: m/s^2 (dead-reckoning 적분용)
-    float gyro_x_dps, gyro_y_dps, gyro_z_dps;    // 단위: deg/s
-    bool valid = false; // false면 읽기 실패 -> 상위 로직에서 SENSOR_FAULT로 연결
-};
+// wake-up(PWR_MGMT_1 0x00) 직후 첫 샘플이 0으로 나오는 현상을 lilo 실측에서
+// 확인함 (센서 내부 안정화 시간 필요로 추정) -> init() 성공 후 대기
+constexpr int kWakeupStabilizeMs = 20;
 
-class Mpu6050Driver {
+class Mpu6050Driver : public IImuSensor {
 public:
     // bus: 실제(LinuxI2CBus) 또는 가짜(MockI2CBus) 구현체를 주입받는다.
     //      -> 센서 실물이 와도 이 클래스 코드는 변경할 필요 없음
@@ -49,10 +48,14 @@ public:
         : bus_(bus), addr_(addr) {}
 
     // 입력: 없음 (센서 하드웨어 초기화)
-    // 처리: PWR_MGMT_1에 0x00 써서 sleep 모드 해제
+    // 처리: PWR_MGMT_1에 0x00 써서 sleep 모드 해제, 안정화 대기
     // 출력: 성공 시 true
-    bool init() {
-        return bus_.writeRegister(addr_, REG_PWR_MGMT_1, 0x00);
+    bool init() override {
+        if (!bus_.writeRegister(addr_, REG_PWR_MGMT_1, 0x00)) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(kWakeupStabilizeMs));
+        return true;
     }
 
     // WHO_AM_I 레지스터로 배선/주소가 맞는지 확인 (0x68이어야 정상)
@@ -66,7 +69,7 @@ public:
     // 입력: 없음 (내부적으로 ACCEL_XOUT_H부터 14바이트 burst read)
     // 처리: raw 16bit 값 6개 파싱 -> g, m/s^2, deg/s 단위로 환산
     // 출력: ImuSample (valid=false면 버스 읽기 실패, 상위에서 SENSOR_FAULT 처리)
-    ImuSample readSample() {
+    ImuSample readSample() override {
         ImuSample sample{};
         uint8_t raw[14] = {0};
 
