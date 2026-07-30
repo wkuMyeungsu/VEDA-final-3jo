@@ -8,7 +8,7 @@
 
 #include "component.h"
 #include "i_detector_manager.h"
-#include "metadata_format.h"
+#include "metadata_xml_builder.h"
 #include "dispatcher_serialize.h"
 #include "channel_worker.h"
 #include "aruco_detector.h"
@@ -44,7 +44,7 @@ class DetectorManager : public Component, public IDetectorManager {
   std::map<int, std::unique_ptr<ChannelWorker>> workers_; // 채널번호 -> 워커
   std::chrono::steady_clock::time_point workers_start_time_;  // 워커 기동 시각 (uptime 계산용)
 
-  // raw 비디오(push) 프레임을 채널별로 보관 → 각 ChannelWorker의 FrameSource가 여기서 읽는다.
+  // raw 비디오(push) 프레임을 채널별로 보관 → 각 ChannelWorker가 여기서 읽는다.
   RawFrameStore raw_store_;
 
   DetectionSlotLimiter slot_limiter_{1};  // permit = 1 (코어 1개는 프레임워크 용)

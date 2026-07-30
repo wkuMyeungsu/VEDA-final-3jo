@@ -1,5 +1,6 @@
-#include "frame_preprocessor.h"
+#include "undistort.h"
 
+#include <opencv2/imgproc.hpp>
 #include <opencv2/calib3d.hpp>  // cv::undistort
 
 cv::Mat TryUndistort(const cv::Mat& color, const CameraCalibration& calib, bool enabled, bool& out_applied) 

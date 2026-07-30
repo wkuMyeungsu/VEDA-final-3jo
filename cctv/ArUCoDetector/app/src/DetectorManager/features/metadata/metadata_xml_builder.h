@@ -4,7 +4,7 @@
 #include <vector>
 #include <opencv2/core.hpp>
 
-namespace MarkerMetadataFormat {
+namespace MetadataXmlBuilder {
     std::string TimePointToString(uint64_t timestamp_ms);
 
     // 검출된 마커 id와 코너를 ONVIF WS-Notification 이벤트 XML로 직렬화

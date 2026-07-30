@@ -195,7 +195,7 @@ void DetectorManager::SendMetadata(int channel, const std::vector<int>& ids, con
   auto now_ms = static_cast<uint64_t> (
     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 
-  std::string xml = MarkerMetadataFormat::BuildMarkerMetadataXml(channel, ids, corners, now_ms);
+  std::string xml = MetadataXmlBuilder::BuildMarkerMetadataXml(channel, ids, corners, now_ms);
 
   auto metadata = StringMetadata(channel, now_ms);
   metadata.Set(xml);
@@ -275,23 +275,23 @@ void DetectorManager::HandleGetLogs(OpenAppSerializable* oas) {
 }
 
 void DetectorManager::HandleGetSettings(OpenAppSerializable* oas) {
-  DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
-  std::string json = SerializeDetectionSettings(settings);
+  DetectionSettings settings = DetectionSettingsIO::Load(kSettingsPath);
+  std::string json = DetectionSettingsIO::Serialize(settings);
   oas->SetResponseBody(json.c_str(), json.size());
 }
 
 void DetectorManager::HandlePostSettings(OpenAppSerializable* oas) {
   // 기존 설정을 먼저 로드 -> body에 없는 필드 (calibration_path 등)를 보존한다.
-  DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
+  DetectionSettings settings = DetectionSettingsIO::Load(kSettingsPath);
 
   std::string body = oas->GetRequestBody();
-  if (!DeserializeDetectionSettings(body, settings)) {
+  if (!DetectionSettingsIO::Deserialize(body, settings)) {
     oas->SetStatusCode(400);
     oas->SetResponseBody("request body parse error");
     return;
   }
 
-  if (!SaveDetectionSettings(kSettingsPath, settings)) {
+  if (!DetectionSettingsIO::Save(kSettingsPath, settings)) {
     oas->SetStatusCode(500);
     oas->SetResponseBody("settings save failed");
     return;
@@ -306,10 +306,10 @@ void DetectorManager::RestartWorkers() {
 
   // 2) 설정 로드. settings.json이 없거나 채널이 비어 있으면(=갓 설치) 기본값(4채널 ON)으로
   //    시작하고 파일도 생성한다(best-effort). UI가 all-off 저장을 막으므로 빈 channels = 미설정.
-  DetectionSettings settings = LoadDetectionSettings(kSettingsPath);
+  DetectionSettings settings = DetectionSettingsIO::Load(kSettingsPath);
   if (settings.channels.empty()) {
-    settings = DefaultDetectionSettings();
-    SaveDetectionSettings(kSettingsPath, settings);
+    settings = DetectionSettingsIO::Default();
+    DetectionSettingsIO::Save(kSettingsPath, settings);
   }
   cv::aruco::PREDEFINED_DICTIONARY_NAME dict = StringToDict(settings.dictionary_name);
   std::string calib_path_template = settings.calibration_path.empty()

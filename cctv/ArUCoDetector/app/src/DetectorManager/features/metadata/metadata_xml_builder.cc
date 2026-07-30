@@ -1,10 +1,10 @@
-#include "metadata_format.h"
+#include "metadata_xml_builder.h"
 
 #include <ctime>
 #include <iomanip>
 #include <sstream>
 
-namespace MarkerMetadataFormat {
+namespace MetadataXmlBuilder {
     
     // UTC 타임스탬프(ms)를 ONVIF UtcTime 속성 형식("YYYY-MM-DDTHH:MM:SS.mmmZ")으로 변환.
     std::string TimePointToString(uint64_t timestamp_ms)
@@ -91,4 +91,4 @@ namespace MarkerMetadataFormat {
         xml << "</tt:Message></wsnt:Message></wsnt:NotificationMessage></tt:Event></tt:MetadataStream>";
         return xml.str();
     }
-}   // namespace MarkerMetadataFormat
+}   // namespace MetadataXmlBuilder

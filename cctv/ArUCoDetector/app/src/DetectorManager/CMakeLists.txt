@@ -4,11 +4,10 @@ add_library(${TARGET_LIB} MODULE
   detector_manager.cc
   features/calibration/camera_calibration.cc
   features/detection/aruco_detector.cc
-  features/detection/frame_source.cc
-  features/detection/frame_preprocessor.cc
+  features/detection/undistort.cc
   features/detection/channel_worker.cc
   features/detection/detection_slot_limiter.cc
-  features/metadata/metadata_format.cc
+  features/metadata/metadata_xml_builder.cc
   features/settings/detection_settings.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE
