@@ -13,6 +13,7 @@
 //   [테스트 3] processFrame() end-to-end (스텁 센서 기준 위험도/예외/거리)
 //   [테스트 4] 하류 JSON에 camera_id가 실제로 실리는지 (이 배선의 존재 이유)
 //   [테스트 5] StubSensorReader가 돌려주는 값 계약 (드라이버로 교체되면 여기서 깨져야 함)
+//   [테스트 6] 진짜 selectNearestPerson() 출력을 processFrame()에 흘려보내는 통합 확인
 //
 //   핸드오버(여러 camera_id 동시 중첩) 처리는 구현 범위 밖이므로 검증 대상도 아니다.
 //   대신 [테스트 3]에서 "다른 카메라에서 온 사람도 드랍되지 않는다"를 고정해 둔다 -
@@ -21,8 +22,9 @@
 // 거리 비교는 부동소수점이라 expectNear(허용오차 1e-6)로 본다.
 // 판정 불가 상태의 sentinel(-1.0)은 엔진이 상수를 그대로 대입하므로 정확히 비교된다.
 //
-// 빌드: g++ -std=c++17 test_judgment_pipeline.cpp judgment_pipeline.cpp \
-//           danger_judgment_engine.cpp -o test_judgment_pipeline -pthread
+// 빌드: g++ -std=c++17 -I../tracking test_judgment_pipeline.cpp judgment_pipeline.cpp \
+//           danger_judgment_engine.cpp ../tracking/nearest_person_selector.cpp \
+//           -o test_judgment_pipeline -pthread
 // 실행: ./test_judgment_pipeline   (종료코드 0=성공, 1=실패)
 
 #include <cstddef>
@@ -30,6 +32,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "judgment_pipeline.h"
 
@@ -353,6 +356,85 @@ void testStubSensorContract() {
     expectBool("is_dead_reckoning = false", sen.is_dead_reckoning, false);
 }
 
+// ── 테스트 6: 상류 구현체와의 통합 ───────────────────────────
+// 위 테스트들은 NearestPersonResult를 손으로 만들어 넣는다. 여기서는 진짜
+// selectNearestPerson()을 호출해 그 출력을 그대로 processFrame()에 넘긴다.
+// 미러링된 타입이 아니라 실제 구현체와 링크됐는지, 그리고 selector의 필드 의미
+// (found / position / camera_id)가 glue의 기대와 어긋나지 않는지 함께 확인한다.
+//
+// 트랙 구성은 nearest_person_selector_main.cpp의 더미 시나리오와 같은 값을 쓴다.
+void testSelectorIntegration() {
+    std::cout << "\n[테스트 6] selectNearestPerson() -> processFrame() 통합\n";
+
+    StubSensorReader sensors;
+    JudgmentPipeline pipeline(kActiveCamera, sensors);
+
+    std::cout << "  -- 3명 중 최근접 선택 (selector 시나리오 1) --\n";
+    {
+        const std::vector<Track> tracks = {
+            {1, 1, {8.0, 8.0}, 0},   // 약 4.24m
+            {2, 1, {5.5, 5.5}, 0},   // 약 0.71m <- 선택돼야 함
+            {3, 2, {1.0, 1.0}, 0},   // 약 5.66m
+        };
+        const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
+
+        // selector 쪽 결과부터 확인 (여기가 틀리면 아래 판정은 볼 의미가 없다)
+        expectBool("selector가 사람을 찾음",   nearest.found, true);
+        report("선택된 track_id=2", nearest.track_id == 2, "2", std::to_string(nearest.track_id));
+
+        const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
+        expectRisk("최근접 0.71m -> DANGER",   out.result.final_risk, RiskLevel::DANGER);
+        expectNear("거리 일치",                out.result.distance_m, nearest.distance_m);
+        expectStr ("camera_id 전달",            out.result.camera_id, "1");
+        expectBool("같은 카메라 -> mismatch 아님", out.camera_id_mismatch, false);
+    }
+
+    std::cout << "  -- 미검출 트랙 제외 후 차순위 선택 (selector 시나리오 2) --\n";
+    {
+        const std::vector<Track> tracks = {
+            {4, 1, {5.1, 5.1}, 2},   // 매우 가깝지만 미검출 -> 제외
+            {5, 1, {7.0, 7.0}, 0},   // 약 2.83m <- 선택돼야 함
+        };
+        const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
+
+        report("선택된 track_id=5", nearest.track_id == 5, "5", std::to_string(nearest.track_id));
+        // 제외된 트랙(0.14m)이 뽑혔다면 DANGER가 나온다 -> CAUTION이어야 정상
+        const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
+        expectRisk("차순위 2.83m -> CAUTION", out.result.final_risk, RiskLevel::CAUTION);
+    }
+
+    std::cout << "  -- 전부 미검출 (selector 시나리오 4) --\n";
+    {
+        const std::vector<Track> tracks = {
+            {6, 1, {5.2, 5.2}, 1},
+            {7, 1, {6.0, 6.0}, 3},
+        };
+        const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
+
+        expectBool("selector가 사람을 못 찾음", nearest.found, false);
+        const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
+        expectBool("person_detected=false로 전달",
+                   pipeline.toCameraInput(kForklift, true, nearest).person_detected, false);
+        expectRisk("사람 없음 -> SAFE",        out.result.final_risk, RiskLevel::SAFE);
+        expectNear("거리 판정 불가 -> -1",     out.result.distance_m, -1.0);
+    }
+
+    std::cout << "  -- 다른 카메라 트랙만 남은 경우 --\n";
+    {
+        // camera_id=2 트랙만 유효 -> selector는 그걸 고르고, glue는 mismatch로 표시한다.
+        const std::vector<Track> tracks = {
+            {8, 1, {5.2, 5.2}, 1},   // 활성 카메라 트랙이지만 미검출 -> 제외
+            {9, 2, {5.5, 5.5}, 0},   // 다른 카메라 트랙 -> 이게 선택됨
+        };
+        const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
+
+        report("선택된 camera_id=2", nearest.camera_id == 2, "2", std::to_string(nearest.camera_id));
+        const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
+        expectBool("mismatch 플래그 켜짐",  out.camera_id_mismatch, true);
+        expectRisk("판정은 드랍되지 않음",   out.result.final_risk, RiskLevel::DANGER);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -364,6 +446,7 @@ int main() {
     testProcessFrame();
     testJsonCarriesCameraId();
     testStubSensorContract();
+    testSelectorIntegration();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";
