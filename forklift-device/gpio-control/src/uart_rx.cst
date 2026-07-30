@@ -22,3 +22,5 @@ IO_LOC "estop_n" 14;
 IO_PORT "estop_n" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
 IO_LOC "buzzer_out" 46;
 IO_PORT "buzzer_out" IO_TYPE=LVCMOS33;
+IO_LOC "uart_tx_o" 41;
+IO_PORT "uart_tx_o" IO_TYPE=LVCMOS33;
