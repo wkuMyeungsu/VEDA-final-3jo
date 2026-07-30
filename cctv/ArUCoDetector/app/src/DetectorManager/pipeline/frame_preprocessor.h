@@ -9,6 +9,3 @@
 // 아니면 원본 그대로. 
 // out_applied = 실제 적용 여부
 cv::Mat TryUndistort(const cv::Mat& color, const CameraCalibration& calib, bool enabled, bool& out_applied);
-
-// BGR -> grayscale (항상)
-cv::Mat ConvertToGrayscale(const cv::Mat& img);

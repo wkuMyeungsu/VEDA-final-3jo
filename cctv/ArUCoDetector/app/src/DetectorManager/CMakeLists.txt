@@ -7,19 +7,19 @@ add_library(${TARGET_LIB} MODULE
   pipeline/frame_source.cc
   pipeline/frame_preprocessor.cc
   pipeline/channel_worker.cc
-  pipeline/detection_slot_limiter.cc
+  concurrency/detection_slot_limiter.cc
   metadata/metadata_format.cc
-  settings/detection_settings.cc
-  debug/debug_detect_handler.cc)
+  settings/detection_settings.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/includes
   ${CMAKE_CURRENT_SOURCE_DIR}/camera
   ${CMAKE_CURRENT_SOURCE_DIR}/pipeline
+  ${CMAKE_CURRENT_SOURCE_DIR}/concurrency
+  ${CMAKE_CURRENT_SOURCE_DIR}/store
   ${CMAKE_CURRENT_SOURCE_DIR}/metadata
   ${CMAKE_CURRENT_SOURCE_DIR}/settings
-  ${CMAKE_CURRENT_SOURCE_DIR}/debug
   ${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include
   ${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include/opencv4
   ${WISENET_PRODUCT_RELEASE_PATH}/includes/metadata
