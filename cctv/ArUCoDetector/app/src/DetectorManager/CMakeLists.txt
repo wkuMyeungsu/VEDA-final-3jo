@@ -2,24 +2,22 @@ set(TARGET_LIB detector_manager)
 
 add_library(${TARGET_LIB} MODULE
   detector_manager.cc
-  camera/camera_calibration.cc
-  pipeline/aruco_detector.cc
-  pipeline/frame_source.cc
-  pipeline/frame_preprocessor.cc
-  pipeline/channel_worker.cc
-  concurrency/detection_slot_limiter.cc
-  metadata/metadata_format.cc
-  settings/detection_settings.cc)
+  features/calibration/camera_calibration.cc
+  features/detection/aruco_detector.cc
+  features/detection/frame_source.cc
+  features/detection/frame_preprocessor.cc
+  features/detection/channel_worker.cc
+  features/detection/detection_slot_limiter.cc
+  features/metadata/metadata_format.cc
+  features/settings/detection_settings.cc)
 
 target_include_directories(${TARGET_LIB} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/includes
-  ${CMAKE_CURRENT_SOURCE_DIR}/camera
-  ${CMAKE_CURRENT_SOURCE_DIR}/pipeline
-  ${CMAKE_CURRENT_SOURCE_DIR}/concurrency
-  ${CMAKE_CURRENT_SOURCE_DIR}/store
-  ${CMAKE_CURRENT_SOURCE_DIR}/metadata
-  ${CMAKE_CURRENT_SOURCE_DIR}/settings
+  ${CMAKE_CURRENT_SOURCE_DIR}/component/includes
+  ${CMAKE_CURRENT_SOURCE_DIR}/features/calibration
+  ${CMAKE_CURRENT_SOURCE_DIR}/features/detection
+  ${CMAKE_CURRENT_SOURCE_DIR}/features/metadata
+  ${CMAKE_CURRENT_SOURCE_DIR}/features/settings
   ${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include
   ${WISENET_PRODUCT_RELEASE_PATH}/3rd_party/include/opencv4
   ${WISENET_PRODUCT_RELEASE_PATH}/includes/metadata
@@ -37,5 +35,5 @@ target_link_libraries(${TARGET_LIB} PRIVATE metadata_manager stdlib pthread)
 target_link_libraries(${TARGET_LIB} PRIVATE sdk_cv5_video cv5_technical_streamingService_sharedBuffer npu_api)
 
 install (TARGETS ${TARGET_LIB} DESTINATION ${CMAKE_HOME_DIRECTORY}/libs/${TARGET_LIB})
-install (DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/manifests/ DESTINATION ${CMAKE_HOME_DIRECTORY}/libs/${TARGET_LIB} FILES_MATCHING PATTERN "*manifest.json")
-install (DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/manifests/ DESTINATION ${CMAKE_HOME_DIRECTORY}/res/models FILES_MATCHING PATTERN "*instance*.json" PATTERN "*attribute*.json")
+install (DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/component/manifests/ DESTINATION ${CMAKE_HOME_DIRECTORY}/libs/${TARGET_LIB} FILES_MATCHING PATTERN "*manifest.json")
+install (DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/component/manifests/ DESTINATION ${CMAKE_HOME_DIRECTORY}/res/models FILES_MATCHING PATTERN "*instance*.json" PATTERN "*attribute*.json")
