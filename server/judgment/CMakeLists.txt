@@ -10,12 +10,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_executable(danger_engine
+# 엔진 로직(헤더 + 구현)만 담은 정적 라이브러리.
+# 실행파일과 테스트가 같은 구현을 공유하도록 하고, main()은 각 실행파일 쪽에만 둔다.
+add_library(danger_judgment_engine STATIC
     danger_judgment_engine.cpp
 )
+target_include_directories(danger_judgment_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+# 실행파일은 main()만 갖고 엔진은 라이브러리로 링크한다.
 # ResultPublisher.h는 헤더 온리이므로 소스 추가 없이 include 경로만 있으면 된다(같은 디렉터리).
-target_link_libraries(danger_engine PRIVATE Threads::Threads)
+add_executable(danger_engine
+    danger_judgment_engine_main.cpp
+)
+target_link_libraries(danger_engine PRIVATE danger_judgment_engine Threads::Threads)
 
 # ResultPublisher 송신 큐 스트레스 테스트 (루프백 TCP 사용, 종료코드 0=성공)
 add_executable(test_result_publisher
@@ -24,9 +31,9 @@ add_executable(test_result_publisher
 target_link_libraries(test_result_publisher PRIVATE Threads::Threads)
 
 # 예외처리 트리거 검증 테스트 (경계값 + 우선순위 매트릭스, 종료코드 0=성공)
-# danger_judgment_engine.cpp를 include해서 엔진을 그대로 쓰므로 소스 추가는 필요 없다.
-# (엔진 쪽 main()은 토큰 치환으로 비활성화된다 - 테스트 파일 주석 참고)
+# 엔진 라이브러리를 링크해서 쓴다. 엔진 main()은 danger_judgment_engine_main.cpp에만
+# 있으므로 이 테스트의 main()과 충돌하지 않는다.
 add_executable(test_exception_trigger
     test_exception_trigger.cpp
 )
-target_link_libraries(test_exception_trigger PRIVATE Threads::Threads)
+target_link_libraries(test_exception_trigger PRIVATE danger_judgment_engine Threads::Threads)

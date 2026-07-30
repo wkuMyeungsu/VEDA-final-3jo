@@ -17,33 +17,23 @@
 //   DEAD_RECKONING은 트리거 발생 여부와 "최소 CAUTION 유지"까지만 검증한다.
 //   회전 중 폐색 지속에 따른 DANGER 에스컬레이션은 회전 임계값이 잠정치라 범위 밖.
 //
-// 엔진은 별도 헤더가 없고 danger_judgment_engine.cpp 안에 main()과 함께 들어 있다.
-// 엔진 소스를 수정하지 않고 재사용하기 위해, 표준 헤더를 먼저 처리한 뒤
-// main 토큰만 치환해서 translation unit을 그대로 include한다(엔진의 main은 호출 안 함).
+// 엔진은 danger_judgment_engine.h(선언) / .cpp(구현)로 분리되어 있고 main()은
+// danger_judgment_engine_main.cpp에 따로 있다. 따라서 헤더만 평범하게 include하고
+// 엔진 구현은 링크 시점에 합친다(예전의 #define main 토큰 치환 트릭은 불필요해져 제거).
 //
 // 임계값 비교는 전부 부동소수점 상등/부등이지만, 경계값(2.0 / 0.5 / 1.0)은 모두
 // 이진 부동소수점으로 정확히 표현되는 값이라 판정이 결정론적이다.
 //
-// 빌드: g++ -std=c++17 test_exception_trigger.cpp -o test_exception_trigger -pthread
+// 빌드: g++ -std=c++17 test_exception_trigger.cpp danger_judgment_engine.cpp \
+//           -o test_exception_trigger -pthread
 // 실행: ./test_exception_trigger   (종료코드 0=성공, 1=실패)
 
+#include <cstddef>
 #include <iostream>
-#include <iomanip>
 #include <string>
 #include <vector>
-#include <cmath>
-#include <sstream>
-#include <chrono>
-#include <ctime>
-#include <thread>
 
-#include "ResultPublisher.h"
-
-// 위 include로 엔진이 필요로 하는 헤더가 모두 처리된 뒤이므로,
-// 아래 치환은 엔진 소스 자체의 main()에만 적용된다.
-#define main danger_engine_main_unused
-#include "danger_judgment_engine.cpp"
-#undef main
+#include "danger_judgment_engine.h"
 
 namespace {
 
