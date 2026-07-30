@@ -13,7 +13,7 @@
 #include <cmath>
 #include "i2c_bus_mock.hpp"
 #include "mpu6050_driver.hpp"
-#include "vl53l0x_stub.hpp"
+#include "vl53l1x_interface.hpp"
 
 namespace {
 bool nearlyEqual(float a, float b, float eps = 0.01f) {
