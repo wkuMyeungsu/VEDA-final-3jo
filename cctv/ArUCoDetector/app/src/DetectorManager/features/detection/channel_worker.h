@@ -12,11 +12,8 @@
 
 #include "aruco_detector.h"             // ArucoDetector, DetectionResult, PREDEFINED_DICTIONARY_NAME
 #include "camera_calibration.h"         // CameraCalibration, LoadCameraCalibration
-#include "frame_source.h"               // FrameSource
+#include "raw_frame_store.h"            // RawFrameStore
 #include "detection_slot_limiter.h"     // DetectionSlotLimiter
-
-class RawFrameStore;        // 채널별 최신 raw 프레임 저장소 (FrameSource가 여기서 읽음)
-class DetectionSlotLimiter; 
 
 // 채널 하나를 전담하는 폴링 워커.
 // 자기만의 std::thread 하나를 돌리면서 poll_interval_ms 주기로
@@ -51,7 +48,7 @@ class ChannelWorker {
         };
 
         // channel          : 담당 채널 번호(1~4)
-        // store            : 채널별 최신 raw 프레임 저장소 (FrameSource가 여기서 프레임을 읽음)
+        // store            : 채널별 최신 raw 프레임 저장소 (여기서 이 채널의 프레임을 읽음)
         // calib_path       : 이 채널의 calib_result_chN.json 절대경로 (생성자에서 한 번 로드)
         // dict             : 검출에 쓸 ArUco 사전 (StringToDict로 문자열→enum 변환한 값)
         // undistort        : 이 채널에서 우리 왜곡보정을 적용할지 (설정의 채널별 토글)
@@ -80,7 +77,7 @@ class ChannelWorker {
         int channel_;                       // 담당 채널 번호
         bool undistort_;                    // 왜곡보정 on/off
         int poll_interval_ms_;              // 폴링 주기
-        FrameSource source_;                // 프레임 획득기 (raw store에서 채널별 최신 프레임을 읽음)
+        RawFrameStore* raw_store_;          // 비소유 포인터. 채널별 최신 raw 프레임 저장소 (수명은 DetectorManager가 관리)
         CameraCalibration calib_;           // 로드된 캘리브레이션 값
         ArucoDetector detector_;            // 검출기 (사전 보유). 생성 후 상태 안 변함
         DetectionSlotLimiter* slot_limiter_; // 비소유 포인터. 수명은 DetectorManager가 관리

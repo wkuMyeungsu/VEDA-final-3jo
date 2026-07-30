@@ -6,7 +6,7 @@
 #include <sstream>   // std::ostringstream
 #include <time.h>    // clock_gettime, CLOCK_THREAD_CPUTIME_ID (POSIX, 스레드별 CPU 시간)
 
-#include "frame_preprocessor.h" // TryUndistort
+#include "undistort.h" // TryUndistort
 #include "detection_slot_limiter.h"
 
 namespace {
@@ -45,7 +45,7 @@ ChannelWorker::ChannelWorker(int channel, RawFrameStore* store,
     : channel_(channel),
       undistort_(undistort),
       poll_interval_ms_(poll_interval_ms),
-      source_(store),                             // raw 프레임 저장소 포인터를 FrameSource에 전달
+      raw_store_(store),                          // raw 프레임 저장소 포인터 저장
       calib_(LoadCameraCalibration(calib_path)),  // 파일을 지금 한 번 읽어 결과 저장
       detector_(dict),                            // dict로 ArUco 사전 로드
       slot_limiter_(slot_limiter),
@@ -158,14 +158,14 @@ void ChannelWorker::RunOnce()
     auto t0 = std::chrono::steady_clock::now();
     long long cpu0 = ThreadCpuTimeMs();
 
-    // 1) raw 저장소에서 이 채널의 최신 프레임(grayscale)을 가져온다. 실패하면 빈 Mat + error 문자열.
-    std::string error;
-    cv::Mat gray = source_.Acquire(channel_, error);
+    // 1) raw 저장소에서 이 채널의 최신 프레임(grayscale)을 가져온다. 아직 프레임이 없으면 빈 Mat.
+    //    (BGR로 안 부풀림 — 이후 파이프라인(undistort)이 gray를 그대로 다룬다.)
+    cv::Mat gray = raw_store_->Get(channel_);
     if (gray.empty())
     {
         // 이번 폴은 스킵(전송 안 함). 상태에 에러만 남긴다.
         std::lock_guard<std::mutex> lk(status_mtx_);
-        status_.last_error = error;
+        status_.last_error = "아직 raw 프레임 수신 전 (ch " + std::to_string(channel_) + ")";
         return;
     }
 

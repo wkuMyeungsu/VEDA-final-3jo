@@ -24,17 +24,20 @@ struct DetectionSettings {
     std::string calibration_path;
 };
 
-// path는 settings.json 경로
-DetectionSettings LoadDetectionSettings(const std::string& path);
+// DetectionSettings를 settings.json으로 읽고 쓰는 담당.
+namespace DetectionSettingsIO {
+    // path는 settings.json 경로
+    DetectionSettings Load(const std::string& path);
 
-// settings를 path에 JSON으로 저장. 성공 여부 반환.
-bool SaveDetectionSettings(const std::string& path, const DetectionSettings& settings);
+    // settings를 path에 JSON으로 저장. 성공 여부 반환.
+    bool Save(const std::string& path, const DetectionSettings& settings);
 
-std::string SerializeDetectionSettings(const DetectionSettings& settings);
+    std::string Serialize(const DetectionSettings& settings);
 
-// JSON 문자열 → 구조체. json에 있는 필드만 덮어씀(없는 필드는 인자 settings 값 유지).
-// "channels"가 있으면 기존 channels를 통째로 교체. 파싱 실패 시 false.
-bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& settings);
+    // JSON 문자열 → 구조체. json에 있는 필드만 덮어씀(없는 필드는 인자 settings 값 유지).
+    // "channels"가 있으면 기존 channels를 통째로 교체. 파싱 실패 시 false.
+    bool Deserialize(const std::string& json, DetectionSettings& settings);
 
-// 기본 설정 (4채널 ON, undistort off). settings.json이 없을 때 초기값으로 사용.
-DetectionSettings DefaultDetectionSettings();
+    // 기본 설정 (4채널 ON, undistort off). settings.json이 없을 때 초기값으로 사용.
+    DetectionSettings Default();
+}

@@ -15,7 +15,9 @@
 // }
 // 파일이 없거나 필드가 없으면 DetectionSettings의 기본값을 그대로 씀.
 
-DetectionSettings LoadDetectionSettings(const std::string& path) {
+namespace DetectionSettingsIO {
+
+DetectionSettings Load(const std::string& path) {
   DetectionSettings settings;
 
   std::ifstream ifs(path);
@@ -26,11 +28,11 @@ DetectionSettings LoadDetectionSettings(const std::string& path) {
   std::stringstream ss;
   ss << ifs.rdbuf();
 
-  DeserializeDetectionSettings(ss.str(), settings);
+  Deserialize(ss.str(), settings);
   return settings;
 }
 
-std::string SerializeDetectionSettings(const DetectionSettings& settings) {
+std::string Serialize(const DetectionSettings& settings) {
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   auto& alloc = doc.GetAllocator();
 
@@ -54,8 +56,8 @@ std::string SerializeDetectionSettings(const DetectionSettings& settings) {
   return strbuf.GetString();  
 }
 
-bool SaveDetectionSettings(const std::string& path, const DetectionSettings& settings) {
-  std::string json = SerializeDetectionSettings(settings);
+bool Save(const std::string& path, const DetectionSettings& settings) {
+  std::string json = Serialize(settings);
   std::ofstream ofs(path);
   if (!ofs.is_open()) {
     return false;
@@ -64,7 +66,7 @@ bool SaveDetectionSettings(const std::string& path, const DetectionSettings& set
   return true;
 }
 
-bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& settings) {
+bool Deserialize(const std::string& json, DetectionSettings& settings) {
   JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
   doc.Parse(json);
   if (doc.HasParseError()) {
@@ -96,7 +98,7 @@ bool DeserializeDetectionSettings(const std::string& json, DetectionSettings& se
   return true;
 }
 
-DetectionSettings DefaultDetectionSettings() {
+DetectionSettings Default() {
   DetectionSettings s;   // dictionary_name="DICT_4X4_50", poll_interval_ms=1000 (구조체 기본값)
   for (int ch = 1; ch <= 4; ++ch) {
     ChannelConfig c;
@@ -107,6 +109,8 @@ DetectionSettings DefaultDetectionSettings() {
   }
   return s;
 }
+
+}  // namespace DetectionSettingsIO
 
 
 
