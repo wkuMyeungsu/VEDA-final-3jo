@@ -1,0 +1,64 @@
+{
+  "LibraryFileName": "libdetector_manager.so",
+  "Instance": {
+    "__comment__": "2009004 = LifeCycleManagerInterface::EReceivers::eLogManager",
+    "InstanceName": "DetectorManager",
+    "SchedulerName": "DetectorManagerScheduler",
+    "ReceiverNames": [
+      "AppDispatcher",
+      {
+        "SymbolName": "LogManager",
+        "RealName": "2009004"
+      },
+      "MetadataManager_0",
+      "MetadataManager_1",
+      "MetadataManager_2",
+      "MetadataManager_3",
+      "SPMgrVideoRaw_0",
+      "SPMgrVideoRaw_1",
+      "SPMgrVideoRaw_2",
+      "SPMgrVideoRaw_3"
+    ],
+    "SourceNames": [
+      {
+        "Source": "OpenPlatform",
+        "GroupName": "SettingChange"
+      },
+      {
+        "Source": "MetadataManager_0",
+        "GroupName": "Metadata::OpenApp"
+      },
+      {
+        "Source": "MetadataManager_1",
+        "GroupName": "Metadata::OpenApp"
+      },
+      {
+        "Source": "MetadataManager_2",
+        "GroupName": "Metadata::OpenApp"
+      },
+      {
+        "Source": "MetadataManager_3",
+        "GroupName": "Metadata::OpenApp"
+      },
+      {
+        "Source": "SPMgrVideoRaw_0",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      },
+      {
+        "Source": "SPMgrVideoRaw_1",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      },
+      {
+        "Source": "SPMgrVideoRaw_2",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      },
+      {
+        "Source": "SPMgrVideoRaw_3",
+        "GroupName": "GroupSPMgrVideoRaw2"
+      }
+    ],
+    "Channel": "0",
+    "ModelPath": "../res/models/",
+    "SettingPath": "../storage/settings/"
+  }
+}

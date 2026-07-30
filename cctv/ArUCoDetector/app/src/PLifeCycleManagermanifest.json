@@ -1,6 +1,7 @@
 {
     "SkeletonPortNumber": "auto",
     "ContainerName": "ArUCoDetector",
+    "AcceptLocalOnly": false,
     "SchedulerNames": [
         "EComponents::eScheduler1",
         "DetectorManagerScheduler"
@@ -32,6 +33,41 @@
             "LocalComponentName": "MetadataManager_0",
             "ContainerName": "System",
             "RemoteComponentName": "MetadataManager_0"
+        },
+        {
+            "LocalComponentName": "MetadataManager_1",
+            "ContainerName": "System",
+            "RemoteComponentName": "MetadataManager_1"
+        },
+        {
+            "LocalComponentName": "MetadataManager_2",
+            "ContainerName": "System",
+            "RemoteComponentName": "MetadataManager_2"
+        },
+        {
+            "LocalComponentName": "MetadataManager_3",
+            "ContainerName": "System",
+            "RemoteComponentName": "MetadataManager_3"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_0",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_0"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_1",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_1"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_2",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_2"
+        },
+        {
+            "LocalComponentName": "SPMgrVideoRaw_3",
+            "ContainerName": "System",
+            "RemoteComponentName": "SPMgrVideoRaw_3"
         }
     ]
 }

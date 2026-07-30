@@ -78,13 +78,6 @@
     .toggle-btn.off:hover { background: #6b7280; }
     .toggle-btn:disabled { opacity: .45; cursor: not-allowed; }
 
-    /* 테스트: 채널별 검출 컬럼 */
-    .detect-grid { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-    .detect-col { flex: 1; min-width: 120px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 12px; text-align: center; }
-    .detect-ch-name { font-weight: 600; font-size: 14px; margin-bottom: 12px; }
-    .detect-col .detect-run { width: 100%; margin-bottom: 14px; }
-    .detect-undist-label { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
-
     .ok { color: #15803d; }
     .fail { color: #b91c1c; }
     .muted { color: #6b7280; font-size: 12px; }
@@ -108,7 +101,6 @@
       th, td { padding: 6px; font-size: 12px; }
       button { padding: 9px 14px; }
       .tab { padding: 9px 14px; }
-      .detect-row { flex-wrap: wrap; gap: 8px; }
     }
   </style>
 </head>
@@ -127,20 +119,15 @@
 
       <!-- ===================== 메인 > 상태 모니터링 (기본 화면) ===================== -->
       <div id="sub-main-status" class="sub-panel active">
-        <div class="wip">
-          ⚠ 상태 모니터링 <b>템플릿</b>입니다. 값은 나중에 GET /status 와 연결되어 채워집니다.
-        </div>
-
         <section>
           <h2>검출 엔진 상태</h2>
           <table>
             <tbody>
-              <tr><th>상태</th><td><span class="badge">준비 중</span></td></tr>
-              <tr><th>가동 시간</th><td>—</td></tr>
-              <tr><th>마지막 메타데이터 전송</th><td>—</td></tr>
+              <tr><th>상태</th><td id="st_state"><span class="badge">—</span></td></tr>
+              <tr><th>가동 시간</th><td id="st_uptime">—</td></tr>
+              <tr><th>마지막 메타데이터 전송</th><td id="st_last_sent">—</td></tr>
             </tbody>
           </table>
-          <p class="muted" style="margin-top: 10px;">채널별 폴링 워커가 구현되면 실행/중지 상태와 전송 시각이 여기에 표시됩니다.</p>
         </section>
 
         <section>
@@ -148,19 +135,29 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>채널</th><th>상태</th><th>검출 마커수</th><th>지연(ms)</th><th>마지막 검출</th><th>캘리브레이션</th></tr>
+                <tr><th>채널</th><th>상태</th><th>검출 마커수</th><th>탈락 후보수</th><th>지연(ms)</th><th>CPU지연(ms)</th><th>마지막 검출</th><th>왜곡보정</th></tr>
               </thead>
               <tbody>
-                <tr><td>1</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-                <tr><td>2</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-                <tr><td>3</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-                <tr><td>4</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+                <tr><td>1</td><td id="ch_state_1">—</td><td id="ch_markers_1">—</td><td id="ch_rejected_1">—</td><td id="ch_latency_1">—</td><td id="ch_cpulatency_1">—</td><td id="ch_lastdetect_1">—</td><td id="ch_calib_1">—</td></tr>
+                <tr><td>2</td><td id="ch_state_2">—</td><td id="ch_markers_2">—</td><td id="ch_rejected_2">—</td><td id="ch_latency_2">—</td><td id="ch_cpulatency_2">—</td><td id="ch_lastdetect_2">—</td><td id="ch_calib_2">—</td></tr>
+                <tr><td>3</td><td id="ch_state_3">—</td><td id="ch_markers_3">—</td><td id="ch_rejected_3">—</td><td id="ch_latency_3">—</td><td id="ch_cpulatency_3">—</td><td id="ch_lastdetect_3">—</td><td id="ch_calib_3">—</td></tr>
+                <tr><td>4</td><td id="ch_state_4">—</td><td id="ch_markers_4">—</td><td id="ch_rejected_4">—</td><td id="ch_latency_4">—</td><td id="ch_cpulatency_4">—</td><td id="ch_lastdetect_4">—</td><td id="ch_calib_4">—</td></tr>
               </tbody>
             </table>
           </div>
           <p class="muted" style="margin-top: 10px;">
-            채널별 실시간 상태 · 검출 개수 · 파이프라인 지연(ms) 표시 예정. 채널 On/Off는 [설정]에서 변경.
+            2초마다 자동 갱신. 채널 On/Off는 [설정]에서 변경.
+            <b>지연(ms)</b>=체감 지연(경합 포함) · <b>CPU지연(ms)</b>=파이프라인 순수 계산 시간(경합 미포함).
+            둘의 차이가 크면 다른 채널과의 CPU 경합 때문입니다.
+            <b>탈락 후보수</b>=사각형처럼 보였지만 사전과 안 맞아 버려진 후보 개수 — 마커 유무와 무관하게 이 값이 크면
+            장면이 복잡(컨투어 많음)해 CPU지연이 늘어난다는 신호입니다.
           </p>
+        </section>
+
+        <section>
+          <h2>실시간 로그 <span class="muted" style="font-weight:400;">(raw 검출)</span></h2>
+          <pre id="log_view" style="max-height: 320px; overflow-y: auto; margin-top: 0;">—</pre>
+          <p class="muted" style="margin-top: 8px;">2초마다 자동 갱신 · 최근 200줄</p>
         </section>
       </div>
 
@@ -190,9 +187,16 @@
           </div>
 
           <div class="form-row">
-            <label for="set_poll">폴링 주기</label>
-            <span><input type="number" id="set_poll" min="100" step="100" value="1000" style="width: 90px;"> ms</span>
-            <span class="muted">스냅샷을 뜨는 간격 · 작을수록 빠르게 반영되지만 CPU 부담↑</span>
+            <label for="set_poll">검출 주기</label>
+            <select id="set_poll" style="width: 150px;">
+              <option value="500">500ms</option>
+              <option value="750">750ms</option>
+              <option value="1000">1000ms (권장)</option>
+              <option value="1500">1500ms</option>
+              <option value="2000">2000ms</option>
+              <option value="3000">3000ms</option>
+            </select>
+            <span class="muted">채널별로 최신 raw 프레임에 검출을 실행하는 주기. 채널당 실제 검출 소요시간(약 500ms~)보다 짧게 잡아도 더 빨라지지 않고 CPU만 소모합니다. 값이 클수록 위험 감지가 늦어집니다.</span>
           </div>
         </section>
 
@@ -235,51 +239,128 @@
         </section>
       </div>
 
-      <!-- ===================== 테스트 > 수동 검출 ===================== -->
-      <div id="sub-test-detect" class="sub-panel">
+      <!-- ===================== 테스트 > 지연 측정 =====================
+           [TEST-ONLY] 이 <div> 전체(마크업)와 아래 스크립트의 [TEST-ONLY] 블록,
+           사이드탭 버튼(지연 측정) 3곳만 지우면 실제 앱 빌드 시 깨끗이 제거된다.
+           (GET /status는 상태모니터링도 같이 쓰는 공용 엔드포인트라 그대로 둘 것) -->
+      <div id="sub-test-latency" class="sub-panel active">
         <div class="wip">
-          🔧 개발/실기 확인용 테스트 도구입니다. (자동 폴링이 완성되면 정리 예정)
+          🔧 개발/실기 확인용 테스트 도구입니다.
         </div>
 
         <section>
-          <h2>마커 검출 (수동)</h2>
-          <p class="muted" style="margin: -4px 0 14px;">
-            채널별 [검출]을 누르면 스냅샷 1장을 떠서 마커를 검출하고 메타데이터로 전송합니다.
-            왜곡보정은 채널마다 켜고 끌 수 있으며, 캘리브레이션 파일이 없는 채널은 검출 후 자동으로 비활성화됩니다.
+          <h2>지연 측정</h2>
+          <p class="muted" style="margin: -4px 0 12px;">
+            [측정 시작] 후 각 채널이 새로 검출을 완료할 때마다 지연(ms)을 수집합니다(0.5초 간격 확인).
+            아래 표는 1초마다 <b>측정 시작부터 지금까지 누적된</b> 통계로 그 자리에서 갱신됩니다 — 표본이 쌓일수록
+            p95·평균이 어떻게 안정화되는지 볼 수 있습니다.
+            <b>지연</b>은 체감 지연(다른 채널과의 CPU 경합으로 대기한 시간 포함),
+            <b>CPU지연</b>은 이 채널이 실제로 CPU에서 실행된 순수 파이프라인 시간(경합 미포함)입니다.
+            둘의 차이가 크면 그만큼 경합 때문에 손해 보는 시간이라는 뜻입니다.
+            <b>평균</b>만 보면 가끔 튀는 지연 스파이크를 놓치므로, 꼬리 경향을 보는 <b>p95</b>와
+            실제 최악치인 <b>최대</b>도 함께 확인하세요.
           </p>
-
-          <div class="detect-grid">
-            <div class="detect-col">
-              <div class="detect-ch-name">채널 1</div>
-              <button type="button" class="detect-run" id="detect_run_1" onclick="onDetectOnce(1)">검출</button>
-              <div class="detect-undist-label">왜곡보정</div>
-              <button type="button" class="toggle-btn on" id="detect_undist_1" data-on="true" onclick="toggleBtn(this)">ON</button>
-            </div>
-            <div class="detect-col">
-              <div class="detect-ch-name">채널 2</div>
-              <button type="button" class="detect-run" id="detect_run_2" onclick="onDetectOnce(2)">검출</button>
-              <div class="detect-undist-label">왜곡보정</div>
-              <button type="button" class="toggle-btn on" id="detect_undist_2" data-on="true" onclick="toggleBtn(this)">ON</button>
-            </div>
-            <div class="detect-col">
-              <div class="detect-ch-name">채널 3</div>
-              <button type="button" class="detect-run" id="detect_run_3" onclick="onDetectOnce(3)">검출</button>
-              <div class="detect-undist-label">왜곡보정</div>
-              <button type="button" class="toggle-btn on" id="detect_undist_3" data-on="true" onclick="toggleBtn(this)">ON</button>
-            </div>
-            <div class="detect-col">
-              <div class="detect-ch-name">채널 4</div>
-              <button type="button" class="detect-run" id="detect_run_4" onclick="onDetectOnce(4)">검출</button>
-              <div class="detect-undist-label">왜곡보정</div>
-              <button type="button" class="toggle-btn on" id="detect_undist_4" data-on="true" onclick="toggleBtn(this)">ON</button>
-            </div>
+          <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+            <button type="button" id="latency_start_btn" onclick="startLatencyMeasure()">측정 시작</button>
+            <button type="button" id="latency_stop_btn" onclick="stopLatencyMeasure()" disabled>측정 종료</button>
+            <span id="latency_measuring_badge" class="muted"></span>
           </div>
 
-          <pre id="detect_result">채널의 [검출]을 누르면 결과가 여기에 표시됩니다.</pre>
-          <div id="detect_note" style="font-size: 12px; margin-bottom: 8px;"></div>
-          <img id="detect_preview" alt="검출 프리뷰" style="display:none; max-width:100%; margin-top:12px; border:1px solid #ddd; border-radius:4px;">
+          <!-- [TEST-ONLY] 비교 테스트 시작 — 이 <div id="compare_box">...</div> 통째와
+               아래 스크립트의 "[TEST-ONLY] 비교 테스트" JS 블록만 지우면 제거된다.
+               의존성: 위 "지연 측정"(수동)의 전역 상태/함수/결과표를 재사용하므로
+               ① 이 블록만 단독 제거 = 안전 (지연 측정 수동 기능은 그대로 남음)
+               ② "지연 측정" 전체를 지울 경우 = 이 블록도 반드시 같이 지워야 함 -->
+          <div id="compare_box" style="border-top: 1px dashed #e5e7eb; margin: 4px 0 14px; padding-top: 14px;">
+            <p class="muted" style="margin: 0 0 10px;">
+              <b>비교 테스트</b> — 아래 항목(설정)마다 채널 on/off를 정의해두면, [비교 테스트 시작] 시
+              <b>실제로 그 설정을 적용(/settings/apply)</b>한 뒤 지정 시간×반복 횟수만큼 측정 →
+              다음 항목으로 자동 이동합니다. 끝나면 원래 설정으로 복원하고, 항목별 <b>경합손실/경합비율/변동폭</b>을
+              계산해 표로 보여주고 CSV로도 내려받을 수 있습니다.
+              (다른 값(마커 사전·검출주기)은 현재 설정 그대로 유지하고, 왜곡보정은 비교를 순수하게 하려고 항목별로 모두 끕니다.)
+            </p>
+
+            <div id="compare_slots"></div>
+            <button type="button" onclick="addCompareSlot()" style="margin-bottom: 12px;">+ 비교 항목 추가</button>
+
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom: 10px;">
+              <label>측정 시간(초) <input type="number" id="cmp_duration_sec" value="50" min="5" max="600" style="width:70px;"></label>
+              <label>반복 횟수 <input type="number" id="cmp_repeat_count" value="4" min="1" max="20" style="width:60px;"></label>
+              <label>웜업(초) <input type="number" id="cmp_warmup_sec" value="3" min="0" max="60" style="width:60px;"></label>
+              <button type="button" id="cmp_start_btn" onclick="startCompareTest()">비교 테스트 시작</button>
+              <button type="button" id="cmp_cancel_btn" onclick="cancelCompareTest()" disabled>중단</button>
+            </div>
+            <div id="cmp_status_badge" class="muted" style="margin-bottom: 12px;"></div>
+
+            <div id="cmp_summary_wrap" class="table-wrap" style="display:none;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>항목</th><th>활성채널</th><th>표본수</th>
+                    <th>평균지연(wall)</th><th>평균CPU지연</th>
+                    <th>경합손실(ms)</th><th>경합비율(%)</th><th>변동폭(ms)</th><th>평균 탈락후보</th>
+                  </tr>
+                </thead>
+                <tbody id="cmp_summary_tbody"></tbody>
+              </table>
+            </div>
+            <div id="cmp_download_row" style="display:none; gap:10px; margin-top: 12px;">
+              <button type="button" onclick="downloadCompareSummaryCsv()">요약 CSV 다운로드</button>
+              <button type="button" onclick="downloadCompareDetailCsv()">상세(회차별) CSV 다운로드</button>
+            </div>
+          </div>
+          <!-- [TEST-ONLY] 비교 테스트 끝 -->
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th rowspan="2">채널</th><th rowspan="2">표본 수</th>
+                  <th colspan="4">지연(ms) · 체감 (경합 포함)</th>
+                  <th colspan="4">CPU지연(ms) · 파이프라인 (경합 제외)</th>
+                  <th rowspan="2">탈락후보<br>(평균)</th>
+                </tr>
+                <tr>
+                  <th>최소</th><th>평균</th><th>p95</th><th>최대</th>
+                  <th>최소</th><th>평균</th><th>p95</th><th>최대</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td><td id="lat_n_1">—</td>
+                  <td id="lat_wall_min_1">—</td><td id="lat_wall_avg_1">—</td><td id="lat_wall_p95_1">—</td><td id="lat_wall_max_1">—</td>
+                  <td id="lat_cpu_min_1">—</td><td id="lat_cpu_avg_1">—</td><td id="lat_cpu_p95_1">—</td><td id="lat_cpu_max_1">—</td>
+                  <td id="lat_rejected_avg_1">—</td>
+                </tr>
+                <tr>
+                  <td>2</td><td id="lat_n_2">—</td>
+                  <td id="lat_wall_min_2">—</td><td id="lat_wall_avg_2">—</td><td id="lat_wall_p95_2">—</td><td id="lat_wall_max_2">—</td>
+                  <td id="lat_cpu_min_2">—</td><td id="lat_cpu_avg_2">—</td><td id="lat_cpu_p95_2">—</td><td id="lat_cpu_max_2">—</td>
+                  <td id="lat_rejected_avg_2">—</td>
+                </tr>
+                <tr>
+                  <td>3</td><td id="lat_n_3">—</td>
+                  <td id="lat_wall_min_3">—</td><td id="lat_wall_avg_3">—</td><td id="lat_wall_p95_3">—</td><td id="lat_wall_max_3">—</td>
+                  <td id="lat_cpu_min_3">—</td><td id="lat_cpu_avg_3">—</td><td id="lat_cpu_p95_3">—</td><td id="lat_cpu_max_3">—</td>
+                  <td id="lat_rejected_avg_3">—</td>
+                </tr>
+                <tr>
+                  <td>4</td><td id="lat_n_4">—</td>
+                  <td id="lat_wall_min_4">—</td><td id="lat_wall_avg_4">—</td><td id="lat_wall_p95_4">—</td><td id="lat_wall_max_4">—</td>
+                  <td id="lat_cpu_min_4">—</td><td id="lat_cpu_avg_4">—</td><td id="lat_cpu_p95_4">—</td><td id="lat_cpu_max_4">—</td>
+                  <td id="lat_rejected_avg_4">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted" style="margin-top: 10px;">
+            1초마다 갱신 · [측정 종료] 시 마지막 값에서 고정.
+            <b>탈락후보(평균)</b>는 사전과 안 맞아 버려진 후보 수 — 마커 개수와 무관하게 이 값이 높은 채널은
+            장면이 복잡해 CPU지연이 늘어난다는 신호입니다.
+          </p>
         </section>
       </div>
+      <!-- ===================== [TEST-ONLY] 지연 측정 끝 ===================== -->
 
     </div>
 
@@ -290,7 +371,8 @@
         <button class="side-tab" data-sub="settings" onclick="switchSub('main','settings')">설정</button>
       </div>
       <div class="side-group" data-parent="test">
-        <button class="side-tab active" data-sub="detect" onclick="switchSub('test','detect')">수동 검출</button>
+        <!-- [TEST-ONLY] 지연 측정 사이드탭 -->
+        <button class="side-tab active" data-sub="latency" onclick="switchSub('test','latency')">지연 측정</button>
       </div>
     </div>
   </div>
@@ -301,7 +383,7 @@
     const base_uri = `${window.location.protocol}//${window.location.hostname}:${window.location.port}/opensdk/${app_id}`;
 
     // ---- 중첩 탭: 상단 탭(top) → 오른쪽 서브탭(sub, 상단 탭에 종속) ----
-    const defaultSub = { main: 'status', test: 'detect' };
+    const defaultSub = { main: 'status', test: 'latency' };
 
     function switchTab(top) {
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === top));
@@ -316,6 +398,537 @@
       document.querySelectorAll('.sub-panel').forEach(p => p.classList.toggle('active', p.id === id));
       document.querySelectorAll('.side-group[data-parent="' + top + '"] .side-tab')
         .forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+      // 상태 모니터링 탭에 있을 때만 /status 주기 폴링
+      if (top === 'main' && sub === 'status') startStatusPolling();
+      else stopStatusPolling();
+    }
+
+    // ---- 상태 모니터링: GET /status 주기 폴링 ----
+    let statusTimer = null;
+
+    function startStatusPolling() {
+      loadStatus(); loadLogs();                  // 진입 즉시 1회
+      if (statusTimer) return;                   // 이미 돌면 중복 방지
+      statusTimer = setInterval(() => { loadStatus(); loadLogs(); }, 2000);
+    }
+    function stopStatusPolling() {
+      if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+    }
+
+    function setCellText(id, v) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = (v === undefined || v === null || v === '') ? '—' : v;
+    }
+
+    // ms → "1h 2m 3s"
+    function formatUptime(ms) {
+      const s = Math.floor(ms / 1000);
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + sec + 's';
+    }
+    // "2026-07-24T09:00:00Z" → "09:00:00" (시각만)
+    function formatTime(iso) {
+      const t = /T(\d{2}:\d{2}:\d{2})/.exec(iso || '');
+      return t ? t[1] : (iso || '—');
+    }
+
+    // 왜곡보정 상태를 "설정값 + 실제 적용 여부"까지 정확히 표시.
+    // (예전엔 calibration 파일 존재 여부만 봐서, 토글이 꺼져있거나 해상도가 안 맞아도 "있음"으로 보였음)
+    function formatUndistortStatus(c) {
+      if (!c.calibration) return '파일없음';
+      if (!c.undistort_enabled) return '꺼짐(파일있음)';
+      return c.undistort_applied ? '적용중' : '해상도불일치';
+    }
+
+    function loadStatus() {
+      fetch(base_uri + '/status')
+        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+        .then(d => {
+          // 검출 엔진 상태
+          const stateEl = document.getElementById('st_state');
+          if (stateEl) stateEl.innerHTML = '<span class="badge">' + (d.running ? '실행 중' : '정지') + '</span>';
+          setCellText('st_uptime', d.running && d.uptime_ms != null ? formatUptime(d.uptime_ms) : '—');
+          setCellText('st_last_sent', d.last_sent ? formatTime(d.last_sent) : '—');
+
+          // 채널 현황: 먼저 전부 비우고, 응답에 있는 채널만 채움
+          for (let ch = 1; ch <= 4; ch++) {
+            setCellText('ch_state_' + ch, '—');
+            setCellText('ch_markers_' + ch, '—');
+            setCellText('ch_rejected_' + ch, '—');
+            setCellText('ch_latency_' + ch, '—');
+            setCellText('ch_cpulatency_' + ch, '—');
+            setCellText('ch_lastdetect_' + ch, '—');
+            setCellText('ch_calib_' + ch, '—');
+          }
+          if (Array.isArray(d.channels)) {
+            for (const c of d.channels) {
+              const ch = c.channel;
+              if (ch < 1 || ch > 4) continue;
+              setCellText('ch_state_' + ch, c.state);
+              setCellText('ch_markers_' + ch, c.marker_count);
+              setCellText('ch_rejected_' + ch, c.rejected_count);
+              setCellText('ch_latency_' + ch, c.latency_ms);
+              setCellText('ch_cpulatency_' + ch, c.cpu_latency_ms);
+              setCellText('ch_lastdetect_' + ch, c.last_detect ? formatTime(c.last_detect) : '—');
+              setCellText('ch_calib_' + ch, formatUndistortStatus(c));
+            }
+          }
+        })
+        .catch(() => { /* 조용히 무시하고 다음 주기에 재시도 */ });
+    }
+
+    // ========================================================================
+    // [TEST-ONLY] 지연 측정 — 테스트 탭 전용 기능. 실제 앱 빌드 시 이 블록 전체와
+    // 위 "테스트 > 지연 측정" <div id="sub-test-latency">, 사이드탭 버튼을 지우면
+    // 깨끗이 제거된다. (GET /status는 상태모니터링도 같이 쓰는 공용 엔드포인트라 그대로 둘 것)
+    //
+    // 설계:
+    //  - 표본 수집(0.5초)과 화면 표시(1초)를 분리한다 — 데이터는 촘촘히, 표시는 읽기 편하게.
+    //  - last_detect가 바뀐 경우만 표본으로 채택해 같은 검출 결과의 중복 집계를 막는다.
+    //  - 표는 채널당 1행(총 4행) 고정 — 매 틱마다 "측정 시작부터 지금까지 누적" 통계로
+    //    같은 셀 값만 덮어쓴다(행이 늘어나지 않음). 경과시간은 표가 아니라 측정 배지 옆에 표시.
+    //  - 표본 저장: min/max/합계/개수는 표본이 들어올 때 O(1)로 바로 누적한다(매 틱마다
+    //    배열 전체를 훑지 않음). 다만 p95는 전체 분포 없이는 정확히 못 구하므로 원본 표본
+    //    배열도 계속 갖고 있다가, 표시 시점에만 그 배열을 정렬해 p95를 뽑는다.
+    //    (표본 수가 측정 세션 동안 많아야 수천 개 수준이라 이 정도 정렬 비용은 매 틱 걱정할
+    //    수준이 아니라서, min/max/합계만 O(1)로 따로 유지하는 정도로 충분하다 판단함)
+    // ========================================================================
+    let latencyMeasuring = false;
+    let latencySampleTimer = null;   // 0.5초: /status를 촘촘히 확인해 표본 수집
+    let latencyDisplayTimer = null;  // 1초: 누적 통계로 표 셀 + 경과시간 갱신
+    let latencyStartTime = null;     // 측정 시작 시각(ms) — 경과시간 계산용
+    // 체감(wall, latency_ms)과 파이프라인(cpu, cpu_latency_ms)을 별도 스토어에 나란히 누적한다.
+    // 같은 검출 이벤트에서 동시에 뽑은 값이라 표본 수(n)는 항상 서로 같다.
+    let latencyStatsWall = {};       // { 채널: { samples:[], n, sum, min, max } }
+    let latencyStatsCpu = {};        // { 채널: { samples:[], n, sum, min, max } }
+    let latencyStatsRejected = {};   // { 채널: { samples:[], n, sum, min, max } } -- 탈락 후보 수 (장면 복잡도 신호)
+    let latencyLastDetect = {};      // { 채널: 마지막으로 표본 채택한 last_detect 값 } (중복 집계 방지)
+    const kLatencySampleIntervalMs = 500;
+    const kLatencyDisplayIntervalMs = 1000;
+
+    function makeEmptyStatStore() {
+      const s = {};
+      for (let ch = 1; ch <= 4; ch++) s[ch] = { samples: [], n: 0, sum: 0, min: Infinity, max: -Infinity };
+      return s;
+    }
+
+    function startLatencyMeasure() {
+      latencyMeasuring = true;
+      latencyStartTime = Date.now();
+      latencyStatsWall = makeEmptyStatStore();
+      latencyStatsCpu = makeEmptyStatStore();
+      latencyStatsRejected = makeEmptyStatStore();
+      latencyLastDetect = {};
+      document.getElementById('latency_start_btn').disabled = true;
+      document.getElementById('latency_stop_btn').disabled = false;
+      for (let ch = 1; ch <= 4; ch++) {
+        setCellText('lat_n_' + ch, '—');
+        for (const p of ['wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max']) {
+          setCellText('lat_' + p + '_' + ch, '—');
+        }
+        setCellText('lat_rejected_avg_' + ch, '—');
+      }
+      sampleLatencyOnce();
+      updateLatencyDisplay();
+      latencySampleTimer = setInterval(sampleLatencyOnce, kLatencySampleIntervalMs);
+      latencyDisplayTimer = setInterval(updateLatencyDisplay, kLatencyDisplayIntervalMs);
+    }
+
+    function sampleLatencyOnce() {
+      fetch(base_uri + '/status')
+        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+        .then(d => {
+          if (!Array.isArray(d.channels)) return;
+          for (const c of d.channels) {
+            const ch = c.channel;
+            if (ch < 1 || ch > 4) continue;
+            // last_detect가 이전에 기록한 값과 다를 때만 "새 검출"로 보고 표본 추가.
+            if (c.last_detect && latencyLastDetect[ch] !== c.last_detect) {
+              latencyLastDetect[ch] = c.last_detect;
+              if (typeof c.latency_ms === 'number') addSample(latencyStatsWall, ch, c.latency_ms);
+              if (typeof c.cpu_latency_ms === 'number') addSample(latencyStatsCpu, ch, c.cpu_latency_ms);
+              if (typeof c.rejected_count === 'number') addSample(latencyStatsRejected, ch, c.rejected_count);
+            }
+          }
+        })
+        .catch(() => { /* 측정 중 일시 오류는 무시하고 다음 표본에서 재시도 */ });
+    }
+
+    // 표본 1개를 지정된 스토어(wall 또는 cpu)의 채널 통계에 반영.
+    // n/sum/min/max는 O(1)로 즉시 갱신(매 틱마다 배열을 안 훑음).
+    function addSample(store, ch, ms) {
+      const s = store[ch];
+      s.samples.push(ms);
+      s.n++;
+      s.sum += ms;
+      if (ms < s.min) s.min = ms;
+      if (ms > s.max) s.max = ms;
+    }
+
+    function percentile(sortedArr, p) {
+      const idx = Math.min(sortedArr.length - 1, Math.ceil(sortedArr.length * p) - 1);
+      return sortedArr[Math.max(0, idx)];
+    }
+
+    // 지정된 스토어에서 채널의 "지금까지 누적된" 통계. n/min/max/avg는 O(1) 필드에서 바로 꺼내고,
+    // p95만 이 시점에 표본 배열을 정렬해서 구한다. 표본 없으면 null.
+    function computeStatsFrom(store, ch) {
+      const s = store[ch];
+      if (!s || s.n === 0) return null;
+      const sorted = s.samples.slice().sort((a, b) => a - b);
+      return { n: s.n, min: s.min, max: s.max, avg: Math.round(s.sum / s.n), p95: percentile(sorted, 0.95) };
+    }
+
+    // 표 셀(채널당 1행, 고정)을 wall/cpu 누적 통계로 그 자리에서 갱신 + 배지 옆 경과시간 갱신.
+    function updateLatencyDisplay() {
+      const elapsedSec = Math.floor((Date.now() - latencyStartTime) / 1000);
+      const badge = document.getElementById('latency_measuring_badge');
+      badge.textContent = latencyMeasuring ? `측정 중... (${elapsedSec}초)` : `측정 종료 · 총 ${elapsedSec}초`;
+
+      for (let ch = 1; ch <= 4; ch++) {
+        const w = computeStatsFrom(latencyStatsWall, ch);
+        const c = computeStatsFrom(latencyStatsCpu, ch);
+        const rj = computeStatsFrom(latencyStatsRejected, ch);
+        setCellText('lat_n_' + ch, w ? w.n : 0);   // wall/cpu 표본 수는 항상 동일하므로 wall 기준
+        setCellText('lat_wall_min_' + ch, w ? w.min : '—');
+        setCellText('lat_wall_avg_' + ch, w ? w.avg : '—');
+        setCellText('lat_wall_p95_' + ch, w ? w.p95 : '—');
+        setCellText('lat_wall_max_' + ch, w ? w.max : '—');
+        setCellText('lat_cpu_min_' + ch, c ? c.min : '—');
+        setCellText('lat_cpu_avg_' + ch, c ? c.avg : '—');
+        setCellText('lat_cpu_p95_' + ch, c ? c.p95 : '—');
+        setCellText('lat_cpu_max_' + ch, c ? c.max : '—');
+        setCellText('lat_rejected_avg_' + ch, rj ? rj.avg : '—');
+      }
+    }
+
+    function stopLatencyMeasure() {
+      latencyMeasuring = false;
+      if (latencySampleTimer) { clearInterval(latencySampleTimer); latencySampleTimer = null; }
+      if (latencyDisplayTimer) { clearInterval(latencyDisplayTimer); latencyDisplayTimer = null; }
+      document.getElementById('latency_start_btn').disabled = false;
+      document.getElementById('latency_stop_btn').disabled = true;
+      updateLatencyDisplay();  // 마지막 표본까지 반영한 값으로 한 번 더 갱신 + 배지를 "측정 종료"로 고정
+    }
+
+    // ========================================================================
+    // [TEST-ONLY] 비교 테스트 시작
+    // 실제 앱 빌드 시 제거 방법: 이 블록 전체 + 위 HTML의
+    // <!-- [TEST-ONLY] 비교 테스트 시작 --> ~ <!-- ...끝 --> 사이(<div id="compare_box">)만 지우면 됨.
+    // 그 외 파일은 안 건드려도 됨 (/settings, /settings/apply는 원래 있는 운영 엔드포인트).
+    //
+    // 의존성 방향(중요): 이 블록은 위 "지연 측정"(수동) 섹션의 전역 상태
+    // (latencyStatsWall/Cpu, latencyMeasuring, latencyStartTime, latencySampleTimer,
+    // latencyDisplayTimer)와 함수(makeEmptyStatStore/addSample/computeStatsFrom/
+    // sampleLatencyOnce/updateLatencyDisplay), 그리고 결과 표(lat_wall_*/lat_cpu_* 셀)를
+    // 그대로 재사용한다.
+    //   ① 이 블록만 단독 삭제 = 안전. "지연 측정"(수동) 기능은 영향 없이 그대로 동작.
+    //   ② "지연 측정" 자체를 통째로 지울 경우 = 이 블록도 반드시 함께 지워야 함
+    //      (반대로 놔두면 존재하지 않는 함수/전역을 참조해 즉시 에러남).
+    //
+    // 여러 항목(채널 on/off 조합)을 정의해두면, 순서대로 실제 설정을 적용
+    // (/settings, /settings/apply)하고 측정→다음 항목 순으로 자동 진행한다.
+    // latencyStatsWall/Cpu 전역을 라운드마다 리셋해서 쓰고, 그 결과를 항목별 풀(pool)에 합산한다.
+    //
+    // 지표 정의:
+    //   경합손실(ms) = wall_avg - cpu_avg        (경합 때문에 날아간 절대 시간)
+    //   경합비율(%)  = 경합손실 / cpu_avg * 100   (기준이 다른 항목끼리도 비교 가능하게 정규화)
+    //   변동폭(ms)   = wall_p95 - wall_min        ("지연 폭이 크다"는 원 문제를 직접 수치화)
+    //   항목 헤드라인 = 그 항목의 활성 채널들의 평균 경합비율(%)
+    // ========================================================================
+    let cmpRunning = false;
+    let cmpCancelled = false;
+    let cmpSlotResults = [];   // 항목별 요약 결과
+    let cmpRoundDetail = [];   // 항목x회차x채널 상세 결과 (CSV용)
+    let cmpSlotCounter = 0;
+
+    // 취소 가능한 대기. delay(ms) 후 자동으로 resolve 되거나, cancelCompareTest()가
+    // cmpPendingTimer/cmpPendingResolve를 통해 즉시 resolve 시킬 수 있다.
+    // (기존엔 setTimeout이 끝날 때까지 무조건 기다려야 해서 [중단]을 눌러도
+    //  남은 웜업/측정 시간만큼은 계속 대기하는 문제가 있었음)
+    let cmpPendingTimer = null;
+    let cmpPendingResolve = null;
+
+    function cancellableWait(ms) {
+      return new Promise(resolve => {
+        cmpPendingResolve = resolve;
+        cmpPendingTimer = setTimeout(() => {
+          cmpPendingTimer = null;
+          cmpPendingResolve = null;
+          resolve();
+        }, ms);
+      });
+    }
+
+    function sleep(ms) { return cancellableWait(ms); }
+
+    // ---- 비교 항목(슬롯) 관리 ----
+    function addCompareSlot(label, defaultChannels) {
+      const id = cmpSlotCounter++;
+      defaultChannels = defaultChannels || [1];
+      const div = document.createElement('div');
+      div.className = 'compare-slot';
+      div.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;';
+      const chBoxes = [1, 2, 3, 4].map(ch => {
+        const checked = defaultChannels.includes(ch) ? 'checked' : '';
+        return `<label style="font-size:13px;">ch${ch}<input type="checkbox" class="cmp_ch" value="${ch}" ${checked}></label>`;
+      }).join('');
+      div.innerHTML =
+        `<input type="text" class="cmp_label" value="${label || ('설정' + (id + 1))}" style="width:110px;">` +
+        chBoxes +
+        `<button type="button" onclick="this.closest('.compare-slot').remove()">삭제</button>`;
+      document.getElementById('compare_slots').appendChild(div);
+    }
+
+    function readCompareSlots() {
+      const slots = [];
+      document.querySelectorAll('#compare_slots .compare-slot').forEach(div => {
+        const label = div.querySelector('.cmp_label').value.trim() || '설정';
+        const channels = Array.from(div.querySelectorAll('.cmp_ch:checked')).map(cb => parseInt(cb.value, 10));
+        if (channels.length > 0) slots.push({ label, channels });
+      });
+      return slots;
+    }
+
+    function setCmpStatus(text) {
+      document.getElementById('cmp_status_badge').textContent = text;
+    }
+
+    // ---- 라운드 1회 실행 (기존 수동 측정과 동일한 전역 상태를 재사용) ----
+    function runCompareRound(round, totalRounds, durationSec, label) {
+      latencyStatsWall = makeEmptyStatStore();
+      latencyStatsCpu = makeEmptyStatStore();
+      latencyStatsRejected = makeEmptyStatStore();
+      latencyLastDetect = {};
+      latencyMeasuring = true;
+      latencyStartTime = Date.now();
+      sampleLatencyOnce();
+      updateLatencyDisplay();
+      latencySampleTimer = setInterval(sampleLatencyOnce, kLatencySampleIntervalMs);
+      latencyDisplayTimer = setInterval(() => {
+        updateLatencyDisplay();
+        const elapsed = Math.floor((Date.now() - latencyStartTime) / 1000);
+        setCmpStatus(`[${label}] ${round}/${totalRounds}회차 측정 중... (${elapsed}/${durationSec}s)`);
+      }, kLatencyDisplayIntervalMs);
+
+      // durationSec만큼 기다리되, [중단]이 눌리면 cancellableWait가 즉시 resolve 되면서
+      // 아래 정리(interval clear)가 바로 실행된다 — 남은 시간을 기다릴 필요 없음.
+      return cancellableWait(durationSec * 1000).then(() => {
+        clearInterval(latencySampleTimer); latencySampleTimer = null;
+        clearInterval(latencyDisplayTimer); latencyDisplayTimer = null;
+        latencyMeasuring = false;
+        updateLatencyDisplay();
+      });
+    }
+
+    // 한 라운드의 표본을 항목 단위 풀(pool)에 합산 (percentile 계산을 위해 원본 표본을 그대로 옮김)
+    function mergeIntoPool(poolStore, ch, sourceStatEntry) {
+      if (!sourceStatEntry) return;
+      for (const v of sourceStatEntry.samples) addSample(poolStore, ch, v);
+    }
+
+    async function startCompareTest() {
+      if (cmpRunning) return;
+      const slots = readCompareSlots();
+      if (slots.length < 1) { alert('비교 항목을 1개 이상 추가하세요.'); return; }
+      const durationSec = parseInt(document.getElementById('cmp_duration_sec').value, 10);
+      const repeatCount = parseInt(document.getElementById('cmp_repeat_count').value, 10);
+      const warmupSec = parseInt(document.getElementById('cmp_warmup_sec').value, 10) || 0;
+      if (!Number.isFinite(durationSec) || durationSec < 1 || !Number.isFinite(repeatCount) || repeatCount < 1) {
+        alert('측정 시간/반복 횟수를 올바르게 입력하세요.');
+        return;
+      }
+
+      cmpRunning = true;
+      cmpCancelled = false;
+      cmpSlotResults = [];
+      cmpRoundDetail = [];
+      document.getElementById('cmp_start_btn').disabled = true;
+      document.getElementById('cmp_cancel_btn').disabled = false;
+      document.getElementById('latency_start_btn').disabled = true;
+      document.getElementById('latency_stop_btn').disabled = true;
+      document.getElementById('cmp_summary_wrap').style.display = 'none';
+      document.getElementById('cmp_download_row').style.display = 'none';
+
+      // 원래 설정 저장 (끝나고 복원용)
+      let originalSettings = null;
+      try {
+        const r = await fetch(base_uri + '/settings');
+        if (r.ok) originalSettings = await r.json();
+      } catch (e) { /* 조회 실패해도 진행은 계속 (복원만 못 함) */ }
+
+      for (let si = 0; si < slots.length && !cmpCancelled; si++) {
+        const slot = slots[si];
+        setCmpStatus(`[${slot.label}] 설정 적용 중...`);
+
+        const channelsPayload = [1, 2, 3, 4].map(ch => (
+          { channel: ch, enabled: slot.channels.includes(ch), undistort: false }
+        ));
+        const payload = {
+          dictionary_name: (originalSettings && originalSettings.dictionary_name) || 'DICT_4X4_50',
+          poll_interval_ms: (originalSettings && originalSettings.poll_interval_ms) || 1000,
+          channels: channelsPayload
+        };
+        try {
+          await fetch(base_uri + '/settings', { method: 'POST', body: JSON.stringify(payload) });
+          await fetch(base_uri + '/settings/apply', { method: 'POST' });
+        } catch (e) {
+          setCmpStatus(`[${slot.label}] 설정 적용 실패 — 건너뜀`);
+          continue;
+        }
+
+        if (warmupSec > 0 && !cmpCancelled) {
+          setCmpStatus(`[${slot.label}] 웜업 대기 중... (${warmupSec}s)`);
+          await sleep(warmupSec * 1000);
+        }
+        if (cmpCancelled) break;
+
+        const slotPoolWall = makeEmptyStatStore();
+        const slotPoolCpu = makeEmptyStatStore();
+        const slotPoolRejected = makeEmptyStatStore();
+
+        for (let round = 1; round <= repeatCount && !cmpCancelled; round++) {
+          setCmpStatus(`[${slot.label}] ${round}/${repeatCount}회차 측정 중... (0/${durationSec}s)`);
+          await runCompareRound(round, repeatCount, durationSec, slot.label);
+
+          for (let ch = 1; ch <= 4; ch++) {
+            mergeIntoPool(slotPoolWall, ch, latencyStatsWall[ch]);
+            mergeIntoPool(slotPoolCpu, ch, latencyStatsCpu[ch]);
+            mergeIntoPool(slotPoolRejected, ch, latencyStatsRejected[ch]);
+            const w = computeStatsFrom(latencyStatsWall, ch);
+            const c = computeStatsFrom(latencyStatsCpu, ch);
+            const rj = computeStatsFrom(latencyStatsRejected, ch);
+            cmpRoundDetail.push({
+              slot: slot.label, round, channel: ch,
+              n: w ? w.n : 0,
+              wall_min: w ? w.min : '', wall_avg: w ? w.avg : '', wall_p95: w ? w.p95 : '', wall_max: w ? w.max : '',
+              cpu_min: c ? c.min : '', cpu_avg: c ? c.avg : '', cpu_p95: c ? c.p95 : '', cpu_max: c ? c.max : '',
+              rejected_avg: rj ? rj.avg : ''
+            });
+          }
+        }
+
+        // 항목 요약 계산 — 라운드 전체를 풀링한 표본 기준 (개별 라운드 p95 평균보다 통계적으로 안정적)
+        let sumRatio = 0, ratioCount = 0, totalN = 0, sumWallWeighted = 0, sumCpuWeighted = 0, sumRejectedWeighted = 0;
+        const perChannel = [];
+        for (const ch of slot.channels) {
+          const w = computeStatsFrom(slotPoolWall, ch);
+          const c = computeStatsFrom(slotPoolCpu, ch);
+          const rj = computeStatsFrom(slotPoolRejected, ch);
+          if (!w || !c) continue;
+          const loss = w.avg - c.avg;
+          const ratio = c.avg > 0 ? (loss / c.avg) * 100 : 0;
+          const spread = w.p95 - w.min;
+          perChannel.push({ loss, ratio, spread });
+          sumRatio += ratio; ratioCount++;
+          totalN += w.n;
+          sumWallWeighted += w.avg * w.n;
+          sumCpuWeighted += c.avg * w.n;
+          sumRejectedWeighted += (rj ? rj.avg : 0) * w.n;
+        }
+        cmpSlotResults.push({
+          label: slot.label,
+          channels: slot.channels.join('+'),
+          totalN,
+          avgWall: totalN > 0 ? Math.round(sumWallWeighted / totalN) : 0,
+          avgCpu: totalN > 0 ? Math.round(sumCpuWeighted / totalN) : 0,
+          avgLoss: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) : 0,
+          avgRatio: ratioCount > 0 ? Math.round((sumRatio / ratioCount) * 10) / 10 : 0,
+          avgSpread: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.spread, 0) / perChannel.length) : 0,
+          avgRejected: totalN > 0 ? Math.round(sumRejectedWeighted / totalN) : 0
+        });
+      }
+
+      // 원래 설정 복원
+      if (originalSettings) {
+        setCmpStatus('원래 설정으로 복원 중...');
+        try {
+          await fetch(base_uri + '/settings', { method: 'POST', body: JSON.stringify(originalSettings) });
+          await fetch(base_uri + '/settings/apply', { method: 'POST' });
+        } catch (e) { /* 복원 실패 시 설정 탭에서 수동으로 재적용 필요 */ }
+      }
+
+      cmpRunning = false;
+      document.getElementById('cmp_start_btn').disabled = false;
+      document.getElementById('cmp_cancel_btn').disabled = true;
+      document.getElementById('latency_start_btn').disabled = false;
+      setCmpStatus(cmpCancelled ? '비교 테스트 중단됨' : '비교 테스트 완료');
+      renderCompareSummary();
+    }
+
+    function cancelCompareTest() {
+      cmpCancelled = true;
+      document.getElementById('cmp_cancel_btn').disabled = true;
+      setCmpStatus('중단 처리 중...');
+      // 지금 웜업/라운드 대기 중이면 남은 시간을 기다리지 않고 그 자리에서 바로 깨운다.
+      if (cmpPendingTimer) { clearTimeout(cmpPendingTimer); cmpPendingTimer = null; }
+      if (cmpPendingResolve) { const r = cmpPendingResolve; cmpPendingResolve = null; r(); }
+    }
+
+    function renderCompareSummary() {
+      const tbody = document.getElementById('cmp_summary_tbody');
+      tbody.innerHTML = '';
+      for (const r of cmpSlotResults) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalN}</td>` +
+          `<td>${r.avgWall}</td><td>${r.avgCpu}</td><td>${r.avgLoss}</td><td>${r.avgRatio}%</td><td>${r.avgSpread}</td><td>${r.avgRejected}</td>`;
+        tbody.appendChild(tr);
+      }
+      document.getElementById('cmp_summary_wrap').style.display = cmpSlotResults.length ? 'block' : 'none';
+      document.getElementById('cmp_download_row').style.display = cmpSlotResults.length ? 'flex' : 'none';
+    }
+
+    // 필드에 CSV 구분자(,)나 따옴표, 줄바꿈이 섞여 있으면 RFC4180대로 큰따옴표로 감싼다.
+    // (안 하면 예: 항목명에 콤마가 들어있을 때 그 콤마가 열 구분자로 오인돼 뒤 셀들이 밀려서 표가 깨짐)
+    function csvEscape(v) {
+      const s = (v === undefined || v === null) ? '' : String(v);
+      if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+
+    function downloadCsvGeneric(filenamePrefix, header, rows) {
+      const lines = [header.map(csvEscape).join(',')];
+      for (const r of rows) lines.push(header.map(k => csvEscape(r[k])).join(','));
+      // 맨 앞 BOM(U+FEFF): 없으면 엑셀이 한글을 시스템 기본 인코딩으로 잘못 읽어 깨져 보인다.
+      const csv = '﻿' + lines.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      a.href = url;
+      a.download = `${filenamePrefix}_${ts}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadCompareSummaryCsv() {
+      downloadCsvGeneric('compare_summary',
+        ['label', 'channels', 'totalN', 'avgWall', 'avgCpu', 'avgLoss', 'avgRatio', 'avgSpread', 'avgRejected'], cmpSlotResults);
+    }
+    function downloadCompareDetailCsv() {
+      downloadCsvGeneric('compare_detail',
+        ['slot', 'round', 'channel', 'n', 'wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max', 'rejected_avg'],
+        cmpRoundDetail);
+    }
+    // ========================================================================
+    // [TEST-ONLY] 비교 테스트 끝
+    // ========================================================================
+
+    // ---- 실시간 로그: GET /logs (plain text) 주기 폴링 ----
+    function loadLogs() {
+      fetch(base_uri + '/logs')
+        .then(r => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))
+        .then(text => {
+          const el = document.getElementById('log_view');
+          if (!el) return;
+          // 사용자가 하단을 보고 있었으면 새 로그를 따라 스크롤(위로 올려 읽는 중이면 방해 안 함)
+          const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+          el.textContent = text.trim() ? text : '(로그 없음)';
+          if (atBottom) el.scrollTop = el.scrollHeight;
+        })
+        .catch(() => {});
     }
 
     // ---- 설정 변경 모드: 버튼으로 토글 (켰을 때만 설정 변경 가능) ----
@@ -405,12 +1018,32 @@
       }
     }
 
+    // set_poll(select)에 서버 값을 반영. 옵션에 정확히 없는 값(예전 설정 등)이면
+    // 가장 가까운 옵션으로 스냅한다 — select가 빈 채로 남는 것을 방지.
+    function setPollSelectValue(ms) {
+      const sel = document.getElementById('set_poll');
+      const options = Array.from(sel.options).map(o => parseInt(o.value, 10));
+      let nearest = options[0], best = Math.abs(nearest - ms);
+      for (const v of options) {
+        const diff = Math.abs(v - ms);
+        if (diff < best) { best = diff; nearest = v; }
+      }
+      sel.value = String(nearest);
+    }
+
     function loadSettings(silent) {
       fetch(base_uri + '/settings')
         .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
         .then(d => {
           if (d.dictionary_name) document.getElementById('set_dict_sel').value = d.dictionary_name;
-          if (d.poll_interval_ms != null) document.getElementById('set_poll').value = d.poll_interval_ms;
+          if (d.poll_interval_ms != null) setPollSelectValue(d.poll_interval_ms);
+          // 서버 상태를 그대로 반영: 먼저 전 채널 OFF로 초기화 후, 서버가 준 채널만 켠다.
+          // (settings.json 없으면 channels가 비어 옴 → 하드코딩 ON이 남는 버그 방지)
+          for (let ch = 1; ch <= 4; ch++) {
+            setBtnState(document.getElementById('ch_on_' + ch), false);
+            setBtnState(document.getElementById('ch_undist_' + ch), false);
+            updateUndistortEnabled(ch);
+          }
           if (Array.isArray(d.channels)) setChannelConfig(d.channels);
           if (!silent) showSettingsMsg('현재 설정을 불러왔습니다.', 'ok');
         })
@@ -420,8 +1053,8 @@
     // [적용] = settings.json 저장(POST /settings) 후 워커 반영(POST /settings/apply)
     function onApplySettings() {
       const poll = parseInt(document.getElementById('set_poll').value, 10);
-      if (!Number.isFinite(poll) || poll < 100) {
-        showSettingsMsg('폴링 주기는 100 이상의 숫자여야 합니다.', 'fail');
+      if (!Number.isFinite(poll) || poll < 500 || poll > 3000) {
+        showSettingsMsg('검출 주기는 500~3000ms 범위여야 합니다.', 'fail');
         return;
       }
       const channels = getChannelConfig();
@@ -449,86 +1082,14 @@
         .catch(e => showSettingsMsg('실패: ' + e + ' (엔드포인트 미구현일 수 있음)', 'fail'));
     }
 
-    // ---- /detectonce : 채널별 스냅샷 1장 → 검출 → 메타데이터 전송 (수동 트리거) ----
-    function onDetectOnce(ch) {
-      const undistort = btnIsOn('detect_undist_' + ch) ? 1 : 0;
-      const runBtn = document.getElementById('detect_run_' + ch);
-      const undistBtn = document.getElementById('detect_undist_' + ch);
-      const out = document.getElementById('detect_result');
-
-      const uri = `${base_uri}/detectonce?ch=${ch}&undistort=${undistort}`;
-      out.textContent = `요청 중... (ch=${ch}, undistort=${undistort})`;
-      out.className = 'muted';
-      runBtn.disabled = true;
-
-      const preview = document.getElementById('detect_preview');
-      preview.style.display = 'none';
-
-      fetch(uri)
-        .then(response => response.text().then(text => ({ ok: response.ok, status: response.status, text })))
-        .then(({ ok, status, text }) => {
-          if (!ok) {
-            out.className = 'fail';
-            out.textContent = `채널 ${ch} 실패 (HTTP ${status})\n${text}`;
-            return;
-          }
-          let data;
-          try { data = JSON.parse(text); } catch (e) {
-            out.className = 'fail';
-            out.textContent = '응답 파싱 실패\n' + text;
-            return;
-          }
-          out.className = 'ok';
-          const summary = {
-            channel: data.channel,
-            marker_count: data.marker_count,
-            rejected_count: data.rejected_count,
-            calibration_available: data.calibration_available,
-            undistort_requested: data.undistort_requested,
-            undistorted: data.undistorted,
-            marker_ids: data.marker_ids
-          };
-          out.textContent = JSON.stringify(summary, null, 2);
-
-          // 캘리브레이션 파일이 없으면 이 채널의 왜곡보정 토글을 OFF + 비활성화
-          if (data.calibration_available === false) {
-            setBtnState(undistBtn, false);
-            undistBtn.disabled = true;
-          } else {
-            undistBtn.disabled = false;
-          }
-
-          const note = document.getElementById('detect_note');
-          if (data.calibration_available === false) {
-            note.textContent = '※ 채널 ' + ch + ': 캘리브레이션 파일이 없어 왜곡보정을 끌 수 없습니다 (원본 그대로, 토글 비활성화).';
-            note.className = 'muted';
-          } else if (data.undistort_requested && !data.undistorted) {
-            note.textContent = '※ 채널 ' + ch + ': 캘리브레이션은 있으나 해상도가 스냅샷과 달라 보정을 건너뛰었습니다.';
-            note.className = 'fail';
-          } else if (data.undistorted) {
-            note.textContent = '※ 채널 ' + ch + ': 왜곡보정(undistort) 적용됨.';
-            note.className = 'ok';
-          } else {
-            note.textContent = '※ 채널 ' + ch + ': 왜곡보정 끔 — 원본 이미지.';
-            note.className = 'muted';
-          }
-
-          if (data.preview) {
-            preview.src = data.preview;
-            preview.style.display = 'block';
-          }
-        })
-        .catch(error => {
-          out.className = 'fail';
-          out.textContent = '네트워크 오류: ' + error;
-        })
-        .finally(() => { runBtn.disabled = false; });
-    }
-
     // 초기화: 메인 탭 + 상태 모니터링, 설정 잠금, 현재 설정 자동 조회(미구현이면 조용히)
     switchTab('main');
     applyEditMode();
     loadSettings(true);
+    // [TEST-ONLY] 비교 테스트 시작 — 이 2줄도 제거 대상 (기본 항목 2개: 1채널 vs 1~4채널)
+    addCompareSlot('1채널', [1]);
+    addCompareSlot('1~4채널', [1, 2, 3, 4]);
+    // [TEST-ONLY] 비교 테스트 끝
   </script>
 </body>
 

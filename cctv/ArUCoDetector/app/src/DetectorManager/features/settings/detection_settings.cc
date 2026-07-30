@@ -1,0 +1,116 @@
+#include "detection_settings.h"
+
+#include <algorithm>
+#include <fstream>
+#include <sstream>
+
+#include "json_utility.h"
+
+// settings.json 형태:
+// {
+//   "dictionary_name": "DICT_4X4_50",
+//   "poll_interval_ms": 1000,
+//   "channels": [{"channel":1,"enabled":true,"undistort":true}, ...]
+//   "calibration_path": "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch{channel}.json"
+// }
+// 파일이 없거나 필드가 없으면 DetectionSettings의 기본값을 그대로 씀.
+
+namespace DetectionSettingsIO {
+
+DetectionSettings Load(const std::string& path) {
+  DetectionSettings settings;
+
+  std::ifstream ifs(path);
+  if (!ifs.is_open()) {
+    return settings;
+  }
+
+  std::stringstream ss;
+  ss << ifs.rdbuf();
+
+  Deserialize(ss.str(), settings);
+  return settings;
+}
+
+std::string Serialize(const DetectionSettings& settings) {
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  auto& alloc = doc.GetAllocator();
+
+  doc.AddMember("dictionary_name", settings.dictionary_name, alloc);
+  doc.AddMember("poll_interval_ms", settings.poll_interval_ms, alloc);
+  doc.AddMember("calibration_path", settings.calibration_path, alloc);
+  
+  JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
+  for (const auto& cc : settings.channels) {
+    JsonUtility::ValueType obj(JsonUtility::Type::kObjectType);
+    obj.AddMember("channel", cc.channel, alloc);
+    obj.AddMember("enabled", cc.enabled, alloc);
+    obj.AddMember("undistort", cc.undistort, alloc);
+    channels_arr.PushBack(obj, alloc);
+  }
+  doc.AddMember("channels", channels_arr, alloc);
+
+  rapidjson::StringBuffer strbuf;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+  doc.Accept(writer);
+  return strbuf.GetString();  
+}
+
+bool Save(const std::string& path, const DetectionSettings& settings) {
+  std::string json = Serialize(settings);
+  std::ofstream ofs(path);
+  if (!ofs.is_open()) {
+    return false;
+  }
+  ofs << json;
+  return true;
+}
+
+bool Deserialize(const std::string& json, DetectionSettings& settings) {
+  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+  doc.Parse(json);
+  if (doc.HasParseError()) {
+    return false;
+  }
+
+  if (doc.HasMember("dictionary_name") && doc["dictionary_name"].IsString()) {
+    settings.dictionary_name = doc["dictionary_name"].GetString();
+  }
+  if (doc.HasMember("poll_interval_ms") && doc["poll_interval_ms"].IsInt()) {
+    // UI든 직접 API 호출이든, 어느 경로로 와도 여기서 최종적으로 범위를 강제한다.
+    settings.poll_interval_ms = std::clamp(doc["poll_interval_ms"].GetInt(), kMinPollIntervalMs, kMaxPollIntervalMs);
+  }
+  if (doc.HasMember("calibration_path") && doc["calibration_path"].IsString()) {
+    settings.calibration_path = doc["calibration_path"].GetString();
+  }
+  if (doc.HasMember("channels") && doc["channels"].IsArray()) {
+    settings.channels.clear();
+    for (auto& v : doc["channels"].GetArray()) {
+        if (!v.IsObject()) continue;
+        ChannelConfig cc;
+        if (v.HasMember("channel") && v["channel"].IsInt())       cc.channel    = v["channel"].GetInt();
+        if (v.HasMember("enabled") && v["enabled"].IsBool())      cc.enabled    = v["enabled"].GetBool();
+        if (v.HasMember("undistort") && v["undistort"].IsBool())  cc.undistort  = v["undistort"].GetBool();
+        settings.channels.push_back(cc);
+    }
+  }
+
+  return true;
+}
+
+DetectionSettings Default() {
+  DetectionSettings s;   // dictionary_name="DICT_4X4_50", poll_interval_ms=1000 (구조체 기본값)
+  for (int ch = 1; ch <= 4; ++ch) {
+    ChannelConfig c;
+    c.channel = ch;
+    c.enabled = true;
+    c.undistort = false;   // 왜곡보정은 기본 off (지연↓, 필요하면 채널별로 켬)
+    s.channels.push_back(c);
+  }
+  return s;
+}
+
+}  // namespace DetectionSettingsIO
+
+
+
