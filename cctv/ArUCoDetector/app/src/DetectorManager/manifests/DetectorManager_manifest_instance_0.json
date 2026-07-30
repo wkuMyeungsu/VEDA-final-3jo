@@ -1,0 +1,32 @@
+{
+  "LibraryFileName": "libdetector_manager.so",
+  "Instance": {
+    "__comment__": "2009004 = LifeCycleManagerInterface::EReceivers::eLogManager",
+    "InstanceName": "DetectorManager",
+    "SchedulerName": "DetectorManagerScheduler",
+    "ReceiverNames": [
+      "AppDispatcher",
+      {
+        "SymbolName": "LogManager",
+        "RealName": "2009004"
+      },
+      {
+        "SymbolName": "MetadataManager",
+        "RealName": "MetadataManager_0"
+      }
+    ],
+    "SourceNames": [
+      {
+        "Source": "OpenPlatform",
+        "GroupName": "SettingChange"
+      },
+      {
+        "Source": "MetadataManager_0",
+        "GroupName": "Metadata::OpenApp"
+      }
+    ],
+    "Channel": 0,
+    "ModelPath": "../res/models/",
+    "SettingPath": "../storage/settings/"
+  }
+}
