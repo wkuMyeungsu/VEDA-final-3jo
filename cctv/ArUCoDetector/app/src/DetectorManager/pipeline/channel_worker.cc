@@ -7,6 +7,7 @@
 #include <time.h>    // clock_gettime, CLOCK_THREAD_CPUTIME_ID (POSIX, 스레드별 CPU 시간)
 
 #include "frame_preprocessor.h" // TryUndistort
+#include "detection_slot_limiter.h"
 
 namespace {
     // 지금 시각(UTC)을 "2026-07-24T09:00:00.123Z" 같은 ISO8601(밀리초 포함) 문자열로 만든다.
@@ -40,13 +41,14 @@ namespace {
 ChannelWorker::ChannelWorker(int channel, RawFrameStore* store,
                              const std::string& calib_path,
                              cv::aruco::PREDEFINED_DICTIONARY_NAME dict, bool undistort,
-                             int poll_interval_ms, SendFn send)
+                             int poll_interval_ms, DetectionSlotLimiter* slot_limiter, SendFn send)
     : channel_(channel),
       undistort_(undistort),
       poll_interval_ms_(poll_interval_ms),
       source_(store),                             // raw 프레임 저장소 포인터를 FrameSource에 전달
       calib_(LoadCameraCalibration(calib_path)),  // 파일을 지금 한 번 읽어 결과 저장
       detector_(dict),                            // dict로 ArUco 사전 로드
+      slot_limiter_(slot_limiter),
       send_(std::move(send))                      // 콜백을 move로 가져옴(내부 클로저 복사 안 함)
 {
     // 이 시점엔 아직 워커 스레드가 없다(단일 스레드) → 락 없이 status_ 써도 안전.
@@ -167,19 +169,18 @@ void ChannelWorker::RunOnce()
         return;
     }
 
-    // 2) (옵션) 왜곡보정. undistort_가 false이거나 캘리브레이션 무효/해상도 불일치면 원본 그대로.
-    //    raw는 이미 grayscale이라 BGR로 부풀렸다 되돌리는 왕복 변환 없이 gray에 바로 적용한다
-    //    (cv::undistort는 채널 수와 무관하게 동작 — grayscale이 컬러보다 3배 가볍다).
     bool undistorted; // 실제 보정 적용 여부 (calib 유효 + 토글 on + 해상도 일치를 모두 만족해야 true) -> status_.undistort_applied로 노출
-    cv::Mat corrected = TryUndistort(gray, calib_, undistort_, undistorted);
+    cv::Mat corrected;
+    DetectionResult result;
 
-    // 3) ArUco 검출 (detector_는 자기 상태를 안 바꾸는 const 연산)
-    DetectionResult result = detector_.Detect(corrected);
+    slot_limiter_->Acquire();
+    corrected = TryUndistort(gray, calib_, undistort_, undistorted);    // 2) (옵션) 왜곡보정. undistort_가 false이거나 캘리브레이션 무효/해상도 불일치면 원본 그대로.
+    result = detector_.Detect(corrected);                               // 3) ArUco 검출 (detector_는 자기 상태를 안 바꾸는 const 연산)
+    slot_limiter_->Release();
 
     // 4) 결과 전송. 검출 0개여도 매 폴링마다 보낸다(서버가 "마커 사라짐"도 알아야 하므로).
     //    send_는 DetectorManager::SendMetadata를 감싼 콜백 → 내부는 SendNoReplyEvent(논블로킹).
     send_(channel_, result.ids, result.corners);
-
     auto t1 = std::chrono::steady_clock::now();
     long long cpu1 = ThreadCpuTimeMs();
     // t1-t0 = 시계 틱 단위 duration → ms로 변환 → .count()로 정수 추출
@@ -190,6 +191,7 @@ void ChannelWorker::RunOnce()
     {
         std::lock_guard<std::mutex> lk(status_mtx_);
         status_.marker_count = static_cast<int>(result.ids.size());
+        status_.rejected_count = result.rejected_count;
         status_.latency_ms = latency;
         status_.cpu_latency_ms = cpu_latency;
         status_.last_detect = NowIso8601(); // 이번 검출 완료 시각 기록

@@ -13,6 +13,7 @@
 #include "channel_worker.h"
 #include "aruco_detector.h"
 #include "raw_frame_store.h"
+#include "detection_slot_limiter.h"
 
 class DetectorManager : public Component, public IDetectorManager {
  public:
@@ -45,6 +46,8 @@ class DetectorManager : public Component, public IDetectorManager {
 
   // raw 비디오(push) 프레임을 채널별로 보관 → 각 ChannelWorker의 FrameSource가 여기서 읽는다.
   RawFrameStore raw_store_;
+
+  DetectionSlotLimiter slot_limiter_{1};  // permit = 1 (코어 1개는 프레임워크 용)
 
   // 상태 모니터링 UI에 띄울 최근 로그 (링버퍼). GET /logs 로 노출.
   std::mutex               logs_mtx_;
