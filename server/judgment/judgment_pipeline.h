@@ -8,8 +8,8 @@
 //       DangerJudgmentEngine::evaluate()까지 호출하는 배선만 담당한다.
 //
 // 이 파일은 판정 로직을 갖지 않는다. 임계값 판단·예외 상태 결정·worst-case 퓨전은
-// 전부 DangerJudgmentEngine 쪽에 있고, 여기서는 값을 옮기고 호출만 한다.
-// (기존 danger_judgment_engine / nearest_person_selector는 수정하지 않았다.)
+// 전부 DangerJudgmentEngine 쪽에 있고, 선택 로직은 nearest_person_selector 쪽에 있다.
+// 여기서는 값을 옮기고 호출만 한다(두 컴포넌트의 로직은 건드리지 않았다).
 //
 // 이번 범위:
 //   - 활성 카메라 1대(단일 camera_id) 기준 처리만
@@ -17,41 +17,24 @@
 // 범위 밖:
 //   - 핸드오버 구간(여러 camera_id 동시 중첩) 처리 -> 아래 JudgmentPipeline의 [TODO] 참고
 //
-// 구현은 judgment_pipeline.cpp에 있다. 이 헤더는 표준 헤더 + 엔진 헤더만 쓰므로
+// 구현은 judgment_pipeline.cpp에 있다. 이 헤더는 표준 헤더 + 두 컴포넌트 헤더만 쓰므로
 // POSIX 의존성이 없다(gmtime_r/소켓 의존성은 엔진 .cpp와 ResultPublisher 쪽에만 있다).
 
 #pragma once
 
-#include <limits>
 #include <string>
 
 #include "danger_judgment_engine.h"
+#include "nearest_person_selector.h"  // NearestPersonResult (상류 결과 타입)
+
+// 상류 결과 타입(NearestPersonResult)은 예전엔 이 헤더가 필드 구성만 베껴 미러링했지만,
+// nearest_person_selector가 헤더/구현/main으로 분리된 뒤로는 그 헤더를 직접 include한다.
+// -> 이제 미러 정의를 손으로 동기화할 필요가 없고, 테스트도 진짜 구현체와 링크된다.
+// (WorldPoint는 nearest_person_selector.h가 danger_judgment_engine.h 쪽 정의를
+//  재사용하므로 두 헤더를 같이 include해도 중복 정의가 생기지 않는다.)
 
 // ============================================================
-// 1. 상류(nearest_person_selector) 결과 타입
-// ============================================================
-
-// nearest_person_selector.cpp의 NearestPersonResult를 필드 구성 그대로 미러링한 것.
-// 그 파일은 아직 헤더가 없고 자체 main()을 갖고 있어서 TU를 그대로 링크할 수 없기 때문에,
-// 링크 없이 타입만 맞추는 방식으로 배선한다.
-// WorldPoint는 danger_judgment_engine.h 쪽 정의를 재사용한다
-// (nearest_person_selector.cpp의 WorldPoint와 필드 구성이 동일하므로 ODR상 문제 없음).
-//
-// [교체 지점] nearest_person_selector.h(또는 워크가이드에서 언급된 server/common/types.hpp)가
-//             생기면 이 블록을 지우고 그 헤더를 include하면 된다. 필드 구성이 같으므로
-//             호출부는 그대로 두면 된다. 그 전까지는 두 정의를 손으로 동기화해야 한다.
-#ifndef NEAREST_PERSON_SELECTOR_H
-struct NearestPersonResult {
-    bool       found = false;
-    int        track_id = -1;
-    int        camera_id = -1;   // 선택된 트랙을 보고 있던 카메라 (found=false면 -1 유지)
-    WorldPoint position;
-    double     distance_m = std::numeric_limits<double>::max();
-};
-#endif
-
-// ============================================================
-// 2. IMU/ToF 리더 인터페이스 (드라이버 연동 전)
+// 1. IMU/ToF 리더 인터페이스 (드라이버 연동 전)
 // ============================================================
 
 // SensorInput 한 프레임 분을 공급하는 쪽의 인터페이스.
@@ -76,7 +59,7 @@ public:
 };
 
 // ============================================================
-// 3. 판정 파이프라인
+// 2. 판정 파이프라인
 // ============================================================
 
 // 한 프레임 처리 결과.
@@ -138,7 +121,7 @@ private:
 };
 
 // ============================================================
-// 4. 출력 헬퍼
+// 3. 출력 헬퍼
 // ============================================================
 
 // camera_id 표기 방식: danger_judgment_engine.h의 CameraInput 주석에 적힌 결정사항대로

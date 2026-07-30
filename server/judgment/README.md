@@ -13,8 +13,12 @@
 | `judgment_pipeline.cpp` | glue 구현 (매핑 + `evaluate()` 호출만, 판정 로직 없음) + IMU/ToF 스텁 리더 |
 | `ResultPublisher.h` | 헤더 온리 TCP 송신기 (POSIX 소켓 + `std::thread`) |
 | `test_exception_trigger.cpp` | 예외처리 트리거 검증 테스트 (헤더만 include, 엔진 구현은 링크) |
-| `test_judgment_pipeline.cpp` | 배선 glue 검증 테스트 (매핑 규칙 + `processFrame()` end-to-end) |
+| `test_judgment_pipeline.cpp` | 배선 glue 검증 테스트 (매핑 규칙 + `processFrame()` end-to-end + 상류 구현체 통합) |
 | `test_result_publisher.cpp` | 송신 큐 스트레스 테스트 |
+
+이 프로젝트의 CMake는 `add_subdirectory`로 `../tracking`(`nearest_person_selector` 라이브러리)을 함께 가져온다. `judgment_pipeline`이 상류 결과 타입(`NearestPersonResult`)을 그쪽 헤더에서 직접 include하기 때문이다.
+
+`../tracking/nearest_person_selector.h`는 `WorldPoint`를 자체 정의하지 않고 `danger_judgment_engine.h` 쪽 정의를 재사용한다. 두 헤더를 같은 TU에서 include하는 `judgment_pipeline`에서 같은 이름의 구조체가 두 번 정의되는 걸 피하기 위한 것 (원래도 두 정의의 필드 구성은 동일했음). 계획대로 `server/common/types.hpp`가 생기면 `WorldPoint`를 거기로 옮기고 두 헤더가 모두 그걸 include하는 형태로 정리하면 된다.
 
 ## 빌드
 
@@ -72,7 +76,8 @@ bbox·world 좌표(person/forklift)는 팀 협의로 제외 확정 (2026-07-29) 
 - ~~**camera_id 통합 지점 부재**~~: **배선됨 (2026-07-30)** — `judgment_pipeline.h/.cpp`가 `NearestPersonResult` → `CameraInput` 매핑과 `evaluate()` 호출을 담당. 단, 아래 세 항목이 남아 있음
 - **핸드오버 구간 미처리**: `judgment_pipeline`은 활성 카메라 1대만 처리함. 여러 `camera_id`가 같은 지게차/사람을 동시에 보는 구간은 카메라별 판정 후 worst-case 채택 방식으로 구현 예정 (`judgment_pipeline.h`의 `[TODO]`). 현재는 다른 카메라에서 온 최근접 사람이 들어오면 `PipelineOutput.camera_id_mismatch`로만 표시하고 판정은 그대로 진행함 (사람을 드랍하는 게 더 위험하므로)
 - **IMU/ToF 스텁**: 드라이버 연동 전이라 `StubSensorReader`가 "센서 정상 + ToF 원거리(5m)" 고정값을 돌려줌 → 현재 파이프라인 경로에서는 ToF 근접 경보·충돌 감지가 동작하지 않음. 교체를 잊고 넘어가지 않도록 첫 `read()` 호출 시 `std::cerr`로 1회 경고를 남김. `ISensorReader`만 구현해 교체하면 됨 (**배포 전 필수 교체**)
-- **selector 헤더 부재**: `nearest_person_selector.cpp`가 헤더 없이 자체 `main()`을 갖고 있어 링크할 수 없음 → `judgment_pipeline.h`가 `NearestPersonResult`를 미러링해 두고 손으로 동기화 중. `nearest_person_selector.h`(또는 `server/common/types.hpp`)가 생기면 미러 블록 삭제 후 include로 교체
+- ~~**selector 헤더 부재**~~: **해결됨 (2026-07-30)** — `nearest_person_selector`를 헤더/구현/`main()`으로 분리하고 정적 라이브러리로 묶었다. `judgment_pipeline.h`의 미러 정의는 삭제되고 `#include "nearest_person_selector.h"`로 교체됨 → 손으로 동기화할 필요 없고, 테스트도 실제 구현체와 링크된다
+- **`cross_camera_reid.cpp` 미통합**: 그 파일은 `Track`(필드 구성이 selector 쪽보다 많음)과 전역 `euclideanDistance()`를 자체 정의하고 있어, 지금 상태로 같은 실행파일에 링크하면 ODR 위반 + 중복 정의가 된다. 어떤 CMake 타깃에도 안 들어가 있어 당장 문제는 없지만, 빌드에 넣을 때 `nearest_person_selector.h` 쪽 정의로 통일해야 함
 
 ## 참고
 
