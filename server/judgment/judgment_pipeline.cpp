@@ -12,6 +12,7 @@
 
 #include "judgment_pipeline.h"
 
+#include <iostream>
 #include <string>
 
 // ============================================================
@@ -31,6 +32,20 @@ SensorInput StubSensorReader::read() {
     //        실제 배포 전에 반드시 교체돼야 한다. 교체를 잊고 배포하면
     //        ToF 근접 경보와 충돌 감지가 조용히 죽은 상태로 동작한다.
     //        (SensorInput의 기본값과 같은 값이지만, 의도를 명시적으로 남기려고 직접 채운다.)
+    //
+    // 스텁이 조용히 동작하면 교체를 잊고 넘어가기 쉬우므로 첫 호출 때 한 번 경고를 남긴다.
+    // 판정 루프마다 찍으면 로그가 묻히니 함수 로컬 static으로 1회만 출력한다
+    // (인스턴스별이 아니라 프로세스 전체 기준 1회 — 리더를 여러 개 만들어도 한 번만 찍힌다).
+    // [주의] 멀티스레드에서 read()가 동시에 불리면 C++11 이후 함수 로컬 static 초기화는
+    //        스레드 안전하지만 아래 대입은 그렇지 않다. 최악의 경우 경고가 두 번 찍힐 뿐
+    //        판정에는 영향이 없어서 잠금은 두지 않았다.
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        std::cerr << "[stub] StubSensorReader 사용 중 - 실제 IMU/ToF 드라이버로 교체하기 전까지"
+                     " 센서 예외(SENSOR_FAULT/EMERGENCY_IMPACT)와 ToF 근접 경보가 발동하지 않습니다\n";
+    }
+
     SensorInput sen;
     sen.imu_ok            = true;
     sen.tof_ok            = true;

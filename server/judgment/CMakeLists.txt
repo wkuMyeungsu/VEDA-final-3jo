@@ -47,3 +47,10 @@ add_executable(test_exception_trigger
     test_exception_trigger.cpp
 )
 target_link_libraries(test_exception_trigger PRIVATE danger_judgment_engine Threads::Threads)
+
+# 배선 glue 검증 테스트 (매핑 규칙 + processFrame end-to-end, 종료코드 0=성공)
+# judgment_pipeline이 엔진 라이브러리를 PUBLIC으로 링크하므로 엔진은 전이로 따라온다.
+add_executable(test_judgment_pipeline
+    test_judgment_pipeline.cpp
+)
+target_link_libraries(test_judgment_pipeline PRIVATE judgment_pipeline Threads::Threads)

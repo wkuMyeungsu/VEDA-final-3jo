@@ -13,6 +13,7 @@
 | `judgment_pipeline.cpp` | glue 구현 (매핑 + `evaluate()` 호출만, 판정 로직 없음) + IMU/ToF 스텁 리더 |
 | `ResultPublisher.h` | 헤더 온리 TCP 송신기 (POSIX 소켓 + `std::thread`) |
 | `test_exception_trigger.cpp` | 예외처리 트리거 검증 테스트 (헤더만 include, 엔진 구현은 링크) |
+| `test_judgment_pipeline.cpp` | 배선 glue 검증 테스트 (매핑 규칙 + `processFrame()` end-to-end) |
 | `test_result_publisher.cpp` | 송신 큐 스트레스 테스트 |
 
 ## 빌드
@@ -28,10 +29,11 @@ g++ -std=c++17 danger_judgment_engine.cpp danger_judgment_engine_main.cpp \
 cmake -S . -B build && cmake --build build
 ```
 
-배선 glue만 빌드 확인할 때 (`ResultPublisher` 미포함이라 소켓 의존성 없음):
+배선 glue와 그 테스트만 빌드·실행할 때 (`ResultPublisher` 미포함이라 소켓 의존성 없음):
 
 ```bash
-cmake -S . -B build && cmake --build build --target judgment_pipeline
+cmake -S . -B build && cmake --build build --target test_judgment_pipeline
+./build/test_judgment_pipeline     # 종료코드 0=성공
 ```
 
 `ResultPublisher.h`는 POSIX 소켓 + `std::thread` 기반이라 Windows/MSVC 네이티브 빌드는 지원하지 않음 (RPi4/Linux 전용).
@@ -69,7 +71,7 @@ bbox·world 좌표(person/forklift)는 팀 협의로 제외 확정 (2026-07-29) 
 - **드랍 로그 한계**: 잔여 드랍은 `droppedCount()`로 프로세스가 살아있는 동안만 정확히 조회 가능하며, 비정상 종료(SIGKILL 등)로 `stop()`/소멸자가 안 불리면 로그에 안 남을 수 있음
 - ~~**camera_id 통합 지점 부재**~~: **배선됨 (2026-07-30)** — `judgment_pipeline.h/.cpp`가 `NearestPersonResult` → `CameraInput` 매핑과 `evaluate()` 호출을 담당. 단, 아래 세 항목이 남아 있음
 - **핸드오버 구간 미처리**: `judgment_pipeline`은 활성 카메라 1대만 처리함. 여러 `camera_id`가 같은 지게차/사람을 동시에 보는 구간은 카메라별 판정 후 worst-case 채택 방식으로 구현 예정 (`judgment_pipeline.h`의 `[TODO]`). 현재는 다른 카메라에서 온 최근접 사람이 들어오면 `PipelineOutput.camera_id_mismatch`로만 표시하고 판정은 그대로 진행함 (사람을 드랍하는 게 더 위험하므로)
-- **IMU/ToF 스텁**: 드라이버 연동 전이라 `StubSensorReader`가 "센서 정상 + ToF 원거리(5m)" 고정값을 돌려줌 → 현재 파이프라인 경로에서는 ToF 근접 경보·충돌 감지가 동작하지 않음. `ISensorReader`만 구현해 교체하면 됨 (**배포 전 필수 교체**)
+- **IMU/ToF 스텁**: 드라이버 연동 전이라 `StubSensorReader`가 "센서 정상 + ToF 원거리(5m)" 고정값을 돌려줌 → 현재 파이프라인 경로에서는 ToF 근접 경보·충돌 감지가 동작하지 않음. 교체를 잊고 넘어가지 않도록 첫 `read()` 호출 시 `std::cerr`로 1회 경고를 남김. `ISensorReader`만 구현해 교체하면 됨 (**배포 전 필수 교체**)
 - **selector 헤더 부재**: `nearest_person_selector.cpp`가 헤더 없이 자체 `main()`을 갖고 있어 링크할 수 없음 → `judgment_pipeline.h`가 `NearestPersonResult`를 미러링해 두고 손으로 동기화 중. `nearest_person_selector.h`(또는 `server/common/types.hpp`)가 생기면 미러 블록 삭제 후 include로 교체
 
 ## 참고
