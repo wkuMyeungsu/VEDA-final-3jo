@@ -38,6 +38,31 @@ GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
     return GST_FLOW_OK;
 }
 
+GstFlowReturn onNewMetadataSample(GstElement *appsink, gpointer userData)
+{
+    auto *self = static_cast<RtspVideoSource *>(userData);
+
+    GstSample *sample = gst_app_sink_pull_sample(GST_APP_SINK(appsink));
+    if (!sample)
+        return GST_FLOW_ERROR;
+
+    GstBuffer *buffer = gst_sample_get_buffer(sample);
+    GstMapInfo map;
+    if (gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+        const QByteArray xml(reinterpret_cast<const char *>(map.data), static_cast<int>(map.size));
+        gst_buffer_unmap(buffer, &map);
+
+        qCDebug(lcRtsp) << "onvif metadata bytes:" << xml.size();
+
+        QMetaObject::invokeMethod(self, [self, xml]() {
+            emit self->onvifMetadataReceived(xml);
+        }, Qt::QueuedConnection);
+    }
+
+    gst_sample_unref(sample);
+    return GST_FLOW_OK;
+}
+
 }
 
 RtspVideoSource::RtspVideoSource(QString cameraId, QUrl rtspUrl, QObject *parent)
@@ -64,10 +89,14 @@ void RtspVideoSource::start()
     // location 값을 따옴표로 감싼다 -- QUrl::toString()이 %21을 다시 '!'로 풀어버릴 수 있는데,
     // 따옴표 없이 넣으면 gst_parse_launch가 그 '!'를 파이프라인 구분자로 오해해서
     // location 값이 중간에 잘린다 (Resource not found로 이어짐).
+    // 같은 RTSP 세션의 ONVIF 메타데이터 트랙(사람 bbox)도 두 번째 브랜치로 받는다.
+    // 카메라가 이 트랙을 안 주면 이 브랜치만 조용히 안 붙고 영상은 그대로 동작.
     const QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
         + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
           " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
-          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false";
+          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false"
+          " src. ! application/x-rtp,media=application,encoding-name=VND.ONVIF.METADATA !"
+          " rtponvifmetadatadepay ! appsink name=metasink emit-signals=true sync=false";
 
     GError *error = nullptr;
     m_pipeline = gst_parse_launch(description.constData(), &error);
@@ -84,6 +113,11 @@ void RtspVideoSource::start()
     GstElement *appsink = gst_bin_get_by_name(GST_BIN(m_pipeline), "sink");
     g_signal_connect(appsink, "new-sample", G_CALLBACK(onNewSample), this);
     gst_object_unref(appsink);
+
+    if (GstElement *metaSink = gst_bin_get_by_name(GST_BIN(m_pipeline), "metasink")) {
+        g_signal_connect(metaSink, "new-sample", G_CALLBACK(onNewMetadataSample), this);
+        gst_object_unref(metaSink);
+    }
 
     m_bus = gst_pipeline_get_bus(GST_PIPELINE(m_pipeline));
 

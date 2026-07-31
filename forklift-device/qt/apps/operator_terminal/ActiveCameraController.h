@@ -9,6 +9,7 @@
 #include "models/CameraInfo.h"
 #include "models/RiskMetadata.h"
 #include "models/Types.h"
+#include "network/OnvifBBoxParser.h"
 
 class MetadataService;
 class VideoSourceManager;
@@ -50,7 +51,8 @@ public:
     int riskLevel() const { return static_cast<int>(m_latest.riskLevel()); }
     int exceptionState() const { return static_cast<int>(m_latest.exceptionState()); }
     double distanceM() const { return m_latest.distanceM(); }
-    BBox personBBox() const { return m_latest.personBBox(); }
+    // ONVIF 데이터가 들어온 적 있는 카메라(RTSP)만 그쪽 bbox 사용, 그 외(Mock/LocalFile)는 기존 경로 유지
+    BBox personBBox() const { return m_onvifActive ? m_onvifPersonBBox : m_latest.personBBox(); }
     BBox forkliftBBox() const { return m_latest.forkliftBBox(); }
 
     RiskTypes::ConnectionState videoConnectionState() const { return m_videoConnectionState; }
@@ -62,6 +64,7 @@ signals:
 
 private slots:
     void handleMetadataUpdated(const RiskMetadata &metadata);
+    void handlePersonDetected(const BBox &bbox);
 
 private:
     void attachVideoConnection();
@@ -78,4 +81,9 @@ private:
 
     RiskTypes::ConnectionState m_videoConnectionState = RiskTypes::ConnectionState::Disconnected;
     QMetaObject::Connection m_videoConnection;
+
+    OnvifBBoxParser *m_onvifParser = nullptr;
+    QMetaObject::Connection m_onvifConnection;
+    BBox m_onvifPersonBBox;
+    bool m_onvifActive = false;
 };

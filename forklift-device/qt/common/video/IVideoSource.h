@@ -31,6 +31,9 @@ signals:
     void frameReady(const QImage &frame);
     void connectionStateChanged(RiskTypes::ConnectionState state);
 
+    // ONVIF 메타데이터(raw XML) 수신 — RTSP 전용
+    void onvifMetadataReceived(const QByteArray &xml);
+
 protected:
     void setConnectionState(RiskTypes::ConnectionState state)
     {

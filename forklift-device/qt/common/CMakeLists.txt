@@ -110,6 +110,8 @@ qt_add_qml_module(safety_common
         network/NoopWarningDevice.cpp
         network/NetworkClient.h
         network/NetworkClient.cpp
+        network/OnvifBBoxParser.h
+        network/OnvifBBoxParser.cpp
 
         config/ConfigTypes.h
         config/ConfigLoader.h
