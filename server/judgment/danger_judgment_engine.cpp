@@ -196,8 +196,12 @@ std::string toJson(const JudgmentResult& r) {
     // distance_m은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
     os << "\"distance_m\":";
     if (r.distance_m < 0) os << "null"; else os << r.distance_m;
+    // risk_level은 문자열이 아니라 정수(0=SAFE/1=CAUTION/2=DANGER)로 내보낸다.
+    // 단말(Qt RiskMetadata::fromJson)이 toInt()로 읽으므로 문자열을 보내면
+    // 항상 0(Safe)으로 떨어져 위험 경보가 통째로 유실된다.
+    // enum 값이 곧 위험도 순서라 static_cast<int>가 그대로 계약 값이 된다.
     os << ','
-       << "\"risk_level\":\"" << toString(r.final_risk) << "\""
+       << "\"risk_level\":" << static_cast<int>(r.final_risk)
        << '}';
     return os.str();
 }

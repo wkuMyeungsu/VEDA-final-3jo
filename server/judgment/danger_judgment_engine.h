@@ -157,6 +157,8 @@ std::string toJsonOrNull(const std::string& s);
 // 필드명·구성은 네트워크·단말 파트(Qt RiskMetadata::fromJson)와 확정된 스키마를 따른다.
 // 확정된 출력 필드는 아래 6개가 전부다:
 //   utc_time / camera_id / zone / exception_state / distance_m / risk_level
+// - risk_level은 정수(0=SAFE/1=CAUTION/2=DANGER)다. 단말이 toInt()로 읽는 계약이므로
+//   문자열로 내보내면 안 된다. 콘솔 로그용 문자열 표기는 toString(RiskLevel) 쪽에 남아 있다.
 // - world 좌표·bbox는 단말에서 쓰지 않기로 협의되어 제외.
 // - camera_risk / tof_risk는 서버 내부 디버깅용이므로 콘솔 로그(printResult)에만 남기고 제외.
 // - 테스트 시나리오 이름표도 프로덕션 스키마에 없으므로 제외.

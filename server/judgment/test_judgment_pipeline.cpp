@@ -328,7 +328,8 @@ void testJsonCarriesCameraId() {
 
         expectContains("camera_id가 문자열로 실림", json, "\"camera_id\":\"1\"");
         expectContains("zone은 미확정이라 null",     json, "\"zone\":null");
-        expectContains("risk_level 반영",            json, "\"risk_level\":\"DANGER\"");
+        // 단말이 toInt()로 읽으므로 정수여야 한다. 따옴표가 붙으면 항상 0(Safe)이 된다.
+        expectContains("risk_level이 정수 2(DANGER)", json, "\"risk_level\":2");
     }
     {
         // 활성 camera_id 미확정이면 예전처럼 null로 나가야 한다(빈 문자열이 그대로 나가면 안 됨).

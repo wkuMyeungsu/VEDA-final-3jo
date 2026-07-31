@@ -51,7 +51,7 @@ cmake -S . -B build && cmake --build build --target test_judgment_pipeline
   "zone": null,
   "exception_state": "NONE",
   "distance_m": 14.14,
-  "risk_level": "DANGER"
+  "risk_level": 2
 }
 ```
 
@@ -62,7 +62,7 @@ cmake -S . -B build && cmake --build build --target test_judgment_pipeline
 | `zone` | string \| null | 김진석 zone↔camera_id 매핑 대기, 값 없으면 null |
 | `exception_state` | string | `NONE` \| `SENSOR_FAULT` \| `DEAD_RECKONING` \| `EMERGENCY_IMPACT` \| `UNCONFIRMED_PROXIMITY` |
 | `distance_m` | number \| null | 판정 불가 상태(폐색/미검출)면 null |
-| `risk_level` | string | `SAFE` \| `CAUTION` \| `DANGER` |
+| `risk_level` | number (int) | `0`=SAFE \| `1`=CAUTION \| `2`=DANGER — 단말이 `toInt()`로 읽으므로 문자열 금지 |
 
 bbox·world 좌표(person/forklift)는 팀 협의로 제외 확정 (2026-07-29) — Qt가 지게차 좌표를 직접 쓰지 않고, 서버가 계산한 거리·위험도만 사용하는 구조로 정리됨.
 
