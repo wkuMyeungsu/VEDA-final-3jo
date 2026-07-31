@@ -13,7 +13,18 @@ module top #(
     input  wire       manual_reset_n,
 
     output wire [1:0] led,
-    output wire       buzzer_out
+    output wire       buzzer_out,
+
+    /*
+     * 조종기 전진 버튼 라인에 직렬로 들어간 릴레이의 코일 구동 신호.
+     * 트랜지스터 베이스로 나가서 릴레이를 여닫는다.
+     *
+     * active-high: 1이면 트랜지스터 on -> 코일 여자 -> NC 접점 떨어짐
+     * -> 전진 라인 차단. 0(또는 FPGA 전원 없음)이면 코일 비여자
+     * -> NC 접점 붙음 -> 전진 정상 동작 (기계적 기본값이므로
+     * FPGA가 죽어도 이 방향은 하드웨어가 스스로 보장한다).
+     */
+    output wire       fwd_cutoff_relay_en
 );
 
     /*
@@ -69,6 +80,13 @@ module top #(
 
     wire       estop_pressed;
     wire       estop_active;
+
+    /*
+     * 전진 차단 트리거: CRITICAL 위험도 또는 ESTOP.
+     * 팀 결정에 따라 COMM_ERROR는 의도적으로 제외했다.
+     */
+    wire       movement_cutoff_trigger;
+    wire       movement_cutoff_active;
 
     wire [2:0] warning_state;
     wire [1:0] led_pattern_out;
@@ -216,6 +234,23 @@ module top #(
         .estop_active      (estop_active)
     );
 
+    assign movement_cutoff_trigger =
+        estop_active || (effective_risk == 2'd3 /* CRITICAL */);
+
+    /*
+     * ESTOP 래치와 동일한 manual_reset_pulse를 공유한다
+     * (한 번의 물리 리셋 조작으로 ESTOP과 전진 차단이 함께 풀림).
+     */
+    movement_cutoff_latch u_movement_cutoff_latch (
+        .clk                    (clk),
+        .rst_n                  (rst_n),
+        .cutoff_trigger         (movement_cutoff_trigger),
+        .manual_reset_pulse     (manual_reset_pulse),
+        .movement_cutoff_active (movement_cutoff_active)
+    );
+
+    assign fwd_cutoff_relay_en = movement_cutoff_active;
+
     warning_fsm u_warning_fsm (
         .effective_risk(effective_risk),
         .comm_error    (comm_error),
@@ -293,6 +328,7 @@ module top #(
     .framing_error           (framing_error),
     .comm_error              (comm_error),
     .estop_active            (estop_active),
+    .movement_cutoff_active  (movement_cutoff_active),
     .effective_risk          (effective_risk),
     .self_test_active        (self_test_active),
     .self_test_active_mode   (self_test_active_mode),
@@ -346,6 +382,8 @@ module top #(
         .fifo_seq      (fifo_seq),
         .fifo_overflow (fifo_overflow),
         .fifo_pop      (fifo_pop),
+
+        .movement_cutoff_active (movement_cutoff_active),
 
         .tx_busy       (uart_tx_busy),
         .tx_done       (uart_tx_done),

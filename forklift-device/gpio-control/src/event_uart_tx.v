@@ -13,6 +13,14 @@ module event_uart_tx (
     output reg          fifo_pop,
 
     /*
+     * 매 프레임에 실시간으로 실어 보내는 상태 비트.
+     * movement_cutoff_active는 event_tx_fifo를 거치지 않고
+     * 전송 시작 시점의 "현재 값"을 그대로 스냅샷한다 (래치 상태라
+     * 이벤트 큐잉 없이도 항상 최신값을 실어 보낼 수 있다).
+     */
+    input  wire        movement_cutoff_active,
+
+    /*
      * uart_tx 연결
      */
     input  wire       tx_busy,
@@ -30,7 +38,7 @@ module event_uart_tx (
      * [0] 0x55            헤더
      * [1] event_code       (heartbeat는 EVENT_HEARTBEAT=0x0E 고정)
      * [2] event_detail
-     * [3] {overflow(1b), 4'b0000, seq[2:0]}
+     * [3] {overflow(1b), movement_cutoff_active(1b), 3'b000, seq[2:0]}
      * [4] checksum = XOR([0]..[3])
      */
     localparam [7:0] MSG_HEADER = 8'h55;
@@ -49,7 +57,7 @@ module event_uart_tx (
     reg [7:0] checksum_snap;
 
     wire [7:0] seq_byte =
-        {fifo_overflow, 4'b0000, fifo_seq};
+        {fifo_overflow, movement_cutoff_active, 3'b000, fifo_seq};
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin

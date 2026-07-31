@@ -11,6 +11,13 @@ module event_detector (
     input  wire       estop_active,
 
     /*
+     * 전진 차단 래치 상태 (movement_cutoff_latch).
+     * ESTOP과 마찬가지로 물리적 개입 상태이므로 우선순위를
+     * estop_changed 바로 다음으로 둔다.
+     */
+    input  wire       movement_cutoff_active,
+
+    /*
      * warning_latch가 반영된 실제 출력 위험도.
      * Pi가 보낸 원본 risk_level이 아니라 실제 경고 상태 변화를
      * 이벤트로 기록한다.
@@ -47,15 +54,19 @@ module event_detector (
         EVENT_SELF_TEST_START         = 8'h0A,
         EVENT_SELF_TEST_DONE          = 8'h0B,
         EVENT_ERROR_CLEARED           = 8'h0C,
-        EVENT_SELF_TEST_REJECTED      = 8'h0D;
+        EVENT_SELF_TEST_REJECTED      = 8'h0D,
+        EVENT_MOVEMENT_CUTOFF_ACTIVE  = 8'h0F,
+        EVENT_MOVEMENT_CUTOFF_CLEARED = 8'h10;
 
     reg       previous_comm_error;
     reg       previous_estop_active;
+    reg       previous_movement_cutoff_active;
     reg       previous_self_test_active;
     reg [1:0] previous_effective_risk;
 
     wire comm_error_changed;
     wire estop_changed;
+    wire movement_cutoff_changed;
     wire self_test_changed;
     wire effective_risk_changed;
 
@@ -64,6 +75,9 @@ module event_detector (
 
     assign estop_changed =
         (estop_active != previous_estop_active);
+
+    assign movement_cutoff_changed =
+        (movement_cutoff_active != previous_movement_cutoff_active);
 
     assign self_test_changed =
         (self_test_active != previous_self_test_active);
@@ -85,6 +99,7 @@ module event_detector (
             /* watchdog은 reset 직후 comm_error=1 */
             previous_comm_error         <= 1'b1;
             previous_estop_active       <= 1'b0;
+            previous_movement_cutoff_active <= 1'b0;
             previous_self_test_active   <= 1'b0;
             previous_effective_risk     <= 2'd0;
         end
@@ -141,6 +156,20 @@ module event_detector (
                 else begin
                     /* 래치가 manual reset으로 해제된 시점 */
                     event_code   <= EVENT_ESTOP_CLEARED;
+                    event_detail <= 8'h00;
+                end
+            end
+            else if (movement_cutoff_changed) begin
+                event_valid                      <= 1'b1;
+                previous_movement_cutoff_active  <= movement_cutoff_active;
+
+                if (movement_cutoff_active) begin
+                    event_code   <= EVENT_MOVEMENT_CUTOFF_ACTIVE;
+                    event_detail <= 8'h00;
+                end
+                else begin
+                    /* 래치가 manual reset으로 해제된 시점 */
+                    event_code   <= EVENT_MOVEMENT_CUTOFF_CLEARED;
                     event_detail <= 8'h00;
                 end
             end
