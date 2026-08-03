@@ -1,7 +1,7 @@
 #include "ActiveCameraController.h"
 
 #include "network/IWarningDevice.h"
-#include "services/MetadataService.h"
+#include "services/MetadataDistributor.h"
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
 
@@ -10,19 +10,19 @@ namespace {
 Q_LOGGING_CATEGORY(lcActiveCamera, "safety.activecamera")
 }
 
-ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, MetadataService *metadataService,
+ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, MetadataDistributor *metadataDistributor,
                                                  VideoSourceManager *videoManager, IWarningDevice *warningDevice,
                                                  QObject *parent)
     : QObject(parent)
-    , m_metadataService(metadataService)
+    , m_metadataDistributor(metadataDistributor)
     , m_videoManager(videoManager)
     , m_warningDevice(warningDevice)
 {
     for (const CameraInfo &info : cameras)
         m_cameras.insert(info.cameraId, info);
 
-    if (m_metadataService)
-        connect(m_metadataService, &MetadataService::metadataUpdated, this,
+    if (m_metadataDistributor)
+        connect(m_metadataDistributor, &MetadataDistributor::metadataUpdated, this,
                 &ActiveCameraController::handleMetadataUpdated);
 
     m_onvifParser = new OnvifBBoxParser(this);
@@ -40,7 +40,7 @@ void ActiveCameraController::setActiveCameraId(const QString &cameraId)
     m_zone = info.zone;
     m_cameraName = info.name;
 
-    m_latest = m_metadataService ? m_metadataService->latestFor(cameraId) : RiskMetadata();
+    m_latest = m_metadataDistributor ? m_metadataDistributor->latestFor(cameraId) : RiskMetadata();
     m_onvifActive = false;
     m_onvifPersonBBox = BBox();
 

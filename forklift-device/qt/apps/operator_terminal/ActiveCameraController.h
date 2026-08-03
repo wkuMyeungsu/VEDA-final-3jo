@@ -11,7 +11,7 @@
 #include "models/Types.h"
 #include "network/OnvifBBoxParser.h"
 
-class MetadataService;
+class MetadataDistributor;
 class VideoSourceManager;
 class IWarningDevice;
 class IVideoSource;
@@ -39,7 +39,7 @@ class ActiveCameraController : public QObject
         RiskTypes::ConnectionState videoConnectionState READ videoConnectionState NOTIFY videoConnectionStateChanged)
 
 public:
-    ActiveCameraController(QVector<CameraInfo> cameras, MetadataService *metadataService,
+    ActiveCameraController(QVector<CameraInfo> cameras, MetadataDistributor *metadataDistributor,
                             VideoSourceManager *videoManager, IWarningDevice *warningDevice,
                             QObject *parent = nullptr);
 
@@ -77,7 +77,7 @@ private:
     QString m_cameraName;
     RiskMetadata m_latest;
 
-    MetadataService *m_metadataService = nullptr;
+    MetadataDistributor *m_metadataDistributor = nullptr;
     VideoSourceManager *m_videoManager = nullptr;
     IWarningDevice *m_warningDevice = nullptr;
 

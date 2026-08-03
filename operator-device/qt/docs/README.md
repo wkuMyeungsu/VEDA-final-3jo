@@ -18,7 +18,7 @@ common/                              C++ 백엔드 + QML 테마/컴포넌트 (Sa
   video/      IVideoSource 및 Mock/LocalFile/Rtsp 구현, VideoStream, DetectionOverlay
   network/    IMetadataSource 및 Mock 구현
   config/     ConfigLoader (JSON 설정 파싱)
-  services/   MetadataService, ServerConnectionService, 각종 QML 모델, DemoController
+  services/   MetadataDistributor, ServerConnectionService, 각종 QML 모델, DemoController
 apps/
   control_center/     관제 PC 실행 파일 (main.cpp)
 qml/
@@ -218,7 +218,7 @@ GStreamer 요구사항:
 - operator-device/qt/common/network/IMetadataSource
 - MockMetadataSource
 - TcpMetadataSource 스켈레톤
-- MetadataService
+- MetadataDistributor
 - ServerConnectionService
 - DetectionOverlay
 - operator-device/qt/config/control_center.json

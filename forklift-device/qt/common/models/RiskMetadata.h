@@ -12,7 +12,7 @@
 // One risk-detection event for a single camera, matching the metadata
 // payload documented in docs/INTEGRATION.md. Produced by IMetadataSource
 // implementations (Mock now, Tcp/WebSocket later) and consumed by
-// MetadataService.
+// MetadataDistributor.
 class RiskMetadata
 {
     Q_GADGET

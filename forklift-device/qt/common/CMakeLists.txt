@@ -108,8 +108,8 @@ qt_add_qml_module(safety_common
         network/IWarningDevice.h
         network/NoopWarningDevice.h
         network/NoopWarningDevice.cpp
-        network/NetworkClient.h
-        network/NetworkClient.cpp
+        network/HandoverClient.h
+        network/HandoverClient.cpp
         network/OnvifBBoxParser.h
         network/OnvifBBoxParser.cpp
 
@@ -119,8 +119,8 @@ qt_add_qml_module(safety_common
 
         services/ServerConnectionService.h
         services/ServerConnectionService.cpp
-        services/MetadataService.h
-        services/MetadataService.cpp
+        services/MetadataDistributor.h
+        services/MetadataDistributor.cpp
         services/CameraListModel.h
         services/CameraListModel.cpp
         services/EventLogModel.h

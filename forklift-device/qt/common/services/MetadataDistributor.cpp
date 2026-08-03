@@ -1,8 +1,8 @@
-#include "MetadataService.h"
+#include "MetadataDistributor.h"
 
 #include "../network/IMetadataSource.h"
 
-MetadataService::MetadataService(QVector<CameraInfo> cameras, int eventLogMaxEntries, QObject *parent)
+MetadataDistributor::MetadataDistributor(QVector<CameraInfo> cameras, int eventLogMaxEntries, QObject *parent)
     : QObject(parent)
     , m_eventLogModel(eventLogMaxEntries)
 {
@@ -11,7 +11,12 @@ MetadataService::MetadataService(QVector<CameraInfo> cameras, int eventLogMaxEnt
         m_cameraNames.insert(info.cameraId, info.name);
 }
 
-void MetadataService::setSource(IMetadataSource *source)
+// 데이터 출처 교체 지점
+// - 지금: MockMetadataSource(가짜 데이터)
+// - 실서버 연동 시: (TcpMetadataSource) 등으로 교체
+// - IMetadataSource 인터페이스만 맞으면 아래 로직 변경 불필요
+// - 기존 source 있으면 먼저 disconnect (안 그러면 신호 중복 수신)
+void MetadataDistributor::setSource(IMetadataSource *source)
 {
     if (m_source == source)
         return;
@@ -22,49 +27,72 @@ void MetadataService::setSource(IMetadataSource *source)
     m_source = source;
 
     if (m_source) {
-        connect(m_source, &IMetadataSource::metadataReceived, this, &MetadataService::handleMetadata);
+        // metadataReceived 1건 -> handleMetadata() 호출 -> 3개 모델 분배 (유일한 진입점)
+        connect(m_source, &IMetadataSource::metadataReceived, this, &MetadataDistributor::handleMetadata);
+        // 연결 상태 변화(끊김/연결중/연결됨) 감지 -> StatusStrip.qml 등에 반영
         connect(m_source, &IMetadataSource::connectionStateChanged, this,
-                &MetadataService::handleSourceConnectionStateChanged);
+                &MetadataDistributor::handleSourceConnectionStateChanged);
+        // connect는 "이후 변화"만 감지 -> 현재 상태 수동 1회 반영 (안 하면 기본값으로 보임)
         handleSourceConnectionStateChanged(m_source->connectionState());
     }
 }
 
-void MetadataService::start()
+void MetadataDistributor::start()
 {
     if (m_source)
         m_source->start();
 }
 
-void MetadataService::stop()
+void MetadataDistributor::stop()
 {
     if (m_source)
         m_source->stop();
 }
 
-RiskMetadata MetadataService::latestFor(const QString &cameraId) const
+// 카메라별 "마지막으로 받은 값" 즉시 조회용
+// - ActiveCameraController::setActiveCameraId()가 카메라 전환 시
+//   다음 이벤트 안 기다리고 바로 그 카메라의 최신 상태를 가져오는 데 씀
+RiskMetadata MetadataDistributor::latestFor(const QString &cameraId) const
 {
     return m_latest.value(cameraId);
 }
 
-void MetadataService::handleMetadata(const RiskMetadata &metadata)
+// 카메라 1대의 새 이벤트 1건 처리
+// - 서버/Mock에서 오는 모든 RiskMetadata가 예외 없이 여기 거침
+// - 로직/로그 추가할 땐 여기가 기준점
+void MetadataDistributor::handleMetadata(const RiskMetadata &metadata)
 {
+    // 1) 카메라별 마지막 상태 캐시 갱신 (latestFor()가 읽는 곳)
     m_latest.insert(metadata.cameraId(), metadata);
 
+    // 2) 카메라 목록 모델 갱신
+    //    이 앱(operator_terminal)에선 DemoPanel.qml의 카메라 선택 드롭다운에만 쓰임
+    //    (control_center처럼 그리드 화면으로 보여주는 용도 아님)
     m_cameraListModel.updateRisk(metadata.cameraId(), metadata.riskLevel(), metadata.exceptionState(),
-                                  metadata.distanceM());
+                                  metadata.distanceM(), metadata.distanceValid());
 
+    // 3) 경보 목록 모델 갱신 -- 값은 채워지지만 이 앱 QML에서 실제로 안 씀
+    //    (control_center의 AlertListView.qml 전용, main.cpp에 context property로도 등록 안 돼있음)
     m_alertListModel.upsert(metadata.cameraId(), m_cameraNames.value(metadata.cameraId()), metadata.zone(),
-                             metadata.riskLevel(), metadata.distanceM(), metadata.exceptionState());
+                             metadata.riskLevel(), metadata.distanceM(), metadata.distanceValid(),
+                             metadata.exceptionState());
 
+    // 4) 이벤트 로그도 마찬가지로 기록은 되지만 이 앱 QML에서 노출 안 됨
+    //    (control_center의 EventLogPanel.qml 전용)
+    //    SAFE + 예외없음(평상시)은 애초에 기록도 안 함
     const bool noteworthy =
         metadata.riskLevel() != RiskTypes::RiskLevel::Safe || metadata.exceptionState() != RiskTypes::ExceptionState::None;
     if (noteworthy)
         m_eventLogModel.addEntry(metadata);
 
+    // 5) 실시간 구독자에게 원본 전달 -- 이 앱에선 ActiveCameraController가 유일한 구독자
+    //    (자신이 지금 보여주는 카메라의 이벤트인지 자기 안에서 다시 걸러냄)
     emit metadataUpdated(metadata);
 }
 
-void MetadataService::handleSourceConnectionStateChanged(RiskTypes::ConnectionState state)
+// source(서버/Mock) 연결 상태가 바뀔 때만 호출됨
+// - 값이 같으면 조기 리턴 (불필요한 QML 갱신/애니메이션 재생 방지)
+void MetadataDistributor::handleSourceConnectionStateChanged(RiskTypes::ConnectionState state)
 {
     if (m_connectionState == state)
         return;
