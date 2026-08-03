@@ -13,6 +13,8 @@
 //   [테스트 2] detectException() 우선순위 충돌 매트릭스 -
 //              충돌 > 센서고장 > DR > 미확인근접 순서가 조건 중첩 시에도 유지되는지,
 //              그 우선순위 보정이 final_risk에도 맞게 반영되는지
+//   [테스트 3] 거리 기반 EMERGENCY(risk_level 3)와 IMU 기반 EMERGENCY_IMPACT(exception)가
+//              서로 다른 축이라는 것 - 특히 예외 보정이 위험도를 낮추지 않는지
 //
 //   DEAD_RECKONING은 트리거 발생 여부와 "최소 CAUTION 유지"까지만 검증한다.
 //   회전 중 폐색 지속에 따른 DANGER 에스컬레이션은 회전 임계값이 잠정치라 범위 밖.
@@ -238,6 +240,55 @@ void testPriorityMatrix() {
     });
 }
 
+// ── 테스트 3: EMERGENCY(위험도) x EMERGENCY_IMPACT(예외) ────
+// 이름이 비슷하지만 축이 다르다: 전자는 카메라 거리 기반 risk_level 3,
+// 후자는 IMU 급가속도 기반 exception_state다. 한쪽이 다른 쪽을 덮어쓰면 안 된다.
+//
+// 특히 예외 보정은 위험도를 "올리기만" 해야 한다. EMERGENCY_IMPACT 보정이 예전처럼
+// final_risk를 DANGER로 못박으면, 카메라상 충돌 임박(EMERGENCY)인 상태에서 충돌까지
+// 의심되는 최악 상황이 오히려 3 -> 2로 내려간다.
+void testEmergencyTierVsImpact() {
+    std::cout << "\n[테스트 3] 거리 EMERGENCY(risk 3) x IMU EMERGENCY_IMPACT(exception)\n";
+
+    // 0.3m -> emergency_threshold_m(0.4) 이내. ToF는 5m(SAFE)로 중립화해 카메라 축만 본다.
+    const WorldPoint kNearA{0.0, 0.0};
+    const WorldPoint kNearB{0.3, 0.0};
+
+    // [주의] 케이스마다 엔진을 새로 만든다. EMERGENCY 히스테리시스가 프레임 간 상태를
+    //        남기므로 한 엔진을 공유하면 앞 케이스의 래치가 뒤 케이스 기대값을 흔든다.
+    {
+        DangerJudgmentEngine engine;
+        runCase(engine, {"카메라 0.3m (충돌 없음)",
+                         CameraInput{true, true, kNearA, kNearB, "", ""},
+                         SensorInput{true, true, 5.0, 0.1, false},
+                         ExceptionState::NONE,             RiskLevel::EMERGENCY});
+    }
+    {
+        DangerJudgmentEngine engine;
+        runCase(engine, {"카메라 0.3m + 충돌2.1g",
+                         CameraInput{true, true, kNearA, kNearB, "", ""},
+                         SensorInput{true, true, 5.0, 2.1, false},
+                         // 예외는 EMERGENCY_IMPACT로 태깅되되 위험도는 3에서 안 내려가야 한다.
+                         ExceptionState::EMERGENCY_IMPACT, RiskLevel::EMERGENCY});
+    }
+    {
+        DangerJudgmentEngine engine;
+        runCase(engine, {"카메라 원거리 + 충돌2.1g (기존 동작)",
+                         CameraInput{true, true, kFarA, kFarB, "", ""},
+                         SensorInput{true, true, 5.0, 2.1, false},
+                         // 카메라가 EMERGENCY가 아닐 때는 예전과 똑같이 DANGER로 올라간다.
+                         ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER});
+    }
+    {
+        DangerJudgmentEngine engine;
+        runCase(engine, {"카메라 0.3m + ToF고장",
+                         CameraInput{true, true, kNearA, kNearB, "", ""},
+                         SensorInput{true, false, 0.0, 0.1, false},
+                         // 최소 CAUTION 보정도 위험도를 낮추지 않는다.
+                         ExceptionState::SENSOR_FAULT,     RiskLevel::EMERGENCY});
+    }
+}
+
 } // namespace
 
 int main() {
@@ -245,6 +296,7 @@ int main() {
 
     testBoundaryValues();
     testPriorityMatrix();
+    testEmergencyTierVsImpact();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";

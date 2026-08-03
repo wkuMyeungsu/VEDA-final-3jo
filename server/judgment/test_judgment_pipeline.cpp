@@ -14,6 +14,8 @@
 //   [테스트 4] 하류 JSON에 camera_id가 실제로 실리는지 (이 배선의 존재 이유)
 //   [테스트 5] StubSensorReader가 돌려주는 값 계약 (드라이버로 교체되면 여기서 깨져야 함)
 //   [테스트 6] 진짜 selectNearestPerson() 출력을 processFrame()에 흘려보내는 통합 확인
+//   [테스트 7] EMERGENCY(4단계 확장) - 진입 거리 / DANGER<->EMERGENCY 히스테리시스 / 래치 해제
+//   [테스트 8] risk_level 직렬화 - 4단계가 전부 0~3 정수로 나가는지
 //
 //   핸드오버(여러 camera_id 동시 중첩) 처리는 구현 범위 밖이므로 검증 대상도 아니다.
 //   대신 [테스트 3]에서 "다른 카메라에서 온 사람도 드랍되지 않는다"를 고정해 둔다 -
@@ -106,6 +108,16 @@ const WorldPoint kForklift{5.0, 5.0};
 const WorldPoint kPersonDanger{5.5, 5.5};    // 약 0.71m -> danger_threshold_m(1.5) 이내
 const WorldPoint kPersonCaution{7.0, 7.0};   // 약 2.83m -> caution_threshold_m(3.0) 이내
 const WorldPoint kPersonSafe{10.0, 10.0};    // 약 7.07m -> SAFE
+
+// EMERGENCY 구간 검증용 좌표 (x축으로만 떨어뜨려 거리 = x 오프셋이 되게 한다).
+// 임계값은 emergency_threshold_m=0.4, 해제선은 0.4+0.1=0.5.
+// 경계에 딱 붙은 값(0.40/0.50)은 sqrt 반올림 1ulp에 따라 갈릴 수 있어 쓰지 않고,
+// 경계에서 0.01m 이상 떨어진 값만 쓴다(<= 비교의 등호 자체는 단위테스트 대상이 아님).
+const WorldPoint kPersonEmergency{5.30, 5.0};    // 0.30m -> 진입선 아래 -> EMERGENCY
+const WorldPoint kPersonJustInside{5.39, 5.0};   // 0.39m -> 진입선 아래 -> EMERGENCY
+const WorldPoint kPersonJustOutside{5.41, 5.0};  // 0.41m -> 진입선 위  -> 진입 안 함(DANGER)
+const WorldPoint kPersonInBand{5.45, 5.0};       // 0.45m -> 진입선~해제선 사이(래치 여부로 갈림)
+const WorldPoint kPersonReleased{5.55, 5.0};     // 0.55m -> 해제선 위  -> DANGER
 
 NearestPersonResult makeFound(int track_id, int camera_id, const WorldPoint& pos) {
     NearestPersonResult n;
@@ -436,6 +448,139 @@ void testSelectorIntegration() {
     }
 }
 
+// ── 테스트 7: EMERGENCY 단계 + 히스테리시스 ─────────────────
+// 스텁 센서가 ToF 5m(SAFE)를 주므로 여기서 보이는 위험도는 전부 카메라 거리 경로 값이다.
+// 히스테리시스는 프레임 간 상태를 남기므로 블록마다 파이프라인을 새로 만들거나
+// resetHysteresis()로 이전 프레임 영향을 지운 뒤 시작한다.
+void testEmergencyTier() {
+    std::cout << "\n[테스트 7] EMERGENCY 단계 + DANGER<->EMERGENCY 히스테리시스\n";
+
+    StubSensorReader sensors;
+
+    std::cout << "  -- 진입 거리 --\n";
+    {
+        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
+
+        expectRisk("0.30m -> EMERGENCY",     out.result.final_risk, RiskLevel::EMERGENCY);
+        expectExc ("거리 기반이라 예외는 NONE", out.result.exception,  ExceptionState::NONE);
+        expectNear("거리 계산값 0.30m",       out.result.distance_m, 0.30);
+        // EMERGENCY_IMPACT(IMU 축)와 섞이지 않는다는 걸 고정해 둔다 - 완전히 별개 필드다.
+        expectContains("JSON risk_level=3",   toJson(out.result), "\"risk_level\":3");
+        expectContains("JSON exception_state는 NONE 유지",
+                       toJson(out.result), "\"exception_state\":\"NONE\"");
+    }
+    {
+        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonJustOutside));
+        expectRisk("0.41m -> DANGER (진입선 위)", out.result.final_risk, RiskLevel::DANGER);
+    }
+    {
+        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonJustInside));
+        expectRisk("0.39m -> EMERGENCY (진입선 아래)", out.result.final_risk, RiskLevel::EMERGENCY);
+    }
+
+    std::cout << "  -- 히스테리시스 (진입 0.4m / 해제 0.5m) --\n";
+    {
+        JudgmentPipeline pipeline(kActiveCamera, sensors);
+
+        // 래치 없이 0.45m부터 시작하면 진입선(0.4) 위라 EMERGENCY가 아니어야 한다.
+        const PipelineOutput before =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
+        expectRisk("래치 전 0.45m -> DANGER", before.result.final_risk, RiskLevel::DANGER);
+
+        // 0.30m로 들어갔다가 다시 0.45m로 나오면, 해제선(0.5)을 못 넘었으므로 EMERGENCY 유지.
+        pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
+        const PipelineOutput held =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
+        expectRisk("진입 후 0.45m -> EMERGENCY 유지", held.result.final_risk, RiskLevel::EMERGENCY);
+        expectBool("래치 걸린 상태",           pipeline.engine().inEmergencyLatch(), true);
+
+        // 해제선을 넘으면 내려온다.
+        const PipelineOutput released =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonReleased));
+        expectRisk("0.55m -> DANGER로 해제",   released.result.final_risk, RiskLevel::DANGER);
+        expectBool("래치 풀린 상태",           pipeline.engine().inEmergencyLatch(), false);
+
+        // 해제된 뒤 0.45m는 다시 진입선 위이므로 EMERGENCY로 되돌아가지 않는다.
+        const PipelineOutput after =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
+        expectRisk("해제 후 0.45m -> DANGER (재진입 없음)",
+                   after.result.final_risk, RiskLevel::DANGER);
+    }
+
+    std::cout << "  -- 거리 판정 불가 프레임에서 래치 해제 --\n";
+    {
+        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
+        expectBool("EMERGENCY 진입 확인", pipeline.engine().inEmergencyLatch(), true);
+
+        // 사람 미검출 -> 거리 계산 불가. 래치를 유지하면 사람이 다시 잡힐 때까지
+        // EMERGENCY가 고착되므로 푸는 쪽을 택했다(engine .cpp 주석 참고).
+        const PipelineOutput lost = pipeline.processFrame(kForklift, true, makeNotFound());
+        expectRisk("사람 미검출 -> SAFE",   lost.result.final_risk, RiskLevel::SAFE);
+        expectBool("래치도 함께 해제",       pipeline.engine().inEmergencyLatch(), false);
+
+        const PipelineOutput reacquired =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
+        expectRisk("재검출 0.45m -> DANGER", reacquired.result.final_risk, RiskLevel::DANGER);
+    }
+
+    std::cout << "  -- 기존 구간이 EMERGENCY에 먹히지 않는지 (회귀 확인) --\n";
+    {
+        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        expectRisk("0.71m -> DANGER 그대로",
+                   pipeline.processFrame(kForklift, true,
+                                         makeFound(2, kActiveCamera, kPersonDanger)).result.final_risk,
+                   RiskLevel::DANGER);
+        expectRisk("2.83m -> CAUTION 그대로",
+                   pipeline.processFrame(kForklift, true,
+                                         makeFound(5, kActiveCamera, kPersonCaution)).result.final_risk,
+                   RiskLevel::CAUTION);
+        expectRisk("7.07m -> SAFE 그대로",
+                   pipeline.processFrame(kForklift, true,
+                                         makeFound(6, kActiveCamera, kPersonSafe)).result.final_risk,
+                   RiskLevel::SAFE);
+    }
+}
+
+// ── 테스트 8: risk_level 직렬화 ──────────────────────────────
+// 단말(Qt)/FPGA가 0~3 정수를 전제로 하므로 4단계가 전부 정수로, 따옴표 없이 나가야 한다.
+// 엔진을 거치지 않고 JudgmentResult를 직접 만들어 직렬화만 본다(판정 경로와 무관하게 고정).
+void testRiskLevelSerialization() {
+    std::cout << "\n[테스트 8] risk_level 직렬화 (0~3 정수)\n";
+
+    const struct { RiskLevel level; const char* expected; const char* name; } rows[] = {
+        {RiskLevel::SAFE,      "\"risk_level\":0", "SAFE -> 0"},
+        {RiskLevel::CAUTION,   "\"risk_level\":1", "CAUTION -> 1"},
+        {RiskLevel::DANGER,    "\"risk_level\":2", "DANGER -> 2"},
+        {RiskLevel::EMERGENCY, "\"risk_level\":3", "EMERGENCY -> 3"},
+    };
+
+    for (const auto& row : rows) {
+        JudgmentResult r{};
+        r.camera_risk = row.level;
+        r.tof_risk    = row.level;
+        r.final_risk  = row.level;
+        r.exception   = ExceptionState::NONE;
+        r.distance_m  = 1.0;
+
+        const std::string json = toJson(r);
+        expectContains(row.name, json, row.expected);
+        // 따옴표가 붙으면 단말 toInt()가 항상 0(Safe)으로 읽어 경보가 통째로 유실된다.
+        report(std::string(row.name) + " (따옴표 없음)",
+               json.find("\"risk_level\":\"") == std::string::npos,
+               "risk_level 값에 따옴표 없음", json);
+    }
+
+    // toString()도 4단계를 전부 알아야 콘솔 로그에 UNKNOWN이 찍히지 않는다.
+    expectStr("toString(EMERGENCY)", toString(RiskLevel::EMERGENCY), "EMERGENCY");
+}
+
 } // namespace
 
 int main() {
@@ -448,6 +593,8 @@ int main() {
     testJsonCarriesCameraId();
     testStubSensorContract();
     testSelectorIntegration();
+    testEmergencyTier();
+    testRiskLevelSerialization();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";

@@ -70,9 +70,49 @@ cmake -S . -B build && cmake --build build --target test_result_publisher
 | `zone` | string \| null | 김진석 zone↔camera_id 매핑 대기, 값 없으면 null |
 | `exception_state` | string | `NONE` \| `SENSOR_FAULT` \| `DEAD_RECKONING` \| `EMERGENCY_IMPACT` \| `UNCONFIRMED_PROXIMITY` |
 | `distance_m` | number \| null | 판정 불가 상태(폐색/미검출)면 null |
-| `risk_level` | number (int) | `0`=SAFE \| `1`=CAUTION \| `2`=DANGER — 단말이 `toInt()`로 읽으므로 문자열 금지 |
+| `risk_level` | number (int) | `0`=SAFE \| `1`=CAUTION \| `2`=DANGER \| `3`=EMERGENCY — 단말이 `toInt()`로 읽으므로 문자열 금지 |
 
 bbox·world 좌표(person/forklift)는 팀 협의로 제외 확정 (2026-07-29) — Qt가 지게차 좌표를 직접 쓰지 않고, 서버가 계산한 거리·위험도만 사용하는 구조로 정리됨.
+
+## 위험 단계 4단계 (2026-08-03 확장)
+
+`RiskLevel`에 `EMERGENCY`(3)를 추가했다. FPGA(`gpio-control/PROTOCOL.md`)와 단말 Qt(`RiskTypes::RiskLevel`)는 이미 `risk_level` 0~3을 전제로 설계돼 있었는데 서버 enum이 3단계뿐이라 3에 도달할 방법이 없었다. 이름은 Qt 쪽(`Emergency`)을 따랐고, FPGA 문서는 같은 값 3을 `CRITICAL`로 부른다 (전진 차단 릴레이가 이 값에서 걸린다).
+
+| 단계 | 값 | 카메라 기준 거리 조건 |
+|---|---|---|
+| SAFE | 0 | > 3.0m |
+| CAUTION | 1 | ≤ `caution_threshold_m` (3.0m) |
+| DANGER | 2 | ≤ `danger_threshold_m` (1.5m) |
+| EMERGENCY | 3 | ≤ `emergency_threshold_m` (**목업 0.4m**) — 충돌 임박 |
+
+> ⚠️ `emergency_threshold_m = 0.4`와 `emergency_release_margin_m = 0.1`은 **근거 있는 실측값이 아니라 자리표시용 목업 상수**다. 좌표정합 PoC + 제동거리 실측(확정된 실험 4종)이 끝나면 교체해야 한다. 교체 시 `emergency_threshold_m`은 `danger_threshold_m`(1.5)보다 작게 유지해야 한다 — 같거나 크면 EMERGENCY가 DANGER 구간을 통째로 삼킨다.
+
+### DANGER ↔ EMERGENCY 히스테리시스
+
+- **진입**: 거리 ≤ 0.4m
+- **해제**: 거리 > 0.4 + 0.1 = 0.5m
+- 사이 구간(0.4~0.5m)은 직전에 EMERGENCY였는지에 따라 갈린다.
+
+위험도 상승은 지연 없이 즉시, 하강만 신중하게 — FPGA `warning_latch`(PROTOCOL.md 1.1절)가 시간 축에서 쓰는 원칙을 거리 축에 적용한 것이다. 임계값 근처에서 좌표가 미세하게 흔들릴 때 3↔2가 프레임마다 진동하면 그대로 LED/부저/전진차단으로 나가기 때문에 필요하다.
+
+주의할 점 세 가지:
+
+1. **다른 경계(SAFE↔CAUTION↔DANGER)에는 히스테리시스가 없다** — 예전부터 없었고 이번에도 넣지 않았다. 같은 방식을 넓히려면 `classifyByDistance()`의 진입/해제 구조를 경계별로 반복하면 되고, 그때는 마지막 단계 하나만 기억하는 `in_emergency_` 대신 직전 `RiskLevel` 전체를 들고 있어야 한다.
+2. **거리 판정이 불가능한 프레임(마커 폐색/사람 미검출)에서는 래치가 풀린다.** 유지하는 쪽이 더 안전해 보이지만 한번 걸리면 사람이 다시 잡힐 때까지 풀 방법이 없어 EMERGENCY가 무기한 고착된다(전진 차단이 걸린 채로 남는다). 그 구간은 기존대로 예외 상태(`DEAD_RECKONING`/`SENSOR_FAULT`)의 최소 CAUTION 보정에 맡긴다.
+3. **`evaluate()`가 프레임 간 상태를 갖게 됐다.** 시그니처는 `const`지만 래치를 `mutable`로 들고 있으므로, 같은 엔진 인스턴스를 여러 스레드에서 동시에 호출하면 안 된다. 판정 대상이 바뀔 때는 `resetHysteresis()`로 초기화한다.
+
+### EMERGENCY(위험도)와 EMERGENCY_IMPACT(예외)는 별개 축
+
+이름만 비슷하고 서로 다른 필드다.
+
+| | 축 | 입력 | 나가는 필드 |
+|---|---|---|---|
+| `RiskLevel::EMERGENCY` | 위험도 | 카메라 기준 거리 | `risk_level: 3` |
+| `ExceptionState::EMERGENCY_IMPACT` | 예외 상태 | IMU 급가속도 | `exception_state: "EMERGENCY_IMPACT"` |
+
+`EMERGENCY_IMPACT` 보정은 예전엔 `final_risk = DANGER`로 못박았는데, 이 대입은 EMERGENCY(3)가 생긴 뒤로 "카메라상 충돌 임박인데 충돌까지 의심되는" 최악 상황의 위험도를 오히려 3 → 2로 **낮춘다**. 위험도는 worst-case로만 움직여야 하므로 `atLeast(fused, DANGER)`로 바꿨다. 카메라가 EMERGENCY가 아닐 때의 동작은 예전과 동일하고, 예외 태깅 자체는 건드리지 않았다. 검증: `test_exception_trigger.cpp` 테스트 3
+
+ToF 경로(`classifyByTof`)는 **아직 3단계 그대로**다. ToF는 사람/벽/적재물을 구분하지 못해(`UNCONFIRMED_PROXIMITY`) 단독으로 EMERGENCY까지 올리는 게 타당한지 미확정이라 이번 확장은 카메라 거리 경로에만 적용했다.
 
 ## 송신 구조 (2026-08-03 확정)
 
@@ -102,6 +142,9 @@ bbox·world 좌표(person/forklift)는 팀 협의로 제외 확정 (2026-07-29) 
 
 ## 미해결 (이정석 확인 대기)
 
+- **EMERGENCY 임계값이 목업**: `emergency_threshold_m = 0.4` / `emergency_release_margin_m = 0.1`은 자리표시용 상수다. 제동거리·좌표정합 오차 실측 후 교체 필요 (**배포 전 필수 교체**). 해제 마진은 좌표정합 오차보다 크게 잡아야 진동이 실제로 막힌다
+- **ToF 경로 EMERGENCY 미적용**: ToF는 사람/벽/적재물 구분이 안 돼 단독으로 위험도 3까지 올리는 게 타당한지 미확정. 적용하려면 `tof_emergency_m`을 추가하고 `classifyByTof()`를 4단계로 넓혀야 함
+- **다른 경계 히스테리시스 부재**: SAFE↔CAUTION↔DANGER 경계는 여전히 단순 임계값 비교라 경계 근처에서 단계가 진동할 수 있음. 필요하면 EMERGENCY와 같은 방식으로 확장 (위 "위험 단계 4단계" 절 참고)
 - **포트**: 임시 9000 (`main()` 하드코딩), 실제 배포 포트 확정 필요 (연결 방향은 서버 listen으로 확정됨)
 - **프레이밍 방식**: 임시 개행(`\n`) 구분, Qt 수신부가 길이-prefix 방식을 원할 수 있음
 - ~~**전송 주기**~~: **확정됨 (2026-08-03)** — 하이브리드(변화 시 즉시 + 무변화 시 200ms 재전송). 위 "송신 구조" 참고. 검증: `test_result_publisher.cpp` 테스트 7~9

@@ -31,11 +31,22 @@ struct WorldPoint {
     double y = 0.0;
 };
 
-// 위험 단계 3단계 (숫자가 클수록 위험)
+// 위험 단계 4단계 (숫자가 클수록 위험)
+//
+// [확장 2026-08-03] EMERGENCY(3) 추가.
+//   FPGA(gpio-control/PROTOCOL.md)와 단말 Qt(RiskTypes::RiskLevel)는 이미 risk_level
+//   0~3을 전제로 설계돼 있었는데 서버 enum이 3단계뿐이라 3에 도달할 방법이 없었다.
+//   이름은 단말 Qt 쪽(Emergency)을 따랐다. FPGA 문서는 같은 값 3을 CRITICAL로 부르며,
+//   전진 차단 릴레이(cutoff_trigger)가 이 값에서 걸린다.
+//
+// [주의] EMERGENCY는 "충돌 임박 거리"를 뜻하는 거리 기반 단계이고,
+//        ExceptionState::EMERGENCY_IMPACT(IMU 급가속도 -> 충돌 의심)와는 완전히 별개 축이다.
+//        이름만 비슷할 뿐 필드(risk_level vs exception_state)도, 입력(카메라 거리 vs IMU)도 다르다.
 enum class RiskLevel {
     SAFE = 0,      // 안전
     CAUTION = 1,   // 주의
-    DANGER = 2     // 위험
+    DANGER = 2,    // 위험
+    EMERGENCY = 3  // 비상 (충돌 임박 거리) - FPGA 문서상 명칭은 CRITICAL
 };
 
 // 예외 상태 (센서 퓨전 특이 상황)
@@ -106,7 +117,24 @@ public:
     double caution_threshold_m = 3.0;  // 이 거리 이내면 주의
     double danger_threshold_m  = 1.5;  // 이 거리 이내면 위험
 
+    // [목업 상수 - 실측값으로 교체 필요] 충돌 임박 판정 거리.
+    // 이 거리 이내면 EMERGENCY(3). 0.4m는 근거 있는 측정값이 아니라 자리표시용 값이며,
+    // 좌표정합 PoC + 제동거리 실측(확정된 실험 4종)이 끝나면 그 값으로 교체한다.
+    // 교체 시 danger_threshold_m(1.5) 아래를 유지해야 한다(같거나 크면 EMERGENCY가
+    // DANGER 구간을 통째로 삼킨다).
+    double emergency_threshold_m = 0.4;
+
+    // [목업 상수 - 실측값으로 교체 필요] EMERGENCY 해제 마진 (히스테리시스).
+    // 한 번 EMERGENCY에 들어가면 거리가 (emergency_threshold_m + 이 값)을 넘어야 내려온다.
+    // 임계값 근처에서 좌표가 미세하게 흔들릴 때 3<->2가 프레임마다 진동하는 걸 막는다
+    // (FPGA는 위험도 상승을 즉시 반영하므로 진동이 그대로 LED/부저/전진차단으로 나간다).
+    // 0.1m 역시 자리표시용이며, 좌표정합 오차 실측값이 나오면 그 오차보다 크게 잡아야 한다.
+    double emergency_release_margin_m = 0.1;
+
     // ToF 근접 임계값
+    // [주의] ToF 경로는 아직 3단계(SAFE/CAUTION/DANGER)로 남겨 뒀다. ToF는 사람/벽/적재물을
+    //        구분하지 못해(UNCONFIRMED_PROXIMITY 참고) 단독으로 EMERGENCY까지 올리는 게
+    //        타당한지 미확정이라, 이번 확장은 카메라 거리 경로에만 적용했다.
     double tof_caution_m = 1.0;
     double tof_danger_m  = 0.5;
 
@@ -114,7 +142,18 @@ public:
     double impact_accel_threshold_g = 2.0;
 
     // 한 프레임 처리: 카메라 입력 + 센서 입력 -> 최종 판정
+    //
+    // [주의] EMERGENCY 히스테리시스 때문에 이 호출은 프레임 간 상태(in_emergency_)를 남긴다.
+    //        같은 엔진 인스턴스를 여러 스레드에서 동시에 호출하면 안 된다(판정 루프는 단일 스레드).
+    //        const를 유지한 건 기존 호출부/테스트가 const 참조로 엔진을 쓰고 있어서다.
     JudgmentResult evaluate(const CameraInput& cam, const SensorInput& sen) const;
+
+    // 히스테리시스 상태를 초기화한다(EMERGENCY 래치 해제).
+    // 판정 대상이 바뀌거나(카메라 전환 등) 테스트에서 이전 프레임 영향을 지울 때 쓴다.
+    void resetHysteresis() { in_emergency_ = false; }
+
+    // 지금 EMERGENCY 래치가 걸려 있는지 (디버깅·테스트용)
+    bool inEmergencyLatch() const { return in_emergency_; }
 
 private:
     static double euclideanDistance(const WorldPoint& a, const WorldPoint& b);
@@ -130,6 +169,13 @@ private:
 
     // r이 minimum보다 낮으면 minimum까지 끌어올림
     static RiskLevel atLeast(RiskLevel r, RiskLevel minimum);
+
+    // EMERGENCY 히스테리시스 래치. 진입은 emergency_threshold_m 이하에서,
+    // 해제는 (emergency_threshold_m + emergency_release_margin_m) 초과에서만 일어난다.
+    // 거리 판정 자체가 불가능한 프레임(마커 폐색/사람 미검출)에서는 해제된다 - 자세한 근거는
+    // danger_judgment_engine.cpp의 evaluate() 주석 참고.
+    // evaluate()가 const라 mutable로 둔다(위 evaluate() 주석의 스레드 주의사항과 한 쌍).
+    mutable bool in_emergency_ = false;
 };
 
 // ============================================================
@@ -157,8 +203,9 @@ std::string toJsonOrNull(const std::string& s);
 // 필드명·구성은 네트워크·단말 파트(Qt RiskMetadata::fromJson)와 확정된 스키마를 따른다.
 // 확정된 출력 필드는 아래 6개가 전부다:
 //   utc_time / camera_id / zone / exception_state / distance_m / risk_level
-// - risk_level은 정수(0=SAFE/1=CAUTION/2=DANGER)다. 단말이 toInt()로 읽는 계약이므로
-//   문자열로 내보내면 안 된다. 콘솔 로그용 문자열 표기는 toString(RiskLevel) 쪽에 남아 있다.
+// - risk_level은 정수(0=SAFE/1=CAUTION/2=DANGER/3=EMERGENCY)다. 단말이 toInt()로 읽는
+//   계약이므로 문자열로 내보내면 안 된다. enum 값이 곧 계약 값이라 EMERGENCY도 별도 처리
+//   없이 3으로 나간다. 콘솔 로그용 문자열 표기는 toString(RiskLevel) 쪽에 남아 있다.
 // - world 좌표·bbox는 단말에서 쓰지 않기로 협의되어 제외.
 // - camera_risk / tof_risk는 서버 내부 디버깅용이므로 콘솔 로그(printResult)에만 남기고 제외.
 // - 테스트 시나리오 이름표도 프로덕션 스키마에 없으므로 제외.
