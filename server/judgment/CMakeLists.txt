@@ -10,6 +10,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# EventLogger(판정 이벤트 로그)는 SQLite3 C API를 사용한다.
+#
+# 설치 (라이브러리가 없어서 아래 find_package가 실패할 때):
+#   Debian/Ubuntu/Raspberry Pi OS : sudo apt install libsqlite3-dev
+#   Fedora/RHEL                   : sudo dnf install sqlite-devel
+#   Arch                          : sudo pacman -S sqlite
+#   macOS (Homebrew)              : brew install sqlite
+#   Windows (개발 확인용, vcpkg)   : vcpkg install sqlite3:x64-windows
+#     -> configure 시 툴체인 지정:
+#        cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+#     (단, 이 프로젝트의 나머지 부분은 POSIX 전용이라 Windows 네이티브 빌드는 지원하지 않는다.
+#      Windows에서는 EventLogger/뷰어/테스트만 따로 컴파일해 확인하는 용도다.)
+#
+# CMake 3.14+ 기본 제공 FindSQLite3 모듈이 SQLite::SQLite3 임포트 타깃을 만들어 준다.
+find_package(SQLite3 REQUIRED)
+
 # 엔진 로직(헤더 + 구현)만 담은 정적 라이브러리.
 # 실행파일과 테스트가 같은 구현을 공유하도록 하고, main()은 각 실행파일 쪽에만 둔다.
 add_library(danger_judgment_engine STATIC
@@ -33,13 +49,30 @@ add_library(judgment_pipeline STATIC
 target_include_directories(judgment_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(judgment_pipeline PUBLIC danger_judgment_engine nearest_person_selector)
 
+# 판정 이벤트 SQLite 로거.
+# 헤더가 std::thread 멤버와 JudgmentResult를 노출하므로 엔진/Threads/SQLite 모두 PUBLIC이다
+# (이걸 링크하는 쪽이 EventLogger.h를 그대로 include할 수 있어야 한다).
+add_library(event_logger STATIC
+    EventLogger.cpp
+)
+target_include_directories(event_logger PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(event_logger PUBLIC danger_judgment_engine SQLite::SQLite3 Threads::Threads)
+
 # 실행파일은 main()만 갖고 엔진은 라이브러리로 링크한다.
 # ResultPublisher.h / ResultDispatcher.h는 헤더 온리이므로 소스 추가 없이
 # include 경로만 있으면 된다(같은 디렉터리).
+# event_logger를 링크하면 엔진/Threads는 전이로 따라온다.
 add_executable(danger_engine
     danger_judgment_engine_main.cpp
 )
-target_link_libraries(danger_engine PRIVATE danger_judgment_engine Threads::Threads)
+target_link_libraries(danger_engine PRIVATE danger_judgment_engine event_logger Threads::Threads)
+
+# 이벤트 로그 조회용 독립 실행파일 (읽기 전용).
+# 엔진과 별개로 돌리는 도구라 소켓/스레드 쪽에는 의존하지 않는다.
+add_executable(event_log_viewer
+    event_log_viewer_main.cpp
+)
+target_link_libraries(event_log_viewer PRIVATE event_logger)
 
 # 송신기(서버 소켓·큐) + 전송 정책(변화 즉시 / 200ms 하트비트) 테스트
 # (루프백 TCP 사용, 종료코드 0=성공)
@@ -63,3 +96,11 @@ add_executable(test_judgment_pipeline
     test_judgment_pipeline.cpp
 )
 target_link_libraries(test_judgment_pipeline PRIVATE judgment_pipeline Threads::Threads)
+
+# 이벤트 로그 검증 테스트 (변화 시에만 기록 / previous_risk_level / 백프레셔, 종료코드 0=성공)
+# ResultDispatcher.h(헤더 온리)를 함께 쓰므로 Threads가 필요한데 event_logger가 PUBLIC으로
+# 끌고 온다. 검증용으로 DB를 직접 읽으므로 SQLite도 전이로 따라온다.
+add_executable(test_event_logger
+    test_event_logger.cpp
+)
+target_link_libraries(test_event_logger PRIVATE event_logger)

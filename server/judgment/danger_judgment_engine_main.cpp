@@ -26,6 +26,7 @@
 #include "danger_judgment_engine.h"
 #include "ResultPublisher.h"   // 판정 결과 TCP 송신 (서버: listen/accept)
 #include "ResultDispatcher.h"  // 전송 정책 (변화 시 즉시 + 200ms 하트비트)
+#include "EventLogger.h"       // 상태 변화 이벤트 SQLite 로그
 
 // ============================================================
 // 테스트 시나리오 (더미 데이터)
@@ -47,11 +48,25 @@ int main() {
     });
     publisher.start();
 
+    // 상태 변화 이벤트 로그(SQLite). 실제 쓰기는 로거 내부 워커 스레드가 담당한다.
+    // start()가 실패해도(디스크/권한 등) 아래 판정·송신은 그대로 진행한다 - 로그를 못 남기는
+    // 것보다 위험 경보가 끊기는 쪽이 훨씬 나쁘다.
+    // [교체 지점] DB 경로는 기본값(server/judgment/events.db, CWD 기준)이다. 배포 시
+    //             절대 경로를 환경변수/설정파일에서 읽어 생성자에 넘기면 된다.
+    risk_log::EventLogger event_logger;
+    event_logger.start();
+
     // 전송 정책: 상태가 바뀌면 즉시, 안 바뀌면 200ms마다 마지막 결과 재전송.
     // 재전송은 dispatcher 내부 스레드가 하므로 아래 판정 루프는 여기서 멈추지 않는다.
     risk_transport::ResultDispatcher dispatcher(
         [&publisher](const std::string& json) { publisher.publish(json); },
         std::chrono::milliseconds(200));
+
+    // 이벤트 로그는 dispatcher가 "상태 변화"로 판단한 순간에만 걸린다.
+    // 200ms 하트비트 재전송은 이 훅을 타지 않으므로 같은 상태가 중복 기록되지 않는다.
+    dispatcher.onStateChangeEvent([&event_logger](const JudgmentResult& r, int prev_risk) {
+        event_logger.log(r, prev_risk);
+    });
     dispatcher.start();
 
     // 판정 루프 한 스텝: 평가 -> 콘솔 출력 -> 전송 정책에 제출.
@@ -135,5 +150,11 @@ int main() {
     dispatcher.stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     publisher.stop();  // 소멸자에서도 호출되지만 명시적으로 정리
+
+    // dispatcher를 먼저 멈춘 뒤에 로거를 닫아야 한다(닫힌 로거에 이벤트가 들어가지 않도록).
+    // stop()은 남은 큐를 끝까지 쓰고 나서 반환한다.
+    event_logger.stop();
+    std::cout << "이벤트 로그: " << event_logger.writtenCount() << "건 기록 -> "
+              << event_logger.dbPath() << "\n";
     return 0;
 }
