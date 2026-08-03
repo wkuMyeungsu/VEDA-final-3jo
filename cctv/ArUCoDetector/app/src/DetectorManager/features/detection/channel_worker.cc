@@ -14,7 +14,7 @@ namespace {
     // (이 파일 안에서만 쓰는 헬퍼라 익명 namespace에 둠 → 바깥에 이름 노출 안 됨)
     // 밀리초가 꼭 필요함: 채널당 검출 주기가 1초보다 짧으면 같은 초 안에 검출이 2번 이상
     // 끝날 수 있는데, 초 단위까지만 찍으면 문자열이 똑같아져서(예: 지연 측정 UI가
-    // "last_detect가 바뀌었는지"로 새 표본을 판단) 뒤 검출이 조용히 유실된다.
+    // "last_detect가 바뀌었는지"로 새 검출을 판단) 뒤 검출이 조용히 유실된다.
     std::string NowIso8601() {
         auto now = std::chrono::system_clock::now();               // 현재 벽시계 시각
         std::time_t t = std::chrono::system_clock::to_time_t(now); // C 스타일 time_t로 변환
