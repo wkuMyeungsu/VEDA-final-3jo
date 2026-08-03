@@ -34,17 +34,20 @@ target_include_directories(judgment_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(judgment_pipeline PUBLIC danger_judgment_engine nearest_person_selector)
 
 # 실행파일은 main()만 갖고 엔진은 라이브러리로 링크한다.
-# ResultPublisher.h는 헤더 온리이므로 소스 추가 없이 include 경로만 있으면 된다(같은 디렉터리).
+# ResultPublisher.h / ResultDispatcher.h는 헤더 온리이므로 소스 추가 없이
+# include 경로만 있으면 된다(같은 디렉터리).
 add_executable(danger_engine
     danger_judgment_engine_main.cpp
 )
 target_link_libraries(danger_engine PRIVATE danger_judgment_engine Threads::Threads)
 
-# ResultPublisher 송신 큐 스트레스 테스트 (루프백 TCP 사용, 종료코드 0=성공)
+# 송신기(서버 소켓·큐) + 전송 정책(변화 즉시 / 200ms 하트비트) 테스트
+# (루프백 TCP 사용, 종료코드 0=성공)
+# ResultDispatcher가 toJson()을 쓰므로 엔진 라이브러리를 링크한다.
 add_executable(test_result_publisher
     test_result_publisher.cpp
 )
-target_link_libraries(test_result_publisher PRIVATE Threads::Threads)
+target_link_libraries(test_result_publisher PRIVATE danger_judgment_engine Threads::Threads)
 
 # 예외처리 트리거 검증 테스트 (경계값 + 우선순위 매트릭스, 종료코드 0=성공)
 # 엔진 라이브러리를 링크해서 쓴다. 엔진 main()은 danger_judgment_engine_main.cpp에만
