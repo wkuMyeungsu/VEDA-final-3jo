@@ -11,7 +11,7 @@ ApplicationWindow {
     id: window
     visible: true
     visibility: Window.FullScreen
-    width: 1024
+    width: 800
     height: 600
     color: Theme.colorBackground
     title: qsTr("Forklift Safety - Operator Terminal")
@@ -37,6 +37,7 @@ ApplicationWindow {
         personBBox: activeCamera.personBBox
         forkliftBBox: activeCamera.forkliftBBox
         distanceM: activeCamera.distanceM
+        distanceValid: activeCamera.distanceValid
     }
 
     EdgeWarningFrame {
@@ -59,6 +60,7 @@ ApplicationWindow {
         riskLevel: activeCamera.riskLevel
         exceptionState: activeCamera.exceptionState
         distanceM: activeCamera.distanceM
+        distanceValid: activeCamera.distanceValid
     }
 
     StatusStrip {

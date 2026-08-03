@@ -20,6 +20,7 @@ class DetectionOverlay : public QQuickPaintedItem
     Q_PROPERTY(BBox personBBox READ personBBox WRITE setPersonBBox NOTIFY personBBoxChanged)
     Q_PROPERTY(BBox forkliftBBox READ forkliftBBox WRITE setForkliftBBox NOTIFY forkliftBBoxChanged)
     Q_PROPERTY(double distanceM READ distanceM WRITE setDistanceM NOTIFY distanceMChanged)
+    Q_PROPERTY(bool distanceValid READ distanceValid WRITE setDistanceValid NOTIFY distanceValidChanged)
     Q_PROPERTY(QColor personColor READ personColor WRITE setPersonColor NOTIFY personColorChanged)
     Q_PROPERTY(QColor forkliftColor READ forkliftColor WRITE setForkliftColor NOTIFY forkliftColorChanged)
     Q_PROPERTY(QColor lineColor READ lineColor WRITE setLineColor NOTIFY lineColorChanged)
@@ -41,6 +42,9 @@ public:
     double distanceM() const { return m_distanceM; }
     void setDistanceM(double distance);
 
+    bool distanceValid() const { return m_distanceValid; }
+    void setDistanceValid(bool valid);
+
     QColor personColor() const { return m_personColor; }
     void setPersonColor(const QColor &color);
 
@@ -55,6 +59,7 @@ signals:
     void personBBoxChanged();
     void forkliftBBoxChanged();
     void distanceMChanged();
+    void distanceValidChanged();
     void personColorChanged();
     void forkliftColorChanged();
     void lineColorChanged();
@@ -70,6 +75,7 @@ private:
     BBox m_personBBox;
     BBox m_forkliftBBox;
     double m_distanceM = 0.0;
+    bool m_distanceValid = true;
     QColor m_personColor{0x4f, 0xc3, 0xf7};
     QColor m_forkliftColor{0xff, 0xb7, 0x4d};
     QColor m_lineColor{0xff, 0xff, 0xff};

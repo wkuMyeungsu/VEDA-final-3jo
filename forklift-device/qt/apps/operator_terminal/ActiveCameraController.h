@@ -32,6 +32,7 @@ class ActiveCameraController : public QObject
     Q_PROPERTY(int riskLevel READ riskLevel NOTIFY metadataChanged)
     Q_PROPERTY(int exceptionState READ exceptionState NOTIFY metadataChanged)
     Q_PROPERTY(double distanceM READ distanceM NOTIFY metadataChanged)
+    Q_PROPERTY(bool distanceValid READ distanceValid NOTIFY metadataChanged)
     Q_PROPERTY(BBox personBBox READ personBBox NOTIFY metadataChanged)
     Q_PROPERTY(BBox forkliftBBox READ forkliftBBox NOTIFY metadataChanged)
     Q_PROPERTY(
@@ -51,6 +52,7 @@ public:
     int riskLevel() const { return static_cast<int>(m_latest.riskLevel()); }
     int exceptionState() const { return static_cast<int>(m_latest.exceptionState()); }
     double distanceM() const { return m_latest.distanceM(); }
+    bool distanceValid() const { return m_latest.distanceValid(); }
     // ONVIF 데이터가 들어온 적 있는 카메라(RTSP)만 그쪽 bbox 사용, 그 외(Mock/LocalFile)는 기존 경로 유지
     BBox personBBox() const { return m_onvifActive ? m_onvifPersonBBox : m_latest.personBBox(); }
     BBox forkliftBBox() const { return m_latest.forkliftBBox(); }

@@ -48,6 +48,15 @@ void DetectionOverlay::setDistanceM(double distance)
     update();
 }
 
+void DetectionOverlay::setDistanceValid(bool valid)
+{
+    if (m_distanceValid == valid)
+        return;
+    m_distanceValid = valid;
+    emit distanceValidChanged();
+    update();
+}
+
 void DetectionOverlay::setPersonColor(const QColor &color)
 {
     if (m_personColor == color)
@@ -111,7 +120,8 @@ void DetectionOverlay::paint(QPainter *painter)
         painter->drawLine(personCenter, forkliftCenter);
 
         const QPointF mid = (personCenter + forkliftCenter) / 2.0;
-        const QString distanceLabel = QStringLiteral("%1 m").arg(m_distanceM, 0, 'f', 2);
+        const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 m").arg(m_distanceM, 0, 'f', 2)
+                                                       : QStringLiteral("측정 불가");
 
         QFont font = painter->font();
         font.setPointSize(11);
