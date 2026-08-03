@@ -26,3 +26,7 @@ add_executable(nearest_person_demo
     nearest_person_selector_main.cpp
 )
 target_link_libraries(nearest_person_demo PRIVATE nearest_person_selector)
+
+# 크로스카메라 Re-ID 더미 시나리오 실행파일 (자체 main 보유, 외부 의존성 없음).
+# [주의] nearest_person_selector와 링크하면 안 된다 - euclideanDistance가 양쪽에 정의돼 있다.
+add_executable(cross_camera_reid_demo cross_camera_reid.cpp)
