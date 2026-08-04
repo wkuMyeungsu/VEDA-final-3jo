@@ -6,6 +6,9 @@
 
 namespace {
 Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")
+
+// appsink("sink")에 새 프레임 도착 시 GStreamer가 호출 (GStreamer 스레드에서 실행)
+// invokeMethod(QueuedConnection)로 Qt 메인 스레드로 넘겨서 emit
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
 {
     auto *self = static_cast<RtspVideoSource *>(userData);
@@ -31,6 +34,34 @@ GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
 
         QMetaObject::invokeMethod(self, [self, copy]() {
             emit self->frameReady(copy);
+        }, Qt::QueuedConnection);
+    }
+
+    gst_sample_unref(sample);
+    return GST_FLOW_OK;
+}
+
+// appsink("metasink")에 새 ONVIF 메타데이터 도착 시 호출
+// XML 파싱은 안 하고 raw 바이트 그대로 onvifMetadataReceived로 전달
+// (파싱은 OnvifBBoxParser 책임 -- 여긴 GStreamer 데이터 수신까지만)
+GstFlowReturn onNewMetadataSample(GstElement *appsink, gpointer userData)
+{
+    auto *self = static_cast<RtspVideoSource *>(userData);
+
+    GstSample *sample = gst_app_sink_pull_sample(GST_APP_SINK(appsink));
+    if (!sample)
+        return GST_FLOW_ERROR;
+
+    GstBuffer *buffer = gst_sample_get_buffer(sample);
+    GstMapInfo map;
+    if (gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+        const QByteArray xml(reinterpret_cast<const char *>(map.data), static_cast<int>(map.size));
+        gst_buffer_unmap(buffer, &map);
+
+        qCDebug(lcRtsp) << "onvif metadata bytes:" << xml.size();
+
+        QMetaObject::invokeMethod(self, [self, xml]() {
+            emit self->onvifMetadataReceived(xml);
         }, Qt::QueuedConnection);
     }
 
@@ -64,10 +95,14 @@ void RtspVideoSource::start()
     // location 값을 따옴표로 감싼다 -- QUrl::toString()이 %21을 다시 '!'로 풀어버릴 수 있는데,
     // 따옴표 없이 넣으면 gst_parse_launch가 그 '!'를 파이프라인 구분자로 오해해서
     // location 값이 중간에 잘린다 (Resource not found로 이어짐).
+    // 같은 RTSP 세션의 ONVIF 메타데이터 트랙(사람 bbox)도 두 번째 브랜치로 받는다.
+    // 카메라가 이 트랙을 안 주면 이 브랜치만 조용히 안 붙고 영상은 그대로 동작.
     const QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
         + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
           " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
-          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false";
+          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false"
+          " src. ! application/x-rtp,media=application,encoding-name=VND.ONVIF.METADATA !"
+          " rtponvifmetadatadepay ! appsink name=metasink emit-signals=true sync=false";
 
     GError *error = nullptr;
     m_pipeline = gst_parse_launch(description.constData(), &error);
@@ -84,6 +119,12 @@ void RtspVideoSource::start()
     GstElement *appsink = gst_bin_get_by_name(GST_BIN(m_pipeline), "sink");
     g_signal_connect(appsink, "new-sample", G_CALLBACK(onNewSample), this);
     gst_object_unref(appsink);
+
+    // ONVIF 브랜치는 선택적 -- 카메라가 트랙을 안 주면 "metasink"가 없을 수 있어 null 체크
+    if (GstElement *metaSink = gst_bin_get_by_name(GST_BIN(m_pipeline), "metasink")) {
+        g_signal_connect(metaSink, "new-sample", G_CALLBACK(onNewMetadataSample), this);
+        gst_object_unref(metaSink);
+    }
 
     m_bus = gst_pipeline_get_bus(GST_PIPELINE(m_pipeline));
 

@@ -11,6 +11,7 @@ Item {
     property bbox personBBox
     property bbox forkliftBBox
     property real distanceM: 0
+    property bool distanceValid: true
     property bool showOverlay: true
 
     readonly property int connectionState: videoItem.connectionState
@@ -30,6 +31,7 @@ Item {
         personBBox: root.personBBox
         forkliftBBox: root.forkliftBBox
         distanceM: root.distanceM
+        distanceValid: root.distanceValid
         personColor: Theme.colorPersonBox
         forkliftColor: Theme.colorForkliftBox
         lineColor: Theme.colorTextPrimary

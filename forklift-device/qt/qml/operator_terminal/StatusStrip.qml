@@ -33,7 +33,7 @@ Rectangle {
             // No dedicated sensor channel yet: sensor health rides on the
             // metadata pipeline, degraded explicitly by a SENSOR_FAULT
             // exception.
-            state: activeCamera.exceptionState === 1 ? 0 : metadataService.connectionState
+            state: activeCamera.exceptionState === 1 ? 0 : metadataDistributor.connectionState
         }
     }
 }

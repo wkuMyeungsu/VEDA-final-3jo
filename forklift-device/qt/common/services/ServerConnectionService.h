@@ -5,7 +5,7 @@
 #include "../models/Types.h"
 
 // Tracks the connection to the central server, as shown in both apps'
-// top/status bars. Backed by NetworkClient once real server integration
+// top/status bars. Backed by HandoverClient once real server integration
 // lands (see docs/INTEGRATION.md); until then it simply starts Connected
 // and is driven by DemoController for demo purposes.
 class ServerConnectionService : public QObject

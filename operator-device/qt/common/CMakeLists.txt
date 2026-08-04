@@ -113,8 +113,8 @@ qt_add_qml_module(safety_common
 
         services/ServerConnectionService.h
         services/ServerConnectionService.cpp
-        services/MetadataService.h
-        services/MetadataService.cpp
+        services/MetadataDistributor.h
+        services/MetadataDistributor.cpp
         services/CameraListModel.h
         services/CameraListModel.cpp
         services/EventLogModel.h

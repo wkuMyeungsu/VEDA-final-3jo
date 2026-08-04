@@ -12,7 +12,7 @@
 // One risk-detection event for a single camera, matching the metadata
 // payload documented in docs/INTEGRATION.md. Produced by IMetadataSource
 // implementations (Mock now, Tcp/WebSocket later) and consumed by
-// MetadataService.
+// MetadataDistributor.
 class RiskMetadata
 {
     Q_GADGET
@@ -21,6 +21,8 @@ class RiskMetadata
     Q_PROPERTY(QString zone READ zone WRITE setZone)
     Q_PROPERTY(RiskTypes::RiskLevel riskLevel READ riskLevel WRITE setRiskLevel)
     Q_PROPERTY(double distanceM READ distanceM WRITE setDistanceM)
+    // distanceM 0.0 vs 측정불가 구분용
+    Q_PROPERTY(bool distanceValid READ distanceValid WRITE setDistanceValid)
     Q_PROPERTY(BBox personBBox READ personBBox WRITE setPersonBBox)
     Q_PROPERTY(BBox forkliftBBox READ forkliftBBox WRITE setForkliftBBox)
     Q_PROPERTY(RiskTypes::ExceptionState exceptionState READ exceptionState WRITE setExceptionState)
@@ -40,6 +42,9 @@ public:
 
     double distanceM() const { return m_distanceM; }
     void setDistanceM(double distance) { m_distanceM = distance; }
+
+    bool distanceValid() const { return m_distanceValid; }
+    void setDistanceValid(bool valid) { m_distanceValid = valid; }
 
     BBox personBBox() const { return m_personBBox; }
     void setPersonBBox(const BBox &box) { m_personBBox = box; }
@@ -61,6 +66,7 @@ private:
     QString m_zone;
     RiskTypes::RiskLevel m_riskLevel = RiskTypes::RiskLevel::Safe;
     double m_distanceM = 0.0;
+    bool m_distanceValid = true;   // 기본 true: 수신 전 상태 보존
     BBox m_personBBox;
     BBox m_forkliftBBox;
     RiskTypes::ExceptionState m_exceptionState = RiskTypes::ExceptionState::None;

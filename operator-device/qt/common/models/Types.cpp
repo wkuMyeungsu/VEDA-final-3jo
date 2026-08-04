@@ -32,6 +32,7 @@ QString exceptionStateToString(ExceptionState state)
     case ExceptionState::EmergencyImpact: return QStringLiteral("EMERGENCY_IMPACT");
     case ExceptionState::NetworkDisconnected: return QStringLiteral("NETWORK_DISCONNECTED");
     case ExceptionState::CameraDisconnected: return QStringLiteral("CAMERA_DISCONNECTED");
+    case ExceptionState::UnconfirmedProximity: return QStringLiteral("UNCONFIRMED_PROXIMITY");
     }
     return QStringLiteral("NONE");
 }
@@ -43,6 +44,7 @@ ExceptionState exceptionStateFromString(const QString &value)
     if (value == QStringLiteral("EMERGENCY_IMPACT")) return ExceptionState::EmergencyImpact;
     if (value == QStringLiteral("NETWORK_DISCONNECTED")) return ExceptionState::NetworkDisconnected;
     if (value == QStringLiteral("CAMERA_DISCONNECTED")) return ExceptionState::CameraDisconnected;
+    if (value == QStringLiteral("UNCONFIRMED_PROXIMITY")) return ExceptionState::UnconfirmedProximity;
     return ExceptionState::None;
 }
 

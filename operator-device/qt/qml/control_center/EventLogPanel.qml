@@ -1,8 +1,9 @@
 import QtQuick
 import Safety.Common
 
-// Bottom panel: rolling audit log of noteworthy events (time, camera, risk
-// level, distance, exception state).
+// 하단 패널: 특이사항(위험/예외) 이벤트 감사 로그.
+// model이 eventLogModel(C++ EventLogModel)이고, 최신 이벤트가 항상 맨 위(row 0).
+// 평상시(SAFE + 예외없음) 이벤트는 애초에 C++ 쪽에서 안 쌓아서 여기 안 뜸.
 Rectangle {
     id: root
     color: Theme.colorSurface
@@ -65,7 +66,7 @@ Rectangle {
                     font.bold: true
                 }
                 Text {
-                    text: model.distanceM.toFixed(2) + " m"
+                    text: model.distanceValid ? model.distanceM.toFixed(2) + " m" : "측정 불가"
                     width: 80
                     color: Theme.colorTextSecondary
                     font.pixelSize: Theme.fontSizeSm

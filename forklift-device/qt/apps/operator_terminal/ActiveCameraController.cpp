@@ -1,24 +1,32 @@
 #include "ActiveCameraController.h"
 
 #include "network/IWarningDevice.h"
-#include "services/MetadataService.h"
+#include "services/MetadataDistributor.h"
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
 
-ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, MetadataService *metadataService,
+#include <QLoggingCategory>
+namespace {
+Q_LOGGING_CATEGORY(lcActiveCamera, "safety.activecamera")
+}
+
+ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, MetadataDistributor *metadataDistributor,
                                                  VideoSourceManager *videoManager, IWarningDevice *warningDevice,
                                                  QObject *parent)
     : QObject(parent)
-    , m_metadataService(metadataService)
+    , m_metadataDistributor(metadataDistributor)
     , m_videoManager(videoManager)
     , m_warningDevice(warningDevice)
 {
     for (const CameraInfo &info : cameras)
         m_cameras.insert(info.cameraId, info);
 
-    if (m_metadataService)
-        connect(m_metadataService, &MetadataService::metadataUpdated, this,
+    if (m_metadataDistributor)
+        connect(m_metadataDistributor, &MetadataDistributor::metadataUpdated, this,
                 &ActiveCameraController::handleMetadataUpdated);
+
+    m_onvifParser = new OnvifBBoxParser(this);
+    connect(m_onvifParser, &OnvifBBoxParser::personDetected, this, &ActiveCameraController::handlePersonDetected);
 }
 
 void ActiveCameraController::setActiveCameraId(const QString &cameraId)
@@ -32,7 +40,9 @@ void ActiveCameraController::setActiveCameraId(const QString &cameraId)
     m_zone = info.zone;
     m_cameraName = info.name;
 
-    m_latest = m_metadataService ? m_metadataService->latestFor(cameraId) : RiskMetadata();
+    m_latest = m_metadataDistributor ? m_metadataDistributor->latestFor(cameraId) : RiskMetadata();
+    m_onvifActive = false;
+    m_onvifPersonBBox = BBox();
 
     attachVideoConnection();
 
@@ -46,6 +56,7 @@ void ActiveCameraController::setActiveCameraId(const QString &cameraId)
 void ActiveCameraController::attachVideoConnection()
 {
     QObject::disconnect(m_videoConnection);
+    QObject::disconnect(m_onvifConnection);
 
     IVideoSource *source = m_videoManager ? m_videoManager->sourceFor(m_activeCameraId) : nullptr;
     if (!source) {
@@ -60,7 +71,22 @@ void ActiveCameraController::attachVideoConnection()
                                      m_videoConnectionState = state;
                                      emit videoConnectionStateChanged();
                                  });
+    m_onvifConnection = connect(source, &IVideoSource::onvifMetadataReceived, m_onvifParser,
+                                 &OnvifBBoxParser::processMetadata);
+    qCDebug(lcActiveCamera) << "attachVideoConnection camera:" << m_activeCameraId
+                            << "onvif connection valid:" << bool(m_onvifConnection);
     emit videoConnectionStateChanged();
+}
+
+void ActiveCameraController::handlePersonDetected(const BBox &bbox)
+{
+    qCDebug(lcActiveCamera) << "handlePersonDetected valid:" << bbox.isValid() << "x:" << bbox.x()
+                            << "y:" << bbox.y() << "w:" << bbox.width() << "h:" << bbox.height();
+    m_onvifActive = true;
+    if (m_onvifPersonBBox == bbox)
+        return;
+    m_onvifPersonBBox = bbox;
+    emit metadataChanged();
 }
 
 void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)

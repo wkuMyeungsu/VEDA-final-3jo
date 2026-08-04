@@ -8,6 +8,7 @@ Column {
     property int riskLevel: 0
     property int exceptionState: 0
     property real distanceM: 0
+    property bool distanceValid: true
 
     spacing: Theme.spacingSm
 
@@ -21,7 +22,7 @@ Column {
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         visible: root.riskLevel !== 0
-        text: root.distanceM.toFixed(2) + " m"
+        text: root.distanceValid ? (root.distanceM.toFixed(2) + " m") : "측정 불가"
         color: Theme.riskColor(root.riskLevel)
         font.pixelSize: Theme.fontSizeHuge
         font.bold: true

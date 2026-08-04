@@ -1,6 +1,6 @@
-# _wip_aruco_parser / CMakeLists.txt
+# aruco_detection / CMakeLists.txt
 #
-# ArUco MarkerDetected 메타데이터 파서 (WIP — 위치 미확정).
+# ArUco MarkerDetected 메타데이터 파서.
 # 이 폴더만의 독립 빌드 설정. 다른 폴더 CMake 는 건드리지 않는다.
 #
 # 순수 파싱 로직 + CSV 로거 + 단위 테스트만 빌드한다 (RTSP/GStreamer 의존 없음).

@@ -18,7 +18,7 @@ common/                              C++ 백엔드 + QML 테마/컴포넌트 (Sa
   video/      IVideoSource 및 Mock/LocalFile/Rtsp 구현, VideoStream, DetectionOverlay
   network/    IMetadataSource 및 Mock 구현, IWarningDevice 및 Noop 구현
   config/     ConfigLoader (JSON 설정 파싱)
-  services/   MetadataService, ServerConnectionService, 각종 QML 모델, DemoController
+  services/   MetadataDistributor, ServerConnectionService, 각종 QML 모델, DemoController
 apps/
   operator_terminal/  운전자 단말 실행 파일 (main.cpp, ActiveCameraController, OperatorDemoController)
 qml/
@@ -225,8 +225,8 @@ GStreamer 요구사항:
 - forklift-device/qt/common/models/RiskMetadata 관련 코드
 - forklift-device/qt/common/network/IMetadataSource
 - MockMetadataSource
-- TcpMetadataSource 또는 NetworkClient 스켈레톤
-- MetadataService
+- TcpMetadataSource 또는 HandoverClient 스켈레톤
+- MetadataDistributor
 - ServerConnectionService
 - ActiveCameraController
 - DetectionOverlay
@@ -366,7 +366,7 @@ GStreamer 요구사항:
     `feature/forklift-device/metadata-integration`). operator-device 쪽은
     별도 브랜치로 동일 작업 필요.
   - 핸드오버 제어채널
-    (`forklift-device/qt/apps/operator_terminal/main.cpp`의 `NetworkClient`
+    (`forklift-device/qt/apps/operator_terminal/main.cpp`의 `HandoverClient`
     연결 — 단말 전용): `feature/forklift-device/handover-control`
   - 물리 경고 장치 연동
     (`forklift-device/qt/apps/operator_terminal/main.cpp`의

@@ -1,10 +1,9 @@
 import QtQuick
 import Safety.Common
 
-// One tile in the control-center grid: video + overlay, a risk banner that
-// only appears above CAUTION, a highlighted border while at risk, and a
-// footer with name/zone/connection state. Click anywhere on the video to
-// expand it.
+// 관제 그리드의 카드 1장 = 영상 + 오버레이 + (위험할 때만 뜨는) 위험 배너 +
+// (위험할 때 강조되는) 테두리 + 하단 이름/구역/연결상태 줄.
+// 영상 아무 데나 클릭하면 확대 화면(ExpandedCameraView)으로 전환됨 (clicked 신호)
 Rectangle {
     id: root
     property string cameraId: ""
@@ -13,10 +12,13 @@ Rectangle {
     property int riskLevel: 0
     property int exceptionState: 0
     property real distanceM: 0
+    property bool distanceValid: true
     property int videoConnectionState: 0
 
     signal clicked()
 
+    // riskLevel !== 0(=Safe 아님) 이거나 예외 상태가 있으면 "경보 중"으로 취급
+    // -> 배너 표시 여부/테두리 굵기·색상이 전부 이 값 하나로 결정됨
     readonly property bool isAlert: riskLevel !== 0 || exceptionState !== 0
 
     color: Theme.colorSurface
@@ -24,6 +26,7 @@ Rectangle {
     border.width: isAlert ? 2 : 1
     border.color: isAlert ? Theme.riskColor(riskLevel) : Theme.colorBorder
 
+    // 테두리 색이 바뀔 때 뚝 끊기지 않고 부드럽게 전환 (예: SAFE -> DANGER)
     Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
 
     RiskBanner {
@@ -53,6 +56,7 @@ Rectangle {
             anchors.fill: parent
             cameraId: root.cameraId
             distanceM: root.distanceM
+            distanceValid: root.distanceValid
         }
 
         MouseArea {

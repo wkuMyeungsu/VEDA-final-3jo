@@ -37,14 +37,14 @@
 2. 완성되면 `operator-device/qt/apps/control_center/main.cpp`에서
    ```cpp
    MockMetadataSource metadataSource(cameras);
-   metadataService.setSource(&metadataSource);
+   metadataDistributor.setSource(&metadataSource);
    ```
    부분을
    ```cpp
    TcpMetadataSource metadataSource(appConfig.serverHost, appConfig.serverPort);
-   metadataService.setSource(&metadataSource);
+   metadataDistributor.setSource(&metadataSource);
    ```
-   로 교체합니다. `MetadataService`, `CameraListModel`, `EventLogModel`,
+   로 교체합니다. `MetadataDistributor`, `CameraListModel`, `EventLogModel`,
    `AlertListModel`, QML은 `IMetadataSource` 인터페이스만 사용하므로 수정할
    필요가 없습니다.
 3. WebSocket을 선호한다면

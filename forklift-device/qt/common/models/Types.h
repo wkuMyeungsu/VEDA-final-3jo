@@ -25,7 +25,8 @@ enum class ExceptionState {
     DeadReckoning,
     EmergencyImpact,
     NetworkDisconnected,
-    CameraDisconnected
+    CameraDisconnected,
+    UnconfirmedProximity
 };
 Q_ENUM_NS(ExceptionState)
 
