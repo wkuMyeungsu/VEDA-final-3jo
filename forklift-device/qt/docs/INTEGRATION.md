@@ -38,14 +38,14 @@
 2. 완성되면 `forklift-device/qt/apps/operator_terminal/main.cpp`에서
    ```cpp
    MockMetadataSource metadataSource(cameras);
-   metadataService.setSource(&metadataSource);
+   metadataDistributor.setSource(&metadataSource);
    ```
    부분을
    ```cpp
    TcpMetadataSource metadataSource(appConfig.serverHost, appConfig.serverPort);
-   metadataService.setSource(&metadataSource);
+   metadataDistributor.setSource(&metadataSource);
    ```
-   로 교체합니다. `MetadataService`, `CameraListModel`, `EventLogModel`,
+   로 교체합니다. `MetadataDistributor`, `CameraListModel`, `EventLogModel`,
    `AlertListModel`, QML은 `IMetadataSource` 인터페이스만 사용하므로 수정할
    필요가 없습니다.
 3. WebSocket을 선호한다면
@@ -55,12 +55,12 @@
 
 ## 3. 서버 제어 채널(핸드오버 등)
 
-`forklift-device/qt/common/network/NetworkClient.h/.cpp`가 명령/제어 채널의
+`forklift-device/qt/common/network/HandoverClient.h/.cpp`가 명령/제어 채널의
 스켈레톤입니다. 서버가 운전자 단말에 camera_id를 할당하는 프로토콜이
 정해지면:
 
-1. `NetworkClient`에 메시지 송수신 메서드를 추가합니다.
-2. `forklift-device/qt/apps/operator_terminal/main.cpp`에서 `NetworkClient`
+1. `HandoverClient`에 메시지 송수신 메서드를 추가합니다.
+2. `forklift-device/qt/apps/operator_terminal/main.cpp`에서 `HandoverClient`
    인스턴스를 만들고, 서버로부터 새 camera_id를 받을 때마다
    `activeCamera.setActiveCameraId(newCameraId)`를 호출하도록 연결합니다
    (지금은 `OperatorDemoController::setActiveCameraId()`가 데모 패널에서만

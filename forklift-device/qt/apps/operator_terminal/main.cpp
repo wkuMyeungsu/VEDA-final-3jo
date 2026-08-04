@@ -9,8 +9,8 @@
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
 #include "network/NoopWarningDevice.h"
-#include "network/NetworkClient.h"
-#include "services/MetadataService.h"
+#include "network/HandoverClient.h"
+#include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
 #include "video/VideoSourceManager.h"
 
@@ -52,30 +52,30 @@ int main(int argc, char *argv[])
     VideoSourceManager videoManager;
     videoManager.setCameras(cameras);
 
-    MetadataService metadataService(cameras, 200);
+    MetadataDistributor metadataDistributor(cameras, 200);
     MockMetadataSource metadataSource(cameras);
-    metadataService.setSource(&metadataSource);
+    metadataDistributor.setSource(&metadataSource);
 
     ServerConnectionService serverConnection;
     // Stand-in for the physical warning device (buzzer/light/vibration).
     // Swap for a real SerialWarningDevice once UART hardware is connected
     // -- see docs/INTEGRATION.md.
-    NetworkClient networkClient;
-    QObject::connect(&networkClient, &NetworkClient::connectionStateChanged, &serverConnection,
+    HandoverClient handoverClient;
+    QObject::connect(&handoverClient, &HandoverClient::connectionStateChanged, &serverConnection,
                      &ServerConnectionService::setConnectionState);
     
     NoopWarningDevice warningDevice;
 
-    ActiveCameraController activeCamera(cameras, &metadataService, &videoManager, &warningDevice);
-    QObject::connect(&networkClient, &NetworkClient::cameraHandoverRequested, &activeCamera,
+    ActiveCameraController activeCamera(cameras, &metadataDistributor, &videoManager, &warningDevice);
+    QObject::connect(&handoverClient, &HandoverClient::cameraHandoverRequested, &activeCamera,
                   &ActiveCameraController::setActiveCameraId);
 
     OperatorDemoController demoController(&metadataSource, &videoManager, &serverConnection, &activeCamera);
     demoController.setDemoModeEnabled(parser.isSet(demoOption));
 
     videoManager.startAll();
-    networkClient.connectToServer(appConfig.serverHost, appConfig.serverPort);
-    metadataService.start();
+    handoverClient.connectToServer(appConfig.serverHost, appConfig.serverPort);
+    metadataDistributor.start();
 
     QString initialCameraId = parser.value(cameraOption);
     if (initialCameraId.isEmpty())
@@ -87,9 +87,9 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     QQmlContext *ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("serverConnection"), &serverConnection);
-    ctx->setContextProperty(QStringLiteral("metadataService"), &metadataService);
+    ctx->setContextProperty(QStringLiteral("metadataDistributor"), &metadataDistributor);
     ctx->setContextProperty(QStringLiteral("activeCamera"), &activeCamera);
-    ctx->setContextProperty(QStringLiteral("cameraListModel"), metadataService.cameraListModel());
+    ctx->setContextProperty(QStringLiteral("cameraListModel"), metadataDistributor.cameraListModel());
     ctx->setContextProperty(QStringLiteral("demoController"), &demoController);
 
     QObject::connect(

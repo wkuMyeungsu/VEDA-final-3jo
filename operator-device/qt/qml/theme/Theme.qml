@@ -94,7 +94,7 @@ QtObject {
         }
     }
 
-    // RiskTypes.ExceptionState: 0 None .. 5 CameraDisconnected
+    // RiskTypes.ExceptionState: 0 None .. 6 UnconfirmedProximity
     function exceptionLabel(state) {
         switch (state) {
         case 1: return "SENSOR_FAULT"
@@ -102,6 +102,7 @@ QtObject {
         case 3: return "EMERGENCY_IMPACT"
         case 4: return "NETWORK_DISCONNECTED"
         case 5: return "CAMERA_DISCONNECTED"
+        case 6: return "UNCONFIRMED_PROXIMITY"
         default: return "NONE"
         }
     }

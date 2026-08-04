@@ -6,6 +6,9 @@
 
 namespace {
 Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")
+
+// appsink("sink")에 새 프레임 도착 시 GStreamer가 호출 (GStreamer 스레드에서 실행)
+// invokeMethod(QueuedConnection)로 Qt 메인 스레드로 안전하게 넘겨서 emit
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
 {
     auto *self = static_cast<RtspVideoSource *>(userData);

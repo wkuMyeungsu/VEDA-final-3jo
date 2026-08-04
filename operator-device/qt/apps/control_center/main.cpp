@@ -9,7 +9,7 @@
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
 #include "services/DemoController.h"
-#include "services/MetadataService.h"
+#include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
@@ -49,9 +49,9 @@ int main(int argc, char *argv[])
     VideoSourceManager videoManager;
     videoManager.setCameras(cameras);
 
-    MetadataService metadataService(cameras, appConfig.eventLogMaxEntries);
+    MetadataDistributor metadataDistributor(cameras, appConfig.eventLogMaxEntries);
     MockMetadataSource metadataSource(cameras);
-    metadataService.setSource(&metadataSource);
+    metadataDistributor.setSource(&metadataSource);
 
     ServerConnectionService serverConnection;
     DemoController demoController(&metadataSource, &videoManager, &serverConnection);
@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
     // Video connection state lives on each IVideoSource, independent of the
     // metadata pipeline; wire it into CameraListModel here so the grid and
     // status list reflect the real per-camera video link.
-    CameraListModel *cameraListModel = metadataService.cameraListModel();
+    CameraListModel *cameraListModel = metadataDistributor.cameraListModel();
     for (const CameraInfo &info : cameras) {
         if (IVideoSource *source = videoManager.sourceFor(info.cameraId)) {
             QObject::connect(source, &IVideoSource::connectionStateChanged, cameraListModel,
@@ -71,16 +71,16 @@ int main(int argc, char *argv[])
     }
 
     videoManager.startAll();
-    metadataService.start();
+    metadataDistributor.start();
 
     QQmlApplicationEngine engine;
     QQmlContext *ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("systemName"), appConfig.systemName);
     ctx->setContextProperty(QStringLiteral("serverConnection"), &serverConnection);
-    ctx->setContextProperty(QStringLiteral("metadataService"), &metadataService);
-    ctx->setContextProperty(QStringLiteral("cameraListModel"), metadataService.cameraListModel());
-    ctx->setContextProperty(QStringLiteral("eventLogModel"), metadataService.eventLogModel());
-    ctx->setContextProperty(QStringLiteral("alertListModel"), metadataService.alertListModel());
+    ctx->setContextProperty(QStringLiteral("metadataDistributor"), &metadataDistributor);
+    ctx->setContextProperty(QStringLiteral("cameraListModel"), metadataDistributor.cameraListModel());
+    ctx->setContextProperty(QStringLiteral("eventLogModel"), metadataDistributor.eventLogModel());
+    ctx->setContextProperty(QStringLiteral("alertListModel"), metadataDistributor.alertListModel());
     ctx->setContextProperty(QStringLiteral("demoController"), &demoController);
 
     QObject::connect(
