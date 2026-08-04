@@ -19,6 +19,8 @@
 
 #include <string>
 
+#include "latency_stamps.h"  // LatencyStamps (서버 내부 지연 계측, JudgmentResult에 얹는다)
+
 // ============================================================
 // 1. 데이터 구조 정의
 // ============================================================
@@ -105,6 +107,13 @@ struct JudgmentResult {
 
     std::string    camera_id;       // cam.camera_id 그대로 전달 (현재는 상류 미연결 -> 빈 문자열)
     std::string    zone;            // cam.zone 그대로 전달 (매핑 미확정 -> 빈 문자열 -> JSON null)
+
+    // 서버 내부 지연 계측 스탬프 (t0_ingest/t1_judge_in은 호출부가 채우고, t2_send는
+    // ResultDispatcher::submit()이 찍는다). evaluate()는 이 필드를 건드리지 않는다 -
+    // 기본값(에폭 0시)인 채로 반환되며, JudgmentPipeline::processFrame()이 반환 후에 채운다.
+    // 맨 끝에 추가한 이유: 기존 aggregate 초기화(JudgmentResult r{};)와 필드 순서를
+    // 건드리지 않기 위해서다. JSON 직렬화(toJson) 스키마에는 포함하지 않는다(하류 계약 밖).
+    LatencyStamps  latency;
 };
 
 // ============================================================

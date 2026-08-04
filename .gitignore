@@ -24,6 +24,9 @@ server/judgment/events.db
 server/judgment/events.db-wal
 server/judgment/events.db-shm
 
+# 판정 지연 계측 로그 (LatencyLogger가 실행 시 생성)
+server/judgment/latency.csv
+
 # 로컬 개발 환경
 .venv/
 .claude/settings.local.json

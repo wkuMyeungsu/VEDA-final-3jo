@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "danger_judgment_engine.h"
+#include "latency_stamps.h"
 
 // ResultDispatcher - 판정 결과 송신 정책 (헤더 온리, 소켓 의존성 없음)
 //
@@ -31,6 +32,11 @@
 //   같은 상태가 수천 건씩 중복 저장돼 로그가 쓸모없어진다.
 //   로거 구현(sqlite3 의존)은 여기 들어오지 않는다. 콜백 시그니처만 두어
 //   이 헤더는 계속 표준 헤더만으로 컴파일된다.
+//
+// [추가] 지연 계측 훅(LatencySink)
+//   서버 내부 지연(t0_ingest~t2_send) 중 t2_send를 채우는 지점도 여기다(submit()에서
+//   sink_() 호출 직전). EventSink와 같은 이유로 상태 변화 시에만 호출하고, 로거 구현
+//   (파일 I/O 의존)은 이 헤더에 들이지 않는다 - 자세한 내용은 latency_stamps.h 참고.
 
 namespace risk_transport {
 
@@ -44,6 +50,14 @@ public:
     //                  (EventLogger::kNoPreviousRisk와 같은 값이며 DB에는 NULL로 저장된다).
     //                  0(SAFE)이 유효한 위험도라서 "직전 없음"을 0으로 표현할 수 없다.
     using EventSink = std::function<void(const JudgmentResult&, int prev_risk_level)>;
+
+    // [추가] 지연 계측 훅(LatencySink).
+    // event_sink_와 같은 이유로 여기(상태 변화가 실제로 일어난 지점)에서만 부른다 -
+    // 하트비트 재전송까지 남기면 t0/t1이 없는(직전 프레임 값 재사용) 스냅숏이 매 200ms
+    // 섞여 들어가 지연 로그를 왜곡한다. r.latency에 t0_ingest/t1_judge_in이 이미 실려
+    // 들어온다는 전제이고(비어 있으면(=시각 0) 상류가 아직 안 채운 것), t2_send는
+    // submit() 안에서 채운 뒤 이 콜백으로 넘긴다.
+    using LatencySink = std::function<void(const LatencyStamps&)>;
 
     // "직전 상태 없음"(= 최초 이벤트)을 뜻하는 prev_risk_level 값.
     static constexpr int kNoPreviousRisk = -1;
@@ -84,10 +98,17 @@ public:
         if (!changed) return;
 
         ++change_sends_;
+
+        // t2_send: 실제 전송(sink_) 직전. 하트비트 재전송 경로(run())는 이 계측 대상이
+        // 아니다(위 latency_sink_ 주석 참고) - 여기 submit()의 "변화 시 즉시 전송" 경로에서만 찍는다.
+        LatencyStamps stamps = r.latency;
+        stamps.t2_send = LatencyStamps::Clock::now();
+
         // 전송이 먼저다. 이벤트 로그가 느려지더라도(디스크 등) 단말로 나가는 시각이
-        // 밀리지 않게 순서를 고정한다. event_sink_ 자체도 큐잉만 하고 즉시 반환한다.
+        // 밀리지 않게 순서를 고정한다. event_sink_/latency_sink_ 자체도 큐잉만 하고 즉시 반환한다.
         sink_(toJson(r));
         if (event_sink_) event_sink_(r, prev_risk);
+        if (latency_sink_) latency_sink_(stamps);
         cv_.notify_one();   // 하트비트 스레드가 리셋된 시각 기준으로 다시 자도록 깨운다
     }
 
@@ -95,6 +116,10 @@ public:
     // start()/submit() 전에 한 번만 설정하는 것을 전제로 한다 - 동작 중 교체는 지원하지 않는다
     // (ResultPublisher::onStateChange와 같은 규약).
     void onStateChangeEvent(EventSink cb) { event_sink_ = std::move(cb); }
+
+    // 지연 계측 훅을 등록한다 (예: LatencyLogger::log). 위 onStateChangeEvent()와 같은 규약 -
+    // start()/submit() 전에 한 번만 설정한다.
+    void onLatencyEvent(LatencySink cb) { latency_sink_ = std::move(cb); }
 
     // 마지막으로 전송한 판정 결과가 있는지 (없으면 하트비트도 나가지 않는다)
     bool hasResult() const {
@@ -154,7 +179,8 @@ private:
     }
 
     Sink sink_;
-    EventSink event_sink_;   // 상태 변화 시에만 호출. 미등록이면 로깅 없이 동작한다.
+    EventSink event_sink_;     // 상태 변화 시에만 호출. 미등록이면 로깅 없이 동작한다.
+    LatencySink latency_sink_; // 상태 변화 시에만 호출. 미등록이면 지연 계측 없이 동작한다.
     std::chrono::milliseconds period_;
 
     mutable std::mutex mtx_;

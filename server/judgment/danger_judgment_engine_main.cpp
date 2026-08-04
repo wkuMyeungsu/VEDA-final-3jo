@@ -27,6 +27,7 @@
 #include "ResultPublisher.h"   // 판정 결과 TCP 송신 (서버: listen/accept)
 #include "ResultDispatcher.h"  // 전송 정책 (변화 시 즉시 + 200ms 하트비트)
 #include "EventLogger.h"       // 상태 변화 이벤트 SQLite 로그
+#include "LatencyLogger.h"     // 서버 내부 판정 지연 CSV 로그
 
 // ============================================================
 // 테스트 시나리오 (더미 데이터)
@@ -56,6 +57,12 @@ int main() {
     risk_log::EventLogger event_logger;
     event_logger.start();
 
+    // 서버 내부 판정 지연(t0_ingest~t2_send) CSV 로그. EventLogger와 같은 원칙으로
+    // start() 실패가 판정·송신을 막지 않는다. 기본 경로는 server/judgment/latency.csv
+    // (CWD 기준, EventLogger::kDefaultDbPath와 같은 규약).
+    risk_log::LatencyLogger latency_logger;
+    latency_logger.start();
+
     // 전송 정책: 상태가 바뀌면 즉시, 안 바뀌면 200ms마다 마지막 결과 재전송.
     // 재전송은 dispatcher 내부 스레드가 하므로 아래 판정 루프는 여기서 멈추지 않는다.
     risk_transport::ResultDispatcher dispatcher(
@@ -67,6 +74,12 @@ int main() {
     dispatcher.onStateChangeEvent([&event_logger](const JudgmentResult& r, int prev_risk) {
         event_logger.log(r, prev_risk);
     });
+
+    // 지연 로그도 이벤트 로그와 같은 지점(상태 변화 시에만)에서 걸린다 - ResultDispatcher.h의
+    // latency_sink_ 주석 참고. t2_send는 dispatcher가 채워서 넘겨준다.
+    dispatcher.onLatencyEvent([&latency_logger](const LatencyStamps& stamps) {
+        latency_logger.log(stamps);
+    });
     dispatcher.start();
 
     // 판정 루프 한 스텝: 평가 -> 콘솔 출력 -> 전송 정책에 제출.
@@ -75,8 +88,19 @@ int main() {
     //
     // 실제 판정 루프의 프레임 간격을 흉내 내려고 스텝마다 100ms 쉰다. 이 간격이 있어야
     // 무변화 구간에서 하트비트가 실제로 도는 걸 데모에서 확인할 수 있다.
+    // 이 데모는 JudgmentPipeline을 거치지 않고 더미 CameraInput/SensorInput을 직접 만들어
+    // evaluate()를 호출한다. 그래서 "센서/메타데이터가 서버에 들어온 시각"(t0_ingest)에
+    // 대응하는 지점은 이 람다가 이번 프레임 데이터(cam/sen)를 받은 시점이고,
+    // "판정 연산 시작 시각"(t1_judge_in)은 evaluate() 호출 직전이다.
+    // (JudgmentPipeline::processFrame()과 같은 두 지점을, 파이프라인을 안 쓰는 이 경로에서도
+    //  그대로 재현한 것뿐이다.)
     auto step = [&](const std::string& name, const CameraInput& cam, const SensorInput& sen) {
+        const auto t0 = LatencyStamps::Clock::now();
+        const auto t1 = LatencyStamps::Clock::now();
         JudgmentResult r = engine.evaluate(cam, sen);
+        r.latency.t0_ingest   = t0;
+        r.latency.t1_judge_in = t1;
+
         printResult(name, r);
         dispatcher.submit(r);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -156,5 +180,9 @@ int main() {
     event_logger.stop();
     std::cout << "이벤트 로그: " << event_logger.writtenCount() << "건 기록 -> "
               << event_logger.dbPath() << "\n";
+
+    latency_logger.stop();
+    std::cout << "지연 로그: " << latency_logger.writtenCount() << "건 기록 -> "
+              << latency_logger.csvPath() << "\n";
     return 0;
 }
