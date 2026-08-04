@@ -6,6 +6,9 @@
 
 namespace {
 Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")
+
+// appsink("sink")에 새 프레임 도착 시 GStreamer가 호출 (GStreamer 스레드에서 실행)
+// invokeMethod(QueuedConnection)로 Qt 메인 스레드로 넘겨서 emit
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
 {
     auto *self = static_cast<RtspVideoSource *>(userData);
@@ -38,6 +41,9 @@ GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
     return GST_FLOW_OK;
 }
 
+// appsink("metasink")에 새 ONVIF 메타데이터 도착 시 호출
+// XML 파싱은 안 하고 raw 바이트 그대로 onvifMetadataReceived로 전달
+// (파싱은 OnvifBBoxParser 책임 -- 여긴 GStreamer 데이터 수신까지만)
 GstFlowReturn onNewMetadataSample(GstElement *appsink, gpointer userData)
 {
     auto *self = static_cast<RtspVideoSource *>(userData);
@@ -114,6 +120,7 @@ void RtspVideoSource::start()
     g_signal_connect(appsink, "new-sample", G_CALLBACK(onNewSample), this);
     gst_object_unref(appsink);
 
+    // ONVIF 브랜치는 선택적 -- 카메라가 트랙을 안 주면 "metasink"가 없을 수 있어 null 체크
     if (GstElement *metaSink = gst_bin_get_by_name(GST_BIN(m_pipeline), "metasink")) {
         g_signal_connect(metaSink, "new-sample", G_CALLBACK(onNewMetadataSample), this);
         gst_object_unref(metaSink);

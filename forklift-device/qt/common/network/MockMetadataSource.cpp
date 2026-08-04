@@ -10,6 +10,7 @@ constexpr int kTickIntervalMs = 1200;
 MockMetadataSource::MockMetadataSource(QVector<CameraInfo> cameras, QObject *parent)
     : IMetadataSource(parent)
 {
+    // 카메라 목록으로 초기 상태 맵 구성 (zone만 미리 채워두고 나머진 기본값)
     for (const CameraInfo &info : cameras) {
         CameraState state;
         state.zone = info.zone;
@@ -24,7 +25,7 @@ void MockMetadataSource::start()
 {
     setConnectionState(RiskTypes::ConnectionState::Connected);
     m_timer.start();
-    tick();
+    tick(); // 첫 tick까지 안 기다리고 초기 이벤트를 바로 내보냄
 }
 
 void MockMetadataSource::stop()
@@ -94,6 +95,9 @@ void MockMetadataSource::clearBBoxOverrides(const QString &cameraId)
     emitCameraUpdate(cameraId);
 }
 
+// 1.2초(kTickIntervalMs)마다 전체 카메라를 순회
+// - autoPlay가 꺼져있고 override도 없는 카메라는 건너뜀
+//   (수동 시나리오 진행 중엔 안 건드린 카메라가 멋대로 안 바뀌게)
 void MockMetadataSource::tick()
 {
     for (auto it = m_states.begin(); it != m_states.end(); ++it) {
@@ -103,6 +107,8 @@ void MockMetadataSource::tick()
     }
 }
 
+// override 값을 막 바꾼 직후 호출 -- 다음 tick(최대 1.2초 후)까지 안 기다리고
+// 즉시 이벤트 1건을 내보내서 QML이 바로 반응하게 함
 void MockMetadataSource::emitCameraUpdate(const QString &cameraId)
 {
     auto it = m_states.find(cameraId);
@@ -111,6 +117,8 @@ void MockMetadataSource::emitCameraUpdate(const QString &cameraId)
     emit metadataReceived(generateForCamera(cameraId, it.value()));
 }
 
+// 이전 위치(current)에서 사방으로 최대 ±0.02(정규화 좌표) 랜덤 이동
+// qBound로 0.05~0.80 범위에 가둬서 화면 밖으로 안 나가게 함
 QPointF MockMetadataSource::wanderPosition(QPointF current)
 {
     QRandomGenerator *rng = QRandomGenerator::global();
@@ -121,6 +129,7 @@ QPointF MockMetadataSource::wanderPosition(QPointF current)
     return QPointF(x, y);
 }
 
+// 카메라 1대의 RiskMetadata 이벤트 1건을 조립 (override 우선, 없으면 랜덤 생성)
 RiskMetadata MockMetadataSource::generateForCamera(const QString &cameraId, CameraState &state) const
 {
     RiskMetadata meta;
@@ -134,10 +143,13 @@ RiskMetadata MockMetadataSource::generateForCamera(const QString &cameraId, Came
     QRandomGenerator *rng = QRandomGenerator::global();
 
     if (state.overrideActive) {
+        // 데모 시나리오로 강제 고정된 값 그대로 사용
         level = state.overrideLevel;
         distance = state.overrideDistanceM;
         exception = state.overrideException;
     } else {
+        // 위험도: SAFE 70% / CAUTION 15% / DANGER 10% / EMERGENCY 5% 가중치
+        // 위험도 높을수록 거리 범위도 가깝게 좁힘
         const int roll = rng->bounded(100);
         if (roll < 70) {
             level = RiskTypes::RiskLevel::Safe;
@@ -153,6 +165,8 @@ RiskMetadata MockMetadataSource::generateForCamera(const QString &cameraId, Came
             distance = rng->generateDouble() * 0.5;
         }
 
+        // 3% 확률로 예외 상태도 하나 얹음 (5종 중 랜덤)
+        // UnconfirmedProximity는 목록에 없어 자동 생성 안 됨 -- 수동 지정 필요
         exception = RiskTypes::ExceptionState::None;
         if (rng->bounded(100) < 3) {
             switch (rng->bounded(5)) {
@@ -169,6 +183,7 @@ RiskMetadata MockMetadataSource::generateForCamera(const QString &cameraId, Came
     meta.setDistanceM(distance);
     meta.setExceptionState(exception);
 
+    // bbox는 override로 지정됐거나 실제 위험 단계일 때만 그림
     const bool showDetections = state.personBBoxOverride.has_value() || state.forkliftBBoxOverride.has_value()
         || level != RiskTypes::RiskLevel::Safe;
 

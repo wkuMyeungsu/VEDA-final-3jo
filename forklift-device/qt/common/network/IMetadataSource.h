@@ -5,11 +5,10 @@
 #include "../models/RiskMetadata.h"
 #include "../models/Types.h"
 
-// Abstraction over "however we receive risk-detection events from the
-// central server". MetadataService only ever talks to this interface;
-// MockMetadataSource is the only implementation wired up today, but
-// TcpMetadataSource (or a WebSocket equivalent) can replace it without
-// touching any UI or service code -- see docs/INTEGRATION.md.
+// 중앙 서버로부터 위험 감지 이벤트를 받는 방법을 감춘 추상 인터페이스
+// - IVideoSource(video/)의 네트워크 버전 짝꿍 클래스
+// - MetadataDistributor는 이 인터페이스만 알고, 실제 구현(Mock/Tcp)은 모름
+// - 지금은 MockMetadataSource 하나뿐, 나중에 TcpMetadataSource로 교체 가능
 class IMetadataSource : public QObject
 {
     Q_OBJECT
@@ -18,16 +17,22 @@ public:
     explicit IMetadataSource(QObject *parent = nullptr) : QObject(parent) {}
     ~IMetadataSource() override = default;
 
+    // 서버 연결/수신 시작
     virtual void start() = 0;
+    // 서버 연결 종료
     virtual void stop() = 0;
 
+    // 마지막으로 emit된 connectionStateChanged 값 (polling용)
     RiskTypes::ConnectionState connectionState() const { return m_connectionState; }
 
 signals:
+    // 카메라 1대의 새 이벤트 1건이 생길 때마다 emit -- MetadataDistributor::handleMetadata()가 받음
     void metadataReceived(const RiskMetadata &metadata);
+    // 연결 상태가 바뀔 때마다 emit (setConnectionState가 호출)
     void connectionStateChanged(RiskTypes::ConnectionState state);
 
 protected:
+    // 값이 바뀐 경우에만 신호를 냄 (중복 emit 방지)
     void setConnectionState(RiskTypes::ConnectionState state)
     {
         if (m_connectionState == state)

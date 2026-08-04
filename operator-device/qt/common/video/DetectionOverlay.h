@@ -7,11 +7,9 @@
 #include "../models/BBox.h"
 #include "../models/Types.h"
 
-// Draws person/forklift detection boxes, a connecting line, and the
-// reported distance on top of a CameraVideoView. Kept independent from
-// VideoStream -- it only needs the same video-native size (bound from
-// QML) to letterbox-align itself with the frame underneath, via the same
-// AspectFit helper.
+// 영상 위에 사람/지게차 박스, 연결선, 거리 라벨을 그리는 투명 오버레이
+// - VideoStream과 별개 아이템, 같은 videoSize로 AspectFit 계산해서 위치 맞춤
+// - 박스는 각각 유효할 때만 그림, 선+거리 라벨은 둘 다 있을 때만 그림
 class DetectionOverlay : public QQuickPaintedItem
 {
     Q_OBJECT
@@ -28,6 +26,7 @@ class DetectionOverlay : public QQuickPaintedItem
 public:
     explicit DetectionOverlay(QQuickItem *parent = nullptr);
 
+    // update()가 호출될 때마다 Qt가 실행 -- 실제 박스/선/라벨 그리기
     void paint(QPainter *painter) override;
 
     QSize videoSize() const { return m_videoSize; }
@@ -68,6 +67,7 @@ protected:
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
 
 private:
+    // box 1개를 videoRect 기준으로 변환해서 사각형 + 라벨 텍스트를 그림
     void drawBox(QPainter *painter, const QRectF &videoRect, const BBox &box, const QColor &color,
                  const QString &label) const;
 

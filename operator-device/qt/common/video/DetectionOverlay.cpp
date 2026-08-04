@@ -8,6 +8,7 @@
 DetectionOverlay::DetectionOverlay(QQuickItem *parent)
     : QQuickPaintedItem(parent)
 {
+    // 영상 위에 겹쳐 그리는 투명 레이어라 배경은 항상 투명
     setFillColor(Qt::transparent);
     setAntialiasing(true);
 }
@@ -90,19 +91,24 @@ void DetectionOverlay::geometryChange(const QRectF &newGeometry, const QRectF &o
     update();
 }
 
+// update()가 호출될 때마다 Qt가 실행 (bbox/거리/색상 등 프로퍼티가 바뀔 때마다 update() 호출됨)
 void DetectionOverlay::paint(QPainter *painter)
 {
     const QRectF bounds(0, 0, width(), height());
     if (bounds.isEmpty())
         return;
 
+    // VideoStream의 paint()와 동일한 계산 -- 그래야 bbox가 실제 영상 위치와 일치함
     const QRectF videoRect = AspectFit::fitRect(bounds.size(), m_videoSize);
 
+    // 박스는 각자 따로 유효하면 그림 (사람만 있어도, 지게차만 있어도 그려짐)
     if (m_personBBox.isValid())
         drawBox(painter, videoRect, m_personBBox, m_personColor, QStringLiteral("PERSON"));
     if (m_forkliftBBox.isValid())
         drawBox(painter, videoRect, m_forkliftBBox, m_forkliftColor, QStringLiteral("FORKLIFT"));
 
+    // 거리 표시(선 + 라벨)는 "둘 다" 있을 때만 -- 거리라는 개념 자체가 두 점 사이의
+    // 값이라, 한쪽이 없으면 의미가 없어서 아예 안 그림
     if (m_personBBox.isValid() && m_forkliftBBox.isValid()) {
         const QRectF personRect = AspectFit::mapNormalizedRect(
             QRectF(m_personBBox.x(), m_personBBox.y(), m_personBBox.width(), m_personBBox.height()), videoRect);
@@ -139,6 +145,7 @@ void DetectionOverlay::paint(QPainter *painter)
     }
 }
 
+// 박스 하나 + 좌상단에 붙는 색깔 있는 라벨(예: "PERSON")을 그림
 void DetectionOverlay::drawBox(QPainter *painter, const QRectF &videoRect, const BBox &box, const QColor &color,
                                 const QString &label) const
 {
