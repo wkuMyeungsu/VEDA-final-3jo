@@ -12,9 +12,7 @@
 // 같은 밀리초 안에 여러 이벤트가 들어오면 utc_time만으로는 순서가 갈리지 않는데,
 // id(AUTOINCREMENT)는 삽입 순서를 그대로 보존한다.
 //
-// 출력 컬럼은 팀 확정 목록(시각/camera_id/risk_level/exception_state/distance_m) 그대로다.
-// previous_risk_level은 DB에는 저장되지만 이 표에는 넣지 않았다 - 필요하면 sqlite3 CLI로
-// 직접 조회하면 된다.
+// 출력 컬럼은 팀 확정 목록(시각/camera_id/risk_level/prev_risk/exception_state/distance_m) 그대로다.
 //
 // 이 파일은 읽기 전용이다. 엔진이 돌고 있는 중에 실행해도 되도록 read-only로 열고
 // busy_timeout을 준다(EventLogger가 WAL 모드로 쓰기 때문에 서로 막지 않는다).
@@ -53,18 +51,26 @@ std::string riskLabel(int level) {
     return std::to_string(level) + " (" + toString(static_cast<RiskLevel>(level)) + ")";
 }
 
+// previous_risk_level은 최초 이벤트에서 NULL이라 riskLabel()에 그대로 넘길 수 없다.
+std::string riskLabelOrNull(sqlite3_stmt* stmt, int col) {
+    if (sqlite3_column_type(stmt, col) == SQLITE_NULL) return kNull;
+    return riskLabel(sqlite3_column_int(stmt, col));
+}
+
 // 컬럼 폭. 가장 긴 값 기준으로 잡았다.
 //   utc_time        "2026-08-03T10:15:30.123Z" = 24
 //   risk_level      "3 (EMERGENCY)"            = 13
+//   prev_risk       "3 (EMERGENCY)"            = 13
 //   exception_state "UNCONFIRMED_PROXIMITY"    = 21
 void printHeader() {
     std::cout << std::left
               << std::setw(24) << "utc_time"      << "  "
               << std::setw(12) << "camera_id"     << "  "
               << std::setw(13) << "risk_level"    << "  "
+              << std::setw(13) << "prev_risk"     << "  "
               << std::setw(21) << "exception_state" << "  "
               << std::right << std::setw(10) << "distance_m" << "\n";
-    std::cout << std::string(24 + 12 + 13 + 21 + 10 + 8, '-') << "\n";
+    std::cout << std::string(24 + 12 + 13 + 13 + 21 + 10 + 10, '-') << "\n";
 }
 
 // sqlite3_column_text()는 NULL 컬럼에 nullptr를 준다.
@@ -88,7 +94,8 @@ int run(int limit, const std::string& db_path) {
     sqlite3_busy_timeout(db, 3000);   // 엔진이 쓰는 중이면 잠깐 기다렸다 재시도
 
     const std::string sql =
-        std::string("SELECT utc_time, camera_id, risk_level, exception_state, distance_m"
+        std::string("SELECT utc_time, camera_id, risk_level, previous_risk_level,"
+                    " exception_state, distance_m"
                     " FROM ") + risk_log::EventLogger::kTableName +
         " ORDER BY id DESC LIMIT ?";
 
@@ -112,13 +119,14 @@ int run(int limit, const std::string& db_path) {
                   << std::setw(24) << textOrNull(stmt, 0) << "  "
                   << std::setw(12) << textOrNull(stmt, 1) << "  "
                   << std::setw(13) << riskLabel(sqlite3_column_int(stmt, 2)) << "  "
-                  << std::setw(21) << textOrNull(stmt, 3) << "  ";
+                  << std::setw(13) << riskLabelOrNull(stmt, 3) << "  "
+                  << std::setw(21) << textOrNull(stmt, 4) << "  ";
 
-        if (sqlite3_column_type(stmt, 4) == SQLITE_NULL) {
+        if (sqlite3_column_type(stmt, 5) == SQLITE_NULL) {
             std::cout << std::right << std::setw(10) << kNull;
         } else {
             std::cout << std::right << std::setw(10) << std::fixed << std::setprecision(2)
-                      << sqlite3_column_double(stmt, 4);
+                      << sqlite3_column_double(stmt, 5);
         }
         std::cout << "\n";
     }
