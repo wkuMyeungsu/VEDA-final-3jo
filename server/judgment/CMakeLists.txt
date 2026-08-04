@@ -58,14 +58,24 @@ add_library(event_logger STATIC
 target_include_directories(event_logger PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(event_logger PUBLIC danger_judgment_engine SQLite::SQLite3 Threads::Threads)
 
+# 서버 내부 판정 지연(t0_ingest~t2_send) CSV 로거.
+# event_logger와 같은 구성 방식(헤더가 std::thread 멤버를 노출하므로 Threads는 PUBLIC).
+# SQLite 의존은 없다(CSV 파일에 std::ofstream으로 직접 쓴다) - latency_stamps.h만 있으면
+# 되므로 danger_judgment_engine을 링크할 필요는 없다.
+add_library(latency_logger STATIC
+    LatencyLogger.cpp
+)
+target_include_directories(latency_logger PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(latency_logger PUBLIC Threads::Threads)
+
 # 실행파일은 main()만 갖고 엔진은 라이브러리로 링크한다.
 # ResultPublisher.h / ResultDispatcher.h는 헤더 온리이므로 소스 추가 없이
 # include 경로만 있으면 된다(같은 디렉터리).
-# event_logger를 링크하면 엔진/Threads는 전이로 따라온다.
+# event_logger/latency_logger를 링크하면 엔진/Threads는 전이로 따라온다.
 add_executable(danger_engine
     danger_judgment_engine_main.cpp
 )
-target_link_libraries(danger_engine PRIVATE danger_judgment_engine event_logger Threads::Threads)
+target_link_libraries(danger_engine PRIVATE danger_judgment_engine event_logger latency_logger Threads::Threads)
 
 # 이벤트 로그 조회용 독립 실행파일 (읽기 전용).
 # 엔진과 별개로 돌리는 도구라 소켓/스레드 쪽에는 의존하지 않는다.

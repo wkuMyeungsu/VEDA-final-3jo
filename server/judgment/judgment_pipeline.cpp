@@ -107,12 +107,22 @@ bool JudgmentPipeline::isCameraIdMismatch(const NearestPersonResult& nearest) co
 PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
                                               bool forklift_localized,
                                               const NearestPersonResult& nearest) {
+    // t0_ingest: 이 프레임의 상류 결과(카메라 검출 + 지게차 좌표)가 파이프라인에 들어온 시각.
+    // 아래 매핑(toCameraInput)과 센서 읽기(sensors_->read())가 여기 포함되므로, 나중에
+    // 이 구간이 실제 큐잉/전처리를 갖게 되더라도 코드를 옮길 필요 없이 그대로 잡힌다.
+    const auto t0 = LatencyStamps::Clock::now();
+
     PipelineOutput out;
 
     const CameraInput cam = toCameraInput(forklift, forklift_localized, nearest);
     const SensorInput sen = sensors_->read();
 
+    // t1_judge_in: 판정 연산(engine_.evaluate) 시작 직전.
+    const auto t1 = LatencyStamps::Clock::now();
     out.result              = engine_.evaluate(cam, sen);
+    out.result.latency.t0_ingest   = t0;
+    out.result.latency.t1_judge_in = t1;
+
     out.camera_id_mismatch  = isCameraIdMismatch(nearest);
 
     return out;
