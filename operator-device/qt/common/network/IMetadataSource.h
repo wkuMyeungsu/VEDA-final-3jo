@@ -8,7 +8,7 @@
 // 중앙 서버로부터 위험 감지 이벤트를 받는 방법을 감춘 추상 인터페이스
 // - IVideoSource(video/)의 네트워크 버전 짝꿍 클래스
 // - MetadataDistributor는 이 인터페이스만 알고, 실제 구현(Mock/Tcp)은 모름
-// - 지금은 MockMetadataSource 하나뿐, 나중에 TcpMetadataSource로 교체 가능
+// - 지금은 MockMetadataSource 하나뿐, 나중에 RiskEventSource로 교체 가능
 class IMetadataSource : public QObject
 {
     Q_OBJECT

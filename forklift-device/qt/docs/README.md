@@ -225,7 +225,7 @@ GStreamer 요구사항:
 - forklift-device/qt/common/models/RiskMetadata 관련 코드
 - forklift-device/qt/common/network/IMetadataSource
 - MockMetadataSource
-- TcpMetadataSource 또는 HandoverClient 스켈레톤
+- RiskEventSource 또는 HandoverClient 스켈레톤
 - MetadataDistributor
 - ServerConnectionService
 - ActiveCameraController
@@ -282,11 +282,12 @@ GStreamer 요구사항:
   "utc_time": "2026-07-15T10:30:00.000Z"
 }
 
-선택적으로 heartbeat 메시지도 지원한다.
-{
-  "type": "heartbeat",
-  "server_time": "2026-07-15T10:30:00.000Z"
-}
+별도의 heartbeat 메시지는 두지 않는다 (2026-08-03 서버 담당자 협의).
+서버가 판정 결과를 주기적으로 계속 publish하므로(상태 변화 시 즉시 송신 +
+그 시점부터 주기 타이머 리셋), 정상 동작 중에는 risk_event 자체가 생존 신호
+역할을 한다. 단말은 메시지 종류를 구분하지 않고 "무엇이든 수신했는가"만으로
+연결 상태를 판단한다.
+송신 주기는 초기 200ms, 실측 후 1000~1500ms로 조정 예정.
 
 검증 규칙:
 - camera_id가 설정 파일에 없는 경우 경고 로그를 남기고 해당 이벤트는 무시한다.
@@ -307,7 +308,9 @@ GStreamer 요구사항:
 - camera_assignment 수신 시 ActiveCameraController를 통해 운전자 단말의 camera_id를 변경한다.
 - 새 camera_id의 영상 준비가 완료된 후 화면을 전환한다.
 - 위험 메타데이터 수신 시각부터 QML 오버레이 갱신까지 지연시간을 측정해 로그로 남긴다.
-- 서버 heartbeat가 일정 시간 없으면 연결 이상 상태로 판단할 수 있도록 timeout 설정을 추가한다.
+- 서버 메시지가 일정 시간 없으면 연결 이상 상태로 판단할 수 있도록 timeout 설정을 추가한다.
+  타임아웃은 서버 송신 주기의 3배를 기준으로 한다 (FPGA<->Pi 채널의 기존 관례와 동일 --
+  gpio-control/src/PROTOCOL.md의 heartbeat 200ms / 판정 600ms 참고).
 
 설정 예시:
 {
@@ -316,7 +319,7 @@ GStreamer 요구사항:
     "host": "192.168.0.10",
     "port": 9000,
     "terminal_id": "TERM_01",
-    "heartbeat_timeout_ms": 3000,
+    "recv_timeout_ms": 600,
     "reconnect_initial_ms": 1000,
     "reconnect_max_ms": 30000,
     "tls_enabled": false
@@ -361,7 +364,7 @@ GStreamer 요구사항:
     **완료**. forklift-device·operator-device 양쪽 다 구현 완료, 실카메라
     검증됨.
   - 서버 메타데이터 연동
-    (`forklift-device/qt/common/network/TcpMetadataSource.cpp`): 위와 동일한
+    (`forklift-device/qt/common/network/RiskEventSource.cpp`): 위와 동일한
     사유로 브랜치 하나, 트랙명은 팀 확인 필요 (가칭
     `feature/forklift-device/metadata-integration`). operator-device 쪽은
     별도 브랜치로 동일 작업 필요.
