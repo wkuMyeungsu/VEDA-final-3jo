@@ -10,10 +10,10 @@
 #include "network/MockMetadataSource.h"
 #include "network/NoopWarningDevice.h"
 #include "network/HandoverClient.h"
+#include "network/RiskEventSource.h" 
 #include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
 #include "video/VideoSourceManager.h"
-
 
 #include "ActiveCameraController.h"
 #include "OperatorDemoController.h"
@@ -53,8 +53,14 @@ int main(int argc, char *argv[])
     videoManager.setCameras(cameras);
 
     MetadataDistributor metadataDistributor(cameras, 200);
-    MockMetadataSource metadataSource(cameras);
-    metadataDistributor.setSource(&metadataSource);
+    MockMetadataSource mockMetadataSource(cameras);   
+    RiskEventSource riskEventSource(appConfig.serverHost, appConfig.serverPort);
+
+    IMetadataSource *activeMetadataSource = &mockMetadataSource;
+    if (appConfig.metadataSourceType == QStringLiteral("tcp"))
+        activeMetadataSource = &riskEventSource;
+
+    metadataDistributor.setSource(activeMetadataSource);
 
     ServerConnectionService serverConnection;
     // Stand-in for the physical warning device (buzzer/light/vibration).
@@ -70,7 +76,7 @@ int main(int argc, char *argv[])
     QObject::connect(&handoverClient, &HandoverClient::cameraHandoverRequested, &activeCamera,
                   &ActiveCameraController::setActiveCameraId);
 
-    OperatorDemoController demoController(&metadataSource, &videoManager, &serverConnection, &activeCamera);
+    OperatorDemoController demoController(&mockMetadataSource, &videoManager, &serverConnection, &activeCamera);
     demoController.setDemoModeEnabled(parser.isSet(demoOption));
 
     videoManager.startAll();
