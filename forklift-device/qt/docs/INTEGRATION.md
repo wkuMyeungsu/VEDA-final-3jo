@@ -42,7 +42,8 @@
    ```
    부분을
    ```cpp
-   RiskEventSource metadataSource(appConfig.serverHost, appConfig.serverPort);
+   RiskEventSource metadataSource(appConfig.serverHost, appConfig.riskPort);
+
    metadataDistributor.setSource(&metadataSource);
    ```
    로 교체합니다. `MetadataDistributor`, `CameraListModel`, `EventLogModel`,

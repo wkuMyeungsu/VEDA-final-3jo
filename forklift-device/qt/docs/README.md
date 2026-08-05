@@ -342,7 +342,8 @@ GStreamer 요구사항:
   "metadata_source": "tcp",
   "server": {
     "host": "192.168.0.10",
-    "port": 9000,
+    "risk_port": 9000,
+    "handover_port": 9001,
     "terminal_id": "TERM_01",
     "recv_timeout_ms": 600,
     "reconnect_initial_ms": 1000,
