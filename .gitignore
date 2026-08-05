@@ -52,3 +52,12 @@ CMakeCache.txt
 cmake_install.cmake
 Makefile
 compile_commands.json
+
+# forklift-device/sensors/kernel (Kbuild 커널 모듈 빌드 산출물, 경로 한정)
+forklift-device/sensors/kernel/*.ko
+forklift-device/sensors/kernel/*.mod
+forklift-device/sensors/kernel/*.mod.c
+forklift-device/sensors/kernel/Module.symvers
+forklift-device/sensors/kernel/modules.order
+forklift-device/sensors/kernel/.tmp_versions/
+forklift-device/sensors/kernel/.*.cmdforklift-device/sensors/driver_test
