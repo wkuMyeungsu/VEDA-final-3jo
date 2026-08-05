@@ -37,6 +37,10 @@ class HandoverClient : public QObject
 public:
     explicit HandoverClient(QObject *parent = nullptr);
 
+    // 단말 terminal_id 설정
+    // 서버 연결 전 호출
+    void setTerminalId(const QString &terminalId) { m_terminalId = terminalId; }
+
     // 서버에 접속한다. host/port는 자동 재연결 때 재사용하려고 저장해 둔다.
     //   host: 서버 호스트(예: "127.0.0.1")   port: 서버 포트(예: 9000)
     void connectToServer(const QString &host, quint16 port);
@@ -71,6 +75,8 @@ private:
     // RtspVideoSource처럼 서버보다 단말을 먼저 켜도 재실행 없이 알아서 붙는다.
     QString m_host;
     quint16 m_port = 0;
+    // 필터링용 단말 ID
+    QString m_terminalId;
 
     // disconnectFromServer()부터 다음 connectToServer()까지만 true. 의도적으로 끊은
     // 동안에는 자동 재연결을 막아, 일부러 끊은 연결이 되살아나지 않게 한다.

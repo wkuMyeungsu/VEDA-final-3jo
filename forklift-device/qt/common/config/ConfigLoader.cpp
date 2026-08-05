@@ -87,5 +87,6 @@ TerminalConfig ConfigLoader::loadTerminalConfig() const
     config.handoverPort = static_cast<quint16>(obj.value(QStringLiteral("handover_port")).toInt(config.handoverPort));
     config.metadataSourceType =
         obj.value(QStringLiteral("metadata_source_type")).toString(config.metadataSourceType);
+    config.terminalId = obj.value(QStringLiteral("terminal_id")).toString();
     return config;
 }

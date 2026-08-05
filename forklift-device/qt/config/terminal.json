@@ -4,6 +4,7 @@
   "server_host": "127.0.0.1",
   "risk_port": 9000,
   "handover_port": 9001,
+  "terminal_id": "TERM_01",
   "_comment_metadata": "mock → tcp로 전환 (RiskEventSource 구현 완료 시)",
   "metadata_source_type": "tcp"
 }

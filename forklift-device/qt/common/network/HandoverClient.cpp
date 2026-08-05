@@ -124,6 +124,19 @@ void HandoverClient::processLine(const QByteArray &line)
         return;
     }
 
+    if (!m_terminalId.isEmpty()) {
+        if (!obj.contains(QStringLiteral("terminal_id"))) {
+            // 수신자 불명 명령 -- 카메라를 바꾸면 엉뚱한 화면이 뜨므로 무시
+            qCWarning(lcHandoverClient) << "terminal_id 없는 camera_assignment 무시:" << line;
+            return;
+        }
+        const QString msgTerminalId = obj.value(QStringLiteral("terminal_id")).toString();
+        if (msgTerminalId != m_terminalId) {
+            qCWarning(lcHandoverClient) << "다른 단말(" << msgTerminalId << ") 대상 명령 무시:" << line;
+            return;
+        }
+    }
+
     const QString cameraId = obj.value(QStringLiteral("camera_id")).toString();
     if (cameraId.isEmpty()) {
         qCWarning(lcHandoverClient) << "camera_assignment에 camera_id 없음:" << line;

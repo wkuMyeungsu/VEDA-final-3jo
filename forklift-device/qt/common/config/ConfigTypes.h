@@ -18,4 +18,5 @@ struct TerminalConfig {
     quint16 riskPort = 9000;      // 위험판정 채널 (RiskEventSource ↔ 서버 ResultPublisher)
     quint16 handoverPort = 9001;  // 핸드오버 제어 채널 (HandoverClient)
     QString metadataSourceType = QStringLiteral("mock"); // "mock" | "tcp"
+    QString terminalId;  // 이 단말의 ID. camera_assignment의 terminal_id와 대조해 내 명령인지 판별
 };
