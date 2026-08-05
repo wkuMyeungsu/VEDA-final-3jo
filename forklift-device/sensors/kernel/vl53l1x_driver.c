@@ -95,6 +95,18 @@ static dev_t vl53l1x_devno;
 static struct class *vl53l1x_class;
 static struct cdev vl53l1x_cdev;
 
+/* /dev/vl53l1x0 노드를 0666으로 생성해 sudo 없이 읽을 수 있게 한다.
+ * 커널 6.2부터 devnode 콜백 시그니처가 const struct device *로 바뀌었고,
+ * 이 드라이버의 빌드 대상(6.18.29+rpt-rpi-v8)도 해당 시그니처를 쓴다
+ * (/lib/modules/$(uname -r)/build/include/linux/device/class.h 확인).
+ */
+static char *vl53l1x_devnode(const struct device *dev, umode_t *mode)
+{
+	if (mode)
+		*mode = 0666;
+	return NULL;
+}
+
 /* ---- 저수준 I2C 접근 ---- */
 
 /* reg(16bit) + data[len] 를 한 트랜잭션으로 write */
@@ -363,7 +375,7 @@ static const struct file_operations fops = {
 
 /* ---- i2c_driver / probe / remove ---- */
 
-static int vl53l1x_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int vl53l1x_probe(struct i2c_client *client)
 {
 	int ret;
 
@@ -416,11 +428,12 @@ static int __init mod_init(void)
 		return -1;
 	}
 
-	vl53l1x_class = class_create(THIS_MODULE, DRIVER_CLASS);
+	vl53l1x_class = class_create(DRIVER_CLASS);
 	if (!vl53l1x_class) {
 		pr_err("vl53l1x: class create failed\n");
 		goto err_chrdev;
 	}
+	vl53l1x_class->devnode = vl53l1x_devnode;
 
 	if (!device_create(vl53l1x_class, NULL, vl53l1x_devno, NULL, DRIVER_NAME)) {
 		pr_err("vl53l1x: device create failed\n");
