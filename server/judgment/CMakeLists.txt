@@ -128,3 +128,15 @@ add_executable(test_event_logger
     test_event_logger.cpp
 )
 target_link_libraries(test_event_logger PRIVATE event_logger)
+
+# [로컬 하드웨어 스모크 테스트] 실제 IMU/ToF 센서값이 DangerJudgmentEngine까지 정상
+# 전달되는지만 확인하는 별도 실행파일. danger_engine(위 danger_judgment_engine_main.cpp)
+# 타깃과는 완전히 무관하며, JudgmentPipeline/ResultPublisher/EventLogger/LatencyLogger는
+# 쓰지 않는다 - 자세한 배경은 sensor_fusion_smoke_test.cpp 상단 주석 참고.
+# sensor_collector_reader가 PUBLIC으로 judgment_pipeline(-> danger_judgment_engine)과
+# forklift-device/sensors include 경로를 끌고 오므로 별도 include_directories 지정은
+# 필요 없다. 실제 I2C 하드웨어(라즈베리파이)에서만 실행 가능하다.
+add_executable(sensor_fusion_smoke_test
+    sensor_fusion_smoke_test.cpp
+)
+target_link_libraries(sensor_fusion_smoke_test PRIVATE sensor_collector_reader)
