@@ -61,3 +61,9 @@ forklift-device/sensors/kernel/Module.symvers
 forklift-device/sensors/kernel/modules.order
 forklift-device/sensors/kernel/.tmp_versions/
 forklift-device/sensors/kernel/.*.cmdforklift-device/sensors/driver_test
+
+# 커널 모듈 빌드 산출물 (make 시 자동 생성, *.o/*.ko 외 추가 규칙)
+forklift-device/sensors/kernel/*.cmd
+forklift-device/sensors/kernel/.*.cmd
+forklift-device/sensors/kernel/Module.symvers
+forklift-device/sensors/kernel/modules.order

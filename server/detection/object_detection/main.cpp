@@ -6,8 +6,8 @@
 //   2) appsink 콜백에서 패킷 하나(raw RTP)를 받을 때마다 RTP 헤더 파싱 -> payload 추출
 //   3) OnvifMetadataReassembler에 순서대로 넣어서 marker bit 뜰 때까지 이어붙임
 //      (시퀀스 번호 연속성도 같이 검사해서, 패킷이 중간에 빠지면 깨진 프레임을 버림)
-//   4) 완성된 XML이 나오면 parseOnvifMetadata()로 파싱
-//   5) 콘솔에 출력 + CSV 파일에 누적 저장 (재연결돼도 같은 CSV 파일에 계속 이어붙여짐)
+//   4) 완성된 XML을 종류별로 분기해 객체탐지 또는 ArUco 파서로 파싱
+//   5) 콘솔에 출력 + 종류별 CSV 파일에 누적 저장 (재연결돼도 계속 이어붙여짐)
 //   6) Ctrl+C(SIGINT) 수신 시 파이프라인에 EOS를 보내서 CSV가 안전하게 마무리되도록 함.
 //      시그널 핸들러는 플래그만 세팅하고, 실제 EOS 전송은 메인 스레드(메인 루프)에서
 //      처리함 — 핸들러 안에서 GStreamer API를 직접 부르면 내부 락과 얽혀 데드락 날 수
@@ -33,6 +33,9 @@
 #include "rtp_metadata_receiver.hpp"
 #include "onvif_metadata_parser.hpp"
 #include "csv_logger.hpp"
+#include "metadata_router.hpp"
+#include "../aruco_detection/aruco_metadata_parser.hpp"
+#include "../aruco_detection/aruco_csv_logger.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -88,7 +91,8 @@ private:
 // appsink 콜백에서 공유할 상태 (재조립기 + 로거)
 struct AppState {
     OnvifMetadataReassembler reassembler;
-    CsvLogger* logger = nullptr;
+    CsvLogger* objectLogger = nullptr;
+    ArucoCsvLogger* arucoLogger = nullptr;
 };
 
 // Ctrl+C 핸들러에서만 접근하는 전역 포인터.
@@ -125,6 +129,21 @@ static void printFrame(const MetadataFrame& frame) {
     }
 }
 
+static void printArucoFrame(const ArucoFrame& frame) {
+    std::cout << "\n=== ArUco UtcTime: " << frame.utcTime
+              << " Channel: " << frame.channel << " ===\n";
+    std::cout << "Detected markers: " << frame.markers.size() << "\n";
+    for (const auto& marker : frame.markers) {
+        std::cout << "  MarkerId=" << marker.id << " Corners=";
+        for (int i = 0; i < 4; ++i) {
+            if (i > 0) std::cout << ",";
+            std::cout << "(" << marker.corners[i].first
+                      << "," << marker.corners[i].second << ")";
+        }
+        std::cout << "\n";
+    }
+}
+
 // appsink에 새 샘플(=RTP 패킷 하나)이 도착할 때마다 GStreamer가 호출하는 콜백
 static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
     AppState* state = static_cast<AppState*>(userData);
@@ -143,10 +162,26 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
             auto completedXml = state->reassembler.feed(
                 payload, payloadSize, header.sequenceNumber, header.marker);
             if (completedXml) {
-                MetadataFrame frame = parseOnvifMetadata(*completedXml);
-                printFrame(frame);
-                if (state->logger) {
-                    state->logger->logFrame(frame);
+                switch (classifyMetadata(*completedXml)) {
+                case MetadataType::ObjectDetection: {
+                    MetadataFrame frame = parseOnvifMetadata(*completedXml);
+                    printFrame(frame);
+                    if (state->objectLogger) state->objectLogger->logFrame(frame);
+                    break;
+                }
+                case MetadataType::ArucoDetection: {
+                    const auto frame = parseArucoMetadata(*completedXml);
+                    if (!frame) {
+                        std::cerr << "[경고] ArUco XML 필드 검증 실패, 프레임 건너뜀\n";
+                        break;
+                    }
+                    printArucoFrame(*frame);
+                    if (state->arucoLogger) state->arucoLogger->logFrame(*frame);
+                    break;
+                }
+                case MetadataType::Unknown:
+                    std::cerr << "[경고] 지원하지 않거나 손상된 ONVIF 메타데이터, 프레임 건너뜀\n";
+                    break;
                 }
             }
         } else {
@@ -327,10 +362,14 @@ int main(int argc, char* argv[]) {
     std::time_t now = std::time(nullptr);
     char timeBuf[32];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y%m%d_%H%M%S", std::localtime(&now));
-    std::string csvPath = std::string("detections_") + timeBuf + ".csv";
-    CsvLogger logger(csvPath);
-    state.logger = &logger;
-    std::cout << "CSV 저장 경로: " << csvPath << "\n";
+    std::string objectCsvPath = std::string("detections_") + timeBuf + ".csv";
+    std::string arucoCsvPath = std::string("aruco_markers_") + timeBuf + ".csv";
+    CsvLogger objectLogger(objectCsvPath);
+    ArucoCsvLogger arucoLogger(arucoCsvPath);
+    state.objectLogger = &objectLogger;
+    state.arucoLogger = &arucoLogger;
+    std::cout << "객체탐지 CSV 저장 경로: " << objectCsvPath << "\n";
+    std::cout << "ArUco CSV 저장 경로: " << arucoCsvPath << "\n";
     std::cout << "수신 시작 시각(로컬 PC 기준): " << timeBuf << "\n";
     std::cout << "※ 이 시각은 PC 로컬시간이고, 프레임별 UtcTime은 카메라 기준 시간이니 "
                  "나중에 정밀 동기화할 때 헷갈리지 않도록 주의.\n";

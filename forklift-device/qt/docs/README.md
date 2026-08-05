@@ -109,6 +109,31 @@ cmake --build build
 ctest --preset windows-mingw --output-on-failure
 ```
 
+## 코딩 컨벤션
+
+### 주석
+- 한글 작성
+- 명사형 개조식 종결 (예: ~발생, ~해제, ~예약 / 서술형 문장 지양)
+- "무엇"이 아닌 "왜" 위주 (코드로 보이는 내용 반복 금지)
+- 파일 기존 주석 스타일 유지 (기존 파일 전면 수정은 별도 작업 예정)
+
+### 네이밍
+- 짧고 직관적인 영어
+- 코드베이스 기존 단어 조합 우선 (새 전문용어 지양)
+- 추상적 영어 전문용어 지양 (예: `Coordinator`/`Hub` 등 모호한 접미어)
+- 전송 수단이 아닌 나르는 데이터 기준 (예: `TcpMetadataSource` → `RiskEventSource`)
+
+### Windows 빌드·런타임 문제 진단 순서
+1. PATH 내 빌드 도구 확인 — `cmake`/`ninja`/`mingw`는 Qt DLL과 별도 경로,
+   위 "빌드" 섹션 PATH 예시는 앱 실행용(Qt DLL)만 포함:
+   ```powershell
+   $env:PATH = "C:/Qt/Tools/CMake_64/bin;C:/Qt/Tools/Ninja;C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.11.0/mingw_64/bin;$env:PATH"
+   ```
+2. `build/`의 `config/` 최신 여부 확인 (실행 파일 옆 사본, 원본 수정 미반영 시 오래된 복사본 의심)
+3. 동일 실행 파일 기실행 여부 확인 (`Permission denied`는 대개 코드 에러가 아닌 파일 잠금)
+4. `cmake --build --preset ...`는 `CMakePresets.json` 위치(`qt/` 폴더)에서 실행
+5. `git checkout <브랜치> -- <경로>`의 경로는 현재 디렉터리 기준 (리포 최상위에서 실행)
+
 
 ## 향후 연동용 Claude Code 프롬프트
 

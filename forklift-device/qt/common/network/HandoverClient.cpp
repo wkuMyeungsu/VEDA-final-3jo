@@ -1,10 +1,20 @@
+// 지게차 단말 - 서버 핸드오버 제어 채널 구현
 #include "HandoverClient.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
+#include <QTimer>
 
 namespace {
 Q_LOGGING_CATEGORY(lcHandoverClient, "safety.handover.client")
+
+// 재연결 대기 시간(ms). 값의 근거:
+//  - ConnectionRefused는 거의 즉시 돌아오므로, 쿨다운이 0이면 사실상 무한 루프로
+//    서버를 두드린다 -> 최소한의 간격이 필요하다.
+//  - 안전 단말이라 너무 길면 복구가 느리다. 3초는 "빠른 복구 vs 서버/로그 안 두드림"의 타협점.
+//  - RtspVideoSource의 재연결과 같은 값이라, 단말 안의 두 연결(영상/제어)이 똑같이 동작한다.
+// 배포별로 다르게 하고 싶으면 이 상수 한 곳만 terminal.json 설정으로 빼면 된다.
+constexpr int kReconnectDelayMs = 3000;
 }
 
 HandoverClient::HandoverClient(QObject *parent)
@@ -16,45 +26,84 @@ HandoverClient::HandoverClient(QObject *parent)
     connect(&m_socket, &QTcpSocket::errorOccurred, this, &HandoverClient::handleError);
 }
 
+// 서버에 접속한다. 재연결 때 재사용하려고 host/port를 저장하고, 이전에 걸어둔
+// "의도적 끊김" 표시를 지워 자동 재연결을 다시 켠다.
 void HandoverClient::connectToServer(const QString &host, quint16 port)
 {
-    setConnectionState(RiskTypes::ConnectionState::Connecting);
+    m_host = host;
+    m_port = port;
+    m_intentionalDisconnect = false;
 
+    setConnectionState(RiskTypes::ConnectionState::Connecting);
     m_socket.connectToHost(host, port);
 }
 
+// 서버 연결을 의도적으로 끊는다. m_intentionalDisconnect를 세워 두어, 뒤이어 오는
+// 끊김 처리기가 자동 재연결을 걸지 않게 한다.
 void HandoverClient::disconnectFromServer()
 {
+    m_intentionalDisconnect = true;
     m_socket.disconnectFromHost();
 }
 
+// 접속 성공.
 void HandoverClient::handleConnected()
 {
     setConnectionState(RiskTypes::ConnectionState::Connected);
 }
 
-// 연결이 끊기면 버퍼도 같이 비움 -- 재연결 시 이전 연결에서 남은 미완성
-// 데이터 조각과 새 연결의 데이터가 섞여서 잘못 파싱되는 걸 방지
+// 연결돼 있던 소켓이 끊겼을 때. 버퍼를 비우고 상태를 갱신한 뒤, (의도적으로 끊은 게
+// 아니라면) 재연결을 예약한다.
 void HandoverClient::handleDisconnected()
 {
     m_buffer.clear();
     setConnectionState(RiskTypes::ConnectionState::Disconnected);
+    scheduleReconnect();
 }
 
+// 소켓 오류. 로그를 남기고 상태를 갱신한 뒤 재연결을 예약한다. "첫 접속 실패"(서버가
+// 아직 안 뜬 경우)는 errorOccurred만 오고 disconnected는 오지 않으므로, 여기서
+// 재시도를 걸어줘야 서버보다 먼저 켠 단말이 나중에라도 붙을 수 있다.
 void HandoverClient::handleError(QAbstractSocket::SocketError error)
 {
-    qCWarning(lcHandoverClient) << "socket error:" << error << m_socket.errorString();
+    qCWarning(lcHandoverClient) << "소켓 오류:" << error << m_socket.errorString();
     setConnectionState(RiskTypes::ConnectionState::Disconnected);
+    scheduleReconnect();
 }
 
-// TCP는 "스트림"이라 한 번의 readyRead가 메시지 절반만 담고 있을 수도,
-// 여러 메시지를 한꺼번에 담고 있을 수도 있음. 그래서 일단 buffer에 다 모아두고
-// 줄바꿈('\n')이 나올 때마다 그 앞부분만 완성된 메시지 1건으로 잘라서 처리.
-// 줄바꿈 구분 방식 자체가 아직 확정 프로토콜이 아니라 임시 규격임 (헤더 주석 참고)
+// 마지막으로 접속했던 곳으로 일정 시간 뒤 다시 시도한다. RtspVideoSource::
+// scheduleReconnect()와 같은 방식이다: this가 소유하는 QTimer::singleShot이라
+// 이 객체가 먼저 파괴되면 콜백이 자동 취소된다(허상 접근 방지). m_reconnectPending은
+// 한 번의 끊김에 errorOccurred+disconnected가 둘 다 와도 재시도를 하나로 합친다.
+//
+// 재시도 중에는 일부러 Connecting 상태를 내보내지 않는다 -> 서버가 죽어 있는 동안
+// 배지가 Connecting<->Disconnected로 깜빡이지 않고 Disconnected를 유지하고,
+// 실제로 붙었을 때만 Connected로 바뀐다.
+void HandoverClient::scheduleReconnect()
+{
+    if (m_intentionalDisconnect || m_reconnectPending || m_host.isEmpty())
+        return;
+
+    m_reconnectPending = true;
+    QTimer::singleShot(kReconnectDelayMs, this, [this]() {
+        m_reconnectPending = false;
+        if (m_intentionalDisconnect)
+            return;
+        // 대기하는 동안 누군가 connectToServer()로 이미 (재)접속을 시작했다면,
+        // 접속을 두 번 시도하지 않도록 여기서 멈춘다.
+        if (m_socket.state() != QAbstractSocket::UnconnectedState)
+            return;
+
+        m_socket.connectToHost(m_host, m_port);
+    });
+}
+
+// 도착한 데이터를 버퍼에 모으고, 개행(\n)으로 끝나는 완성된 줄만 골라 처리한다.
 void HandoverClient::handleReadyRead()
 {
     m_buffer += m_socket.readAll();
 
+    // 한 줄에 JSON 하나(개행 구분) -- 팀과 프레이밍이 확정되기 전까지 쓰는 임시 방식.
     int newlineIndex;
     while ((newlineIndex = m_buffer.indexOf('\n')) != -1) {
         const QByteArray line = m_buffer.left(newlineIndex);
@@ -64,28 +113,27 @@ void HandoverClient::handleReadyRead()
     }
 }
 
-// 완성된 한 줄을 JSON으로 해석. 기대하는 형태(임시):
-// {"type": "camera_assignment", "camera_id": "..."}
-// type이 camera_assignment가 아니거나 camera_id가 없으면 조용히 무시(경고 로그만) --
-// 서버가 나중에 다른 type의 메시지를 같은 채널로 보내게 되더라도 여기서 안 죽게 함
+// 서버가 보낸 한 줄(JSON)을 해석한다. "type"이 "camera_assignment"이고 "camera_id"가
+// 있으면 cameraHandoverRequested 신호를 낸다. (스키마는 아직 임시값 - 헤더 참고.)
 void HandoverClient::processLine(const QByteArray &line)
 {
     const QJsonObject obj = QJsonDocument::fromJson(line).object();
 
     if (obj.value(QStringLiteral("type")).toString() != QStringLiteral("camera_assignment")) {
-        qCWarning(lcHandoverClient) << "ignoring unrecognized message:" << line;
+        qCWarning(lcHandoverClient) << "알 수 없는 메시지 무시:" << line;
         return;
     }
 
     const QString cameraId = obj.value(QStringLiteral("camera_id")).toString();
     if (cameraId.isEmpty()) {
-        qCWarning(lcHandoverClient) << "camera_assignment message missing camera_id:" << line;
+        qCWarning(lcHandoverClient) << "camera_assignment에 camera_id 없음:" << line;
         return;
     }
 
     emit cameraHandoverRequested(cameraId);
 }
 
+// 상태가 실제로 바뀐 경우에만 갱신하고 connectionStateChanged 신호를 낸다.
 void HandoverClient::setConnectionState(RiskTypes::ConnectionState state)
 {
     if (m_connectionState == state)

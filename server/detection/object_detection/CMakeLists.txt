@@ -34,9 +34,21 @@ add_executable(rtp_metadata_receiver
     onvif_metadata_parser.cpp
     rtp_metadata_receiver.cpp
     csv_logger.cpp
+    metadata_router.cpp
+    ../aruco_detection/aruco_metadata_parser.cpp
+    ../aruco_detection/aruco_csv_logger.cpp
     main.cpp
 )
 target_link_libraries(rtp_metadata_receiver PRIVATE
     ${PUGIXML_TARGET}
     PkgConfig::GST
 )
+
+add_executable(metadata_router_test
+    metadata_router.cpp
+    test_metadata_router.cpp
+)
+target_link_libraries(metadata_router_test PRIVATE ${PUGIXML_TARGET})
+
+enable_testing()
+add_test(NAME metadata_router_test COMMAND metadata_router_test)
