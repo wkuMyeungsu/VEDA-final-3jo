@@ -49,6 +49,20 @@ add_library(judgment_pipeline STATIC
 target_include_directories(judgment_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(judgment_pipeline PUBLIC danger_judgment_engine nearest_person_selector)
 
+# SensorCollector(forklift-device 트랙, 실제 MPU6050/VL53L1X 드라이버) -> ISensorReader 어댑터.
+# forklift-device/sensors 아래 드라이버/인터페이스는 전부 헤더 온리라 별도 소스 없이
+# include 경로만 추가하면 된다. main_test.cpp / test_mpu6050_real.cpp는 자체 main()을 가진
+# 독립 스모크 테스트라 이 타깃에는 포함하지 않는다(연동 시 이 타깃과 링크 충돌 발생).
+# ISensorReader/SensorInput을 그대로 노출해야 호출부가 judgment_pipeline.h를 include할 수
+# 있으므로 judgment_pipeline은 PUBLIC으로 링크한다.
+add_library(sensor_collector_reader STATIC
+    sensor_collector_reader.cpp
+)
+target_include_directories(sensor_collector_reader PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../forklift-device/sensors
+)
+target_link_libraries(sensor_collector_reader PUBLIC judgment_pipeline)
+
 # 판정 이벤트 SQLite 로거.
 # 헤더가 std::thread 멤버와 JudgmentResult를 노출하므로 엔진/Threads/SQLite 모두 PUBLIC이다
 # (이걸 링크하는 쪽이 EventLogger.h를 그대로 include할 수 있어야 한다).
