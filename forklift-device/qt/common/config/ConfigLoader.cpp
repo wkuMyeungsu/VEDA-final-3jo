@@ -83,7 +83,8 @@ TerminalConfig ConfigLoader::loadTerminalConfig() const
 
     config.defaultCameraId = obj.value(QStringLiteral("default_camera_id")).toString();
     config.serverHost = obj.value(QStringLiteral("server_host")).toString(config.serverHost);
-    config.serverPort = static_cast<quint16>(obj.value(QStringLiteral("server_port")).toInt(config.serverPort));
+    config.riskPort = static_cast<quint16>(obj.value(QStringLiteral("risk_port")).toInt(config.riskPort));
+    config.handoverPort = static_cast<quint16>(obj.value(QStringLiteral("handover_port")).toInt(config.handoverPort));
     config.metadataSourceType =
         obj.value(QStringLiteral("metadata_source_type")).toString(config.metadataSourceType);
     return config;

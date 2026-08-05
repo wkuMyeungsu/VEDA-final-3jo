@@ -54,8 +54,7 @@ int main(int argc, char *argv[])
 
     MetadataDistributor metadataDistributor(cameras, 200);
     MockMetadataSource mockMetadataSource(cameras);   
-    RiskEventSource riskEventSource(appConfig.serverHost, appConfig.serverPort);
-
+    RiskEventSource riskEventSource(appConfig.serverHost, appConfig.riskPort);
     IMetadataSource *activeMetadataSource = &mockMetadataSource;
     if (appConfig.metadataSourceType == QStringLiteral("tcp"))
         activeMetadataSource = &riskEventSource;
@@ -80,9 +79,7 @@ int main(int argc, char *argv[])
     demoController.setDemoModeEnabled(parser.isSet(demoOption));
 
     videoManager.startAll();
-    handoverClient.connectToServer(appConfig.serverHost, appConfig.serverPort);
-    metadataDistributor.start();
-
+    handoverClient.connectToServer(appConfig.serverHost, appConfig.handoverPort);
     QString initialCameraId = parser.value(cameraOption);
     if (initialCameraId.isEmpty())
         initialCameraId = appConfig.defaultCameraId;
