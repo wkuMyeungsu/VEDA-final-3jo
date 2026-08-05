@@ -29,7 +29,7 @@
 
 ## 2. 중앙 서버 메타데이터 스트림 연동
 
-1. `forklift-device/qt/common/network/TcpMetadataSource.cpp`의
+1. `forklift-device/qt/common/network/RiskEventSource.cpp`의
    `handleReadyRead()`에 실제 와이어 프로토콜 파싱을 구현합니다(현재는 소켓
    연결/해제/에러는 실제로 동작하지만 메시지 파싱은 TODO로 남아 있습니다).
    서버가 보내는 각 메시지를 `RiskMetadata::fromJson()`이 기대하는 JSON
@@ -42,14 +42,14 @@
    ```
    부분을
    ```cpp
-   TcpMetadataSource metadataSource(appConfig.serverHost, appConfig.serverPort);
+   RiskEventSource metadataSource(appConfig.serverHost, appConfig.serverPort);
    metadataDistributor.setSource(&metadataSource);
    ```
    로 교체합니다. `MetadataDistributor`, `CameraListModel`, `EventLogModel`,
    `AlertListModel`, QML은 `IMetadataSource` 인터페이스만 사용하므로 수정할
    필요가 없습니다.
 3. WebSocket을 선호한다면
-   `forklift-device/qt/common/network/TcpMetadataSource.cpp`를 참고해 동일한
+   `forklift-device/qt/common/network/RiskEventSource.cpp`를 참고해 동일한
    `IMetadataSource` 인터페이스를 구현하는 `WebSocketMetadataSource`를
    추가하면 됩니다(Qt6 WebSockets 모듈 사용).
 

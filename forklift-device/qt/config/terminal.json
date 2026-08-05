@@ -3,6 +3,6 @@
   "_comment_server": "server_host/server_port: 로컬 개발용 placeholder → 실제 서버 주소로 교체",
   "server_host": "127.0.0.1",
   "server_port": 9000,
-  "_comment_metadata": "mock → tcp로 전환 (TcpMetadataSource 구현 완료 시)",
-  "metadata_source_type": "mock"
+  "_comment_metadata": "mock → tcp로 전환 (RiskEventSource 구현 완료 시)",
+  "metadata_source_type": "tcp"
 }

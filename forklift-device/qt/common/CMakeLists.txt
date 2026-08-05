@@ -112,6 +112,8 @@ qt_add_qml_module(safety_common
         network/HandoverClient.cpp
         network/OnvifBBoxParser.h
         network/OnvifBBoxParser.cpp
+        network/RiskEventSource.h
+        network/RiskEventSource.cpp
 
         config/ConfigTypes.h
         config/ConfigLoader.h

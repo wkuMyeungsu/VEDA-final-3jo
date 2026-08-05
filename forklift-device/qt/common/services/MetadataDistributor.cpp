@@ -13,7 +13,7 @@ MetadataDistributor::MetadataDistributor(QVector<CameraInfo> cameras, int eventL
 
 // 데이터 출처 교체 지점
 // - 지금: MockMetadataSource(가짜 데이터)
-// - 실서버 연동 시: (TcpMetadataSource) 등으로 교체
+// - 실서버 연동 시: (RiskEventSource) 등으로 교체
 // - IMetadataSource 인터페이스만 맞으면 아래 로직 변경 불필요
 // - 기존 source 있으면 먼저 disconnect (안 그러면 신호 중복 수신)
 void MetadataDistributor::setSource(IMetadataSource *source)
