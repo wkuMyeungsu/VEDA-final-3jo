@@ -79,6 +79,7 @@ int main(int argc, char *argv[])
     demoController.setDemoModeEnabled(parser.isSet(demoOption));
 
     videoManager.startAll();
+    handoverClient.setTerminalId(appConfig.terminalId);
     handoverClient.connectToServer(appConfig.serverHost, appConfig.handoverPort);
     QString initialCameraId = parser.value(cameraOption);
     if (initialCameraId.isEmpty())
