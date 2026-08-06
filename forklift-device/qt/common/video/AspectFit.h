@@ -4,50 +4,37 @@
 #include <QRectF>
 #include <QSizeF>
 
-// 영상 비율 유지 계산(레터박스/필러박스) 공용 함수
-// - VideoStream: 영상 그릴 위치 계산에 사용
-// - DetectionOverlay: 박스 그릴 위치 계산에 같은 함수 사용
-// - 계산을 한 곳에 모아야 영상과 박스 위치가 항상 일치함
+// - 영상 비율 유지 및 좌표 변환 유틸리티 네임스페이스
 namespace AspectFit {
 
-// itemSize(화면에 할당된 영역) 안에 contentSize(영상 원본 비율)를 비율 유지하며
-// 최대로 맞춰 넣었을 때의 사각형을 반환 (남는 공간은 위아래 또는 좌우 여백이 됨)
-inline QRectF fitRect(const QSizeF &itemSize, const QSizeF &contentSize)
+inline QRectF fitRect(const QSizeF &itemSize, const QSizeF &contentSize)       // - 비율 유지 영역 계산: 원본 비율을 유지하며 표시 영역에 맞춘 영역 반환
 {
-    // 크기 정보 없으면 비율 계산 불가 -> 원본 영역 그대로 반환
-    if (itemSize.isEmpty() || contentSize.width() <= 0.0 || contentSize.height() <= 0.0)
+    if (itemSize.isEmpty() || contentSize.width() <= 0.0 || contentSize.height() <= 0.0) // - 유효성 검증: 크기 정보 미존재 시 전체 영역 반환
         return QRectF(QPointF(0, 0), itemSize);
 
-    // 가로세로 비율 계산
-    const double itemAspect = itemSize.width() / itemSize.height();
-    const double contentAspect = contentSize.width() / contentSize.height();
+    const double itemAspect = itemSize.width() / itemSize.height();             // - 표시 영역 비율 계산: 화면 가로/세로 비율 측정
+    const double contentAspect = contentSize.width() / contentSize.height();   // - 원본 영상 비율 계산: 영상 가로/세로 비율 측정
 
     QSizeF fitted;
-    if (contentAspect > itemAspect) {
-        // 영상이 더 넓적함 -> 폭 기준으로 맞춤 (레터박스: 위아래 여백)
-        fitted.setWidth(itemSize.width());                  // 폭을 꽉 채움
-        fitted.setHeight(itemSize.width() / contentAspect); // 비율대로 높이 계산
-    } else {
-        // 영상이 더 세로로 김 -> 높이 기준으로 맞춤 (필러박스: 좌우 여백)
-        fitted.setHeight(itemSize.height());                // 높이를 꽉 채움
-        fitted.setWidth(itemSize.height() * contentAspect); // 비율대로 폭 계산
+    if (contentAspect > itemAspect) {                                           // - 가로 비율 우세 비교: 가로 폭 기준 영역 설정 (상하 여백 발생)
+        fitted.setWidth(itemSize.width());                                     // - 폭 설정: 표시 영역 가로 폭 맞춤
+        fitted.setHeight(itemSize.width() / contentAspect);                    // - 높이 계산: 비율 기준 높이 산출
+    } else {                                                                   // - 세로 비율 우세 비교: 세로 높이 기준 영역 설정 (좌우 여백 발생)
+        fitted.setHeight(itemSize.height());                                   // - 높이 설정: 표시 영역 세로 높이 맞춤
+        fitted.setWidth(itemSize.height() * contentAspect);                    // - 폭 계산: 비율 기준 가로 폭 산출
     }
 
-    // 남는 여백을 절반씩 나눠서 가운데 정렬
-    const double x = (itemSize.width() - fitted.width()) / 2.0;
-    const double y = (itemSize.height() - fitted.height()) / 2.0;
-    return QRectF(QPointF(x, y), fitted); // 최종 위치+크기
+    const double x = (itemSize.width() - fitted.width()) / 2.0;                // - X 위치 계산: 좌우 중앙 정렬 여백 산출
+    const double y = (itemSize.height() - fitted.height()) / 2.0;              // - Y 위치 계산: 상하 중앙 정렬 여백 산출
+    return QRectF(QPointF(x, y), fitted);                                      // - 영역 반환: 여백이 적용된 최종 표시 영역 좌표 반환
 }
 
-// 정규화 좌표(0.0~1.0)를 실제 픽셀 좌표로 변환
-// videoRect: fitRect()가 계산한, 영상이 실제로 그려지는 영역
-// -> bbox가 항상 영상 위에 정확히 겹쳐짐
-inline QRectF mapNormalizedRect(const QRectF &normalized, const QRectF &videoRect)
+inline QRectF mapNormalizedRect(const QRectF &normalized, const QRectF &videoRect) // - 좌표 정규화 변환: 0.0~1.0 비율 좌표를 실제 화면 픽셀 좌표로 변환
 {
-    return QRectF(videoRect.x() + normalized.x() * videoRect.width(),   // x: 여백만큼 밀어줌
-                  videoRect.y() + normalized.y() * videoRect.height(),  // y: 여백만큼 밀어줌
-                  normalized.width() * videoRect.width(),               // width: 영상 폭 기준 환산
-                  normalized.height() * videoRect.height());            // height: 영상 높이 기준 환산
+    return QRectF(videoRect.x() + normalized.x() * videoRect.width(),          // - X 좌표 계산: 영상 시작 위치 및 비율 기준 X 좌표 산출
+                  videoRect.y() + normalized.y() * videoRect.height(),         // - Y 좌표 계산: 영상 시작 위치 및 비율 기준 Y 좌표 산출
+                  normalized.width() * videoRect.width(),                      // - 너비 계산: 영상 폭 기준 너비 픽셀 산출
+                  normalized.height() * videoRect.height());                   // - 높이 계산: 영상 높이 기준 높이 픽셀 산출
 }
 
 } // namespace AspectFit
