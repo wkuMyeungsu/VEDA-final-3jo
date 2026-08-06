@@ -7,72 +7,67 @@
 #include "RtspVideoSource.h"
 
 namespace {
-Q_LOGGING_CATEGORY(lcVideoManager, "safety.video.manager")
-VideoSourceManager *g_instance = nullptr;
+Q_LOGGING_CATEGORY(lcVideoManager, "safety.video.manager")                    // - 로깅 카테고리 정의: 영상 소스 관리 로그 분류용 이름 지정
+VideoSourceManager *g_instance = nullptr;                                      // - 전역 인스턴스 포인터: 싱글톤 인스턴스 주소 보관
 }
 
-// 프로세스당 1개만 허용 (싱글턴) -- 두 번째로 만들려고 하면 디버그 빌드에서 assert로 즉시 걸림
 VideoSourceManager::VideoSourceManager(QObject *parent)
     : QObject(parent)
 {
-    Q_ASSERT_X(g_instance == nullptr, "VideoSourceManager", "only one instance is supported per process");
-    g_instance = this;
+    Q_ASSERT_X(g_instance == nullptr, "VideoSourceManager", "only one instance is supported per process"); // - 중복 생성 검증: 프로세스당 단일 인스턴스 생성 보장
+    g_instance = this;                                                         // - 인스턴스 등록: 현재 객체 주소를 전역 포인터에 저장
 }
 
 VideoSourceManager::~VideoSourceManager()
 {
-    if (g_instance == this)
+    if (g_instance == this)                                                    // - 인스턴스 해제: 소멸 시 전역 포인터 초기화
         g_instance = nullptr;
 }
 
 VideoSourceManager *VideoSourceManager::instance()
 {
-    return g_instance;
+    return g_instance;                                                         // - 인스턴스 조회: 전역 인스턴스 포인터 반환
 }
 
 void VideoSourceManager::setCameras(const QVector<CameraInfo> &cameras)
 {
-    // 재호출 시 이전 소스는 전부 정리 (재연결/재시작 시나리오 대비)
-    qDeleteAll(m_sources);
-    m_sources.clear();
+    qDeleteAll(m_sources);                                                     // - 기존 소스 정리: 이전 영상 소스 메모리 전체 해제
+    m_sources.clear();                                                         // - 맵 초기화: 영상 소스 저장용 맵 비우기
 
-    for (const CameraInfo &info : cameras) {
-        if (IVideoSource *source = createSource(info))
-            m_sources.insert(info.cameraId, source);
+    for (const CameraInfo &info : cameras) {                                   // - 카메라 목록 순회: 설정별 영상 소스 객체 생성
+        if (IVideoSource *source = createSource(info))                         // - 소스 생성 검증: 생성된 영상 소스 존재 시 맵에 추가
+            m_sources.insert(info.cameraId, source);                           // - 소스 저장: 카메라 ID를 키로 영상 소스 객체 보관
     }
 }
 
 void VideoSourceManager::startAll()
 {
-    for (IVideoSource *source : std::as_const(m_sources))
-        source->start();
+    for (IVideoSource *source : std::as_const(m_sources))                      // - 전체 소스 순회: 등록된 모든 영상 소스 구동
+        source->start();                                                       // - 재생 시작: 각 영상 소스 start() 호출
 }
 
 void VideoSourceManager::stopAll()
 {
-    for (IVideoSource *source : std::as_const(m_sources))
-        source->stop();
+    for (IVideoSource *source : std::as_const(m_sources))                      // - 전체 소스 순회: 등록된 모든 영상 소스 정지
+        source->stop();                                                        // - 재생 정지: 각 영상 소스 stop() 호출
 }
 
 IVideoSource *VideoSourceManager::sourceFor(const QString &cameraId) const
 {
-    return m_sources.value(cameraId, nullptr);
+    return m_sources.value(cameraId, nullptr);                                 // - 소스 조회: 카메라 ID에 해당하는 영상 소스 포인터 반환
 }
 
-// "카메라 종류 -> 실제 C++ 클래스" 매핑이 이 함수 하나뿐
-// 새 소스 타입 추가 시 case만 늘리면 됨
 IVideoSource *VideoSourceManager::createSource(const CameraInfo &info)
 {
-    switch (info.sourceType) {
-    case VideoSourceType::Mock:
+    switch (info.sourceType) {                                                 // - 소스 유형 분류: 설정 타입에 따른 객체 동적 생성
+    case VideoSourceType::Mock:                                                // - 가상 소스 처리: MockVideoSource 객체 생성
         return new MockVideoSource(info.cameraId, info.zone, this);
-    case VideoSourceType::LocalFile:
+    case VideoSourceType::LocalFile:                                           // - 파일 소스 처리: LocalFileVideoSource 객체 생성
         return new LocalFileVideoSource(info.cameraId, QUrl::fromLocalFile(info.localFilePath), this);
-    case VideoSourceType::Rtsp:
+    case VideoSourceType::Rtsp:                                                // - RTSP 소스 처리: RtspVideoSource 객체 생성
         return new RtspVideoSource(info.cameraId, QUrl(info.rtspUrl), this);
     }
 
-    // enum에 없는 값(설정 파일 오타 등) -- 앱이 죽는 대신 Mock으로 대체해서 계속 동작하게 함
-    qCWarning(lcVideoManager) << "unknown source type for camera" << info.cameraId << "-- falling back to mock";
-    return new MockVideoSource(info.cameraId, info.zone, this);
+    qCWarning(lcVideoManager) << "unknown source type for camera" << info.cameraId << "-- falling back to mock"; // - 경고 로그: 정의되지 않은 유형 예외 처리
+    return new MockVideoSource(info.cameraId, info.zone, this);                // - 예외 대체: 기본값으로 MockVideoSource 생성 및 반환
 }
