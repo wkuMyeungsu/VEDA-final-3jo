@@ -1,0 +1,79 @@
+#pragma once
+
+#include <chrono>
+#include <cmath>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <string>
+
+namespace forklift::common {
+
+struct MetadataTiming {
+    std::string server_received_utc;
+    double delta_ms = NAN;
+};
+
+inline std::string formatUtc(const std::chrono::system_clock::time_point& time) {
+    const auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(time);
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time - seconds).count();
+    const std::time_t raw = std::chrono::system_clock::to_time_t(seconds);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &raw);
+#else
+    gmtime_r(&raw, &utc);
+#endif
+    std::ostringstream output;
+    output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%S")
+           << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
+    return output.str();
+}
+
+inline bool parseUtc(const std::string& value,
+                     std::chrono::system_clock::time_point& output) {
+    if (value.size() < 20 || value[4] != '-' || value[7] != '-' ||
+        value[10] != 'T' || value[13] != ':' || value[16] != ':') return false;
+    std::tm utc{};
+    try {
+        utc.tm_year = std::stoi(value.substr(0, 4)) - 1900;
+        utc.tm_mon = std::stoi(value.substr(5, 2)) - 1;
+        utc.tm_mday = std::stoi(value.substr(8, 2));
+        utc.tm_hour = std::stoi(value.substr(11, 2));
+        utc.tm_min = std::stoi(value.substr(14, 2));
+        utc.tm_sec = std::stoi(value.substr(17, 2));
+    } catch (...) {
+        return false;
+    }
+    std::size_t fractionEnd = value.find_first_of("Z+ -", 19);
+    if (fractionEnd == std::string::npos) fractionEnd = value.size();
+    double fraction = 0.0;
+    if (fractionEnd > 19) {
+        try { fraction = std::stod("0." + value.substr(19, fractionEnd - 19)); }
+        catch (...) { return false; }
+    }
+#ifdef _WIN32
+    const std::time_t raw = _mkgmtime(&utc);
+#else
+    const std::time_t raw = timegm(&utc);
+#endif
+    if (raw == static_cast<std::time_t>(-1)) return false;
+    output = std::chrono::system_clock::from_time_t(raw) +
+             std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                 std::chrono::duration<double>(fraction));
+    return true;
+}
+
+inline MetadataTiming makeMetadataTiming(
+    const std::string& cameraUtc,
+    const std::chrono::system_clock::time_point& received) {
+    MetadataTiming timing;
+    timing.server_received_utc = formatUtc(received);
+    std::chrono::system_clock::time_point camera;
+    if (parseUtc(cameraUtc, camera)) {
+        timing.delta_ms = std::chrono::duration<double, std::milli>(received - camera).count();
+    }
+    return timing;
+}
+
+}  // namespace forklift::common

@@ -29,4 +29,3 @@ int main() {
     assert(empty_frame.markers[0].corners[3].y == 140.0);
     return 0;
 }
-

@@ -1,0 +1,12 @@
+{
+  "camera_id": "cam_01",
+  "rtsp_url": "rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp",
+  "metadata_topic": "tns1:OpenApp/ArUCo_Detection/MarkerDetected",
+  "ntp_server": "192.168.0.1",
+  "output": {
+    "object_csv": "storage/detections.csv",
+    "aruco_csv": "storage/aruco_markers.csv",
+    "event_db": "storage/events.db",
+    "latency_csv": "storage/latency.csv"
+  }
+}

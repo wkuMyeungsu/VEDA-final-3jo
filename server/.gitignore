@@ -1,0 +1,14 @@
+/build/
+/runtime/
+**/build/
+*.db
+*.db-shm
+*.db-wal
+*.csv
+*.log
+*.o
+*.a
+*.so
+*.pyc
+__pycache__/
+Testing/
