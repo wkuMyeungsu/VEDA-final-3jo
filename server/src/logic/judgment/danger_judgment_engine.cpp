@@ -230,6 +230,7 @@ std::string toJson(const JudgmentResult& r) {
        << "\"utc_time\":\"" << nowIso8601Ms() << "\","
        << "\"camera_id\":" << toJsonOrNull(r.camera_id) << ','
        << "\"zone\":" << toJsonOrNull(r.zone) << ','
+       << "\"terminal_id\":" << toJsonOrNull(r.terminal_id) << ','
        << "\"exception_state\":\"" << toString(r.exception) << "\",";
     // distance_m은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
     os << "\"distance_m\":";

@@ -22,14 +22,17 @@ namespace {
 
 // 스키마. 컬럼 구성은 팀 확정 스펙 그대로다.
 // - previous_risk_level만 NULL 허용: 최초 이벤트에는 직전 상태가 존재하지 않는다.
-// - camera_id / distance_m도 NULL 허용: 상류 미연결(camera_id) 및 거리 판정 불가
-//   (폐색/사람 미검출 -> distance_m = -1) 상황을 "값 없음"으로 구분해서 남기기 위함.
-//   toJson()이 같은 상황을 JSON null로 내보내는 것과 규칙을 맞췄다.
+// - camera_id / terminal_id / distance_m도 NULL 허용: 상류 미연결(camera_id/terminal_id) 및
+//   거리 판정 불가(폐색/사람 미검출 -> distance_m = -1) 상황을 "값 없음"으로 구분해서 남기기
+//   위함. toJson()이 같은 상황을 JSON null로 내보내는 것과 규칙을 맞췄다.
+// - terminal_id는 CREATE TABLE IF NOT EXISTS라서 기존 events.db 파일에는 자동으로 붙지
+//   않는다 -> start()가 ensureTerminalIdColumn()으로 별도 보강한다.
 constexpr const char* kCreateTableSql =
     "CREATE TABLE IF NOT EXISTS events ("
     "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
     "  utc_time TEXT NOT NULL,"
     "  camera_id TEXT,"
+    "  terminal_id TEXT,"
     "  risk_level INTEGER NOT NULL,"
     "  previous_risk_level INTEGER,"
     "  exception_state TEXT NOT NULL,"
@@ -38,8 +41,8 @@ constexpr const char* kCreateTableSql =
 
 constexpr const char* kInsertSql =
     "INSERT INTO events"
-    " (utc_time, camera_id, risk_level, previous_risk_level, exception_state, distance_m)"
-    " VALUES (?, ?, ?, ?, ?, ?)";
+    " (utc_time, camera_id, terminal_id, risk_level, previous_risk_level, exception_state, distance_m)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?)";
 
 } // namespace
 
@@ -55,8 +58,9 @@ bool EventLogger::start() {
     if (running_.load()) return true;
 
     if (!openDatabase()) return false;
-    if (!exec(kCreateTableSql)) { closeDatabase(); return false; }
-    if (!prepareStatement())    { closeDatabase(); return false; }
+    if (!exec(kCreateTableSql))       { closeDatabase(); return false; }
+    if (!ensureTerminalIdColumn())    { closeDatabase(); return false; }
+    if (!prepareStatement())          { closeDatabase(); return false; }
 
     running_.store(true);
     worker_ = std::thread(&EventLogger::run, this);
@@ -79,6 +83,7 @@ void EventLogger::log(const JudgmentResult& r, int previous_risk_level) {
     Row row;
     row.utc_time            = nowIso8601Ms();   // 쓰기 시점이 아니라 발생 시점
     row.camera_id           = r.camera_id;
+    row.terminal_id         = r.terminal_id;
     row.risk_level          = static_cast<int>(r.final_risk);
     row.previous_risk_level = previous_risk_level;
     row.exception_state     = toString(r.exception);
@@ -150,6 +155,35 @@ bool EventLogger::openDatabase() {
     exec("PRAGMA journal_mode=WAL");
     exec("PRAGMA synchronous=NORMAL");
     exec("PRAGMA busy_timeout=3000");
+    return true;
+}
+
+bool EventLogger::ensureTerminalIdColumn() {
+    // PRAGMA table_info는 결과 집합을 돌려주는 쿼리라 sqlite3_exec의 콜백으로는 다루기
+    // 번거로워서 prepare/step으로 직접 훑는다. 컬럼명은 1번 인덱스("name")에 있다.
+    sqlite3_stmt* pragma_stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &pragma_stmt, nullptr) != SQLITE_OK) {
+        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
+        return false;
+    }
+
+    bool has_terminal_id = false;
+    while (sqlite3_step(pragma_stmt) == SQLITE_ROW) {
+        const unsigned char* name = sqlite3_column_text(pragma_stmt, 1);
+        if (name && std::string(reinterpret_cast<const char*>(name)) == "terminal_id") {
+            has_terminal_id = true;
+            break;
+        }
+    }
+    sqlite3_finalize(pragma_stmt);
+
+    if (has_terminal_id) return true;
+
+    // 기존 events.db 파일(CREATE TABLE IF NOT EXISTS 시점에 이미 존재)에는 컬럼이
+    // 자동으로 붙지 않으므로 여기서 한 번 보강한다. 새로 만든 DB는 CREATE TABLE에
+    // 이미 terminal_id가 포함돼 있어 이 분기를 타지 않는다.
+    std::cerr << "[EventLogger] 기존 events.db에 terminal_id 컬럼이 없어 ALTER TABLE로 추가합니다\n";
+    if (!exec("ALTER TABLE events ADD COLUMN terminal_id TEXT")) return false;
     return true;
 }
 
@@ -259,22 +293,29 @@ bool EventLogger::insertRow(const Row& row) {
         sqlite3_bind_text(stmt_, 2, row.camera_id.c_str(), -1, SQLITE_TRANSIENT);
     }
 
-    sqlite3_bind_int(stmt_, 3, row.risk_level);
+    // terminal_id도 camera_id와 같은 규칙: 빈 값은 NULL.
+    if (row.terminal_id.empty()) {
+        sqlite3_bind_null(stmt_, 3);
+    } else {
+        sqlite3_bind_text(stmt_, 3, row.terminal_id.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    sqlite3_bind_int(stmt_, 4, row.risk_level);
 
     // 최초 이벤트(직전 상태 없음)는 NULL. 0(SAFE)과 반드시 구분돼야 한다.
     if (row.previous_risk_level < 0) {
-        sqlite3_bind_null(stmt_, 4);
+        sqlite3_bind_null(stmt_, 5);
     } else {
-        sqlite3_bind_int(stmt_, 4, row.previous_risk_level);
+        sqlite3_bind_int(stmt_, 5, row.previous_risk_level);
     }
 
-    sqlite3_bind_text(stmt_, 5, row.exception_state.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_, 6, row.exception_state.c_str(), -1, SQLITE_TRANSIENT);
 
     // distance_m의 -1은 "거리 판정 불가" sentinel이지 측정값이 아니다 -> NULL.
     if (row.distance_m < 0) {
-        sqlite3_bind_null(stmt_, 6);
+        sqlite3_bind_null(stmt_, 7);
     } else {
-        sqlite3_bind_double(stmt_, 6, row.distance_m);
+        sqlite3_bind_double(stmt_, 7, row.distance_m);
     }
 
     if (sqlite3_step(stmt_) != SQLITE_DONE) {

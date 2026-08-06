@@ -88,8 +88,11 @@ class JudgmentPipeline {
 public:
     // active_camera_id: 이 파이프라인이 담당하는 활성 카메라.
     //                   음수면 "미확정"으로 보고 하류 JSON에 camera_id=null로 나간다.
+    // terminal_id: 이 파이프라인이 결과를 보낼 단말 식별자. processFrame()이 evaluate() 호출
+    //              후 결과에 그대로 채워 넣는다(값 검증 없이 통과). 빈 문자열이면 하류 JSON에
+    //              terminal_id=null로 나간다(camera_id와 동일 규약).
     // sensors: 호출부가 소유한다(파이프라인보다 오래 살아야 함).
-    JudgmentPipeline(int active_camera_id, ISensorReader& sensors);
+    JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors);
 
     // 한 프레임 처리: 상류 입력 -> CameraInput 매핑 -> SensorInput 읽기 -> evaluate().
     //
@@ -109,6 +112,7 @@ public:
     bool isCameraIdMismatch(const NearestPersonResult& nearest) const;
 
     int activeCameraId() const { return active_camera_id_; }
+    const std::string& terminalId() const { return terminal_id_; }
 
     // 임계값 보정(확정된 실험 4종 결과 반영)을 호출부에서 할 수 있도록 엔진을 노출한다.
     DangerJudgmentEngine&       engine()       { return engine_; }
@@ -116,6 +120,7 @@ public:
 
 private:
     int                  active_camera_id_;
+    std::string          terminal_id_;
     ISensorReader*       sensors_;   // non-owning
     DangerJudgmentEngine engine_;
 };

@@ -118,6 +118,7 @@ private:
     struct Row {
         std::string utc_time;
         std::string camera_id;            // 빈 문자열 -> NULL
+        std::string terminal_id;          // 빈 문자열 -> NULL (camera_id와 동일 규약)
         int         risk_level = 0;
         int         previous_risk_level = kNoPreviousRisk;  // 음수 -> NULL
         std::string exception_state;
@@ -128,6 +129,11 @@ private:
     bool prepareStatement();
     bool exec(const char* sql);
     void closeDatabase();
+
+    // CREATE TABLE IF NOT EXISTS는 이미 존재하는 기존 events.db 파일에는 새 컬럼을
+    // 붙여주지 않는다. start() 시점에 PRAGMA table_info로 terminal_id 컬럼 유무를 확인하고
+    // 없으면 ALTER TABLE ADD COLUMN으로 보강한다(2026-08-06 terminal_id 추가 시 도입).
+    bool ensureTerminalIdColumn();
 
     void run();
     void writeBatch(const std::vector<Row>& rows);

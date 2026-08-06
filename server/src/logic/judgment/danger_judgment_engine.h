@@ -106,6 +106,12 @@ struct JudgmentResult {
     std::string    camera_id;       // cam.camera_id 그대로 전달 (현재는 상류 미연결 -> 빈 문자열)
     std::string    zone;            // cam.zone 그대로 전달 (매핑 미확정 -> 빈 문자열 -> JSON null)
 
+    // 이 판정을 보낼 단말(운전자석) 식별자. CameraInput을 거치지 않고
+    // JudgmentPipeline이 evaluate() 호출 후 직접 채운다(생성자 인자로 받은 값을 그대로 대입) -
+    // 단말이 여러 대일 때 "이 메시지가 어느 단말 것인지" 구분하기 위해 도입됨 (2026-08-06 팀 합의).
+    // 빈 문자열 -> JSON null (camera_id/zone과 동일 규약).
+    std::string    terminal_id;
+
     // 서버 내부 지연 계측 스탬프 (t0_ingest/t1_judge_in은 호출부가 채우고, t2_send는
     // ResultDispatcher::submit()이 찍는다). evaluate()는 이 필드를 건드리지 않는다 -
     // 기본값(에폭 0시)인 채로 반환되며, JudgmentPipeline::processFrame()이 반환 후에 채운다.
@@ -199,7 +205,7 @@ void printResult(const std::string& scenario, const JudgmentResult& r);
 // gmtime_r 사용(POSIX 전용).
 std::string nowIso8601Ms();
 
-// "미확정/미연결이면 null"로 나가야 하는 문자열 필드(camera_id, zone)를 직렬화한다.
+// "미확정/미연결이면 null"로 나가야 하는 문자열 필드(camera_id, zone, terminal_id)를 직렬화한다.
 // 빈 문자열("")과 값 없음을 하류에서 구분할 수 있도록 빈 값은 null로 통일한다.
 std::string toJsonOrNull(const std::string& s);
 
@@ -208,8 +214,10 @@ std::string toJsonOrNull(const std::string& s);
 // 외부 JSON 라이브러리 없이 표준 C++17만으로 수동 직렬화한다.
 //
 // 필드명·구성은 네트워크·단말 파트(Qt RiskMetadata::fromJson)와 확정된 스키마를 따른다.
-// 확정된 출력 필드는 아래 6개가 전부다:
-//   utc_time / camera_id / zone / exception_state / distance_m / risk_level
+// 확정된 출력 필드는 아래 7개가 전부다:
+//   utc_time / camera_id / zone / terminal_id / exception_state / distance_m / risk_level
+// - terminal_id는 이 판정을 받을 단말 식별자다(2026-08-06 추가). camera_id/zone과 같은 규약으로
+//   빈 문자열이면 null로 나간다.
 // - risk_level은 정수(0=SAFE/1=CAUTION/2=DANGER/3=EMERGENCY)다. 단말이 toInt()로 읽는
 //   계약이므로 문자열로 내보내면 안 된다. enum 값이 곧 계약 값이라 EMERGENCY도 별도 처리
 //   없이 3으로 나간다. 콘솔 로그용 문자열 표기는 toString(RiskLevel) 쪽에 남아 있다.
