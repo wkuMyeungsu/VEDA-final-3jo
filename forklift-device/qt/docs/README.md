@@ -307,6 +307,17 @@ GStreamer 요구사항:
   "utc_time": "2026-07-15T10:30:00.000Z"
 }
 
+단말 -> 서버 hello 메시지 예시 (위 두 메시지와 반대 방향):
+{
+  "type": "hello",
+  "terminal_id": "TERM_01"
+}
+단말이 핸드오버 채널(9001)에 접속하는 즉시 1회 보낸다. 서버는 이 값으로 그 소켓이
+어느 terminal_id인지 저장해두고, 이후 그 소켓으로 보내는 camera_assignment의
+terminal_id를 채운다. 서버 설정과 단말 설정(terminal.json의 terminal_id)을 사람이
+손으로 맞춰야 하는 방식(둘이 어긋나면 조용히 무시됨) 대신, 접속마다 단말이 스스로
+알려주는 방식으로 2026-08-06 forklift-device/server 협의.
+
 별도의 heartbeat 메시지는 두지 않는다 (2026-08-03 서버 담당자 협의).
 서버가 판정 결과를 주기적으로 계속 publish하므로(상태 변화 시 즉시 송신 +
 그 시점부터 주기 타이머 리셋), 정상 동작 중에는 risk_event 자체가 생존 신호
