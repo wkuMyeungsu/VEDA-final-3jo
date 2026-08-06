@@ -42,6 +42,7 @@
 #include "logic/judgment/judgment_pipeline.h"
 #include "network/result_publisher.hpp"
 #include "network/result_dispatcher.hpp"
+#include "network/camera_assignment_server.hpp"
 #include "logging/event_logger.hpp"
 #include "logging/latency_logger.hpp"
 
@@ -52,6 +53,7 @@ namespace {
 constexpr int kActiveCameraId = 1;
 constexpr const char* kTerminalId = "TERM_01";
 constexpr uint16_t kResultPublisherPort = 9000;
+constexpr uint16_t kCameraAssignmentServerPort = 9001;
 }  // namespace
 
 #ifdef _WIN32
@@ -125,12 +127,17 @@ struct AppState {
     risk_log::LatencyLogger latencyLogger;
     risk_transport::ResultDispatcher resultDispatcher;
 
+    // 9001 카메라 할당 채널. 배선만 한다 - 자동 전환 판단(sendCameraAssignment() 호출)은
+    // cross_camera_reid 연동이 필요해 이번 스코프 밖(CameraAssignmentServer.h 커밋 메시지 참고).
+    risk_transport::CameraAssignmentServer cameraAssignmentServer;
+
     AppState()
         : judgmentPipeline(kActiveCameraId, kTerminalId, sensorReader),
           resultPublisher("0.0.0.0", kResultPublisherPort),
           resultDispatcher(
               [this](const std::string& json) { resultPublisher.publish(json); },
-              std::chrono::milliseconds(200)) {}
+              std::chrono::milliseconds(200)),
+          cameraAssignmentServer("0.0.0.0", kCameraAssignmentServerPort) {}
 };
 
 // Ctrl+C 핸들러에서만 접근하는 전역 포인터.
@@ -474,6 +481,8 @@ int main(int argc, char* argv[]) {
     });
     state.resultPublisher.start();
 
+    state.cameraAssignmentServer.start();
+
     state.eventLogger.start();
     state.latencyLogger.start();
 
@@ -523,6 +532,7 @@ int main(int argc, char* argv[]) {
     state.resultDispatcher.stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     state.resultPublisher.stop();
+    state.cameraAssignmentServer.stop();
     state.eventLogger.stop();
     state.latencyLogger.stop();
 

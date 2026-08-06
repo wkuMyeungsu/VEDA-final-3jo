@@ -36,3 +36,16 @@ add_test(NAME event_logger_test COMMAND test_event_logger)
 add_executable(test_result_publisher test_result_publisher.cpp)
 target_link_libraries(test_result_publisher PRIVATE server_judgment Threads::Threads)
 add_test(NAME result_publisher_test COMMAND test_result_publisher)
+
+add_executable(test_camera_assignment_server test_camera_assignment_server.cpp)
+target_include_directories(test_camera_assignment_server PRIVATE ${SERVER_SRC_DIR})
+target_link_libraries(test_camera_assignment_server PRIVATE Threads::Threads)
+add_test(NAME camera_assignment_server_test COMMAND test_camera_assignment_server)
+
+# hello 타임아웃(5초+) 실시간 대기 테스트라 기본 빌드/ctest 루프에서 뺀다.
+# `cmake --build build --target test_camera_assignment_server_timeout`으로 명시 빌드 후 직접 실행.
+add_executable(test_camera_assignment_server_timeout EXCLUDE_FROM_ALL
+    test_camera_assignment_server_timeout.cpp
+)
+target_include_directories(test_camera_assignment_server_timeout PRIVATE ${SERVER_SRC_DIR})
+target_link_libraries(test_camera_assignment_server_timeout PRIVATE Threads::Threads)
