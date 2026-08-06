@@ -81,6 +81,7 @@ int main(int argc, char *argv[])
     videoManager.startAll();
     handoverClient.setTerminalId(appConfig.terminalId);
     handoverClient.connectToServer(appConfig.serverHost, appConfig.handoverPort);
+    metadataDistributor.start();
     QString initialCameraId = parser.value(cameraOption);
     if (initialCameraId.isEmpty())
         initialCameraId = appConfig.defaultCameraId;
