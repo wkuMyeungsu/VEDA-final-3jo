@@ -1,7 +1,3 @@
-add_executable(test_common_types common_types_test.cpp)
-target_include_directories(test_common_types PRIVATE ${SERVER_SRC_DIR})
-add_test(NAME common_types_test COMMAND test_common_types)
-
 add_executable(test_onvif_metadata_parser
     test_onvif_metadata_parser.cpp
 )

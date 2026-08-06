@@ -182,8 +182,8 @@ static void printArucoFrame(const ArucoFrame& frame) {
         std::cout << "  MarkerId=" << marker.id << " Corners=";
         for (int i = 0; i < 4; ++i) {
             if (i > 0) std::cout << ",";
-            std::cout << "(" << marker.corners[i].first
-                      << "," << marker.corners[i].second << ")";
+            std::cout << "(" << marker.corners[i].x
+                      << "," << marker.corners[i].y << ")";
         }
         std::cout << "\n";
     }

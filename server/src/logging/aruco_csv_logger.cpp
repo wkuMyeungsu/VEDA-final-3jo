@@ -33,8 +33,8 @@ void ArucoCsvLogger::logFrame(const ArucoFrame& frame) {
               << frame.channel << ","
               << m.id;
         for (int c = 0; c < 4; ++c) {
-            file_ << "," << m.corners[c].first
-                  << "," << m.corners[c].second;
+            file_ << "," << m.corners[c].x
+                  << "," << m.corners[c].y;
         }
         file_ << "\n";
     }
