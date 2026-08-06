@@ -5,42 +5,33 @@
 #include "../models/RiskMetadata.h"
 #include "../models/Types.h"
 
-// 중앙 서버로부터 위험 감지 이벤트를 받는 방법을 감춘 추상 인터페이스
-// - IVideoSource(video/)의 네트워크 버전 짝꿍 클래스
-// - MetadataDistributor는 이 인터페이스만 알고, 실제 구현(Mock/Tcp)은 모름
-// - 지금은 MockMetadataSource 하나뿐, 나중에 RiskEventSource로 교체 가능
+// - 위험 감지 데이터 수신 인터페이스 (실제 구현부와 분리된 추상 클래스)
 class IMetadataSource : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit IMetadataSource(QObject *parent = nullptr) : QObject(parent) {}
-    ~IMetadataSource() override = default;
+    explicit IMetadataSource(QObject *parent = nullptr) : QObject(parent) {}   // - 생성자: 부모 객체 지정 및 초기화
+    ~IMetadataSource() override = default;                                    // - 소멸자: 기본 소멸자 지정
 
-    // 서버 연결/수신 시작
-    virtual void start() = 0;
-    // 서버 연결 종료
-    virtual void stop() = 0;
+    virtual void start() = 0;                                                 // - 수신 시작: 서버 연결 및 데이터 수신 개시
+    virtual void stop() = 0;                                                  // - 수신 정지: 서버 연결 해제 및 데이터 수신 중단
 
-    // 마지막으로 emit된 connectionStateChanged 값 (polling용)
-    RiskTypes::ConnectionState connectionState() const { return m_connectionState; }
+    RiskTypes::ConnectionState connectionState() const { return m_connectionState; } // - 현재 상태 조회: 연결 상태 값 반환
 
 signals:
-    // 카메라 1대의 새 이벤트 1건이 생길 때마다 emit -- MetadataDistributor::handleMetadata()가 받음
-    void metadataReceived(const RiskMetadata &metadata);
-    // 연결 상태가 바뀔 때마다 emit (setConnectionState가 호출)
-    void connectionStateChanged(RiskTypes::ConnectionState state);
+    void metadataReceived(const RiskMetadata &metadata);                       // - 데이터 수신 알림: 새 위험 감지 이벤트 발생 시 전달
+    void connectionStateChanged(RiskTypes::ConnectionState state);             // - 상태 변경 알림: 서버 연결 상태 변경 시 발생
 
 protected:
-    // 값이 바뀐 경우에만 신호를 냄 (중복 emit 방지)
-    void setConnectionState(RiskTypes::ConnectionState state)
+    void setConnectionState(RiskTypes::ConnectionState state)                 // - 연결 상태 갱신: 상태 값 변경 처리 함수
     {
-        if (m_connectionState == state)
+        if (m_connectionState == state)                                        // - 중복 변경 방지: 현재 상태와 동일한 경우 생략
             return;
-        m_connectionState = state;
-        emit connectionStateChanged(state);
+        m_connectionState = state;                                             // - 상태값 갱신: 내부 상태 변수 업데이트
+        emit connectionStateChanged(state);                                    // - 신호 발생: 상태 변경 이벤트 외부 전달
     }
 
 private:
-    RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected;
+    RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected; // - 현재 연결 상태 보관 (기본값: Disconnected)
 };

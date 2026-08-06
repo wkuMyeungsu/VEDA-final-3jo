@@ -1,19 +1,18 @@
 # 지게차 운전자 단말 (forklift-device/qt)
 
-Qt 6 / QML 기반 운전자용 사용자 단말 프로그램(`operator_terminal`)입니다.
-현재는 실제 카메라/서버가 없으므로 모든 영상과 위험 이벤트는 Mock 소스로
-생성되며, `--demo` 옵션으로 데모 패널을 열어 위험 단계·연결 상태·카메라
-전환 등을 즉석에서 시연할 수 있습니다.
+Qt 6 / QML 기반의 운전자용 사용자 단말 프로그램(`operator_terminal`)임.  
+현재는 실제 카메라/서버 연결 전 상태로 모든 영상과 위험 이벤트가 Mock 소스로 생성되며, `--demo` 옵션을 통해 위험 단계·연결 상태·카메라 전환 등을 즉석에서 시연할 수 있음.
 
-실제 RTSP 카메라/중앙 서버/물리 경고 장치를 연동할 때 수정해야 할 위치는
-[INTEGRATION.md](INTEGRATION.md)에 정리되어 있습니다.
+> 💡 실제 RTSP 카메라, 중앙 서버, 물리 경고 장치 연동 시 수정 위치 및 방법은 [INTEGRATION.md](INTEGRATION.md) 파일 참조.
+
+---
 
 ## 프로젝트 구조
 
-```
+```text
 CMakeLists.txt / CMakePresets.json   최상위 빌드 설정
 common/                              C++ 백엔드 + QML 테마/컴포넌트 (Safety.Common 모듈)
-                                     operator-device/qt/common과는 독립된 사본
+                                     (operator-device/qt/common과는 독립된 사본)
   models/     RiskMetadata, BBox, CameraInfo, 공용 enum(RiskTypes)
   video/      IVideoSource 및 Mock/LocalFile/Rtsp 구현, VideoStream, DetectionOverlay
   network/    IMetadataSource 및 Mock 구현, IWarningDevice 및 Noop 구현
@@ -29,120 +28,116 @@ config/               cameras.json, terminal.json 샘플
 tests/                QtTest 기반 단위 테스트
 ```
 
-## 빌드 (Windows, Qt 6.11.0 MinGW)
+---
 
-이 저장소는 `C:/Qt/6.11.0/mingw_64` + `C:/Qt/Tools/mingw1310_64`(g++) +
-`C:/Qt/Tools/Ninja`로 구성된 CMake 프리셋 `windows-mingw`를 포함합니다. 다른
-경로에 Qt가 설치되어 있다면 `CMakePresets.json`의 경로를 맞게 수정하세요.
+## 빌드 방법
 
-```powershell
-cmake --preset windows-mingw
-cmake --build --preset windows-mingw
-ctest --preset windows-mingw --output-on-failure
-```
+### Windows 빌드 (Qt 6.11.0 MinGW)
 
-빌드 산출물은 `build/windows-mingw/operator_terminal.exe`에 생성되며,
-실행 파일 옆에 `config/` 디렉터리가 자동으로 복사됩니다(빌드 후 재실행 시
-JSON을 직접 수정해도 반영됩니다).
+- **환경 구성**: `C:/Qt/6.11.0/mingw_64` + `C:/Qt/Tools/mingw1310_64`(g++) + `C:/Qt/Tools/Ninja`
+- **CMake 프리셋**: `windows-mingw` 제공 (설치 경로가 다를 경우 `CMakePresets.json` 수정 필요)
+- **빌드 명령어**:
+  ```powershell
+  cmake --preset windows-mingw
+  cmake --build --preset windows-mingw
+  ctest --preset windows-mingw --output-on-failure
+  ```
+- **산출물 위치**: `build/windows-mingw/operator_terminal.exe` (실행 파일 옆 `config/` 디렉터리 자동 복사)
+- **실행 전 PATH 설정** (Qt DLL 로드용):
+  ```powershell
+  $env:PATH = "C:/Qt/6.11.0/mingw_64/bin;$env:PATH"
+  ```
 
-Qt DLL을 찾을 수 있도록 실행 전 `C:/Qt/6.11.0/mingw_64/bin`을 PATH에
-추가하세요:
+### Linux / Raspberry Pi 빌드
 
-```powershell
-$env:PATH = "C:/Qt/6.11.0/mingw_64/bin;$env:PATH"
-```
+- **요구 사항**: Qt 6.5 이상 (Core, Gui, Qml, Quick, QuickControls2, Multimedia, Network 모듈)
+- **빌드 명령어**:
+  ```bash
+  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
+  ```
+- **구동 특성**: Raspberry Pi 4 전체 화면 구동 지원 (`OperatorWindow.qml` 실행 시 `Window.FullScreen` 자동 적용)
 
-### Linux / Raspberry Pi
+---
 
-동일한 CMakeLists.txt를 사용합니다. Qt 6.5 이상(Core/Gui/Qml/Quick/
-QuickControls2/Multimedia/Network)이 설치되어 있으면 됩니다.
+## 실행 방법
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-```
+- **기본 실행 명령어**:
+  ```powershell
+  .\operator_terminal.exe --demo --camera CAM_01
+  ```
 
-운전자 단말은 Raspberry Pi 4 전체화면 실행을 염두에 두고 작성되었습니다
-(`OperatorWindow.qml`이 기동 시 `Window.FullScreen`으로 표시됩니다).
+- **실행 옵션**:
+  - `--demo`: 데모 패널 활성화 (`Ctrl+Shift+D` 단축키 제공, 지정 미해당 시 단축키 비활성화)
+  - `--config <dir>`: `cameras.json` / `terminal.json` 읽기 디렉터리 지정 (기본값: 실행 파일 옆 `config/`)
+  - `--camera <id>`: 시작 시 표시할 `camera_id` 강제 지정
 
-## 실행
+- **데모 패널 제공 기능**:
+  - 카메라별 위험 단계(SAFE/CAUTION/DANGER/EMERGENCY) 및 예외 상태 강제 설정
+  - Mock 이벤트 자동 재생 시작/정지 제어
+  - 서버 및 카메라 연결/끊김 상태 토글
+  - 사람/지게차 영역 상자(BBox) 위치 조절
+  - 표출 `camera_id` 전환 기능 제공 (핸드오버 재현)
 
-```powershell
-# 운전자 단말 (기본 카메라: config/terminal.json의 default_camera_id)
-.\operator_terminal.exe --demo --camera CAM_01
-```
-
-옵션:
-
-- `--demo` : 데모 패널을 `Ctrl+Shift+D`로 열 수 있게 합니다. 지정하지 않으면
-  패널에 접근할 방법이 없습니다(단축키가 비활성 상태).
-- `--config <dir>` : `cameras.json` / `terminal.json`을 읽어올 디렉터리를
-  지정합니다(기본값: 실행 파일 옆 `config/`).
-- `--camera <id>` : 시작 시 표시할 camera_id를 강제 지정합니다.
-
-데모 패널에서 할 수 있는 것:
-
-- 카메라별 SAFE/CAUTION/DANGER/EMERGENCY 강제 설정, 예외 상태 강제 설정
-- Mock 이벤트 자동 재생 시작/정지
-- 서버 연결/끊김, 카메라 연결/끊김 토글
-- person/forklift bbox 위치 변경
-- 표시 중인 camera_id 전환 — 핸드오버 상황 재현
+---
 
 ## 설정 파일
 
-`config/cameras.json`에 카메라를 추가하면(예: `CAM_05`) 재빌드 없이
-`--camera` 옵션이나 서버발 핸드오버로 선택 가능한 카메라 목록에 추가됩니다.
-`source_type`을 `"mock"` → `"rtsp"`로 바꾸고 `rtsp_url`을 채우면 실카메라로
-전환됩니다(`RtspVideoSource` 구현 완료, 실카메라 검증됨). 자세한 절차는
-[INTEGRATION.md](INTEGRATION.md) 참고.
+- **카메라 추가 (`config/cameras.json`)**:
+  - 신규 카메라 등록 시 재빌드 없이 `--camera` 옵션 및 서버 핸드오버 목록에 반영
+  - `source_type`을 `"mock"`에서 `"rtsp"`로 변경하고 `rtsp_url` 입력 시 실제 카메라 스트림으로 전환 (`RtspVideoSource` 구현 완료)
+  - 세부 적용 절차는 [INTEGRATION.md](INTEGRATION.md) 참조
+
+---
 
 ## 테스트
 
-`common/` 아래의 서비스 클래스는 UI/QML과 독립적으로 동작하도록 작성되어
-있어 QtTest로 직접 테스트합니다 (`tests/`):
+UI/QML과 독립적으로 동작하는 `common/` 하위 서비스 클래스 대상 QtTest 단위 테스트 실행 (`tests/`):
 
-- `test_config_loader` — cameras.json 파싱, 잘못된 항목 스킵
-- `test_mock_metadata_source` — 위험 단계 강제 설정/해제, override 동작
-- `test_bbox_aspect_fit` — letterbox/pillarbox 좌표 변환
+- **테스트 항목**:
+  - `test_config_loader`: `cameras.json` 파싱 및 무효 항목 스킵 검증
+  - `test_mock_metadata_source`: 위험 단계 제어 및 오버라이드 동작 검증
+  - `test_bbox_aspect_fit`: 비율 유지 좌표 변환 계산 검증
 
-```powershell
-ctest --preset windows-mingw --output-on-failure
-```
+- **테스트 실행 명령어**:
+  ```powershell
+  ctest --preset windows-mingw --output-on-failure
+  ```
+
+---
 
 ## 코딩 컨벤션
 
-### 주석
-- 한글 작성
-- 명사형 개조식 종결 (예: ~발생, ~해제, ~예약 / 서술형 문장 지양)
-- "무엇"이 아닌 "왜" 위주 (코드로 보이는 내용 반복 금지)
-- 파일 기존 주석 스타일 유지 (기존 파일 전면 수정은 별도 작업 예정)
+### 주석 작성 규칙
+- 한글 작성 원칙
+- 명사형 개조식 종결 적용 (예: ~발생, ~해제, ~예약 / 서술형 문장 지양)
+- 단순 코드 설명 지양 및 작성 이유/의도 중심 기재
+- 파일 내 기존 주석 스타일 유지
 
-### 네이밍
-- 짧고 직관적인 영어
-- 코드베이스 기존 단어 조합 우선 (새 전문용어 지양)
-- 추상적 영어 전문용어 지양 (예: `Coordinator`/`Hub` 등 모호한 접미어)
-- 전송 수단이 아닌 나르는 데이터 기준 (예: `TcpMetadataSource` → `RiskEventSource`)
+### 네이밍 규칙
+- 짧고 직관적인 영어 사용
+- 기존 코드베이스 내 단어 조합 우선 적용
+- 모호하고 추상적인 전문용어 지양 (예: `Coordinator`, `Hub` 등 모호한 접미어)
+- 전송 수단이 아닌 수송 데이터 기준 명명 (예: `RiskEventSource`)
 
-### Windows 빌드·런타임 문제 진단 순서
-1. PATH 내 빌드 도구 확인 — `cmake`/`ninja`/`mingw`는 Qt DLL과 별도 경로,
-   위 "빌드" 섹션 PATH 예시는 앱 실행용(Qt DLL)만 포함:
+### Windows 빌드 및 런타임 오류 진단 순서
+1. **PATH 빌드 도구 확인**: 빌드 도구 및 Qt DLL 경로 동시 적용
    ```powershell
    $env:PATH = "C:/Qt/Tools/CMake_64/bin;C:/Qt/Tools/Ninja;C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.11.0/mingw_64/bin;$env:PATH"
    ```
-2. `build/`의 `config/` 최신 여부 확인 (실행 파일 옆 사본, 원본 수정 미반영 시 오래된 복사본 의심)
-3. 동일 실행 파일 기실행 여부 확인 (`Permission denied`는 대개 코드 에러가 아닌 파일 잠금)
-4. `cmake --build --preset ...`는 `CMakePresets.json` 위치(`qt/` 폴더)에서 실행
-5. `git checkout <브랜치> -- <경로>`의 경로는 현재 디렉터리 기준 (리포 최상위에서 실행)
+2. **`build/` 내 `config/` 디렉터리 최신 여부 확인**: 원본 미반영 시 사본 확인 필요
+3. **기실행 중인 프로세스 여부 확인**: `Permission denied` 발생 시 파일 잠금 해제 필요
+4. **CMake 실행 디렉터리 위치 확인**: `CMakePresets.json`이 위치한 디렉터리에서 실행
+5. **Git 명령 경로 확인**: 리포지토리 최상위 디렉터리 기준으로 명령 수행
 
+---
 
 ## 향후 연동용 Claude Code 프롬프트
 
-- RTSP 카메라 연동: **완료** (`RtspVideoSource`, 실카메라 검증됨). 아래 1번
-  프롬프트는 완료된 작업의 기록으로 남겨둠.
-- 중앙 서버 JSON 메타데이터 연동: 미완료. 아래 2번 프롬프트로 진행.
+- **RTSP 카메라 연동**: **완료** (`RtspVideoSource` 구현 및 실카메라 검증 완료)
+- **중앙 서버 JSON 메타데이터 연동**: **미완료** (아래 2번 프롬프트 활용 진행)
 
-> 작업 전에는 반드시 새 Git 브랜치를 만들고, 기존 Mock 구현은 삭제하지 않은
-> 상태에서 실제 구현을 추가하세요.
+> 💡 작업 전 신규 Git 브랜치 생성 필수, 기존 Mock 구현을 유지한 상태에서 실제 구현체 추가 진행.
 
 <details>
 <summary><strong>1. 실제 카메라 준비 후 RTSP 연동 프롬프트 (완료됨)</strong></summary>
@@ -312,6 +307,7 @@ GStreamer 요구사항:
   "type": "hello",
   "terminal_id": "TERM_01"
 }
+
 단말이 핸드오버 채널(9001)에 접속하는 즉시 1회 보낸다. 서버는 이 값으로 그 소켓이
 어느 terminal_id인지 저장해두고, 이후 그 소켓으로 보내는 camera_assignment의
 terminal_id를 채운다. 서버 설정과 단말 설정(terminal.json의 terminal_id)을 사람이
@@ -390,37 +386,21 @@ terminal_id를 채운다. 서버 설정과 단말 설정(terminal.json의 termin
 
 </details>
 
+---
+
 ### 연동 작업 전 체크리스트
 
-- 실제 장비 연동은 팀 Git 규칙(`feature/<위치>/<작업>`, 위치는 담당자가 아니라
-  코드가 도는 기기 기준)에 맞춰 브랜치를 나눠 진행한다. `common/`이
-  forklift-device/operator-device에 각각 독립 사본으로 존재하므로(의도적
-  중복), 아래 RTSP·서버 메타데이터 연동도 두 프로젝트에서 각각 별도로
-  구현해야 한다(한쪽만 고치고 끝나지 않음).
-  - RTSP 카메라 연동 (`forklift-device/qt/common/video/RtspVideoSource.cpp`):
-    **완료**. forklift-device·operator-device 양쪽 다 구현 완료, 실카메라
-    검증됨.
-  - 서버 메타데이터 연동
-    (`forklift-device/qt/common/network/RiskEventSource.cpp`): 위와 동일한
-    사유로 브랜치 하나, 트랙명은 팀 확인 필요 (가칭
-    `feature/forklift-device/metadata-integration`). operator-device 쪽은
-    별도 브랜치로 동일 작업 필요.
-  - 핸드오버 제어채널
-    (`forklift-device/qt/apps/operator_terminal/main.cpp`의 `HandoverClient`
-    연결 — 단말 전용): `feature/forklift-device/handover-control`
-  - 물리 경고 장치 연동
-    (`forklift-device/qt/apps/operator_terminal/main.cpp`의
-    `SerialWarningDevice` — 단말 전용): `feature/forklift-device/warning-device-serial`
-    (파트별 작업가이드의 공통 인터페이스 규약에 명시된 "UART 경고 패킷(0xAA + risk_level
-    + checksum, watchdog 주기 포함) — 네트워크·단말 ↔ FPGA 보드" 접점에 해당. 즉 차현민님의
-    FPGA 경고 보드와 UART로 통신하는 것이 맞는 설계다. 패킷 포맷·watchdog 주기는 구현 전
-    차현민님과 최종 확정 필요. 별도로 BSP 파트가 담당하는 "/dev 노드 인터페이스(LED·부저·
-    진동 개별 구동)"가 이것과 같은 경로인지 다른 경로인지는 아직 불명확 — 확인 필요)
-- `config/*.json`의 실제 IP, 계정, 비밀번호는 Git에 커밋하지 않기
-- Mock 모드는 실제 장비 장애 시에도 UI를 검증할 수 있도록 계속 유지
-- 실제 카메라 연결 전에 VLC 또는 `gst-launch-1.0`으로 RTSP 주소와 코덱 확인
-- 서버 JSON 스키마(`risk_event`의 `exception_state` 값 목록 포함)는 서버·검출 담당자와
-  먼저 확정한 뒤 코드에 반영 — 특히 `exception_state`는 위험 판정 엔진 쪽에서 정의한
-  값(`SENSOR_FAULT`, `DEAD_RECKONING`, `EMERGENCY_IMPACT`, 정상 시 `NONE`)과 정확히
-  일치하는지 대조
-- 연동 완료 후 Windows와 Raspberry Pi에서 각각 빌드 및 실행 검증
+- **Git 브랜치 규칙**: `feature/<위치>/<작업>` 형식을 준수하여 브랜치 분리 진행 (도체 기준)
+  - `common/` 모듈은 `forklift-device`와 `operator-device`에 각각 독립 사본으로 존재하므로 두 프로젝트 개별 구현 필요
+- **세부 모듈별 진행 상황**:
+  - **RTSP 카메라 연동** (`forklift-device/qt/common/video/RtspVideoSource.cpp`): **완료** (양쪽 프로젝트 구현 및 실카메라 검증 완료)
+  - **서버 메타데이터 연동** (`forklift-device/qt/common/network/RiskEventSource.cpp`): 브랜치 생성 및 작업 진행 필요 (가칭 `feature/forklift-device/metadata-integration`)
+  - **핸드오버 제어 채널** (`HandoverClient` 연결): `feature/forklift-device/handover-control` 브랜치 생성 진행
+  - **물리 경고 장치 연동** (`SerialWarningDevice` 연동): `feature/forklift-device/warning-device-serial` 브랜치 생성 진행
+    - UART 경고 패킷 규격: `0xAA` + `risk_level` + `checksum` (watchdog 주기 포함)
+    - 구현 전 FPGA 담당자와 패킷 포맷 및 watchdog 주기 최종 확정 필요
+- **보안**: `config/*.json` 내 실제 IP, 계정, 비밀번호 커밋 금지
+- **유지보수성**: 실제 장비 장애 대응을 위해 Mock 모드는 항상 유지
+- **사전 검증**: 실제 카메라 연결 전 VLC 또는 `gst-launch-1.0`을 통한 RTSP 주소 및 코덱 검증
+- **스키마 동기화**: 서버 JSON 스키마(`exception_state` enum 값 포함: `NONE`, `SENSOR_FAULT`, `DEAD_RECKONING`, `EMERGENCY_IMPACT`) 사전 대조
+- **크로스 플랫폼 검증**: 연동 완료 후 Windows 및 Raspberry Pi 환경에서 각각 빌드/실행 검증 수행

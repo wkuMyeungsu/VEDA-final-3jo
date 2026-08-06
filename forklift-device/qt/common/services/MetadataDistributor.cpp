@@ -4,98 +4,71 @@
 
 MetadataDistributor::MetadataDistributor(QVector<CameraInfo> cameras, int eventLogMaxEntries, QObject *parent)
     : QObject(parent)
-    , m_eventLogModel(eventLogMaxEntries)
+    , m_eventLogModel(eventLogMaxEntries)                                      // - 생성자: 이벤트 로그 모델의 최대 보관 개수 설정
 {
-    m_cameraListModel.setCameras(cameras);
-    for (const CameraInfo &info : cameras)
-        m_cameraNames.insert(info.cameraId, info.name);
+    m_cameraListModel.setCameras(cameras);                                     // - 카메라 설정 등록: 전체 카메라 목록 모델 초기화
+    for (const CameraInfo &info : cameras)                                     // - 카메라 목록 순회: ID 기반 카메라 이름 맵 구성
+        m_cameraNames.insert(info.cameraId, info.name);                        // - 이름 맵 저장: 카메라 ID별 이름 저장
 }
 
-// 데이터 출처 교체 지점
-// - 지금: MockMetadataSource(가짜 데이터)
-// - 실서버 연동 시: (RiskEventSource) 등으로 교체
-// - IMetadataSource 인터페이스만 맞으면 아래 로직 변경 불필요
-// - 기존 source 있으면 먼저 disconnect (안 그러면 신호 중복 수신)
 void MetadataDistributor::setSource(IMetadataSource *source)
 {
-    if (m_source == source)
+    if (m_source == source)                                                    // - 중복 설정 방지: 동일 소스인 경우 실행 생략
         return;
 
-    if (m_source)
+    if (m_source)                                                              // - 기존 소스 해제: 이전에 연결된 데이터 소스의 신호 연결 해제
         disconnect(m_source, nullptr, this, nullptr);
 
-    m_source = source;
+    m_source = source;                                                         // - 소스 교체: 새 데이터 소스 객체 저장
 
     if (m_source) {
-        // metadataReceived 1건 -> handleMetadata() 호출 -> 3개 모델 분배 (유일한 진입점)
-        connect(m_source, &IMetadataSource::metadataReceived, this, &MetadataDistributor::handleMetadata);
-        // 연결 상태 변화(끊김/연결중/연결됨) 감지 -> StatusStrip.qml 등에 반영
+        connect(m_source, &IMetadataSource::metadataReceived, this, &MetadataDistributor::handleMetadata); // - 데이터 수신 신호 연결: 데이터 수신 시 분배 처리 함수 호출
         connect(m_source, &IMetadataSource::connectionStateChanged, this,
-                &MetadataDistributor::handleSourceConnectionStateChanged);
-        // connect는 "이후 변화"만 감지 -> 현재 상태 수동 1회 반영 (안 하면 기본값으로 보임)
-        handleSourceConnectionStateChanged(m_source->connectionState());
+                &MetadataDistributor::handleSourceConnectionStateChanged);     // - 상태 변경 신호 연결: 소스 연결 상태 변경 감지
+        handleSourceConnectionStateChanged(m_source->connectionState());        // - 초기 상태 반영: 현재 소스의 연결 상태 수동 1회 반영
     }
 }
 
 void MetadataDistributor::start()
 {
-    if (m_source)
+    if (m_source)                                                              // - 수신 시작: 데이터 소스가 존재하는 경우 시작 함수 호출
         m_source->start();
 }
 
 void MetadataDistributor::stop()
 {
-    if (m_source)
+    if (m_source)                                                              // - 수신 정지: 데이터 소스가 존재하는 경우 정지 함수 호출
         m_source->stop();
 }
 
-// 카메라별 "마지막으로 받은 값" 즉시 조회용
-// - ActiveCameraController::setActiveCameraId()가 카메라 전환 시
-//   다음 이벤트 안 기다리고 바로 그 카메라의 최신 상태를 가져오는 데 씀
 RiskMetadata MetadataDistributor::latestFor(const QString &cameraId) const
 {
-    return m_latest.value(cameraId);
+    return m_latest.value(cameraId);                                           // - 최신 상태 반환: 지정 카메라의 가장 최근 위험 메타데이터 조회 및 반환
 }
 
-// 카메라 1대의 새 이벤트 1건 처리
-// - 서버/Mock에서 오는 모든 RiskMetadata가 예외 없이 여기 거침
-// - 로직/로그 추가할 땐 여기가 기준점
 void MetadataDistributor::handleMetadata(const RiskMetadata &metadata)
 {
-    // 1) 카메라별 마지막 상태 캐시 갱신 (latestFor()가 읽는 곳)
-    m_latest.insert(metadata.cameraId(), metadata);
+    m_latest.insert(metadata.cameraId(), metadata);                             // - 상태 캐시 갱신: 카메라 ID별 최신 메타데이터 맵에 저장
 
-    // 2) 카메라 목록 모델 갱신
-    //    이 앱(operator_terminal)에선 DemoPanel.qml의 카메라 선택 드롭다운에만 쓰임
-    //    (control_center처럼 그리드 화면으로 보여주는 용도 아님)
     m_cameraListModel.updateRisk(metadata.cameraId(), metadata.riskLevel(), metadata.exceptionState(),
-                                  metadata.distanceM(), metadata.distanceValid());
+                                  metadata.distanceM(), metadata.distanceValid()); // - 카메라 목록 모델 갱신: 위험 수준, 예외 상태 및 거리 정보 업데이트
 
-    // 3) 경보 목록 모델 갱신 -- 값은 채워지지만 이 앱 QML에서 실제로 안 씀
-    //    (control_center의 AlertListView.qml 전용, main.cpp에 context property로도 등록 안 돼있음)
     m_alertListModel.upsert(metadata.cameraId(), m_cameraNames.value(metadata.cameraId()), metadata.zone(),
                              metadata.riskLevel(), metadata.distanceM(), metadata.distanceValid(),
-                             metadata.exceptionState());
+                             metadata.exceptionState());                       // - 경보 목록 모델 갱신: 위험 수준에 따라 경보 목록 항목 추가/갱신/삭제
 
-    // 4) 이벤트 로그도 마찬가지로 기록은 되지만 이 앱 QML에서 노출 안 됨
-    //    (control_center의 EventLogPanel.qml 전용)
-    //    SAFE + 예외없음(평상시)은 애초에 기록도 안 함
     const bool noteworthy =
-        metadata.riskLevel() != RiskTypes::RiskLevel::Safe || metadata.exceptionState() != RiskTypes::ExceptionState::None;
+        metadata.riskLevel() != RiskTypes::RiskLevel::Safe || metadata.exceptionState() != RiskTypes::ExceptionState::None; // - 주요 이벤트 검증: 안전 단계가 아니거나 예외 발생 여부 확인
     if (noteworthy)
-        m_eventLogModel.addEntry(metadata);
+        m_eventLogModel.addEntry(metadata);                                    // - 이벤트 로그 추가: 주요 위험/예외 발생 시 로그 모델에 기록
 
-    // 5) 실시간 구독자에게 원본 전달 -- 이 앱에선 ActiveCameraController가 유일한 구독자
-    //    (자신이 지금 보여주는 카메라의 이벤트인지 자기 안에서 다시 걸러냄)
-    emit metadataUpdated(metadata);
+    emit metadataUpdated(metadata);                                            // - 신호 발생: 실시간 메타데이터 갱신 이벤트 전달
 }
 
-// source(서버/Mock) 연결 상태가 바뀔 때만 호출됨
-// - 값이 같으면 조기 리턴 (불필요한 QML 갱신/애니메이션 재생 방지)
 void MetadataDistributor::handleSourceConnectionStateChanged(RiskTypes::ConnectionState state)
 {
-    if (m_connectionState == state)
+    if (m_connectionState == state)                                            // - 중복 변경 방지: 동일한 상태값인 경우 처리 생략
         return;
-    m_connectionState = state;
-    emit connectionStateChanged();
+    m_connectionState = state;                                                 // - 상태값 갱신: 내부 상태 변수 업데이트
+    emit connectionStateChanged();                                             // - 신호 발생: 데이터 소스 연결 상태 변경 알림
 }

@@ -8,40 +8,28 @@
 typedef struct _GstElement GstElement;
 typedef struct _GstBus GstBus;
 
-// 진짜 RTSP 카메라에 GStreamer로 접속하는 실제 구현체
-// - 파이프라인: rtspsrc -> rtph264depay -> h264parse -> avdec_h264 -> videoconvert -> appsink
-// - RGB 프레임 도착 시 onNewSample() 콜백이 QImage로 감싸 frameReady로 emit
-// - forklift-device 전용: ONVIF 메타데이터(사람 bbox) 트랙도 같은 세션에서 같이 받음
-//   (operator-device는 bbox 안 씀 -> 이 브랜치 없음)
-// - GStreamer 버스 메시지는 워커 스레드(m_busThread)에서 폴링 (메인 스레드 안 막음)
-// - 연결 끊김/에러 시 자동 재연결
+// - RTSP 영상 수신 클래스 (GStreamer 기반 실시간 스트리밍 재생 및 ONVIF 메타데이터 수신 처리)
 class RtspVideoSource : public IVideoSource
 {
     Q_OBJECT
 
 public:
-    RtspVideoSource(QString cameraId, QUrl rtspUrl, QObject *parent = nullptr);
-    // 워커 스레드 정지 + 파이프라인 정리까지 확실히 마무리
-    ~RtspVideoSource() override;
+    RtspVideoSource(QString cameraId, QUrl rtspUrl, QObject *parent = nullptr); // - 생성자: 카메라 ID, RTSP 주소, 부모 객체 지정 및 초기화
+    ~RtspVideoSource() override;                                              // - 소멸자: 스레드 정지 및 파이프라인 리소스 해제
 
-    // 파이프라인 생성 + 재생 시작 + 버스 워커 스레드 기동
-    void start() override;
-    // 재생 정지 + 워커 스레드 종료 + 파이프라인 해제
-    void stop() override;
+    void start() override;                                                     // - 재생 시작: 파이프라인 수립, 스트리밍 구동 및 감시 스레드 시작
+    void stop() override;                                                      // - 재생 정지: 스트리밍 중단, 스레드 종료 및 파이프라인 해제
 
 private:
+    void busLoop();                                                            // - 상태 감시 루프: 워커 스레드에서 GStreamer 메시지 모니터링 실행
+    void scheduleReconnect();                                                  // - 재연결 예약: 에러/종료 발생 시 일정 시간 후 재생 재시도
 
-    void busLoop(); //워커 스레드에서 실행되는 함수
-    // 에러/EOS 발생 시 일정 시간 뒤 stop()+start()를 다시 호출해서 복구 시도
-    void scheduleReconnect();
+    QString m_cameraId;                                                        // - 카메라 ID: 카메라 식별자 보관
+    QUrl m_rtspUrl;                                                            // - RTSP 주소: 스트리밍 접속 URL 보관
 
-    QString m_cameraId;
-    QUrl m_rtspUrl;
+    GstElement *m_pipeline = nullptr;                                          // - 파이프라인 포인터: GStreamer 파이프라인 객체 참조
+    GstBus *m_bus = nullptr;                                                   // - 버스 포인터: GStreamer 이벤트 버스 객체 참조
 
-    GstElement *m_pipeline = nullptr;
-    GstBus *m_bus = nullptr;
-
-    std::thread m_busThread;               // busLoop()을 돌리는 워커 스레드
-    std::atomic_bool m_stopRequested{false}; // 메인 스레드 <-> 워커 스레드 간 종료 신호
-
+    std::thread m_busThread;                                                   // - 감시 스레드: 상태 메시지 모니터링 전용 스레드
+    std::atomic_bool m_stopRequested{false};                                   // - 정지 요청 플래그: 스레드 간 안전한 종료 신호 보관
 };
