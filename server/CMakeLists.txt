@@ -69,6 +69,7 @@ target_include_directories(forklift_safety_server PRIVATE ${SERVER_SRC_DIR})
 target_link_libraries(forklift_safety_server PRIVATE
     server_input
     server_logging
+    server_judgment
     server_network
     PkgConfig::GST
 )

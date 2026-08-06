@@ -29,6 +29,8 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
+#include <limits>
+#include <optional>
 
 #include "input/rtp_metadata_receiver.hpp"
 #include "input/onvif_metadata_parser.hpp"
@@ -37,6 +39,22 @@
 #include "common/metadata_timing.hpp"
 #include "input/aruco_metadata_parser.hpp"
 #include "logging/aruco_csv_logger.hpp"
+#include "logic/judgment/judgment_pipeline.h"
+#include "network/result_publisher.hpp"
+#include "network/result_dispatcher.hpp"
+#include "logging/event_logger.hpp"
+#include "logging/latency_logger.hpp"
+
+// [교체 지점] 이번 단계에서는 활성 카메라 1대 기준 소스 상수로 고정.
+// 나중에 CLI/config로 값의 출처만 바꾸면 되고, JudgmentPipeline 생성자
+// 시그니처는 그대로 유지된다.
+// terminal_id는 아직 이 브랜치(develop 기준)의 JudgmentPipeline/JudgmentResult/
+// EventLogger가 지원하지 않는다(feature/server/terminal-id 미병합) -> 이번
+// 범위에서는 다루지 않는다.
+namespace {
+constexpr int kActiveCameraId = 1;
+constexpr uint16_t kResultPublisherPort = 9000;
+}  // namespace
 
 #ifdef _WIN32
 #include <windows.h>
@@ -89,11 +107,32 @@ private:
 };
 #endif
 
-// appsink 콜백에서 공유할 상태 (재조립기 + 로거)
+// appsink 콜백에서 공유할 상태 (재조립기 + 로거 + 판정 인프라)
 struct AppState {
     OnvifMetadataReassembler reassembler;
     CsvLogger* objectLogger = nullptr;
     ArucoCsvLogger* arucoLogger = nullptr;
+
+    // ArUco/Object 두 토픽이 비동기로 도착하므로, ObjectDetection 판정 시점에
+    // 참조할 수 있게 가장 최근 ArUco 프레임을 캐시해 둔다.
+    std::optional<ArucoFrame> lastAruco;
+
+    // 판정 인프라. 선언 순서가 곧 생성 순서이므로, 서로를 참조하는 멤버(judgmentPipeline
+    // -> sensorReader, resultDispatcher -> resultPublisher)는 참조 대상을 먼저 선언한다.
+    StubSensorReader sensorReader;
+    JudgmentPipeline judgmentPipeline;
+
+    risk_transport::ResultPublisher resultPublisher;
+    risk_log::EventLogger eventLogger;
+    risk_log::LatencyLogger latencyLogger;
+    risk_transport::ResultDispatcher resultDispatcher;
+
+    AppState()
+        : judgmentPipeline(kActiveCameraId, sensorReader),
+          resultPublisher("0.0.0.0", kResultPublisherPort),
+          resultDispatcher(
+              [this](const std::string& json) { resultPublisher.publish(json); },
+              std::chrono::milliseconds(200)) {}
 };
 
 // Ctrl+C 핸들러에서만 접근하는 전역 포인터.
@@ -175,6 +214,43 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                               << " delta_ms=" << frame.deltaMs << "\n";
                     printFrame(frame);
                     if (state->objectLogger) state->objectLogger->logFrame(frame);
+
+                    // ── 위험 판정 트리거 ─────────────────────────────────
+                    // 호모그래피(3단계)가 아직 없으므로 WorldPoint 좌표는 상수 더미로
+                    // 고정한다. 픽셀 좌표를 미터인 것처럼 넣으면 거짓 정밀도로 위험
+                    // 판정을 그르치므로 절대 쓰지 않는다. 불리언 신호(person_detected/
+                    // forklift_localized)만 실제 검출값을 반영한다.
+                    {
+                        bool person_detected = false;
+                        for (const auto& obj : frame.objects) {
+                            if (obj.classInfo.type == "Human") {
+                                person_detected = true;
+                                break;
+                            }
+                        }
+                        const bool forklift_localized =
+                            state->lastAruco.has_value() && !state->lastAruco->markers.empty();
+
+                        // [더미] 호모그래피 도입 전까지 안전거리(5m)로 고정.
+                        const WorldPoint forkliftPoint{0.0, 0.0};
+                        const WorldPoint personPoint{5.0, 0.0};
+
+                        NearestPersonResult nearest;
+                        nearest.found = person_detected;
+                        nearest.camera_id = person_detected ? kActiveCameraId : -1;
+                        nearest.position = person_detected ? personPoint : WorldPoint{};
+                        nearest.distance_m = person_detected
+                                                  ? 5.0
+                                                  : std::numeric_limits<double>::max();
+
+                        const PipelineOutput judgmentOut = state->judgmentPipeline.processFrame(
+                            forkliftPoint, forklift_localized, nearest);
+                        state->resultDispatcher.submit(judgmentOut.result);
+
+                        std::cout << "[판정] final_risk=" << toString(judgmentOut.result.final_risk)
+                                  << " exception_state=" << toString(judgmentOut.result.exception)
+                                  << "\n";
+                    }
                     break;
                 }
                 case MetadataType::ArucoDetection: {
@@ -192,6 +268,7 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                               << " delta_ms=" << timedFrame.deltaMs << "\n";
                     printArucoFrame(timedFrame);
                     if (state->arucoLogger) state->arucoLogger->logFrame(timedFrame);
+                    state->lastAruco = timedFrame;
                     break;
                 }
                 case MetadataType::Unknown:
@@ -389,6 +466,25 @@ int main(int argc, char* argv[]) {
     std::cout << "※ 이 시각은 PC 로컬시간이고, 프레임별 UtcTime은 카메라 기준 시간이니 "
                  "나중에 정밀 동기화할 때 헷갈리지 않도록 주의.\n";
 
+    // 판정 인프라 조립. 옛 danger_judgment_engine_main.cpp와 동일한 순서로 생성·연결한다:
+    // ResultPublisher -> EventLogger/LatencyLogger -> ResultDispatcher -> 훅 연결 -> start.
+    state.resultPublisher.onStateChange([](risk_transport::LinkState s) {
+        const char* name = s == risk_transport::LinkState::CONNECTED    ? "CONNECTED"
+                            : s == risk_transport::LinkState::LISTENING ? "LISTENING"
+                                                                         : "DISCONNECTED";
+        std::cerr << "[publisher] link state -> " << name << "\n";
+    });
+    state.resultPublisher.start();
+
+    state.eventLogger.start();
+    state.latencyLogger.start();
+
+    state.resultDispatcher.onStateChangeEvent(
+        [&state](const JudgmentResult& r, int prev_risk) { state.eventLogger.log(r, prev_risk); });
+    state.resultDispatcher.onLatencyEvent(
+        [&state](const LatencyStamps& stamps) { state.latencyLogger.log(stamps); });
+    state.resultDispatcher.start();
+
     std::signal(SIGINT, handleSigint);
 
     const int maxRetries = 5;
@@ -423,6 +519,14 @@ int main(int argc, char* argv[]) {
                          "카메라 쪽 상태(웹뷰어 재접속 등)를 확인해보는 걸 권장합니다.\n";
         }
     }
+
+    // 판정 인프라 정리. 옛 danger_judgment_engine_main.cpp와 동일한 순서:
+    // dispatcher -> (flush 대기) -> publisher -> 로거(event/latency) 순.
+    state.resultDispatcher.stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    state.resultPublisher.stop();
+    state.eventLogger.stop();
+    state.latencyLogger.stop();
 
     std::cout << "종료됨. 파일 저장 완료(또는 위 경고 참고).\n";
     return 0;
