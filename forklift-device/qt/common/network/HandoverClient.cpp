@@ -50,6 +50,25 @@ void HandoverClient::disconnectFromServer()
 void HandoverClient::handleConnected()
 {
     setConnectionState(RiskTypes::ConnectionState::Connected);
+    sendHello();
+}
+
+// 접속 직후 자기 terminal_id를 서버에 알린다. 서버는 이 값으로 이후
+// camera_assignment의 terminal_id를 채운다 -- 서버/단말 설정을 사람이 손으로
+// 맞추지 않아도 되게 하는 게 목적 (어긋나면 조용히 무시되는 문제 방지).
+// scheduleReconnect()는 connectToServer()를 거치지 않고 소켓을 직접 재연결하므로,
+// connected 신호에 물린 handleConnected()에서 불러야 재연결 때도 빠짐없이 나간다.
+void HandoverClient::sendHello()
+{
+    if (m_terminalId.isEmpty())    // 미설정(mock 개발)이면 알릴 신원이 없음
+        return;
+
+    QJsonObject obj;
+    obj[QStringLiteral("type")] = QStringLiteral("hello");
+    obj[QStringLiteral("terminal_id")] = m_terminalId;
+
+    m_socket.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    m_socket.write("\n");
 }
 
 // 연결돼 있던 소켓이 끊겼을 때. 버퍼를 비우고 상태를 갱신한 뒤, (의도적으로 끊은 게
