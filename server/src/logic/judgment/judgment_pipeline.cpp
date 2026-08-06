@@ -59,8 +59,8 @@ SensorInput StubSensorReader::read() {
 // 2. 판정 파이프라인
 // ============================================================
 
-JudgmentPipeline::JudgmentPipeline(int active_camera_id, ISensorReader& sensors)
-    : active_camera_id_(active_camera_id), sensors_(&sensors) {}
+JudgmentPipeline::JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors)
+    : active_camera_id_(active_camera_id), terminal_id_(terminal_id), sensors_(&sensors) {}
 
 CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
                                             bool forklift_localized,
@@ -120,6 +120,7 @@ PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
     // t1_judge_in: 판정 연산(engine_.evaluate) 시작 직전.
     const auto t1 = LatencyStamps::Clock::now();
     out.result              = engine_.evaluate(cam, sen);
+    out.result.terminal_id  = terminal_id_;
     out.result.latency.t0_ingest   = t0;
     out.result.latency.t1_judge_in = t1;
 

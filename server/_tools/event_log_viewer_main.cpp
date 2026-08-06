@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::string sql =
-        "SELECT utc_time, camera_id, risk_level, exception_state, distance_m FROM "
+        "SELECT utc_time, camera_id, terminal_id, risk_level, exception_state, distance_m FROM "
         + std::string(risk_log::EventLogger::kTableName) + " ORDER BY id DESC LIMIT ?";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -32,11 +32,13 @@ int main(int argc, char** argv) {
     }
     sqlite3_bind_int(stmt, 1, limit);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char* terminal_id = sqlite3_column_text(stmt, 2);
         std::cout << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)) << " "
                   << sqlite3_column_int(stmt, 1) << " "
-                  << toString(static_cast<RiskLevel>(sqlite3_column_int(stmt, 2))) << " "
-                  << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)) << " "
-                  << sqlite3_column_double(stmt, 4) << "\n";
+                  << (terminal_id ? reinterpret_cast<const char*>(terminal_id) : "") << " "
+                  << toString(static_cast<RiskLevel>(sqlite3_column_int(stmt, 3))) << " "
+                  << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)) << " "
+                  << sqlite3_column_double(stmt, 5) << "\n";
     }
     sqlite3_finalize(stmt);
     sqlite3_close(db);

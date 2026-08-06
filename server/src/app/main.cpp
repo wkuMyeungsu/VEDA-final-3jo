@@ -48,11 +48,9 @@
 // [교체 지점] 이번 단계에서는 활성 카메라 1대 기준 소스 상수로 고정.
 // 나중에 CLI/config로 값의 출처만 바꾸면 되고, JudgmentPipeline 생성자
 // 시그니처는 그대로 유지된다.
-// terminal_id는 아직 이 브랜치(develop 기준)의 JudgmentPipeline/JudgmentResult/
-// EventLogger가 지원하지 않는다(feature/server/terminal-id 미병합) -> 이번
-// 범위에서는 다루지 않는다.
 namespace {
 constexpr int kActiveCameraId = 1;
+constexpr const char* kTerminalId = "TERM_01";
 constexpr uint16_t kResultPublisherPort = 9000;
 }  // namespace
 
@@ -128,7 +126,7 @@ struct AppState {
     risk_transport::ResultDispatcher resultDispatcher;
 
     AppState()
-        : judgmentPipeline(kActiveCameraId, sensorReader),
+        : judgmentPipeline(kActiveCameraId, kTerminalId, sensorReader),
           resultPublisher("0.0.0.0", kResultPublisherPort),
           resultDispatcher(
               [this](const std::string& json) { resultPublisher.publish(json); },

@@ -101,8 +101,9 @@ void expectContains(const std::string& name, const std::string& haystack,
 // ── 테스트 픽스처 ────────────────────────────────────────────
 // nearest_person_selector.cpp의 테스트 시나리오와 같은 좌표를 써서 값 추적이 쉽게 한다.
 
-const int        kActiveCamera = 1;
-const WorldPoint kForklift{5.0, 5.0};
+const int         kActiveCamera = 1;
+const std::string kTerminalId   = "TERM_TEST";
+const WorldPoint  kForklift{5.0, 5.0};
 
 // 지게차(5,5) 기준 거리별 사람 위치.
 const WorldPoint kPersonDanger{5.5, 5.5};    // 약 0.71m -> danger_threshold_m(1.5) 이내
@@ -173,7 +174,7 @@ void testCameraInputMapping() {
     std::cout << "\n[테스트 1] toCameraInput() 매핑 규칙\n";
 
     StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, sensors);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
 
     std::cout << "  -- 사람 검출됨 --\n";
     {
@@ -213,7 +214,7 @@ void testCameraInputMapping() {
 
     std::cout << "  -- 활성 camera_id 미확정(음수) --\n";
     {
-        JudgmentPipeline unset(-1, sensors);
+        JudgmentPipeline unset(-1, kTerminalId, sensors);
         const CameraInput cam =
             unset.toCameraInput(kForklift, true, makeFound(2, 1, kPersonDanger));
 
@@ -236,7 +237,7 @@ void testCameraIdMismatch() {
     std::cout << "\n[테스트 2] camera_id_mismatch 판정 조건\n";
 
     StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, sensors);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
 
     expectBool("같은 camera_id -> mismatch 아님",
                pipeline.isCameraIdMismatch(makeFound(2, kActiveCamera, kPersonDanger)), false);
@@ -249,7 +250,7 @@ void testCameraIdMismatch() {
                pipeline.isCameraIdMismatch(makeNotFound()), false);
 
     // 활성 카메라가 미확정이면 비교 기준이 없다.
-    JudgmentPipeline unset(-1, sensors);
+    JudgmentPipeline unset(-1, kTerminalId, sensors);
     expectBool("활성 id 미확정 -> mismatch 판단 안 함",
                unset.isCameraIdMismatch(makeFound(2, 5, kPersonDanger)), false);
 }
@@ -261,7 +262,7 @@ void testProcessFrame() {
     std::cout << "\n[테스트 3] processFrame() end-to-end (스텁 센서 기준)\n";
 
     StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, sensors);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
 
     std::cout << "  -- 거리별 위험도 --\n";
     {
@@ -333,19 +334,20 @@ void testJsonCarriesCameraId() {
 
     StubSensorReader sensors;
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
         const std::string json = toJson(out.result);
 
         expectContains("camera_id가 문자열로 실림", json, "\"camera_id\":\"1\"");
         expectContains("zone은 미확정이라 null",     json, "\"zone\":null");
+        expectContains("terminal_id가 문자열로 실림", json, "\"terminal_id\":\"" + kTerminalId + "\"");
         // 단말이 toInt()로 읽으므로 정수여야 한다. 따옴표가 붙으면 항상 0(Safe)이 된다.
         expectContains("risk_level이 정수 2(DANGER)", json, "\"risk_level\":2");
     }
     {
         // 활성 camera_id 미확정이면 예전처럼 null로 나가야 한다(빈 문자열이 그대로 나가면 안 됨).
-        JudgmentPipeline unset(-1, sensors);
+        JudgmentPipeline unset(-1, kTerminalId, sensors);
         const PipelineOutput out =
             unset.processFrame(kForklift, true, makeFound(2, 1, kPersonDanger));
         expectContains("활성 id 미확정 -> camera_id null",
@@ -380,7 +382,7 @@ void testSelectorIntegration() {
     std::cout << "\n[테스트 6] selectNearestPerson() -> processFrame() 통합\n";
 
     StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, sensors);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
 
     std::cout << "  -- 3명 중 최근접 선택 (selector 시나리오 1) --\n";
     {
@@ -459,7 +461,7 @@ void testEmergencyTier() {
 
     std::cout << "  -- 진입 거리 --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
 
@@ -472,13 +474,13 @@ void testEmergencyTier() {
                        toJson(out.result), "\"exception_state\":\"NONE\"");
     }
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonJustOutside));
         expectRisk("0.41m -> DANGER (진입선 위)", out.result.final_risk, RiskLevel::DANGER);
     }
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonJustInside));
         expectRisk("0.39m -> EMERGENCY (진입선 아래)", out.result.final_risk, RiskLevel::EMERGENCY);
@@ -486,7 +488,7 @@ void testEmergencyTier() {
 
     std::cout << "  -- 히스테리시스 (진입 0.4m / 해제 0.5m) --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
 
         // 래치 없이 0.45m부터 시작하면 진입선(0.4) 위라 EMERGENCY가 아니어야 한다.
         const PipelineOutput before =
@@ -515,7 +517,7 @@ void testEmergencyTier() {
 
     std::cout << "  -- 거리 판정 불가 프레임에서 래치 해제 --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
         pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
         expectBool("EMERGENCY 진입 확인", pipeline.engine().inEmergencyLatch(), true);
 
@@ -532,7 +534,7 @@ void testEmergencyTier() {
 
     std::cout << "  -- 기존 구간이 EMERGENCY에 먹히지 않는지 (회귀 확인) --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
         expectRisk("0.71m -> DANGER 그대로",
                    pipeline.processFrame(kForklift, true,
                                          makeFound(2, kActiveCamera, kPersonDanger)).result.final_risk,
