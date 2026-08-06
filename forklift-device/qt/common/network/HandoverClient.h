@@ -65,6 +65,8 @@ private:
     void setConnectionState(RiskTypes::ConnectionState state);
     void processLine(const QByteArray &line);
     void scheduleReconnect();
+    // 접속 직후 자기 terminal_id를 서버에 알린다 (handleConnected()에서 호출).
+    void sendHello();
 
     QTcpSocket m_socket;
     QByteArray m_buffer;
