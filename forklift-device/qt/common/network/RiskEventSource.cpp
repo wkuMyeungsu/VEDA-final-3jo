@@ -1,135 +1,118 @@
 #include "RiskEventSource.h"
 
-#include <QDateTime>        // 시각 처리
-#include <QJsonDocument>    // JSON 파싱
-#include <QJsonObject>      // JSON 객체
-#include <QJsonParseError>  // 파싱 에러 정보
-#include <QLoggingCategory> // 로그 카테고리
-#include <QTimer>           // 지연 실행
+#include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QLoggingCategory>
+#include <QTimer>
 
 namespace {
-Q_LOGGING_CATEGORY(lcRiskEventSource, "safety.risk.tcp")  // 로그 태그
+Q_LOGGING_CATEGORY(lcRiskEventSource, "safety.risk.tcp")                  // - 로깅 카테고리 정의: 위험 이벤트 통신 로그 분류용 이름 지정
 
-// 재접속 시 재시도 간격 -- RtspVideoSource::scheduleReconnect()와 동일한 값 사용
-// (ConnectionRefused 순간 재시도로 바쁜 루프 도는 것 방지 + 값 통일)
-constexpr int kReconnectDelayMs = 3000;   // 재접속 대기 3초
-
-// 접속 직후 몰려오는 백로그(최대 100건) 중 이 값보다 오래된 메시지는 화면/부저에
-// 반영 안 함. 정상 동작 중 메시지 간격은 최대 200ms라 여유 있게 잡음.
-// [미확정] 근거 없는 값 -- 실측/협의 후 조정 필요
-constexpr qint64 kStaleThresholdMs = 1000;
+constexpr int kReconnectDelayMs = 3000;                                   // - 재연결 대기 시간 설정 (3초): 서버 부하 방지 및 빠른 복구 목적
+constexpr qint64 kStaleThresholdMs = 1000;                                // - 오래된 메시지 기준 시간 (1초): 지연된 경보 발생 방지 목적
 }
 
 RiskEventSource::RiskEventSource(QString host, quint16 port, QObject *parent)
     : IMetadataSource(parent)
-    , m_host(std::move(host))   // 서버 주소 저장
-    , m_port(port)               // 서버 포트 저장
+    , m_host(std::move(host))                                             // - 접속 주소 저장: 서버 호스트 정보 보관
+    , m_port(port)                                                         // - 접속 포트 저장: 서버 포트 번호 보관
 {
-    connect(&m_socket, &QTcpSocket::connected, this, &RiskEventSource::handleConnected);       // 연결 성공 시
-    connect(&m_socket, &QTcpSocket::disconnected, this, &RiskEventSource::handleDisconnected); // 연결 끊길 시
-    connect(&m_socket, &QTcpSocket::readyRead, this, &RiskEventSource::handleReadyRead);       // 데이터 도착 시
-    connect(&m_socket, &QTcpSocket::errorOccurred, this, &RiskEventSource::handleError);       // 에러 발생 시
+    connect(&m_socket, &QTcpSocket::connected, this, &RiskEventSource::handleConnected);       // - 연결 성공 이벤트 연결
+    connect(&m_socket, &QTcpSocket::disconnected, this, &RiskEventSource::handleDisconnected); // - 연결 끊김 이벤트 연결
+    connect(&m_socket, &QTcpSocket::readyRead, this, &RiskEventSource::handleReadyRead);       // - 데이터 수신 이벤트 연결
+    connect(&m_socket, &QTcpSocket::errorOccurred, this, &RiskEventSource::handleError);       // - 통신 오류 이벤트 연결
 }
 
 void RiskEventSource::start()
 {
-    m_stopRequested = false;   // 재연결 허용 상태로
-    setConnectionState(RiskTypes::ConnectionState::Connecting); // 상태를 연결 중으로
-    m_socket.connectToHost(m_host, m_port); // 접속 시도
+    m_stopRequested = false;                                              // - 수동 종료 플래그 초기화: 자동 재연결 기능 활성화
+    setConnectionState(RiskTypes::ConnectionState::Connecting);           // - 상태 변경: 연결 진행 중 상태로 설정
+    m_socket.connectToHost(m_host, m_port);                               // - 서버 접속 시도: 지정 주소 및 포트로 연결 요청
 }
 
 void RiskEventSource::stop()
 {
-    m_stopRequested = true;             // 이후 끊김은 재연결 안 함
-    m_socket.disconnectFromHost();      // 연결 종료
-    setConnectionState(RiskTypes::ConnectionState::Disconnected); // 상태를 끊김으로
+    m_stopRequested = true;                                               // - 수동 종료 설정: 자동 재연결 동작 차단
+    m_socket.disconnectFromHost();                                        // - 연결 해제: 서버와의 소켓 연결 종료
+    setConnectionState(RiskTypes::ConnectionState::Disconnected);          // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
 }
 
 void RiskEventSource::handleConnected()
 {
-    setConnectionState(RiskTypes::ConnectionState::Connected); // 상태를 연결됨으로
+    setConnectionState(RiskTypes::ConnectionState::Connected);            // - 상태 갱신: 연결 상태를 '연결됨'으로 변경
 }
 
-// 연결이 끊기면 버퍼도 같이 비움 -- HandoverClient::handleDisconnected()와 동일한 이유
-// (이전 연결의 미완성 조각과 새 연결 데이터가 섞이는 것 방지)
 void RiskEventSource::handleDisconnected()
 {
-    m_buffer.clear();          // 받다 만 데이터 버림
-    setConnectionState(RiskTypes::ConnectionState::Disconnected); // 상태를 끊김으로
-    if (!m_stopRequested)      // 의도치 않은 끊김이면
-        scheduleReconnect();   // 재접속 예약
+    m_buffer.clear();                                                     // - 버퍼 초기화: 이전 수신 데이터 비우기
+    setConnectionState(RiskTypes::ConnectionState::Disconnected);          // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
+    if (!m_stopRequested)                                                 // - 수동 종료 확인: 의도치 않은 끊김인 경우 재연결 진행
+        scheduleReconnect();                                              // - 재연결 예약: 일정 시간 후 접속 재시도
 }
 
 void RiskEventSource::handleError(QAbstractSocket::SocketError error)
 {
-    qCWarning(lcRiskEventSource) << "socket error:" << error << m_socket.errorString(); // 에러 로그
-    setConnectionState(RiskTypes::ConnectionState::Disconnected); // 상태를 끊김으로
-    if (!m_stopRequested)      // 의도치 않은 끊김이면
-        scheduleReconnect();   // 재접속 예약
+    qCWarning(lcRiskEventSource) << "socket error:" << error << m_socket.errorString(); // - 경고 로그 출력: 오류 내용 및 원인 기록
+    setConnectionState(RiskTypes::ConnectionState::Disconnected);          // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
+    if (!m_stopRequested)                                                 // - 수동 종료 확인: 의도치 않은 에러인 경우 재연결 진행
+        scheduleReconnect();                                              // - 재연결 예약: 접속 실패 시 자동 복구 재시도
 }
 
-// errorOccurred + disconnected가 한 번의 끊김에 대해 같이 발생할 수 있어서
-// m_reconnectPending으로 중복 예약을 막음 (RtspVideoSource와 동일한 이유)
 void RiskEventSource::scheduleReconnect()
 {
-    if (m_reconnectPending)    // 이미 예약돼 있으면
-        return;                // 중복 예약 방지
-    m_reconnectPending = true; // 예약 표시
+    if (m_reconnectPending)                                               // - 중복 시도 차단: 이미 예약된 경우 실행 생략
+        return;
+    m_reconnectPending = true;                                            // - 예약 상태 설정: 중복 타이머 생성 방지
 
-    // this가 먼저 파괴되면 QTimer::singleShot이 콜백을 알아서 취소해줌
-    QTimer::singleShot(kReconnectDelayMs, this, [this]() {   // 3초 뒤 1회 실행
-        m_reconnectPending = false;   // 예약 해제
-        if (m_stopRequested)          // 그새 stop() 호출됐으면
-            return;                   // 재접속 안 함
-        setConnectionState(RiskTypes::ConnectionState::Connecting); // 상태를 연결 중으로
-        m_socket.connectToHost(m_host, m_port); // 재접속 시도
+    QTimer::singleShot(kReconnectDelayMs, this, [this]() {                // - 지연 실행 예약: 3초 후 재접속 작업 진행
+        m_reconnectPending = false;                                        // - 예약 상태 해제: 대기 상태 초기화
+        if (m_stopRequested)                                              // - 수동 종료 확인: 대기 중 종료 요청 시 중단
+            return;
+        setConnectionState(RiskTypes::ConnectionState::Connecting);      // - 상태 변경: 연결 진행 중 상태로 설정
+        m_socket.connectToHost(m_host, m_port);                            // - 재접속 시도: 저장된 주소 및 포트로 접속 요청
     });
 }
 
-// TCP는 스트림이라 한 번의 readyRead가 메시지 절반만, 또는 여러 개를 한꺼번에
-// 담을 수 있음 -- HandoverClient::handleReadyRead()와 동일한 버퍼링 방식
 void RiskEventSource::handleReadyRead()
 {
-    m_buffer += m_socket.readAll();   // 도착 데이터를 버퍼에 이어붙임
+    m_buffer += m_socket.readAll();                                       // - 데이터 누적: 수신 데이터를 버퍼에 연속 저장
 
     int newlineIndex;
-    while ((newlineIndex = m_buffer.indexOf('\n')) != -1) {   // 줄바꿈 하나 = 메시지 1건
-        const QByteArray line = m_buffer.left(newlineIndex);   // 완성된 한 줄
-        m_buffer.remove(0, newlineIndex + 1);                  // 처리한 부분 버퍼에서 제거
-        if (!line.trimmed().isEmpty())                         // 빈 줄 아니면
-            processLine(line);                                 // 처리 함수로 전달
+    while ((newlineIndex = m_buffer.indexOf('\n')) != -1) {               // - 줄 단위 처리: 개행 문자(\n) 검색 및 반복 처리
+        const QByteArray line = m_buffer.left(newlineIndex);              // - 한 줄 추출: 개행 문자 전까지 데이터 잘라내기
+        m_buffer.remove(0, newlineIndex + 1);                             // - 버퍼 정리: 처리된 데이터 및 개행 문자 제거
+        if (!line.trimmed().isEmpty())                                    // - 유효 검증: 공백이 아닌 경우 해석 함수 호출
+            processLine(line);
     }
 }
 
-// 완성된 한 줄을 RiskMetadata로 파싱. distance_m null -> distanceValid=false는
-// RiskMetadata::fromJson()이 이미 처리함 (QML도 이미 "측정 불가"로 표시함, 새로
-// 만들 필요 없음). 여기서 추가로 하는 일은 오래된 백로그 메시지 필터링뿐.
 void RiskEventSource::processLine(const QByteArray &line)
 {
     QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError); // JSON 파싱 시도
-    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) { // 깨진 줄이면
-        qCWarning(lcRiskEventSource) << "malformed line, ignoring:" << parseError.errorString() << line; // 경고 로그
-        return;                                                            // 버림
-    }
+    const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError); // - JSON 변환: 수신 문장 해석 및 데이터 파싱
 
-    const RiskMetadata metadata = RiskMetadata::fromJson(doc.object()); // RiskMetadata로 변환
-
-    const QDateTime utcTime = metadata.utcTime();  // 메시지 생성 시각
-    if (!utcTime.isValid()) {                      // 시각 정보 없거나 이상하면
-        // 오래된 메시지인지 판단 불가 -- 일단 반영하고 경고만 남김
-        qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << line; // 경고 로그
-        emit metadataReceived(metadata);            // 반영
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) { // - 유효성 검증: JSON 형식 에러 또는 객체가 아닌 경우 필터링
+        qCWarning(lcRiskEventSource) << "malformed line, ignoring:" << parseError.errorString() << line; // - 경고 로그: 손상된 데이터 기록
         return;
     }
 
-    const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc()); // 경과 시간 계산
-    if (ageMs > kStaleThresholdMs) {   // 1초 넘게 오래됐으면
-        // 접속 직후 몰려온 백로그 -- 로그만 남기고 화면엔 반영 안 함
-        qCInfo(lcRiskEventSource) << "discarding stale backlog message, age(ms)=" << ageMs
-                                   << "utc_time=" << utcTime.toString(Qt::ISODateWithMs); // 정보 로그
-        return;                        // 버림
+    const RiskMetadata metadata = RiskMetadata::fromJson(doc.object());   // - 데이터 객체 생성: JSON을 RiskMetadata로 변환
+
+    const QDateTime utcTime = metadata.utcTime();                         // - 시간 정보 추출: 메시지 생성 시각 확인
+    if (!utcTime.isValid()) {                                             // - 시각 검증: 시간 정보가 없거나 유효하지 않은 경우 처리
+        qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << line; // - 경고 로그: 시간 정보 없음 기록
+        emit metadataReceived(metadata);                                  // - 신호 발생: 시간 확인 불가 데이터 전달 처리
+        return;
     }
 
-    emit metadataReceived(metadata);   // 오래되지 않은 메시지 -- 정상 반영
+    const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc());// - 경과 시간 계산: 현재 시간과의 차이(ms) 측정
+    if (ageMs > kStaleThresholdMs) {                                      // - 시간 지연 검증: 1초 이상 지난 지연 데이터 여부 확인
+        qCInfo(lcRiskEventSource) << "discarding stale backlog message, age(ms)=" << ageMs
+                                   << "utc_time=" << utcTime.toString(Qt::ISODateWithMs); // - 정보 로그: 오래된 데이터 폐기 기록
+        return;                                                           // - 데이터 폐기: 지나간 경보 데이터 반영 생략
+    }
+
+    emit metadataReceived(metadata);                                      // - 신호 발생: 정상 위험 이벤트 데이터 전달
 }
