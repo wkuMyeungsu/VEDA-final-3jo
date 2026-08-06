@@ -66,8 +66,8 @@ int main() {
     check(parsed->markers.size() == 2, "MarkerCount=2");
     check(parsed->markers[0].id == 40, "MarkerIds[0]과 Marker0Corners 대응");
     check(parsed->markers[1].id == 38, "MarkerIds[1]과 Marker1Corners 대응");
-    checkClose(parsed->markers[0].corners[0].first, 120.5, "첫 코너 x 순서 보존");
-    checkClose(parsed->markers[0].corners[3].second, 140.0, "마지막 코너 y 순서 보존");
+    checkClose(parsed->markers[0].corners[0].x, 120.5, "첫 코너 x 순서 보존");
+    checkClose(parsed->markers[0].corners[3].y, 140.0, "마지막 코너 y 순서 보존");
 
     std::string emptyXml = replaceOnce(validXml, "MarkerCount\" Value=\"2", "MarkerCount\" Value=\"0");
     emptyXml = replaceOnce(emptyXml, "MarkerIds\" Value=\"40,38", "MarkerIds\" Value=\"");
