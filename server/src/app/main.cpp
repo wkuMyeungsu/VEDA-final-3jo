@@ -39,19 +39,28 @@
 #include "common/metadata_timing.hpp"
 #include "input/aruco_metadata_parser.hpp"
 #include "logging/aruco_csv_logger.hpp"
+#include "config/terminal_config.hpp"
 #include "logic/judgment/judgment_pipeline.h"
+#include "logic/tracking/marker_channel_tracker.hpp"
 #include "network/result_publisher.hpp"
 #include "network/result_dispatcher.hpp"
 #include "network/camera_assignment_server.hpp"
 #include "logging/event_logger.hpp"
 #include "logging/latency_logger.hpp"
 
-// [교체 지점] 이번 단계에서는 활성 카메라 1대 기준 소스 상수로 고정.
-// 나중에 CLI/config로 값의 출처만 바꾸면 되고, JudgmentPipeline 생성자
-// 시그니처는 그대로 유지된다.
 namespace {
-constexpr int kActiveCameraId = 1;
-constexpr const char* kTerminalId = "TERM_01";
+// 활성 카메라와 단말 ID는 더 이상 상수가 아니다:
+//   - terminal_id / marker_id / 핸드오버 파라미터 -> 설정 파일(server/config/terminal_*.json)
+//   - active_camera_id -> MarkerChannelTracker가 실시간으로 결정 (지게차 마커가 보이는 채널)
+// 설정 파일 경로를 인자로 안 주면 이 단말 ID로 기본 파일을 찾는다.
+constexpr const char* kDefaultTerminalId = "TERM_01";
+
+// 마커가 아직 어느 카메라에서도 확정되지 않은 상태의 활성 카메라 값.
+// JudgmentPipeline 규약상 음수는 "미확정"이라 하류 JSON에 camera_id=null로 나간다.
+// 예전처럼 1로 시작하면, 실제로는 지게차 위치를 모르는 구간에 cam 1이 확정된 것처럼
+// 보고하게 된다.
+constexpr int kUnknownCameraId = -1;
+
 constexpr uint16_t kResultPublisherPort = 9000;
 constexpr uint16_t kCameraAssignmentServerPort = 9001;
 }  // namespace
@@ -118,7 +127,14 @@ struct AppState {
     std::optional<ArucoFrame> lastAruco;
 
     // 판정 인프라. 선언 순서가 곧 생성 순서이므로, 서로를 참조하는 멤버(judgmentPipeline
-    // -> sensorReader, resultDispatcher -> resultPublisher)는 참조 대상을 먼저 선언한다.
+    // -> sensorReader, resultDispatcher -> resultPublisher, markerTracker/judgmentPipeline
+    // -> config)는 참조 대상을 먼저 선언한다.
+    forklift::config::TerminalConfig config;
+
+    // 지게차 마커가 어느 카메라 채널에 보이는지 추적. 액티브 채널이 바뀌는 순간에만
+    // 신호를 주므로, 그 신호를 받아 9001 camera_assignment를 보낸다.
+    MarkerChannelTracker markerTracker;
+
     StubSensorReader sensorReader;
     JudgmentPipeline judgmentPipeline;
 
@@ -127,18 +143,48 @@ struct AppState {
     risk_log::LatencyLogger latencyLogger;
     risk_transport::ResultDispatcher resultDispatcher;
 
-    // 9001 카메라 할당 채널. 배선만 한다 - 자동 전환 판단(sendCameraAssignment() 호출)은
-    // cross_camera_reid 연동이 필요해 이번 스코프 밖(CameraAssignmentServer.h 커밋 메시지 참고).
+    // 9001 카메라 할당 채널. 전환 시점 판단은 markerTracker가 하고, 이 클래스는
+    // "확정된 단말에게 실제로 보내는" 역할만 한다.
     risk_transport::CameraAssignmentServer cameraAssignmentServer;
 
-    AppState()
-        : judgmentPipeline(kActiveCameraId, kTerminalId, sensorReader),
+    explicit AppState(forklift::config::TerminalConfig cfg)
+        : config(std::move(cfg)),
+          markerTracker(config.forklift.marker_id,
+                        config.handover.confirm_frames,
+                        config.handover.lostGrace()),
+          judgmentPipeline(kUnknownCameraId, config.forklift.terminal_id, sensorReader),
           resultPublisher("0.0.0.0", kResultPublisherPort),
           resultDispatcher(
               [this](const std::string& json) { resultPublisher.publish(json); },
               std::chrono::milliseconds(200)),
           cameraAssignmentServer("0.0.0.0", kCameraAssignmentServerPort) {}
 };
+
+// 액티브 카메라가 실제로 바뀌었을 때만 불린다(MarkerChannelTracker가 그때만 신호를 준다).
+// 하는 일 두 가지:
+//   1) 판정 파이프라인의 담당 카메라 갱신 -> 하류 판정 JSON의 camera_id가 따라간다
+//   2) 단말에 camera_assignment 전송 -> 운전석 화면이 새 카메라로 전환된다
+//
+// 단말이 아직 9001에 붙지 않았으면 2)는 false를 돌려주는데, 이건 오류가 아니라 흔한
+// 상태(서버가 먼저 뜬 경우)라 경고만 남기고 계속 간다. 단말은 접속 직후 hello를 보내고,
+// 그 다음 전환 때 정상적으로 받게 된다.
+static void applyActiveCameraChange(AppState& state, int camera_id) {
+    state.judgmentPipeline.setActiveCameraId(camera_id);
+
+    // camera_id 문자열 표기는 판정 JSON과 같은 규칙(cameraIdToString)을 쓴다.
+    // 두 채널이 같은 카메라를 다르게 부르면 단말에서 대조가 안 된다.
+    const std::string camera_id_str = cameraIdToString(camera_id);
+
+    // [TODO] zone 매핑 미확정(김진석) — 확정 전까지 빈 문자열.
+    //        판정 JSON 쪽 규약(빈 값 -> null)과 맞춘다.
+    const bool sent = state.cameraAssignmentServer.sendCameraAssignment(
+        state.config.forklift.terminal_id, camera_id_str, /*zone=*/"", nowIso8601Ms());
+
+    std::cout << "[핸드오버] 액티브 카메라 전환 -> channel=" << camera_id_str
+              << " (marker_id=" << state.config.forklift.marker_id
+              << ", terminal_id=" << state.config.forklift.terminal_id
+              << ", 단말 전송=" << (sent ? "성공" : "실패(단말 미접속)") << ")\n";
+}
 
 // Ctrl+C 핸들러에서만 접근하는 전역 포인터.
 // 시그널 핸들러 안에서는 이것 말고 다른 걸 건드리면 위험하므로 최소한으로만 사용.
@@ -242,7 +288,13 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
 
                         NearestPersonResult nearest;
                         nearest.found = person_detected;
-                        nearest.camera_id = person_detected ? kActiveCameraId : -1;
+                        // 사람이 어느 카메라에서 보였는지는 아직 상류에서 안 올라온다
+                        // (호모그래피/Re-ID 미연동). 지금 담당 중인 카메라를 그대로 쓴다 -
+                        // 이렇게 두면 isCameraIdMismatch()가 항상 false라 핸드오버 의심
+                        // 플래그가 오탐하지 않는다. 마커가 아직 안 잡혀 담당 카메라가
+                        // 미확정(-1)이면 그 값이 그대로 내려가 하류 JSON에서 null이 된다.
+                        nearest.camera_id =
+                            person_detected ? state->judgmentPipeline.activeCameraId() : -1;
                         nearest.position = person_detected ? personPoint : WorldPoint{};
                         nearest.distance_m = person_detected
                                                   ? 5.0
@@ -274,6 +326,13 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                     printArucoFrame(timedFrame);
                     if (state->arucoLogger) state->arucoLogger->logFrame(timedFrame);
                     state->lastAruco = timedFrame;
+
+                    // 이 프레임으로 "지게차가 지금 어느 카메라에 보이는지"를 갱신한다.
+                    // 반환값이 있을 때 = 액티브 채널이 실제로 바뀐 순간뿐이다
+                    // (안 바뀌면 nullopt라 여기서 아무 일도 일어나지 않는다).
+                    if (auto newChannel = state->markerTracker.onArucoFrame(timedFrame)) {
+                        applyActiveCameraChange(*state, *newChannel);
+                    }
                     break;
                 }
                 case MetadataType::Unknown:
@@ -445,14 +504,42 @@ int main(int argc, char* argv[]) {
 #endif
 
     if (argc < 2) {
-        std::cerr << "사용법: " << argv[0] << " <RTSP URL>\n";
+        std::cerr << "사용법: " << argv[0] << " <RTSP URL> [단말 설정 JSON 경로]\n";
         std::cerr << "예: " << argv[0]
                   << " \"rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp\"\n";
+        std::cerr << "설정 경로를 생략하면 " << kDefaultTerminalId
+                  << " 기본 파일(config/terminal_" << kDefaultTerminalId << ".json)을 찾습니다.\n";
         return 1;
     }
 
     gst_init(&argc, &argv);
-    AppState state;
+
+    // ── 단말 설정 로드 ──────────────────────────────────────────
+    // 실패하면 그냥 죽는다. 마커 ID/단말 ID 없이 기본값으로 계속 돌면 "지게차가 아무
+    // 카메라에도 안 잡히는" 것처럼 조용히 동작해서 원인을 찾기 어렵다 - 설정 문제는
+    // 시작할 때 크게 실패하는 편이 낫다.
+    const std::string configPath =
+        (argc >= 3) ? argv[2]
+                    : forklift::config::resolveTerminalConfigPath(kDefaultTerminalId);
+    forklift::config::TerminalConfig terminalConfig;
+    try {
+        terminalConfig = forklift::config::loadTerminalConfig(configPath);
+    } catch (const forklift::config::TerminalConfigError& e) {
+        std::cerr << "[오류] 단말 설정 로드 실패: " << e.what() << "\n"
+                     "       설정 파일 예시는 server/config/terminal_TERM_01.json 참고.\n"
+                     "       (실행 위치에 따라 config/ 상대경로가 달라지므로, 필요하면 "
+                     "두 번째 인자로 경로를 직접 지정하세요.)\n";
+        return 2;
+    }
+
+    std::cout << "단말 설정 로드 완료: " << configPath
+              << " (terminal_id=" << terminalConfig.forklift.terminal_id
+              << ", forklift_id=" << terminalConfig.forklift.forklift_id
+              << ", marker_id=" << terminalConfig.forklift.marker_id
+              << ", confirm_frames=" << terminalConfig.handover.confirm_frames
+              << ", lost_grace_ms=" << terminalConfig.handover.lost_grace_ms << ")\n";
+
+    AppState state(std::move(terminalConfig));
 
     // CSV 파일은 딱 한 번만 생성. 재연결이 몇 번 일어나든 같은 파일에 계속 이어붙여짐
     // (CsvLogger는 파일이 이미 있으면 헤더 없이 append하는 구조라 문제없음).
