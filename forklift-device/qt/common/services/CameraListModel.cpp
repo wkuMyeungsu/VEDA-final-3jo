@@ -1,108 +1,101 @@
 #include "CameraListModel.h"
 
 CameraListModel::CameraListModel(QObject *parent)
-    : QAbstractListModel(parent)
+    : QAbstractListModel(parent)                                               // - 생성자: 부모 객체 지정 및 모델 초기화
 {
 }
 
-// beginResetModel()/endResetModel(): "목록 전체가 바뀐다"고 QML에 알리는 표준 절차
-// 이 사이에서 내부 데이터(m_rows)를 마음대로 바꿔도 안전함
 void CameraListModel::setCameras(const QVector<CameraInfo> &cameras)
 {
-    beginResetModel();
-    m_rows.clear();
-    m_rows.reserve(cameras.size());
-    for (const CameraInfo &info : cameras) {
-        Row row;
-        row.info = info;
-        m_rows.append(row);
+    beginResetModel();                                                         // - 모델 리셋 시작: QML 알림용 리셋 작업 개시
+    m_rows.clear();                                                            // - 기존 목록 비우기: 이전 카메라 행 목록 초기화
+    m_rows.reserve(cameras.size());                                            // - 메모리 확보: 카메라 개수만큼 미리 공간 할당
+    for (const CameraInfo &info : cameras) {                                   // - 카메라 목록 순회: 개별 카메라 정보를 행 객체로 변환
+        Row row;                                                               // - 행 객체 생성: 개별 카메라 정보 및 상태 데이터 보관용
+        row.info = info;                                                       // - 정보 설정: 카메라 기본 설정값 저장
+        m_rows.append(row);                                                    // - 행 추가: 카메라 목록 배열에 저장
     }
-    endResetModel();
+    endResetModel();                                                           // - 모델 리셋 완료: QML 알림용 리셋 작업 종료
 }
 
 int CameraListModel::rowForCameraId(const QString &cameraId) const
 {
-    for (int i = 0; i < m_rows.size(); ++i) {
-        if (m_rows.at(i).info.cameraId == cameraId)
+    for (int i = 0; i < m_rows.size(); ++i) {                                  // - 목록 순회: 등록된 카메라 항목 검색
+        if (m_rows.at(i).info.cameraId == cameraId)                            // - ID 일치 확인: 일치하는 카메라 항목 행 번호 반환
             return i;
     }
-    return -1;
+    return -1;                                                                 // - 검색 실패: 미존재 시 -1 반환
 }
 
 int CameraListModel::indexForCameraId(const QString &cameraId) const
 {
-    return rowForCameraId(cameraId);
+    return rowForCameraId(cameraId);                                           // - 인덱스 조회: 카메라 ID 기준 행 인덱스 반환
 }
 
 void CameraListModel::updateRisk(const QString &cameraId, RiskTypes::RiskLevel level,
                                   RiskTypes::ExceptionState exception, double distanceM, bool distanceValid)
 {
-    const int row = rowForCameraId(cameraId);
-    if (row < 0)
-        return; // 모델에 없는 cameraId면 조용히 무시 (설정에 없는 카메라에서 이벤트가 온 경우)
+    const int row = rowForCameraId(cameraId);                                  // - 행 위치 조회: 대상 카메라 항목의 목록 인덱스 검색
+    if (row < 0)                                                               // - 무효 검증: 목록에 없는 카메라 ID인 경우 처리 생략
+        return;
 
-    Row &target = m_rows[row];
-    target.riskLevel = level;
-    target.exceptionState = exception;
-    target.distanceM = distanceM;
-    target.distanceValid = distanceValid;
+    Row &target = m_rows[row];                                                 // - 참조 획득: 대상 카메라 행 참조
+    target.riskLevel = level;                                                  // - 위험 단계 갱신: 새 위험 수준 저장
+    target.exceptionState = exception;                                         // - 예외 상태 갱신: 새 예외 상태 저장
+    target.distanceM = distanceM;                                              // - 측정 거리 갱신: 새 거리값 저장
+    target.distanceValid = distanceValid;                                      // - 거리 유효성 갱신: 새 유효성 여부 저장
 
-    // setCameras()와 달리 행 4개(리스크/예외/거리/거리유효성)만 바뀌었다고 콕 집어서 알림
-    // -> QML이 해당 셀만 다시 그림 (카드 전체를 다시 그리는 것보다 가벼움)
-    const QModelIndex idx = index(row);
-    emit dataChanged(idx, idx, {RiskLevelRole, ExceptionStateRole, DistanceRole, DistanceValidRole});
+    const QModelIndex idx = index(row);                                       // - 모델 인덱스 생성: 갱신 위치 인덱스 획득
+    emit dataChanged(idx, idx, {RiskLevelRole, ExceptionStateRole, DistanceRole, DistanceValidRole}); // - 변경 신호 발생: 변경된 속성에 대한 QML 갱신 알림
 }
 
 void CameraListModel::updateVideoConnectionState(const QString &cameraId, RiskTypes::ConnectionState state)
 {
-    const int row = rowForCameraId(cameraId);
-    if (row < 0)
+    const int row = rowForCameraId(cameraId);                                  // - 행 위치 조회: 대상 카메라 항목의 목록 인덱스 검색
+    if (row < 0)                                                               // - 무효 검증: 목록에 없는 카메라 ID인 경우 처리 생략
         return;
 
-    m_rows[row].videoConnectionState = state;
-    const QModelIndex idx = index(row);
-    emit dataChanged(idx, idx, {VideoConnectionStateRole});
+    m_rows[row].videoConnectionState = state;                                  // - 영상 상태 갱신: 새 연결 상태 저장
+    const QModelIndex idx = index(row);                                       // - 모델 인덱스 생성: 갱신 위치 인덱스 획득
+    emit dataChanged(idx, idx, {VideoConnectionStateRole});                    // - 변경 신호 발생: 영상 연결 상태에 대한 QML 갱신 알림
 }
 
 int CameraListModel::rowCount(const QModelIndex &parent) const
 {
-    if (parent.isValid())
+    if (parent.isValid())                                                      // - 유효성 검증: 부모 인덱스가 유효한 경우 0 반환
         return 0;
-    return m_rows.size();
+    return m_rows.size();                                                      // - 행 수 반환: 전체 카메라 개수 반환
 }
 
-// QML이 "이 행의 이 role 값 줘"라고 물어볼 때마다 호출됨 (delegate가 화면에 그릴 때마다)
 QVariant CameraListModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_rows.size())   // - 범주 검증: 유효하지 않은 인덱스 요청 시 빈 값 반환
         return {};
 
-    const Row &row = m_rows.at(index.row());
+    const Row &row = m_rows.at(index.row());                                   // - 행 참조: 요청 인덱스의 데이터 획득
     switch (role) {
-    case CameraIdRole: return row.info.cameraId;
-    case NameRole: return row.info.name;
-    case ZoneRole: return row.info.zone;
-    case RiskLevelRole: return QVariant::fromValue(row.riskLevel);
-    case ExceptionStateRole: return QVariant::fromValue(row.exceptionState);
-    case DistanceRole: return row.distanceM;
-    case DistanceValidRole: return row.distanceValid;
-    case VideoConnectionStateRole: return QVariant::fromValue(row.videoConnectionState);
-    default: return {};
+    case CameraIdRole: return row.info.cameraId;                               // - ID 반환: 카메라 ID 전달
+    case NameRole: return row.info.name;                                       // - 이름 반환: 카메라 명칭 전달
+    case ZoneRole: return row.info.zone;                                       // - 구역 반환: 설치 위치 전달
+    case RiskLevelRole: return QVariant::fromValue(row.riskLevel);             // - 위험 단계 반환: 위험 수준 전달
+    case ExceptionStateRole: return QVariant::fromValue(row.exceptionState);   // - 예외 상태 반환: 예외 상태 전달
+    case DistanceRole: return row.distanceM;                                  // - 거리 반환: 측정 거리 전달
+    case DistanceValidRole: return row.distanceValid;                         // - 거리 유효성 반환: 유효성 전달
+    case VideoConnectionStateRole: return QVariant::fromValue(row.videoConnectionState); // - 영상 상태 반환: 영상 연결 상태 전달
+    default: return {};                                                        // - 기본값 반환: 정의되지 않은 역할 요청 시 빈 값 반환
     }
 }
 
-// Roles enum 값 <-> QML에서 쓰는 문자열 이름 매핑표
-// 예: CameraGrid.qml의 "model.riskLevel"이 바로 여기 "riskLevel" 문자열과 연결됨
 QHash<int, QByteArray> CameraListModel::roleNames() const
 {
     return {
-        {CameraIdRole, "cameraId"},
-        {NameRole, "name"},
-        {ZoneRole, "zone"},
-        {RiskLevelRole, "riskLevel"},
-        {ExceptionStateRole, "exceptionState"},
-        {DistanceRole, "distanceM"},
-        {DistanceValidRole, "distanceValid"},
-        {VideoConnectionStateRole, "videoConnectionState"},
+        {CameraIdRole, "cameraId"},                                           // - 역할 매핑: QML cameraId 속성 연결
+        {NameRole, "name"},                                                   // - 역할 매핑: QML name 속성 연결
+        {ZoneRole, "zone"},                                                   // - 역할 매핑: QML zone 속성 연결
+        {RiskLevelRole, "riskLevel"},                                         // - 역할 매핑: QML riskLevel 속성 연결
+        {ExceptionStateRole, "exceptionState"},                               // - 역할 매핑: QML exceptionState 속성 연결
+        {DistanceRole, "distanceM"},                                          // - 역할 매핑: QML distanceM 속성 연결
+        {DistanceValidRole, "distanceValid"},                                 // - 역할 매핑: QML distanceValid 속성 연결
+        {VideoConnectionStateRole, "videoConnectionState"},                   // - 역할 매핑: QML videoConnectionState 속성 연결
     };
 }

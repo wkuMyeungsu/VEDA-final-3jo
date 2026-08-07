@@ -7,35 +7,25 @@
 #include "../models/CameraInfo.h"
 #include "IVideoSource.h"
 
-// 카메라마다 IVideoSource 1개씩 소유하고 camera_id로 꺼내주는 창구
-// - 카메라 종류(Mock/LocalFile/Rtsp) 판단은 createSource()가 전담
-// - VideoStream(QML)은 이 매니저에서만 소스를 받고, 직접 안 만듦
-// - 앱마다 1개만 생성되는 싱글턴, instance()로 접근
+// - 영상 소스 관리자 클래스 (카메라 ID별 IVideoSource 객체 보관 및 인스턴스 생성/구동 관리)
 class VideoSourceManager : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit VideoSourceManager(QObject *parent = nullptr);
-    // 보유 중인 IVideoSource들도 QObject 부모-자식 관계로 같이 정리됨
-    ~VideoSourceManager() override;
+    explicit VideoSourceManager(QObject *parent = nullptr);                     // - 생성자: 부모 객체 지정 및 싱글톤 인스턴스 등록
+    ~VideoSourceManager() override;                                           // - 소멸자: 보유 중인 영상 소스 객체 전체 정리
 
-    // 마지막으로 생성된 인스턴스를 반환 (앱당 1개만 만든다는 전제)
-    static VideoSourceManager *instance();
+    static VideoSourceManager *instance();                                     // - 인스턴스 조회: 프로세스 단일 인스턴스 포인터 반환
 
-    // 기존 소스는 전부 삭제하고 새 카메라 목록으로 다시 생성 (앱 시작 시 1회 호출)
-    void setCameras(const QVector<CameraInfo> &cameras);
-    // 모든 카메라의 start() 일괄 호출
-    void startAll();
-    // 모든 카메라의 stop() 일괄 호출
-    void stopAll();
+    void setCameras(const QVector<CameraInfo> &cameras);                       // - 카메라 설정 등록: 기존 소스 삭제 및 새 카메라 정보 기반 소스 객체 생성
+    void startAll();                                                           // - 전체 재생 시작: 등록된 모든 영상 소스의 start() 일괄 호출
+    void stopAll();                                                            // - 전체 재생 정지: 등록된 모든 영상 소스의 stop() 일괄 호출
 
-    // cameraId에 해당하는 소스 반환, 없으면 nullptr
-    IVideoSource *sourceFor(const QString &cameraId) const;
+    IVideoSource *sourceFor(const QString &cameraId) const;                     // - 소스 조회: 카메라 ID에 해당하는 영상 소스 객체 포인터 반환
 
 private:
-    // sourceType에 따라 Mock/LocalFile/Rtsp 중 실제로 인스턴스화할 클래스를 결정
-    IVideoSource *createSource(const CameraInfo &info);
+    IVideoSource *createSource(const CameraInfo &info);                         // - 소스 객체 생성: 카메라 소스 유형별(Mock/LocalFile/Rtsp) 객체 동적 생성
 
-    QHash<QString, IVideoSource *> m_sources;
+    QHash<QString, IVideoSource *> m_sources;                                  // - 영상 소스 맵: 카메라 ID 기준 영상 소스 포인터 배열 보관
 };

@@ -1,4 +1,3 @@
-// 지게차 단말 - 서버 핸드오버 제어 채널 구현
 #include "HandoverClient.h"
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -6,138 +5,139 @@
 #include <QTimer>
 
 namespace {
-Q_LOGGING_CATEGORY(lcHandoverClient, "safety.handover.client")
+Q_LOGGING_CATEGORY(lcHandoverClient, "safety.handover.client")                  // - 로깅 카테고리 정의: 통신 로그 분류용 이름 지정
 
-// 재연결 대기 시간(ms). 값의 근거:
-//  - ConnectionRefused는 거의 즉시 돌아오므로, 쿨다운이 0이면 사실상 무한 루프로
-//    서버를 두드린다 -> 최소한의 간격이 필요하다.
-//  - 안전 단말이라 너무 길면 복구가 느리다. 3초는 "빠른 복구 vs 서버/로그 안 두드림"의 타협점.
-//  - RtspVideoSource의 재연결과 같은 값이라, 단말 안의 두 연결(영상/제어)이 똑같이 동작한다.
-// 배포별로 다르게 하고 싶으면 이 상수 한 곳만 terminal.json 설정으로 빼면 된다.
-constexpr int kReconnectDelayMs = 3000;
+constexpr int kReconnectDelayMs = 3000;                                         // - 재연결 대기 시간 설정 (3초): 서버 부하 방지 및 빠른 복구 목적
 }
 
 HandoverClient::HandoverClient(QObject *parent)
     : QObject(parent)
 {
-    connect(&m_socket, &QTcpSocket::connected, this, &HandoverClient::handleConnected);
-    connect(&m_socket, &QTcpSocket::disconnected, this, &HandoverClient::handleDisconnected);
-    connect(&m_socket, &QTcpSocket::readyRead, this, &HandoverClient::handleReadyRead);
-    connect(&m_socket, &QTcpSocket::errorOccurred, this, &HandoverClient::handleError);
+    connect(&m_socket, &QTcpSocket::connected, this, &HandoverClient::handleConnected);       // - 연결 성공 이벤트 연결
+    connect(&m_socket, &QTcpSocket::disconnected, this, &HandoverClient::handleDisconnected); // - 연결 끊김 이벤트 연결
+    connect(&m_socket, &QTcpSocket::readyRead, this, &HandoverClient::handleReadyRead);       // - 데이터 수신 이벤트 연결
+    connect(&m_socket, &QTcpSocket::errorOccurred, this, &HandoverClient::handleError);       // - 통신 오류 이벤트 연결
 }
 
-// 서버에 접속한다. 재연결 때 재사용하려고 host/port를 저장하고, 이전에 걸어둔
-// "의도적 끊김" 표시를 지워 자동 재연결을 다시 켠다.
 void HandoverClient::connectToServer(const QString &host, quint16 port)
 {
-    m_host = host;
-    m_port = port;
-    m_intentionalDisconnect = false;
+    m_host = host;                                                              // - 접속 주소 저장: 재연결용 호스트 정보 보관
+    m_port = port;                                                              // - 접속 포트 저장: 재연결용 포트 정보 보관
+    m_intentionalDisconnect = false;                                          // - 수동 종료 플래그 초기화: 자동 재연결 활성화
 
-    setConnectionState(RiskTypes::ConnectionState::Connecting);
-    m_socket.connectToHost(host, port);
+    setConnectionState(RiskTypes::ConnectionState::Connecting);                // - 상태 변경: 연결 진행 중 상태로 설정
+    m_socket.connectToHost(host, port);                                        // - 서버 접속 시도: 지정 주소 및 포트로 연결 요청
 }
 
-// 서버 연결을 의도적으로 끊는다. m_intentionalDisconnect를 세워 두어, 뒤이어 오는
-// 끊김 처리기가 자동 재연결을 걸지 않게 한다.
 void HandoverClient::disconnectFromServer()
 {
-    m_intentionalDisconnect = true;
-    m_socket.disconnectFromHost();
+    m_intentionalDisconnect = true;                                            // - 수동 종료 설정: 자동 재연결 동작 차단
+    m_socket.disconnectFromHost();                                             // - 연결 해제: 서버와의 소켓 연결 종료
 }
 
-// 접속 성공.
 void HandoverClient::handleConnected()
 {
-    setConnectionState(RiskTypes::ConnectionState::Connected);
+    setConnectionState(RiskTypes::ConnectionState::Connected);                 // - 상태 갱신: 연결 상태를 '연결됨'으로 변경
+    sendHello();                                                               // - 식별 정보 전송: 서버에 단말 ID 알림 함수 호출
 }
 
-// 연결돼 있던 소켓이 끊겼을 때. 버퍼를 비우고 상태를 갱신한 뒤, (의도적으로 끊은 게
-// 아니라면) 재연결을 예약한다.
-void HandoverClient::handleDisconnected()
+void HandoverClient::sendHello()
 {
-    m_buffer.clear();
-    setConnectionState(RiskTypes::ConnectionState::Disconnected);
-    scheduleReconnect();
-}
-
-// 소켓 오류. 로그를 남기고 상태를 갱신한 뒤 재연결을 예약한다. "첫 접속 실패"(서버가
-// 아직 안 뜬 경우)는 errorOccurred만 오고 disconnected는 오지 않으므로, 여기서
-// 재시도를 걸어줘야 서버보다 먼저 켠 단말이 나중에라도 붙을 수 있다.
-void HandoverClient::handleError(QAbstractSocket::SocketError error)
-{
-    qCWarning(lcHandoverClient) << "소켓 오류:" << error << m_socket.errorString();
-    setConnectionState(RiskTypes::ConnectionState::Disconnected);
-    scheduleReconnect();
-}
-
-// 마지막으로 접속했던 곳으로 일정 시간 뒤 다시 시도한다. RtspVideoSource::
-// scheduleReconnect()와 같은 방식이다: this가 소유하는 QTimer::singleShot이라
-// 이 객체가 먼저 파괴되면 콜백이 자동 취소된다(허상 접근 방지). m_reconnectPending은
-// 한 번의 끊김에 errorOccurred+disconnected가 둘 다 와도 재시도를 하나로 합친다.
-//
-// 재시도 중에는 일부러 Connecting 상태를 내보내지 않는다 -> 서버가 죽어 있는 동안
-// 배지가 Connecting<->Disconnected로 깜빡이지 않고 Disconnected를 유지하고,
-// 실제로 붙었을 때만 Connected로 바뀐다.
-void HandoverClient::scheduleReconnect()
-{
-    if (m_intentionalDisconnect || m_reconnectPending || m_host.isEmpty())
+    if (m_terminalId.isEmpty())                                                // - ID 확인: 단말 ID 미설정 시 전송 생략
         return;
 
-    m_reconnectPending = true;
-    QTimer::singleShot(kReconnectDelayMs, this, [this]() {
-        m_reconnectPending = false;
-        if (m_intentionalDisconnect)
-            return;
-        // 대기하는 동안 누군가 connectToServer()로 이미 (재)접속을 시작했다면,
-        // 접속을 두 번 시도하지 않도록 여기서 멈춘다.
-        if (m_socket.state() != QAbstractSocket::UnconnectedState)
+    QJsonObject obj;                                                            // - 메시지 객체 생성: 전송용 JSON 객체 생성
+    obj[QStringLiteral("type")] = QStringLiteral("hello");                      // - 메시지 유형 설정: 'hello' 타입 지정
+    obj[QStringLiteral("terminal_id")] = m_terminalId;                           // - 단말 ID 설정: 현재 단말 식별자 지정
+
+    m_socket.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));          // - 데이터 전송: JSON 메시지 변환 및 전송
+    m_socket.write("\n");                                                       // - 줄바꿈 전송: 메시지 구분용 개행 문자 전송
+}
+
+void HandoverClient::handleDisconnected()
+{
+    m_buffer.clear();                                                          // - 버퍼 초기화: 수신 데이터 임시 저장소 비우기
+    setConnectionState(RiskTypes::ConnectionState::Disconnected);               // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
+    scheduleReconnect();                                                       // - 재연결 예약: 일정 시간 후 재접속 시도
+}
+
+void HandoverClient::handleError(QAbstractSocket::SocketError error)
+{
+    qCWarning(lcHandoverClient) << "소켓 오류:" << error << m_socket.errorString(); // - 경고 로그 출력: 오류 내용 및 상세 원인 기록
+    setConnectionState(RiskTypes::ConnectionState::Disconnected);               // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
+    scheduleReconnect();                                                       // - 재연결 예약: 접속 실패 시 자동 복구 재시도
+}
+
+void HandoverClient::scheduleReconnect()
+{
+    if (m_intentionalDisconnect || m_reconnectPending || m_host.isEmpty())      // - 중복 시도 차단: 수동 종료, 예약 중, 주소 미설정 시 생략
+        return;
+
+    m_reconnectPending = true;                                                 // - 예약 상태 설정: 중복 타이머 생성 방지
+
+    QTimer::singleShot(kReconnectDelayMs, this, [this]() {                     // - 지연 실행 예약: 3초 후 재접속 작업 진행
+        m_reconnectPending = false;                                             // - 예약 상태 해제: 대기 상태 초기화
+
+        if (m_intentionalDisconnect)                                            // - 수동 종료 확인: 대기 중 종료 요청 시 중단
             return;
 
-        m_socket.connectToHost(m_host, m_port);
+        if (m_socket.state() != QAbstractSocket::UnconnectedState)              // - 소켓 상태 확인: 다른 접속 시도 중인 경우 중단
+            return;
+
+        m_socket.connectToHost(m_host, m_port);                                 // - 재접속 시도: 저장된 주소 및 포트로 접속 요청
     });
 }
 
-// 도착한 데이터를 버퍼에 모으고, 개행(\n)으로 끝나는 완성된 줄만 골라 처리한다.
 void HandoverClient::handleReadyRead()
 {
-    m_buffer += m_socket.readAll();
+    m_buffer += m_socket.readAll();                                             // - 데이터 누적: 수신 데이터를 버퍼에 연속 저장
 
-    // 한 줄에 JSON 하나(개행 구분) -- 팀과 프레이밍이 확정되기 전까지 쓰는 임시 방식.
     int newlineIndex;
-    while ((newlineIndex = m_buffer.indexOf('\n')) != -1) {
-        const QByteArray line = m_buffer.left(newlineIndex);
-        m_buffer.remove(0, newlineIndex + 1);
-        if (!line.trimmed().isEmpty())
+    while ((newlineIndex = m_buffer.indexOf('\n')) != -1) {                    // - 줄 단위 처리: 개행 문자(\n) 검색 및 반복 처리
+        const QByteArray line = m_buffer.left(newlineIndex);                   // - 한 줄 추출: 개행 문자 전까지 데이터 잘라내기
+        m_buffer.remove(0, newlineIndex + 1);                                  // - 버퍼 정리: 처리된 데이터 및 개행 문자 제거
+
+        if (!line.trimmed().isEmpty())                                         // - 유효 검증: 공백이 아닌 경우 해석 함수 호출
             processLine(line);
     }
 }
 
-// 서버가 보낸 한 줄(JSON)을 해석한다. "type"이 "camera_assignment"이고 "camera_id"가
-// 있으면 cameraHandoverRequested 신호를 낸다. (스키마는 아직 임시값 - 헤더 참고.)
 void HandoverClient::processLine(const QByteArray &line)
 {
-    const QJsonObject obj = QJsonDocument::fromJson(line).object();
+    const QJsonObject obj = QJsonDocument::fromJson(line).object();             // - JSON 변환: 수신 문장 해석 및 객체 변환
 
-    if (obj.value(QStringLiteral("type")).toString() != QStringLiteral("camera_assignment")) {
-        qCWarning(lcHandoverClient) << "알 수 없는 메시지 무시:" << line;
+    if (obj.value(QStringLiteral("type")).toString() != QStringLiteral("camera_assignment")) { // - 종류 검증: 카메라 할당 메시지 확인
+        qCWarning(lcHandoverClient) << "알 수 없는 메시지 무시:" << line;     // - 경고 로그: 알 수 없는 메시지 기록
         return;
     }
 
-    const QString cameraId = obj.value(QStringLiteral("camera_id")).toString();
-    if (cameraId.isEmpty()) {
+    if (!m_terminalId.isEmpty()) {                                             // - 단말 ID 확인: 단말 ID가 설정된 경우 검증 진행
+        if (!obj.contains(QStringLiteral("terminal_id"))) {                   // - ID 존재 확인: 수신 대상 ID 누락 시 무시
+            qCWarning(lcHandoverClient) << "terminal_id 없는 camera_assignment 무시:" << line;
+            return;
+        }
+
+        const QString msgTerminalId = obj.value(QStringLiteral("terminal_id")).toString();
+        if (msgTerminalId != m_terminalId) {                                   // - ID 일치 확인: 타 단말 대상 메시지인 경우 무시
+            qCWarning(lcHandoverClient) << "다른 단말(" << msgTerminalId << ") 대상 명령 무시:" << line;
+            return;
+        }
+    }
+
+    const QString cameraId = obj.value(QStringLiteral("camera_id")).toString(); // - 카메라 ID 추출: 할당된 카메라 식별자 추출
+    if (cameraId.isEmpty()) {                                                  // - ID 누락 확인: 카메라 ID가 빈 값인 경우 무시
         qCWarning(lcHandoverClient) << "camera_assignment에 camera_id 없음:" << line;
         return;
     }
 
-    emit cameraHandoverRequested(cameraId);
+    emit cameraHandoverRequested(cameraId);                                    // - 화면 전환 요청: 카메라 핸드오버 신호 발생
 }
 
-// 상태가 실제로 바뀐 경우에만 갱신하고 connectionStateChanged 신호를 낸다.
 void HandoverClient::setConnectionState(RiskTypes::ConnectionState state)
 {
-    if (m_connectionState == state)
+    if (m_connectionState == state)                                            // - 중복 변경 방지: 현재 상태와 동일한 경우 생략
         return;
-    m_connectionState = state;
-    emit connectionStateChanged(state);
+
+    m_connectionState = state;                                                 // - 상태값 갱신: 내부 상태 변수 업데이트
+    emit connectionStateChanged(state);                                        // - 신호 발생: 상태 변경 이벤트 외부 전달
 }
