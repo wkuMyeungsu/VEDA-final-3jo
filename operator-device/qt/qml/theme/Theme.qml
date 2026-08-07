@@ -30,6 +30,10 @@ QtObject {
     readonly property color colorEmergency: "#ff3b3b"
     readonly property color colorEmergencyBg: "#3d0a0a"
 
+    // 통신/카메라 끊김 등으로 riskLevel을 신뢰할 수 없을 때 쓰는 중립색 (안전으로 오인 방지)
+    readonly property color colorUnknown: "#9aa4bb"
+    readonly property color colorUnknownBg: "#20263a"
+
     readonly property color colorPersonBox: "#4fc3f7"
     readonly property color colorForkliftBox: "#ffb74d"
 
@@ -102,7 +106,7 @@ QtObject {
         case 3: return "EMERGENCY_IMPACT"
         case 4: return "NETWORK_DISCONNECTED"
         case 5: return "CAMERA_DISCONNECTED"
-        case 6: return "UNCONFIRMED_PROXIMITY"
+        case 6: return "NOT CONFIRMED"
         default: return "NONE"
         }
     }

@@ -8,6 +8,7 @@
 
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
+#include "network/RiskEventSource.h"
 #include "services/DemoController.h"
 #include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
@@ -51,7 +52,11 @@ int main(int argc, char *argv[])
 
     MetadataDistributor metadataDistributor(cameras, appConfig.eventLogMaxEntries);
     MockMetadataSource metadataSource(cameras);
-    metadataDistributor.setSource(&metadataSource);
+    RiskEventSource riskEventSource(appConfig.serverHost, appConfig.serverPort); // - 실제 서버 데이터 소스 생성: TCP 통신 수신 객체
+    IMetadataSource *activeMetadataSource = &metadataSource;                    // - 활성 데이터 소스 지정: 기본값으로 가상 소스 설정
+    if (appConfig.metadataSourceType == QStringLiteral("tcp"))                  // - 소스 유형 확인: 설정값이 tcp인 경우 실제 소스로 변경
+        activeMetadataSource = &riskEventSource;
+    metadataDistributor.setSource(activeMetadataSource);
 
     ServerConnectionService serverConnection;
     DemoController demoController(&metadataSource, &videoManager, &serverConnection);

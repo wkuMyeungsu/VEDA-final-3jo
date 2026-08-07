@@ -106,6 +106,8 @@ qt_add_qml_module(safety_common
         network/IMetadataSource.h
         network/MockMetadataSource.h
         network/MockMetadataSource.cpp
+        network/RiskEventSource.h
+        network/RiskEventSource.cpp
 
         config/ConfigTypes.h
         config/ConfigLoader.h
