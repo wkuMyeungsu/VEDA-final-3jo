@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QObject>
 #include <QTcpSocket>
+#include <QTimer>
 
 #include "../models/RiskMetadata.h"
 #include "IMetadataSource.h"
@@ -23,6 +24,7 @@ private slots:
     void handleDisconnected();                                               // - 연결 끊김 처리: 서버 연결 해제 이벤트 핸들러
     void handleReadyRead();                                                  // - 데이터 수신 처리: 서버 데이터 수신 이벤트 핸들러
     void handleError(QAbstractSocket::SocketError error);                    // - 통신 오류 처리: 소켓 에러 발생 이벤트 핸들러
+    void handleWatchdogTimeout();                                            // - 무수신 감지 처리: 워치독 만료 시 통신 끊김 상태 통지
 
 private:
     void processLine(const QByteArray &line);                                // - 수신 데이터 해석: 한 줄(JSON) 검증, 오래된 데이터 필터링 및 신호 전달
@@ -34,4 +36,7 @@ private:
     QByteArray m_buffer;                                                     // - 수신 버퍼: 미완성 데이터 누적용 임시 저장소
     bool m_stopRequested = false;                                            // - 수동 종료 상태: 사용자 요청에 의한 종료 여부 (자동 재연결 차단용)
     bool m_reconnectPending = false;                                         // - 재연결 진행 상태: 중복 타이머 생성 방지용 플래그
+    int m_reconnectDelayMs = 0;                                              // - 다음 재연결 대기 시간: 실패마다 2배로 증가(exponential backoff)
+    QTimer m_watchdogTimer;                                                  // - 무수신 감지 타이머: 데이터 수신마다 재시작, 만료 시 통신 끊김 판단
+    QString m_lastCameraId;                                                  // - 마지막 수신 카메라 ID: 워치독 만료 시 어느 카드에 표시할지 판단용
 };
