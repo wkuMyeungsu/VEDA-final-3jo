@@ -62,6 +62,12 @@ SensorInput StubSensorReader::read() {
 JudgmentPipeline::JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors)
     : active_camera_id_(active_camera_id), terminal_id_(terminal_id), sensors_(&sensors) {}
 
+void JudgmentPipeline::setActiveCameraId(int camera_id) {
+    if (camera_id == active_camera_id_) return;
+    active_camera_id_ = camera_id;
+    engine_.resetHysteresis();
+}
+
 CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
                                             bool forklift_localized,
                                             const NearestPersonResult& nearest) const {

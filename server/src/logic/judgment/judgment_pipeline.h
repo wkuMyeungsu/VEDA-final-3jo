@@ -114,6 +114,21 @@ public:
     int activeCameraId() const { return active_camera_id_; }
     const std::string& terminalId() const { return terminal_id_; }
 
+    // 담당 카메라를 바꾼다(핸드오버). MarkerChannelTracker가 액티브 채널 변경을
+    // 알려올 때 호출부가 부른다 - 생성자 인자로 한 번 박고 마는 값이었는데,
+    // 지게차를 따라 카메라가 바뀌면 하류 JSON의 camera_id도 같이 따라가야 한다.
+    //
+    // 카메라가 바뀌면 엔진의 EMERGENCY 히스테리시스 래치도 같이 푼다. 직전 카메라
+    // 기준 거리로 걸린 래치를, 시야도 좌표계도 다른 새 카메라의 첫 프레임에 그대로
+    // 물려주면 근거 없는 EMERGENCY가 유지된다(danger_judgment_engine.h의
+    // resetHysteresis() 주석이 말하는 "판정 대상이 바뀌는 경우"가 바로 이것이다).
+    // 값이 실제로 달라질 때만 리셋하므로 같은 값으로 여러 번 불러도 안전하다.
+    //
+    // [주의] 이 함수와 processFrame()은 같은 스레드에서 불러야 한다. 엔진 히스테리시스가
+    //        원래부터 단일 스레드 전제라(엔진 헤더 evaluate() 주석) 여기에도 락을 두지
+    //        않았다. main.cpp에서는 둘 다 appsink 콜백 스레드에서만 호출된다.
+    void setActiveCameraId(int camera_id);
+
     // 임계값 보정(확정된 실험 4종 결과 반영)을 호출부에서 할 수 있도록 엔진을 노출한다.
     DangerJudgmentEngine&       engine()       { return engine_; }
     const DangerJudgmentEngine& engine() const { return engine_; }
