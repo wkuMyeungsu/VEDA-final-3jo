@@ -1,0 +1,11 @@
+{
+  "forklift": {
+    "marker_id": 0,
+    "forklift_id": "FL_01",
+    "terminal_id": "TERM_01"
+  },
+  "handover": {
+    "confirm_frames": 3,
+    "lost_grace_ms": 500
+  }
+}

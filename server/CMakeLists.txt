@@ -21,6 +21,20 @@ pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 
 set(SERVER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# 벤더링한 외부 헤더 라이브러리 (nlohmann/json single-header). 출처·버전·왜 시스템
+# 패키지가 아닌지는 third_party/README.md 참고.
+set(SERVER_THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+
+# 설정 계층: 단말별 JSON 설정 로드
+# json.hpp는 무겁고(약 900KB) 이 타깃 안에서만 필요하므로 include를 PRIVATE로 막는다.
+add_library(server_config STATIC
+    src/config/terminal_config.cpp
+)
+target_include_directories(server_config
+    PUBLIC  ${SERVER_SRC_DIR}
+    PRIVATE ${SERVER_THIRD_PARTY_DIR}
+)
+
 # 입력 계층: RTSP/RTP 수신, XML 재조립, 메타데이터 라우팅·파싱
 add_library(server_input STATIC
     src/input/rtp_metadata_receiver.cpp
@@ -44,6 +58,7 @@ target_link_libraries(server_logging PUBLIC SQLite::SQLite3 Threads::Threads)
 # 추적 계층
 add_library(server_tracking STATIC
     src/logic/tracking/nearest_person_selector.cpp
+    src/logic/tracking/marker_channel_tracker.cpp
 )
 target_include_directories(server_tracking PUBLIC ${SERVER_SRC_DIR})
 target_link_libraries(server_tracking PUBLIC Threads::Threads)
@@ -69,6 +84,7 @@ target_include_directories(forklift_safety_server PRIVATE ${SERVER_SRC_DIR})
 target_link_libraries(forklift_safety_server PRIVATE
     server_input
     server_logging
+    server_config
     server_judgment
     server_network
     PkgConfig::GST

@@ -33,6 +33,15 @@ add_executable(test_result_publisher test_result_publisher.cpp)
 target_link_libraries(test_result_publisher PRIVATE server_judgment Threads::Threads)
 add_test(NAME result_publisher_test COMMAND test_result_publisher)
 
+add_executable(test_terminal_config test_terminal_config.cpp)
+target_link_libraries(test_terminal_config PRIVATE server_config)
+add_test(NAME terminal_config_test COMMAND test_terminal_config)
+
+# 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
+add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)
+target_link_libraries(test_marker_channel_tracker PRIVATE server_tracking)
+add_test(NAME marker_channel_tracker_test COMMAND test_marker_channel_tracker)
+
 add_executable(test_camera_assignment_server test_camera_assignment_server.cpp)
 target_include_directories(test_camera_assignment_server PRIVATE ${SERVER_SRC_DIR})
 target_link_libraries(test_camera_assignment_server PRIVATE Threads::Threads)
