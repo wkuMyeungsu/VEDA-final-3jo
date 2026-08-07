@@ -7,7 +7,8 @@
 namespace {
 Q_LOGGING_CATEGORY(lcHandoverClient, "safety.handover.client")                  // - 로깅 카테고리 정의: 통신 로그 분류용 이름 지정
 
-constexpr int kReconnectDelayMs = 3000;                                         // - 재연결 대기 시간 설정 (3초): 서버 부하 방지 및 빠른 복구 목적
+constexpr int kReconnectBaseDelayMs = 3000;                                     // - 재연결 시작 대기 시간 (3초): 첫 재시도 간격
+constexpr int kReconnectMaxDelayMs = 30000;                                     // - 재연결 최대 대기 시간 (30초): 서버 장기 다운 시 재시도 폭주 방지
 }
 
 HandoverClient::HandoverClient(QObject *parent)
@@ -24,6 +25,7 @@ void HandoverClient::connectToServer(const QString &host, quint16 port)
     m_host = host;                                                              // - 접속 주소 저장: 재연결용 호스트 정보 보관
     m_port = port;                                                              // - 접속 포트 저장: 재연결용 포트 정보 보관
     m_intentionalDisconnect = false;                                          // - 수동 종료 플래그 초기화: 자동 재연결 활성화
+    m_reconnectDelayMs = kReconnectBaseDelayMs;                                 // - 재연결 대기 시간 초기화: 수동 재접속은 backoff 처음부터 다시
 
     setConnectionState(RiskTypes::ConnectionState::Connecting);                // - 상태 변경: 연결 진행 중 상태로 설정
     m_socket.connectToHost(host, port);                                        // - 서버 접속 시도: 지정 주소 및 포트로 연결 요청
@@ -37,6 +39,7 @@ void HandoverClient::disconnectFromServer()
 
 void HandoverClient::handleConnected()
 {
+    m_reconnectDelayMs = kReconnectBaseDelayMs;                                // - 재연결 대기 시간 초기화: 연결 성공 시 backoff 처음부터 다시
     setConnectionState(RiskTypes::ConnectionState::Connected);                 // - 상태 갱신: 연결 상태를 '연결됨'으로 변경
     sendHello();                                                               // - 식별 정보 전송: 서버에 단말 ID 알림 함수 호출
 }
@@ -75,7 +78,10 @@ void HandoverClient::scheduleReconnect()
 
     m_reconnectPending = true;                                                 // - 예약 상태 설정: 중복 타이머 생성 방지
 
-    QTimer::singleShot(kReconnectDelayMs, this, [this]() {                     // - 지연 실행 예약: 3초 후 재접속 작업 진행
+    const int delay = m_reconnectDelayMs;                                      // - 이번 대기 시간 확정: 다음 시도용 증가 전 값 사용
+    m_reconnectDelayMs = qMin(m_reconnectDelayMs * 2, kReconnectMaxDelayMs);    // - 다음 대기 시간 증가: 실패할수록 간격을 2배씩 늘림(상한 30초)
+
+    QTimer::singleShot(delay, this, [this]() {                                 // - 지연 실행 예약: 현재 backoff 간격만큼 대기 후 재접속 작업 진행
         m_reconnectPending = false;                                             // - 예약 상태 해제: 대기 상태 초기화
 
         if (m_intentionalDisconnect)                                            // - 수동 종료 확인: 대기 중 종료 요청 시 중단

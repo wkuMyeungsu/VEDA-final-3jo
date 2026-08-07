@@ -49,4 +49,5 @@ private:
 
     bool m_intentionalDisconnect = false;                                      // - 수동 종료 상태: 사용자 요청에 의한 종료 여부
     bool m_reconnectPending = false;                                            // - 재연결 진행 상태: 중복 타이머 생성 방지용 플래그
+    int m_reconnectDelayMs = 0;                                                 // - 다음 재연결 대기 시간: 실패마다 2배로 증가(exponential backoff)
 };
