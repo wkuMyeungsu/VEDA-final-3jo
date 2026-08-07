@@ -26,7 +26,12 @@ server/
 │
 ├── config/                           # 설정 파일 (JSON 등)
 │   ├── camera_config.json
+│   ├── terminal_TERM_01.json         # 단말 1대분 설정 (단말당 파일 1개)
 │   └── README.md
+│
+├── third_party/                      # 벤더링한 외부 라이브러리 (수정 금지)
+│   ├── nlohmann/json.hpp             # JSON 파서 single-header v3.11.3 (MIT)
+│   └── README.md                     # 출처·버전·왜 벤더링인지
 │
 ├── tests/                            # 테스트 코드만 독립 보관
 │   ├── CMakeLists.txt
@@ -34,10 +39,13 @@ server/
 │   ├── test_onvif_metadata_parser.cpp
 │   ├── test_aruco_metadata_parser.cpp
 │   ├── test_metadata_router.cpp
+│   ├── test_terminal_config.cpp
+│   ├── test_marker_channel_tracker.cpp
 │   ├── test_judgment_pipeline.cpp
 │   ├── test_exception_trigger.cpp    # ctest 타깃명: judgment_engine_test
 │   ├── test_event_logger.cpp
 │   ├── test_result_publisher.cpp
+│   ├── test_camera_assignment_server.cpp
 │   └── sensor_fusion_smoke_test.cpp  # [빌드 미포함] 라즈베리파이 실기 전용 HW 스모크 테스트
 │
 ├── _tools/                           # 보조 도구 (실행 파이프라인과 무관)
@@ -53,6 +61,9 @@ server/
     │   ├── metadata_timing.hpp
     │   └── latency_stamps.hpp        # 서버 내부 지연 계측 스탬프
     │
+    ├── config/                       # 설정 파일 로드 (config/*.json -> 구조체)
+    │   └── terminal_config.*         # 단말별 마커 ID / 단말 ID / 핸드오버 파라미터
+    │
     ├── input/                        # 데이터 수신 및 파싱 (RTSP, ONVIF, ArUco)
     │   ├── rtp_metadata_receiver.*   # RTP 헤더 파싱 / XML 조각 재조립
     │   ├── onvif_metadata_parser.*   # 객체탐지(VideoAnalytics) XML 파서
@@ -64,6 +75,7 @@ server/
     │   ├── homography/               # 호모그래피 좌표 변환 (README 자리만 확보)
     │   ├── tracking/
     │   │   ├── nearest_person_selector.*
+    │   │   ├── marker_channel_tracker.* # 지게차 마커가 보이는 카메라 채널 판정(핸드오버)
     │   │   └── cross_camera_reid.cpp # [빌드 미포함] 카메라 간 ID 유지(Re-ID), 미완성 짝
     │   └── judgment/
     │       ├── danger_judgment_engine.*
@@ -90,18 +102,55 @@ cmake --build build -j2
 cd build && ctest --output-on-failure
 ```
 
+두 번째 인자로 단말 설정 파일 경로를 줄 수 있다. 생략하면 `TERM_01` 기본 파일을
+`config/` → `../config/` → `server/config/` 순으로 찾는다(실행 위치에 따라 상대경로가
+달라지는 문제를 완화하기 위한 것으로, 아래 "런타임 데이터"의 CWD 주의사항과 같은 성격이다).
+설정을 못 읽으면 서버는 그 자리에서 종료된다(종료코드 2).
+
+```bash
+./build/forklift_safety_server "rtsp://..." config/terminal_TERM_02.json
+```
+
 ## 빌드 구성 (CMake)
 
 ```text
 server_input    ← src/input/*                        (pugixml)
 server_logging  ← src/logging/*                      (SQLite3, Threads)
+server_config   ← src/config/*                       (third_party/nlohmann, PRIVATE)
 server_tracking ← src/logic/tracking/nearest_person_selector.cpp
+                                     marker_channel_tracker.cpp
 server_judgment ← src/logic/judgment/*               (→ server_tracking)
 server_network  ← src/network/result_publisher.cpp   (→ server_judgment)
 
 실행파일: forklift_safety_server  (src/app/main.cpp)
           event_log_viewer        (_tools/event_log_viewer_main.cpp)
 ```
+
+`json.hpp`는 헤더 하나가 약 900KB라 빌드 시간에 영향을 준다. `server_config`
+타깃에서만 PRIVATE으로 include하고 다른 계층 헤더에는 노출하지 않는다
+(`terminal_config.hpp`의 공개 API에 nlohmann 타입이 하나도 없는 이유).
+
+## 카메라 자동 전환 (핸드오버)
+
+지게차에 붙은 ArUco 마커가 어느 카메라에 보이는지를 `MarkerChannelTracker`가 추적하고,
+액티브 채널이 **실제로 바뀌는 순간에만** 두 가지가 일어난다.
+
+1. `JudgmentPipeline::setActiveCameraId()` — 이후 판정 결과 JSON의 `camera_id`가 새 채널로 나간다
+2. `CameraAssignmentServer::sendCameraAssignment()` — 9001 채널로 단말 화면 전환 지시
+
+판정 규칙(설정 `handover` 절에서 조정):
+
+```text
+confirm_frames  연속 검출 이만큼 쌓인 카메라만 "확정 후보"     (기본 3)
+lost_grace_ms   액티브가 마커를 놓쳐도 이 시간까지는 유지      (기본 500ms)
+
+전환 조건 = 액티브에서 마커를 마지막으로 본 지 lost_grace_ms 초과
+            && 다른 카메라가 확정 후보
+```
+
+액티브를 새로 잡는 건 즉시, 잡고 있던 걸 놓는 건 신중하게 — `DangerJudgmentEngine`의
+EMERGENCY 히스테리시스와 같은 원칙을 시간 축에 적용한 것이다. 서버 기동 직후처럼 아직
+어느 카메라에서도 마커가 확정되지 않은 구간에서는 `camera_id`가 `null`로 나간다.
 
 ## 런타임 데이터
 
