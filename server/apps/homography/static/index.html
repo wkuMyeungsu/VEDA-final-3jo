@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Server Admin</title>
+  <title>Homography</title>
   <style>
     body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#20252b;background:#f6f7f9}
     section{background:#fff;border:1px solid #dfe3e8;border-radius:10px;padding:1.2rem;margin:1rem 0}
@@ -14,9 +14,8 @@
   </style>
 </head>
 <body>
-  <h1>Server Admin</h1>
-  <p class="muted">관리 화면은 초기 골격입니다. 서버 상태 연동은 다음 단계에서 연결합니다.</p>
-  <section><h2>Server</h2><p id="status">확인 중...</p></section>
+  <h1>Homography</h1>
+  <p class="muted">보드 생성과 Homography 검증 전용 앱</p>
   <section><h2>Homography</h2>
     <div class="row"><button onclick="selftest()">Selftest</button></div>
     <h3>보드 생성</h3>
@@ -52,7 +51,6 @@
     async function genBoard(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';const result=await call('/api/homography/gen-board',{config:v('#config'),output:v('#output'),board_width_mm:v('#width'),board_height_mm:v('#height'),margin_mm:v('#margin'),dpi:v('#dpi')});document.querySelector('#result').textContent=JSON.stringify(result,null,2);if(result.ok){const url=result.artifact_url+'?t='+Date.now();document.querySelector('#artifact').hidden=false;document.querySelector('#download').href=url;document.querySelector('#preview').src=url;}}
     async function calibrate(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/calibrate',{config:v('#config'),input:v('#cal-input'),output:v('#cal-output'),channel:v('#cal-channel'),max_rmse_cm:v('#cal-gate')}),null,2)}
     async function viewResult(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/view',{config:v('#config'),homography:v('#view-h'),input:v('#cal-input'),output_dir:v('#view-dir')}),null,2)}
-    fetch('/api/status').then(r=>r.json()).then(x=>document.querySelector('#status').textContent=JSON.stringify(x)).catch(e=>document.querySelector('#status').textContent='GUI 서버 연결 실패')
   </script>
 </body>
 </html>
