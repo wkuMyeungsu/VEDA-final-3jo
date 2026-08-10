@@ -13,6 +13,8 @@
 //   [테스트 7] 전송 정책: 상태 변화 시에만 즉시 전송, 무변화 submit은 전송하지 않음
 //   [테스트 8] 전송 정책: 무변화 구간의 주기 재전송(하트비트) + 변화 시 타이머 리셋
 //   [테스트 9] 정책 -> 소켓 end-to-end (하트비트가 실제로 단말까지 도착하는지)
+//   [테스트 10] 기동 시 idle 프라이밍: submit() 0회에도 하트비트가 도는지 (+ 프라이밍이
+//               이벤트 로그/지연 계측/첫 판정 전송을 왜곡하지 않는지)
 //
 // [구조 변경 2026-08-03] ResultPublisher가 client(connect)에서 server(listen/accept)로
 //   바뀌었기 때문에, 이 테스트의 수신부도 "서버 역할"에서 "단말 역할(client)"로 뒤집혔다.
@@ -409,6 +411,110 @@ void testDispatcherSendsOnlyOnChange() {
           "예외 상태가 JSON에 반영됨");
 }
 
+// 기동 시 idle 프라이밍 - submit()이 한 번도 안 불려도 하트비트가 도는지.
+//
+// 회귀 대상 버그: submit()은 main.cpp의 ObjectDetection 분기에서만 불리므로 카메라가
+// 객체 메타데이터를 한 번도 안 올리면 has_last_가 계속 false였고, run()의 하트비트
+// 루프가 영원히 대기만 해서 risk_event 채널이 통째로 조용했다.
+void testIdlePrimingStartsHeartbeat() {
+    std::cout << "\n[테스트 10] 기동 시 idle 프라이밍 - 판정 프레임 0장에서도 하트비트\n";
+
+    // (1) 프라이밍 없이 start()만 하면 아무것도 안 나간다 (수정 전 동작 = 버그 재현).
+    {
+        RecordingSink sink;
+        risk_transport::ResultDispatcher dispatcher(
+            [&sink](const std::string& json) { sink(json); }, std::chrono::milliseconds(50));
+        dispatcher.start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        dispatcher.stop();
+
+        check(sink.size() == 0,
+              "프라이밍 없이 submit()도 없으면 무전송 (실제: " + std::to_string(sink.size()) + "건)");
+    }
+
+    // (2) primeIdle() 후에는 submit() 없이도 heartbeat_period 안에 최소 1건이 나간다.
+    {
+        RecordingSink sink;
+        risk_transport::ResultDispatcher dispatcher(
+            [&sink](const std::string& json) { sink(json); }, std::chrono::milliseconds(50));
+        dispatcher.primeIdle();
+        check(dispatcher.hasResult(), "primeIdle() 직후 hasResult() == true");
+
+        dispatcher.start();
+        // 한 주기(50ms)만 재면 스케줄러 지터로 오탐이 나므로 세 주기까지 여유를 준다.
+        // 검증 대상은 "주기 안에 나가는가"이지 정확한 횟수가 아니다(횟수는 테스트 8 담당).
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(150);
+        while (sink.size() == 0 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        dispatcher.stop();
+
+        check(sink.size() >= 1,
+              "submit() 0회에도 하트비트 최소 1건 전송 (실제: " + std::to_string(sink.size()) + "건)");
+        check(dispatcher.changeSendCount() == 0,
+              "프라이밍은 '변화 전송'으로 세지 않음 (실제: " +
+              std::to_string(dispatcher.changeSendCount()) + "회)");
+        check(dispatcher.heartbeatSendCount() >= 1,
+              "하트비트 카운터 증가 (실제: " +
+              std::to_string(dispatcher.heartbeatSendCount()) + "회)");
+
+        auto lines = sink.snapshot();
+        const std::string first = lines.empty() ? std::string() : lines.front();
+        check(!lines.empty() && first.find("\"risk_level\":0") != std::string::npos,
+              "idle JSON risk_level=0(SAFE)");
+        check(!lines.empty() && first.find("\"exception_state\":\"NONE\"") != std::string::npos,
+              "idle JSON exception_state=NONE");
+        check(!lines.empty() && first.find("\"distance_m\":null") != std::string::npos,
+              "idle JSON distance_m=null (기본값 0.0이 '0m 밀착'으로 새지 않음)");
+        check(!lines.empty() && first.find("\"camera_id\":null") != std::string::npos
+                             && first.find("\"zone\":null") != std::string::npos,
+              "idle JSON camera_id/zone=null (미확정 규약)");
+        if (!lines.empty()) std::cout << "  --- idle 하트비트 ---\n  | " << first << "\n";
+    }
+
+    // (3) 프라이밍은 자리표시일 뿐이라, 첫 진짜 판정은 값이 같아도(SAFE) 전송·이벤트
+    //     로그·지연 계측이 그대로 나가야 한다(프라이밍 도입 전 동작 유지).
+    {
+        RecordingSink sink;
+        risk_transport::ResultDispatcher dispatcher(
+            [&sink](const std::string& json) { sink(json); }, std::chrono::milliseconds(200));
+
+        int  event_count = 0;
+        int  seen_prev_risk = 12345;
+        int  latency_count = 0;
+        dispatcher.onStateChangeEvent([&](const JudgmentResult&, int prev_risk) {
+            ++event_count;
+            seen_prev_risk = prev_risk;
+        });
+        dispatcher.onLatencyEvent([&](const LatencyStamps&) { ++latency_count; });
+
+        dispatcher.primeIdle();
+        check(event_count == 0 && latency_count == 0,
+              "primeIdle()은 이벤트 로그/지연 계측 훅을 부르지 않음 (event=" +
+              std::to_string(event_count) + ", latency=" + std::to_string(latency_count) + ")");
+
+        // idle과 risk_level/exception이 같은 첫 판정. sameState()만 보면 무변화지만
+        // 판정으로서는 첫 건이므로 전송돼야 한다.
+        dispatcher.submit(makeResult(RiskLevel::SAFE));
+        check(sink.size() == 1,
+              "첫 진짜 판정은 idle과 같은 값이어도 즉시 전송 (실제: " +
+              std::to_string(sink.size()) + "건)");
+        check(event_count == 1, "첫 판정이 이벤트 로그로 나감 (실제: " +
+              std::to_string(event_count) + "건)");
+        check(seen_prev_risk == risk_transport::ResultDispatcher::kNoPreviousRisk,
+              "직전 위험도는 idle(SAFE)이 아니라 '없음'(-1) (실제: " +
+              std::to_string(seen_prev_risk) + ")");
+        check(latency_count == 1, "첫 판정의 지연 스탬프가 기록됨 (실제: " +
+              std::to_string(latency_count) + "건)");
+
+        // 그 다음 동일 판정은 원래 규칙대로 무변화 -> 전송 없음.
+        dispatcher.submit(makeResult(RiskLevel::SAFE));
+        check(sink.size() == 1 && event_count == 1,
+              "두 번째 동일 판정은 무변화로 억제됨 (실제 전송: " +
+              std::to_string(sink.size()) + "건)");
+    }
+}
+
 // 전송 정책 - 하트비트 + 타이머 리셋. 시간 기반이라 여유 있는 범위로 검사한다.
 void testDispatcherHeartbeatAndReset() {
     std::cout << "\n[테스트 8] 전송 정책 - 무변화 시 주기 재전송 + 변화 시 타이머 리셋\n";
@@ -520,6 +626,7 @@ int main() {
     testSurvivesWithoutTerminal();
     testRelistenAfterDisconnect();
     testDispatcherSendsOnlyOnChange();
+    testIdlePrimingStartsHeartbeat();
     testDispatcherHeartbeatAndReset();
     testHybridEndToEnd();
 
