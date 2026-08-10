@@ -10,6 +10,7 @@
     label{display:flex;flex-direction:column;gap:.25rem;font-size:.9rem}input{padding:.45rem;border:1px solid #bbc3cc;border-radius:5px}
     button{padding:.55rem .9rem;border:0;border-radius:5px;background:#216eaa;color:white;cursor:pointer}
     pre{white-space:pre-wrap;background:#18202a;color:#e6edf3;padding:1rem;border-radius:6px;min-height:3rem}
+    #preview{display:block;max-width:100%;max-height:600px;margin-top:1rem;border:1px solid #bbc3cc}
   </style>
 </head>
 <body>
@@ -28,6 +29,7 @@
       <label>DPI<input id="dpi" type="number" value="300"></label>
     </div>
     <button onclick="genBoard()">SVG/PNG 생성</button>
+    <div id="artifact" hidden><a id="download" download>결과 다운로드</a><img id="preview" alt="생성 결과 미리보기"></div>
     <h3>캘리브레이션</h3>
     <div class="row">
       <label>입력 이미지<input id="cal-input" value="capture.png"></label>
@@ -47,7 +49,7 @@
   <script>
     async function call(path, body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json()}
     async function selftest(){document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/selftest'),null,2)}
-    async function genBoard(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/gen-board',{config:v('#config'),output:v('#output'),board_width_mm:v('#width'),board_height_mm:v('#height'),margin_mm:v('#margin'),dpi:v('#dpi')}),null,2)}
+    async function genBoard(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';const result=await call('/api/homography/gen-board',{config:v('#config'),output:v('#output'),board_width_mm:v('#width'),board_height_mm:v('#height'),margin_mm:v('#margin'),dpi:v('#dpi')});document.querySelector('#result').textContent=JSON.stringify(result,null,2);if(result.ok){const url=result.artifact_url+'?t='+Date.now();document.querySelector('#artifact').hidden=false;document.querySelector('#download').href=url;document.querySelector('#preview').src=url;}}
     async function calibrate(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/calibrate',{config:v('#config'),input:v('#cal-input'),output:v('#cal-output'),channel:v('#cal-channel'),max_rmse_cm:v('#cal-gate')}),null,2)}
     async function viewResult(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/view',{config:v('#config'),homography:v('#view-h'),input:v('#cal-input'),output_dir:v('#view-dir')}),null,2)}
     fetch('/api/status').then(r=>r.json()).then(x=>document.querySelector('#status').textContent=JSON.stringify(x)).catch(e=>document.querySelector('#status').textContent='GUI 서버 연결 실패')
