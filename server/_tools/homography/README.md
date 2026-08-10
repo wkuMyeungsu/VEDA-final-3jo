@@ -44,6 +44,7 @@ ctest -R homography_selftest --output-on-failure
 `gen-board` accepts `.svg` and `.png`. SVG is recommended for physical
 printing because its physical width and height are explicitly recorded in mm;
 print it at 100% / actual size. PNG uses the requested `--dpi` (default 300)
-to calculate its pixel dimensions. IDs, TL reference crosses, and grid guides
-are included by default and can be disabled with `--no-ids`, `--no-origin`, or
-`--no-grid`.
+to calculate its pixel dimensions. The default physical output hides IDs and
+grid guides; TL reference crosses are placed outside each marker. Use
+`--show-ids` or `--show-grid` for inspection output, and `--no-origin` to hide
+the reference crosses.

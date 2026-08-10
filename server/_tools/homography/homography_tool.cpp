@@ -51,9 +51,9 @@ struct BoardLayout {
     double height_mm = 0.0;
     double margin_mm = 10.0;
     double dpi = 300.0;
-    bool show_ids = true;
+    bool show_ids = false;
     bool show_origin = true;
-    bool show_grid = true;
+    bool show_grid = false;
 };
 
 void usage() {
@@ -61,7 +61,7 @@ void usage() {
 commands:
   gen-board  --config CONFIG --output FILE
              [--board-width-mm MM --board-height-mm MM --margin-mm MM]
-             [--dpi DPI] [--no-ids] [--no-origin] [--no-grid]
+             [--dpi DPI] [--show-ids] [--show-grid] [--no-origin]
   calibrate  --config CONFIG --input IMAGE --output JSON [--channel N]
              [--max-rmse-cm CM]
   view       --config CONFIG --homography JSON --input IMAGE
@@ -168,7 +168,7 @@ BoardLayout read_layout(const Config& c, int argc, char** argv) {
     b.width_mm = arg(argc,argv,"--board-width-mm").empty() ? grid_width_mm(c)+2*b.margin_mm : to_double(arg(argc,argv,"--board-width-mm"),"board-width-mm");
     b.height_mm = arg(argc,argv,"--board-height-mm").empty() ? grid_height_mm(c)+2*b.margin_mm : to_double(arg(argc,argv,"--board-height-mm"),"board-height-mm");
     if (!arg(argc,argv,"--dpi").empty()) b.dpi=to_double(arg(argc,argv,"--dpi"),"dpi");
-    b.show_ids=!has_arg(argc,argv,"--no-ids"); b.show_origin=!has_arg(argc,argv,"--no-origin"); b.show_grid=!has_arg(argc,argv,"--no-grid");
+    b.show_ids=has_arg(argc,argv,"--show-ids"); b.show_origin=!has_arg(argc,argv,"--no-origin"); b.show_grid=has_arg(argc,argv,"--show-grid");
     if (b.width_mm<=0||b.height_mm<=0||b.margin_mm<0||b.dpi<=0) throw std::runtime_error("invalid board layout");
     if (grid_width_mm(c)+2*b.margin_mm>b.width_mm || grid_height_mm(c)+2*b.margin_mm>b.height_mm)
         throw std::runtime_error("grid does not fit in board size with the requested margin");
@@ -193,7 +193,7 @@ void write_board_svg(const std::string& path, const Config& c, const BoardLayout
     out<<"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\""<<b.width_mm<<"mm\" height=\""<<b.height_mm<<"mm\" viewBox=\"0 0 "<<b.width_mm<<" "<<b.height_mm<<"\">\n";
     out<<"<rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n";
     if(b.show_grid){out<<"<g fill=\"none\" stroke=\"#55aa55\" stroke-width=\"0.25\">"; for(int col=0;col<=c.cols;++col) out<<"<line x1=\""<<b.margin_mm+col*pitch_mm<<"\" y1=\""<<b.margin_mm<<"\" x2=\""<<b.margin_mm+col*pitch_mm<<"\" y2=\""<<b.margin_mm+grid_height_mm(c)<<"\"/>"; for(int row=0;row<=c.rows;++row) out<<"<line x1=\""<<b.margin_mm<<"\" y1=\""<<b.margin_mm+row*pitch_mm<<"\" x2=\""<<b.margin_mm+grid_width_mm(c)<<"\" y2=\""<<b.margin_mm+row*pitch_mm<<"\"/>"; out<<"</g>\n";}
-    for(int row=0;row<c.rows;++row) for(int col=0;col<c.cols;++col){const int id=c.id_offset+row*c.cols+col; const double x=b.margin_mm+col*pitch_mm,y=b.margin_mm+row*pitch_mm; out<<"<image x=\""<<x<<"\" y=\""<<y<<"\" width=\""<<marker_mm<<"\" height=\""<<marker_mm<<"\" preserveAspectRatio=\"none\" href=\""<<marker_data_uri(c,id)<<"\"/>\n"; out<<"<path d=\"M "<<x-2<<" "<<y<<" h 4 M "<<x<<" "<<y-2<<" v 4\" stroke=\"#0066cc\" stroke-width=\"0.3\"/>\n"; if(b.show_ids) out<<"<text x=\""<<x<<"\" y=\""<<y+marker_mm+4<<"\" font-size=\"3.5\" fill=\"#111\">id="<<id<<"</text>\n";}
+    for(int row=0;row<c.rows;++row) for(int col=0;col<c.cols;++col){const int id=c.id_offset+row*c.cols+col; const double x=b.margin_mm+col*pitch_mm,y=b.margin_mm+row*pitch_mm; out<<"<image x=\""<<x<<"\" y=\""<<y<<"\" width=\""<<marker_mm<<"\" height=\""<<marker_mm<<"\" preserveAspectRatio=\"none\" href=\""<<marker_data_uri(c,id)<<"\"/>\n"; out<<"<path d=\"M "<<x-3<<" "<<y-2<<" h 4 M "<<x-1<<" "<<y-4<<" v 4\" stroke=\"#0066cc\" stroke-width=\"0.3\"/>\n"; if(b.show_ids) out<<"<text x=\""<<x<<"\" y=\""<<y+marker_mm+4<<"\" font-size=\"3.5\" fill=\"#111\">id="<<id<<"</text>\n";}
     if(b.show_origin) out<<"<text x=\""<<b.margin_mm<<"\" y=\""<<b.margin_mm-3<<"\" font-size=\"4\" fill=\"#0066cc\">ORIGIN (0,0) / X-right / Y-down</text>\n";
     out<<"</svg>\n";
 }
@@ -201,7 +201,7 @@ void write_board_svg(const std::string& path, const Config& c, const BoardLayout
 void write_board_png(const std::string& path, const Config& c, const BoardLayout& b) {
     const double pxmm=b.dpi/25.4, marker_px=c.marker_len_cm*10.0*pxmm, pitch_px=(c.marker_len_cm+c.gap_cm)*10.0*pxmm;
     cv::Mat image(static_cast<int>(std::lround(b.height_mm*pxmm)),static_cast<int>(std::lround(b.width_mm*pxmm)),CV_8UC3,cv::Scalar(255,255,255));
-    for(int row=0;row<c.rows;++row) for(int col=0;col<c.cols;++col){int id=c.id_offset+row*c.cols+col; cv::Mat marker;cv::aruco::drawMarker(dictionary(c),id,static_cast<int>(std::lround(marker_px)),marker,1); cv::Mat color;cv::cvtColor(marker,color,cv::COLOR_GRAY2BGR); int x=std::lround((b.margin_mm+col*(c.marker_len_cm+c.gap_cm)*10.0)*pxmm),y=std::lround((b.margin_mm+row*(c.marker_len_cm+c.gap_cm)*10.0)*pxmm); color.copyTo(image(cv::Rect(x,y,color.cols,color.rows))); if(b.show_origin) cv::drawMarker(image,{x,y},cv::Scalar(200,0,0),cv::MARKER_CROSS,static_cast<int>(4*pxmm),1); if(b.show_ids) cv::putText(image,"id="+std::to_string(id),{x,y+color.rows+static_cast<int>(4*pxmm)},cv::FONT_HERSHEY_SIMPLEX,0.8*pxmm,cv::Scalar(20,20,20),1,cv::LINE_AA);}
+    for(int row=0;row<c.rows;++row) for(int col=0;col<c.cols;++col){int id=c.id_offset+row*c.cols+col; cv::Mat marker;cv::aruco::drawMarker(dictionary(c),id,static_cast<int>(std::lround(marker_px)),marker,1); cv::Mat color;cv::cvtColor(marker,color,cv::COLOR_GRAY2BGR); int x=std::lround((b.margin_mm+col*(c.marker_len_cm+c.gap_cm)*10.0)*pxmm),y=std::lround((b.margin_mm+row*(c.marker_len_cm+c.gap_cm)*10.0)*pxmm); color.copyTo(image(cv::Rect(x,y,color.cols,color.rows))); if(b.show_origin) cv::drawMarker(image,{x-static_cast<int>(2*pxmm),y-static_cast<int>(2*pxmm)},cv::Scalar(200,0,0),cv::MARKER_CROSS,static_cast<int>(4*pxmm),1); if(b.show_ids) cv::putText(image,"id="+std::to_string(id),{x,y+color.rows+static_cast<int>(4*pxmm)},cv::FONT_HERSHEY_SIMPLEX,0.8*pxmm,cv::Scalar(20,20,20),1,cv::LINE_AA);}
     if (b.show_grid) { const int left=std::lround(b.margin_mm*pxmm), top=left, right=std::lround((b.margin_mm+grid_width_mm(c))*pxmm), bottom=std::lround((b.margin_mm+grid_height_mm(c))*pxmm); for(int col=0;col<=c.cols;++col){int x=std::lround((b.margin_mm+col*(c.marker_len_cm+c.gap_cm)*10.0)*pxmm);cv::line(image,{x,top},{x,bottom},cv::Scalar(140,210,140),1);} for(int row=0;row<=c.rows;++row){int y=std::lround((b.margin_mm+row*(c.marker_len_cm+c.gap_cm)*10.0)*pxmm);cv::line(image,{left,y},{right,y},cv::Scalar(140,210,140),1);} }
     if(!cv::imwrite(path,image)) throw std::runtime_error("cannot write output: "+path);
 }
