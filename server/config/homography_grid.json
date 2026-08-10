@@ -1,0 +1,9 @@
+{
+  "dictionary": "DICT_4X4_100",
+  "cols": 5,
+  "rows": 11,
+  "marker_len_cm": 5.0,
+  "gap_cm": 4.8,
+  "id_offset": 0,
+  "origin_corner": "TL"
+}
