@@ -577,6 +577,18 @@ int main(int argc, char* argv[]) {
         [&state](const JudgmentResult& r, int prev_risk) { state.eventLogger.log(r, prev_risk); });
     state.resultDispatcher.onLatencyEvent(
         [&state](const LatencyStamps& stamps) { state.latencyLogger.log(stamps); });
+
+    // 첫 ObjectDetection 프레임이 오기 전에도 risk_event 하트비트가 돌게 한다.
+    // submit()은 이 아래 appsink 콜백의 ObjectDetection 분기에서만 불리므로, 카메라가
+    // 객체 메타데이터를 한 번도 안 올리면(ArUco만 오거나 사람이 안 잡히는 동안) 채널이
+    // 통째로 조용해져서 단말이 "서버 다운"과 "안전 상태"를 구분할 수 없었다.
+    // terminal_id는 기동 시점에 이미 확정된 값이라 idle 자리표시에도 채워 보낸다
+    // (camera_id/zone/거리는 아직 근거가 없으므로 미확정 규약대로 null로 나간다).
+    {
+        JudgmentResult idle = risk_transport::ResultDispatcher::idleResult();
+        idle.terminal_id = state.config.forklift.terminal_id;
+        state.resultDispatcher.primeIdle(idle);
+    }
     state.resultDispatcher.start();
 
     std::signal(SIGINT, handleSigint);

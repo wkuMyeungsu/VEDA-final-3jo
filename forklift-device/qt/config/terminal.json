@@ -1,7 +1,7 @@
 {
   "default_camera_id": "CAM_01",
   "_comment_server": "server_host/server_port: 로컬 개발용 placeholder → 실제 서버 주소로 교체",
-  "server_host": "127.0.0.1",
+  "server_host": "192.168.0.13",
   "risk_port": 9000,
   "handover_port": 9001,
   "terminal_id": "TERM_01",
