@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(forklift_safety_server LANGUAGES CXX)
 
+option(BUILD_HOMOGRAPHY_TOOL "Build the standalone OpenCV homography tool" OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -77,5 +79,21 @@ add_executable(event_log_viewer _tools/event_log_viewer_main.cpp)
 target_include_directories(event_log_viewer PRIVATE ${SERVER_SRC_DIR})
 target_link_libraries(event_log_viewer PRIVATE server_judgment SQLite::SQLite3)
 
+# Standalone calibration/inspection utility.  It intentionally does not link
+# any server library; OpenCV is discovered only when this option is enabled.
+if (BUILD_HOMOGRAPHY_TOOL)
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d aruco highgui imgcodecs)
+    add_executable(homography_tool _tools/homography/homography_tool.cpp)
+    target_include_directories(homography_tool PRIVATE
+        ${SERVER_SRC_DIR}
+        ${SERVER_THIRD_PARTY_DIR}
+    )
+    target_link_libraries(homography_tool PRIVATE ${OpenCV_LIBS})
+    target_compile_definitions(homography_tool PRIVATE HOMOGRAPHY_TOOL_VERSION="1")
+endif()
+
 enable_testing()
+if (BUILD_HOMOGRAPHY_TOOL)
+    add_test(NAME homography_selftest COMMAND homography_tool selftest)
+endif()
 add_subdirectory(tests)
