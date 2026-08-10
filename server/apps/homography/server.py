@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 HOST = os.environ.get("ADMIN_GUI_HOST", "0.0.0.0")
-PORT = int(os.environ.get("ADMIN_GUI_PORT", "8000"))
+PORT = int(os.environ.get("HOMOGRAPHY_APP_PORT", "8001"))
 TOOL = os.environ.get("HOMOGRAPHY_TOOL", "homography_tool")
 TIMEOUT = int(os.environ.get("HOMOGRAPHY_COMMAND_TIMEOUT_SEC", "120"))
 RESULT_ROOT = Path(os.environ.get("ADMIN_GUI_RESULT_DIR", "/tmp/server-admin-gui-results"))
@@ -167,5 +167,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"server-admin-gui listening on {HOST}:{PORT}")
+    print(f"homography-app listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
