@@ -8,6 +8,10 @@ import json
 import mimetypes
 import os
 import subprocess
+import shutil
+import tempfile
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -18,6 +22,9 @@ HOST = os.environ.get("ADMIN_GUI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ADMIN_GUI_PORT", "8000"))
 TOOL = os.environ.get("HOMOGRAPHY_TOOL", "homography_tool")
 TIMEOUT = int(os.environ.get("HOMOGRAPHY_COMMAND_TIMEOUT_SEC", "120"))
+RESULT_ROOT = Path(os.environ.get("ADMIN_GUI_RESULT_DIR", "/tmp/server-admin-gui-results"))
+RESULT_TTL_SEC = int(os.environ.get("ADMIN_GUI_RESULT_TTL_SEC", "3600"))
+RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def run_tool(args):
@@ -34,6 +41,16 @@ def run_tool(args):
                 "stderr": f"command timed out after {TIMEOUT}s"}
 
 
+def cleanup_results():
+    now = time.time()
+    for path in RESULT_ROOT.iterdir():
+        try:
+            if now - path.stat().st_mtime > RESULT_TTL_SEC:
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[admin-gui] {self.address_string()} - {fmt % args}")
@@ -48,6 +65,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path.startswith("/artifacts/"):
+            parts = path.split("/")
+            if len(parts) != 4 or not parts[2] or not parts[3]:
+                self.send_error(404)
+                return
+            candidate = (RESULT_ROOT / parts[2] / parts[3]).resolve()
+            if os.path.commonpath((str(RESULT_ROOT.resolve()), str(candidate))) != str(RESULT_ROOT.resolve()) or not candidate.is_file():
+                self.send_error(404)
+                return
+            self.serve_file(candidate)
+            return
         if path == "/api/status":
             self.send_json({"ok": True, "server_monitoring": "placeholder",
                             "homography_tool": TOOL, "port": PORT})
@@ -74,7 +102,16 @@ class Handler(BaseHTTPRequestHandler):
             if any(not isinstance(payload.get(key), str) or not payload[key] for key in required):
                 self.send_json({"ok": False, "error": "config and output are required"}, 400)
                 return
-            args = ["gen-board", "--config", payload["config"], "--output", payload["output"]]
+            output_name = Path(payload["output"]).name
+            if Path(output_name).suffix.lower() not in (".svg", ".png"):
+                self.send_json({"ok": False, "error": "output must end with .svg or .png"}, 400)
+                return
+            cleanup_results()
+            job_id = uuid.uuid4().hex
+            job_dir = RESULT_ROOT / job_id
+            job_dir.mkdir()
+            output_path = job_dir / output_name
+            args = ["gen-board", "--config", payload["config"], "--output", str(output_path)]
             options = (("board_width_mm", "--board-width-mm"),
                        ("board_height_mm", "--board-height-mm"),
                        ("margin_mm", "--margin-mm"), ("dpi", "--dpi"))
@@ -84,7 +121,14 @@ class Handler(BaseHTTPRequestHandler):
             for key, flag in (("no_ids", "--no-ids"), ("no_origin", "--no-origin"),
                               ("no_grid", "--no-grid")):
                 if payload.get(key): args.append(flag)
-            self.send_json(run_tool(args))
+            result = run_tool(args)
+            if result["ok"]:
+                result["artifact_url"] = f"/artifacts/{job_id}/{output_name}"
+                result["preview_url"] = result["artifact_url"]
+                result["note"] = "결과는 임시 파일이며 자동 만료됩니다. 브라우저에서 다운로드하세요."
+            else:
+                shutil.rmtree(job_dir, ignore_errors=True)
+            self.send_json(result)
             return
         if path == "/api/homography/calibrate":
             required = ("config", "input", "output")
