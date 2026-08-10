@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Server Admin</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#20252b;background:#f6f7f9}
+    section{background:#fff;border:1px solid #dfe3e8;border-radius:10px;padding:1.2rem;margin:1rem 0}
+    h1{margin-top:0}.muted{color:#69727d}.row{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
+    label{display:flex;flex-direction:column;gap:.25rem;font-size:.9rem}input{padding:.45rem;border:1px solid #bbc3cc;border-radius:5px}
+    button{padding:.55rem .9rem;border:0;border-radius:5px;background:#216eaa;color:white;cursor:pointer}
+    pre{white-space:pre-wrap;background:#18202a;color:#e6edf3;padding:1rem;border-radius:6px;min-height:3rem}
+  </style>
+</head>
+<body>
+  <h1>Server Admin</h1>
+  <p class="muted">관리 화면은 초기 골격입니다. 서버 상태 연동은 다음 단계에서 연결합니다.</p>
+  <section><h2>Server</h2><p id="status">확인 중...</p></section>
+  <section><h2>Homography</h2>
+    <div class="row"><button onclick="selftest()">Selftest</button></div>
+    <h3>보드 생성</h3>
+    <div class="row">
+      <label>Config 경로<input id="config" value="grid.json"></label>
+      <label>출력 경로<input id="output" value="board.svg"></label>
+      <label>가로(mm)<input id="width" type="number" value="480"></label>
+      <label>세로(mm)<input id="height" type="number" value="1065"></label>
+      <label>여백(mm)<input id="margin" type="number" value="15"></label>
+      <label>DPI<input id="dpi" type="number" value="300"></label>
+    </div>
+    <button onclick="genBoard()">SVG/PNG 생성</button>
+    <h3>캘리브레이션</h3>
+    <div class="row">
+      <label>입력 이미지<input id="cal-input" value="capture.png"></label>
+      <label>출력 JSON<input id="cal-output" value="homography_ch1.json"></label>
+      <label>채널<input id="cal-channel" type="number" value="1"></label>
+      <label>RMSE 게이트(cm)<input id="cal-gate" type="number" value="2"></label>
+    </div>
+    <button onclick="calibrate()">Calibrate</button>
+    <h3>검증 뷰</h3>
+    <div class="row">
+      <label>Homography JSON<input id="view-h" value="homography_ch1.json"></label>
+      <label>출력 디렉터리<input id="view-dir" value="view_result"></label>
+    </div>
+    <button onclick="viewResult()">View 생성</button>
+    <pre id="result">결과가 여기에 표시됩니다.</pre>
+  </section>
+  <script>
+    async function call(path, body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json()}
+    async function selftest(){document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/selftest'),null,2)}
+    async function genBoard(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/gen-board',{config:v('#config'),output:v('#output'),board_width_mm:v('#width'),board_height_mm:v('#height'),margin_mm:v('#margin'),dpi:v('#dpi')}),null,2)}
+    async function calibrate(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/calibrate',{config:v('#config'),input:v('#cal-input'),output:v('#cal-output'),channel:v('#cal-channel'),max_rmse_cm:v('#cal-gate')}),null,2)}
+    async function viewResult(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/view',{config:v('#config'),homography:v('#view-h'),input:v('#cal-input'),output_dir:v('#view-dir')}),null,2)}
+    fetch('/api/status').then(r=>r.json()).then(x=>document.querySelector('#status').textContent=JSON.stringify(x)).catch(e=>document.querySelector('#status').textContent='GUI 서버 연결 실패')
+  </script>
+</body>
+</html>
