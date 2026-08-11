@@ -1,10 +1,14 @@
 {
   "default_camera_id": "CAM_01",
-  "_comment_server": "server_host/server_port: 로컬 개발용 placeholder → 실제 서버 주소로 교체",
+  "_comment_server_host": "HandoverClient 제어 채널(TCP) 대상 서버 주소. 로컬 개발용 placeholder → 실제 주소로 교체",
   "server_host": "192.168.0.13",
-  "risk_port": 9000,
+  "_comment_handover_port": "HandoverClient 제어 채널(TCP) 포트",
   "handover_port": 9001,
+  "_comment_mqtt_broker_host": "RiskEventSource가 구독할 MQTT 브로커 주소. 로컬 개발용 placeholder → 실제 주소로 교체",
+  "mqtt_broker_host": "192.168.0.13",
+  "_comment_mqtt_broker_port": "RiskEventSource가 구독할 MQTT 브로커 포트 (기본 1883)",
+  "mqtt_broker_port": 1883,
   "terminal_id": "TERM_01",
-  "_comment_metadata": "mock → tcp로 전환 (RiskEventSource 구현 완료 시)",
-  "metadata_source_type": "tcp"
+  "_comment_metadata": "mock → mqtt로 전환 (RiskEventSource MQTT 구현 완료 시)",
+  "metadata_source_type": "mqtt"
 }

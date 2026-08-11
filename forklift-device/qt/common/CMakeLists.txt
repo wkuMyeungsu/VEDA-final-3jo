@@ -11,6 +11,9 @@ pkg_check_modules(GST REQUIRED IMPORTED_TARGET
     gstreamer-app-1.0
 )
 
+# RiskEventSource가 MQTT(libmosquitto)로 위험 판정 데이터를 구독하므로 링크 필요.
+pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
+
 qt_add_library(safety_common STATIC)
 
 target_include_directories(safety_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -133,4 +136,4 @@ qt_add_qml_module(safety_common
         services/DemoController.cpp
 )
 
-target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST)
+target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST PkgConfig::MOSQUITTO)

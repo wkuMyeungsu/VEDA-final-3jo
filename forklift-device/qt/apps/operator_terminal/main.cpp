@@ -53,9 +53,9 @@ int main(int argc, char *argv[])
 
     MetadataDistributor metadataDistributor(cameras, 200);                        // - 메타데이터 분배기 생성: 주기적 데이터 분배 객체 초기화
     MockMetadataSource mockMetadataSource(cameras);                              // - 가상 데이터 소스 생성: 테스트용 메타데이터 생성기
-    RiskEventSource riskEventSource(appConfig.serverHost, appConfig.riskPort);   // - 실제 서버 데이터 소스 생성: TCP 통신 수신 객체
+    RiskEventSource riskEventSource(appConfig.mqttBrokerHost, appConfig.mqttBrokerPort, appConfig.terminalId); // - 실제 서버 데이터 소스 생성: MQTT 통신 수신 객체
     IMetadataSource *activeMetadataSource = &mockMetadataSource;                 // - 활성 데이터 소스 지정: 기본값으로 가상 소스 설정
-    if (appConfig.metadataSourceType == QStringLiteral("tcp"))                   // - 소스 유형 확인: 설정값이 tcp인 경우 실제 소스로 변경
+    if (appConfig.metadataSourceType == QStringLiteral("mqtt"))                  // - 소스 유형 확인: 설정값이 mqtt인 경우 실제 소스로 변경
         activeMetadataSource = &riskEventSource;
 
     metadataDistributor.setSource(activeMetadataSource);                          // - 데이터 소스 연결: 분배기에 활성 소스 지정
