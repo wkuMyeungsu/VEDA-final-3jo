@@ -10,10 +10,10 @@ Rectangle {
     property int exceptionState: 0
     property bool large: false
 
-    // 통신/카메라 끊김(RiskTypes.ExceptionState: 4 NetworkDisconnected, 5 CameraDisconnected)이면
-    // riskLevel이 서버 판정이 아니라 로컬에서 채운 기본값(Safe)이라 신뢰할 수 없음 - 그대로
-    // 보여주면 끊긴 상태를 "안전"으로 오인하게 됨
-    readonly property bool dataStale: exceptionState === 4 || exceptionState === 5
+    // 예외상태가 뭐든(통신 끊김, 센서 이상, 추측항법 등) 하나라도 있으면 riskLevel을
+    // 있는 그대로("SAFE" 등) 보여주지 않음 - 안전이 확정된 게 아니라 판정을 못 믿는
+    // 상태라 "안전"으로 오인하게 만들면 안 됨
+    readonly property bool dataStale: exceptionState !== 0
     readonly property color accent: dataStale ? Theme.colorUnknown : Theme.riskColor(riskLevel)
 
     color: dataStale ? Theme.colorUnknownBg : Theme.riskBgColor(riskLevel)
