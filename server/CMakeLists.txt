@@ -19,6 +19,9 @@ pkg_check_modules(GST REQUIRED IMPORTED_TARGET
 )
 pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 
+# 단말->서버 센서 업링크(MQTT 구독) - SensorUplinkReceiver가 사용.
+pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
+
 set(SERVER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # 벤더링한 외부 헤더 라이브러리 (nlohmann/json single-header). 출처·버전·왜 시스템
@@ -74,9 +77,10 @@ target_link_libraries(server_judgment PUBLIC server_tracking Threads::Threads)
 add_library(server_network STATIC
     src/network/result_publisher.cpp
     src/network/sensor_uplink_receiver.cpp
+    src/network/network_sensor_reader.cpp
 )
 target_include_directories(server_network PUBLIC ${SERVER_SRC_DIR})
-target_link_libraries(server_network PUBLIC server_judgment Threads::Threads)
+target_link_libraries(server_network PUBLIC server_judgment PkgConfig::MOSQUITTO Threads::Threads)
 
 # 유일한 서버 실행 진입점. 기존 detection/object_detection/main.cpp을
 # src/main.cpp으로 승격해 수신 계층을 여기서 조립한다.
