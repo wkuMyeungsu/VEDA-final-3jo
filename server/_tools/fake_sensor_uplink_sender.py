@@ -1,6 +1,37 @@
 #!/usr/bin/env python3
 # fake_sensor_uplink_sender.py
 #
+# [주의 - 더 이상 서버와 프로토콜이 맞지 않음] SensorUplinkReceiver가 TCP+NDJSON+hello에서
+# MQTT 구독(forklift/sensor/+, QoS 0, retain 없음) 방식으로 교체됐다(서버 측 수신 경로
+# "최신값 캐시" 방식 팀 확정). 이 스크립트는 옛 TCP 프로토콜용이라 지금 서버에는 그대로
+# 접속조차 안 된다. 검증/디버깅용으로는 참고 스키마 + 아래 mosquitto_pub 대체 명령을 써라.
+# 이 파일 자체는 옛 TCP 채널이 부활할 경우를 대비해 지우지 않고 남겨둔다.
+#
+# MQTT 대체 명령 (mosquitto-clients 패키지의 mosquitto_pub, 이 환경엔 이미 설치돼 있음):
+#   토픽 형식: forklift/sensor/<terminal_id>  (terminal_id는 payload가 아니라 토픽에 싣는다 - hello 없음)
+#
+#   단발 전송:
+#     mosquitto_pub -h 127.0.0.1 -p 1883 -t forklift/sensor/TERM_01 -q 0 -m \
+#       '{"camera_id":"cam0","tof_ok":true,"tof_distance_mm":420,"imu_ok":true,
+#         "imu_accel_x_g":0.02,"imu_accel_y_g":-0.01,"imu_accel_z_g":1.01,"ts_ms":1754380800123}'
+#
+#   주기 전송(쉘 루프, --interval 0.5초 흉내):
+#     while true; do
+#       mosquitto_pub -h 127.0.0.1 -p 1883 -t forklift/sensor/TERM_01 -q 0 -m \
+#         "{\"camera_id\":\"cam0\",\"tof_ok\":true,\"tof_distance_mm\":800,\"imu_ok\":true,\
+#           \"imu_accel_x_g\":0.0,\"imu_accel_y_g\":0.0,\"imu_accel_z_g\":1.0,\"ts_ms\":$(date +%s%3N)}"
+#       sleep 0.5
+#     done
+#
+#   isStale() 전환 확인(--disconnect-after 대체): 위 루프를 Ctrl+C로 멈추고 kDefaultStaleTimeoutMs
+#   (1200ms)만큼 기다리면 된다 - MQTT는 연결이 아니라 메시지 흐름이 끊기는 것으로 stale이 되므로
+#   "접속 종료"라는 이벤트 자체가 없다.
+#
+#   --corrupt-every 대체(깨진 JSON 섞어 보내기): -m 뒤에 깨진 JSON을 그냥 한 번 실어 보내면 된다.
+#     mosquitto_pub -h 127.0.0.1 -p 1883 -t forklift/sensor/TERM_01 -q 0 -m '{"camera_id":'
+#
+# ── 아래는 옛 TCP 버전 원본 주석/코드(참고용, 지금 서버와 호환되지 않음) ──────────
+#
 # 입력값: 접속할 서버 주소/포트, 단말 식별자, 전송 주기 (아래 옵션 참고)
 # 처리과정:
 #   1) SensorUplinkReceiver(기본 9002)에 TCP로 접속
