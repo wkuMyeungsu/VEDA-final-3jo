@@ -61,7 +61,8 @@ constexpr const char* kDefaultTerminalId = "TERM_01";
 // 보고하게 된다.
 constexpr int kUnknownCameraId = -1;
 
-constexpr uint16_t kResultPublisherPort = 9000;
+// 판정 결과(risk_event) 채널은 TCP 9000에서 MQTT로 옮겨갔다(2026-08-11) - 서버가 직접
+// 포트를 열지 않으므로 포트 상수도 없다. 브로커 주소는 ResultPublisher 생성자 기본값 참고.
 constexpr uint16_t kCameraAssignmentServerPort = 9001;
 }  // namespace
 
@@ -153,7 +154,9 @@ struct AppState {
                         config.handover.confirm_frames,
                         config.handover.lostGrace()),
           judgmentPipeline(kUnknownCameraId, config.forklift.terminal_id, sensorReader),
-          resultPublisher("0.0.0.0", kResultPublisherPort),
+          // 브로커 host/port는 생성자 기본값(localhost:1883)을 그대로 쓴다 - 브로커가
+          // 서버와 같은 머신에 있는 현재 배치 기준. 다른 머신으로 옮기면 여기서 넘긴다.
+          resultPublisher(config.forklift.terminal_id),
           resultDispatcher(
               [this](const std::string& json) { resultPublisher.publish(json); },
               std::chrono::milliseconds(200)),
@@ -561,8 +564,8 @@ int main(int argc, char* argv[]) {
     // 판정 인프라 조립. 옛 danger_judgment_engine_main.cpp와 동일한 순서로 생성·연결한다:
     // ResultPublisher -> EventLogger/LatencyLogger -> ResultDispatcher -> 훅 연결 -> start.
     state.resultPublisher.onStateChange([](risk_transport::LinkState s) {
-        const char* name = s == risk_transport::LinkState::CONNECTED    ? "CONNECTED"
-                            : s == risk_transport::LinkState::LISTENING ? "LISTENING"
+        const char* name = s == risk_transport::LinkState::CONNECTED     ? "CONNECTED"
+                            : s == risk_transport::LinkState::CONNECTING ? "CONNECTING"
                                                                          : "DISCONNECTED";
         std::cerr << "[publisher] link state -> " << name << "\n";
     });
