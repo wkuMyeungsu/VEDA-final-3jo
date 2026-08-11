@@ -24,7 +24,9 @@ Rectangle {
     color: Theme.colorSurface
     radius: Theme.radiusMd
     border.width: isAlert ? 2 : 1
-    border.color: isAlert ? Theme.riskColor(riskLevel) : Theme.colorBorder
+    // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
+    border.color: exceptionState !== 0 ? Theme.colorUnknown
+                  : (isAlert ? Theme.riskColor(riskLevel) : Theme.colorBorder)
 
     // 테두리 색이 바뀔 때 뚝 끊기지 않고 부드럽게 전환 (예: SAFE -> DANGER)
     Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
@@ -57,6 +59,7 @@ Rectangle {
             cameraId: root.cameraId
             distanceM: root.distanceM
             distanceValid: root.distanceValid
+            riskLevel: root.riskLevel
         }
 
         MouseArea {

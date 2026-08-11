@@ -18,11 +18,14 @@ Item {
 
         // model.xxx는 AlertListModel::roleNames()에 등록된 이름들
         delegate: Rectangle {
+            id: delegateRoot
             width: ListView.view.width
             height: 52
             radius: Theme.radiusSm
-            color: Theme.riskBgColor(model.riskLevel)
-            border.color: Theme.riskColor(model.riskLevel)
+            // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
+            readonly property bool dataStale: model.exceptionState !== 0
+            color: dataStale ? Theme.colorUnknownBg : Theme.riskBgColor(model.riskLevel)
+            border.color: dataStale ? Theme.colorUnknown : Theme.riskColor(model.riskLevel)
             border.width: 1
 
             Column {
@@ -44,7 +47,7 @@ Item {
                     text: Theme.riskLabel(model.riskLevel) + " · "
                           + (model.distanceValid ? model.distanceM.toFixed(2) + " m" : "측정 불가")
                           + (model.exceptionState !== 0 ? " · " + Theme.exceptionLabel(model.exceptionState) : "")
-                    color: Theme.riskColor(model.riskLevel)
+                    color: delegateRoot.dataStale ? Theme.colorUnknown : Theme.riskColor(model.riskLevel)
                     font.pixelSize: Theme.fontSizeSm
                     elide: Text.ElideRight
                     width: parent.width

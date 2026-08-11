@@ -91,7 +91,7 @@ Rectangle {
                     model: ["SENSOR_FAULT", "DEAD_RECKONING", "EMERGENCY_IMPACT", "NETWORK_DISCONNECTED", "CAMERA_DISCONNECTED"]
                     delegate: Button {
                         text: modelData
-                        onClicked: demoController.setCameraRisk(cameraCombo.currentValue, 2, 1.0, modelData)
+                        onClicked: demoController.setCameraRisk(cameraCombo.currentValue, 0, 1.0, modelData)
                     }
                 }
             }

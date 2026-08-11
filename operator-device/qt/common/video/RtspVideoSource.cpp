@@ -70,7 +70,7 @@ void RtspVideoSource::start()
     const QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
         + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
           " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
-          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false";
+          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true";
 
     GError *error = nullptr;
     m_pipeline = gst_parse_launch(description.constData(), &error);
