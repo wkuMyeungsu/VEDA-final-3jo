@@ -1,0 +1,25 @@
+# sensor_uplink_publisher.service - 예시 systemd 유닛 파일.
+#
+# 실제 설치(경로 확정, systemctl enable 등)는 팀이 직접 한다 - 이 파일은 참고용
+# 템플릿이다. ExecStart/WorkingDirectory/User의 경로·계정은 실제 배포 환경(라즈베리
+# 파이 단말)에 맞게 바꿔야 한다. 아래 값은 전부 placeholder.
+#
+# 설치 예시:
+#   sudo cp sensor_uplink_publisher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sensor_uplink_publisher
+
+[Unit]
+Description=VEDA forklift sensor uplink publisher (IMU/ToF -> MQTT)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/veda/forklift-device/sensors
+ExecStart=/opt/veda/forklift-device/sensors/build/sensor_uplink_publisher --config /opt/veda/forklift-device/sensors/config/sensor.json
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
