@@ -50,8 +50,10 @@ Item {
         anchors.fill: parent
         color: Theme.colorSurface
         radius: Theme.radiusMd
-        border.color: root.riskLevel !== 0 ? Theme.riskColor(root.riskLevel) : Theme.colorBorder
-        border.width: root.riskLevel !== 0 ? 2 : 1
+        // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
+        border.color: root.exceptionState !== 0 ? Theme.colorUnknown
+                      : (root.riskLevel !== 0 ? Theme.riskColor(root.riskLevel) : Theme.colorBorder)
+        border.width: (root.riskLevel !== 0 || root.exceptionState !== 0) ? 2 : 1
 
         Item {
             id: header
@@ -101,7 +103,7 @@ Item {
                 anchors.left: idText.right
                 anchors.leftMargin: Theme.spacingMd
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.riskLevel !== 0
+                visible: root.riskLevel !== 0 || root.exceptionState !== 0
                 riskLevel: root.riskLevel
                 exceptionState: root.exceptionState
             }
@@ -123,6 +125,7 @@ Item {
                 forkliftBBox: root.forkliftBBox
                 distanceM: root.distanceM
                 distanceValid: root.distanceValid
+                riskLevel: root.riskLevel
             }
         }
     }
