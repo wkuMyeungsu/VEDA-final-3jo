@@ -1,0 +1,7 @@
+{
+  "camera_id": "CAM_01",
+  "terminal_id": "TERM_01",
+  "_comment_broker": "broker_host: 로컬 테스트 단계 placeholder → 실제 서버 주소로 교체 예정",
+  "broker_host": "localhost",
+  "broker_port": 1883
+}
