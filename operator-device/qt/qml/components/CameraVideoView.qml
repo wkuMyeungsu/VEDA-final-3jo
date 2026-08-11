@@ -13,6 +13,7 @@ Item {
     property real distanceM: 0
     property bool distanceValid: true
     property bool showOverlay: true
+    property int riskLevel: 0
 
     readonly property int connectionState: videoItem.connectionState
     readonly property real fps: videoItem.fps
@@ -32,7 +33,7 @@ Item {
         forkliftBBox: root.forkliftBBox
         distanceM: root.distanceM
         distanceValid: root.distanceValid
-        personColor: Theme.colorPersonBox
+        personColor: root.riskLevel !== 0 ? Theme.riskColor(root.riskLevel) : Theme.colorPersonBox
         forkliftColor: Theme.colorForkliftBox
         lineColor: Theme.colorTextPrimary
     }

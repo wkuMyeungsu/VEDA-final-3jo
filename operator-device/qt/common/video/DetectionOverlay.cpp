@@ -107,25 +107,13 @@ void DetectionOverlay::paint(QPainter *painter)
     if (m_forkliftBBox.isValid())
         drawBox(painter, videoRect, m_forkliftBBox, m_forkliftColor, QStringLiteral("FORKLIFT"));
 
-    // 거리 표시(선 + 라벨)는 "둘 다" 있을 때만 -- 거리라는 개념 자체가 두 점 사이의
-    // 값이라, 한쪽이 없으면 의미가 없어서 아예 안 그림
-    if (m_personBBox.isValid() && m_forkliftBBox.isValid()) {
+    // 거리 라벨은 personBBox만 있으면 표시 -- forkliftBBox는 ArUco 연동을 안 하기로
+    // 결정되어 앞으로도 계속 invalid라 조건에서 뺌. distanceM/distanceValid는 서버에서
+    // personBBox와 무관하게 독립적으로 내려오는 값이라 그대로 씀
+    if (m_personBBox.isValid()) {
         const QRectF personRect = AspectFit::mapNormalizedRect(
             QRectF(m_personBBox.x(), m_personBBox.y(), m_personBBox.width(), m_personBBox.height()), videoRect);
-        const QRectF forkliftRect = AspectFit::mapNormalizedRect(
-            QRectF(m_forkliftBBox.x(), m_forkliftBBox.y(), m_forkliftBBox.width(), m_forkliftBBox.height()),
-            videoRect);
 
-        const QPointF personCenter = personRect.center();
-        const QPointF forkliftCenter = forkliftRect.center();
-
-        QPen linePen(m_lineColor);
-        linePen.setWidthF(1.5);
-        linePen.setStyle(Qt::DashLine);
-        painter->setPen(linePen);
-        painter->drawLine(personCenter, forkliftCenter);
-
-        const QPointF mid = (personCenter + forkliftCenter) / 2.0;
         const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 m").arg(m_distanceM, 0, 'f', 2)
                                                        : QStringLiteral("측정 불가");
 
@@ -135,7 +123,16 @@ void DetectionOverlay::paint(QPainter *painter)
         painter->setFont(font);
 
         const QFontMetrics metrics(font);
-        const QRectF textRect = QRectF(metrics.boundingRect(distanceLabel)).adjusted(-8, -4, 8, 4).translated(mid);
+        // personRect 우상단 바깥쪽에 배지 형태로 배치
+        const QPointF anchor = personRect.topRight() + QPointF(6, -6);
+        QRectF textRect = QRectF(metrics.boundingRect(distanceLabel)).adjusted(-8, -4, 8, 4).translated(anchor);
+
+        // personBBox가 화면 가장자리에 가까우면 배지가 오버레이 밖으로 나가서 안 보일 수
+        // 있음 -- 그리는 영역(bounds) 안으로 되돌림
+        if (textRect.top() < bounds.top())
+            textRect.moveTop(bounds.top());
+        if (textRect.right() > bounds.right())
+            textRect.moveRight(bounds.right());
 
         QPainterPath badgePath;
         badgePath.addRoundedRect(textRect, 6, 6);
