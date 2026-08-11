@@ -11,24 +11,36 @@
     button{padding:.55rem .9rem;border:0;border-radius:5px;background:#216eaa;color:white;cursor:pointer}
     pre{white-space:pre-wrap;background:#18202a;color:#e6edf3;padding:1rem;border-radius:6px;min-height:3rem}
     #preview{display:block;max-width:100%;max-height:600px;margin-top:1rem;border:1px solid #bbc3cc}
+    #preview-frame{width:100%;height:700px;margin-top:1rem;border:1px solid #bbc3cc;background:#fff}
+    #solve-image{max-width:100%;max-height:520px;border:1px solid #bbc3cc;background:#222;cursor:crosshair}
+    #marker-table input{width:5.5rem}.hint{font-size:.88rem;color:#69727d}
   </style>
 </head>
 <body>
   <h1>Homography</h1>
-  <p class="muted">보드 생성과 Homography 검증 전용 앱</p>
+    <p class="muted">ArUco 마커 출력과 Homography 검증 전용 앱</p>
   <section><h2>Homography</h2>
     <div class="row"><button onclick="selftest()">Selftest</button></div>
-    <h3>보드 생성</h3>
+    <h3>ArUco 마커 묶음 생성</h3>
     <div class="row">
       <label>Config 경로<input id="config" value="config/homography_grid.json"></label>
-      <label>출력 경로<input id="output" value="board.svg"></label>
-      <label>가로(mm)<input id="width" type="number" value="480"></label>
-      <label>세로(mm)<input id="height" type="number" value="1065"></label>
-      <label>여백(mm)<input id="margin" type="number" value="15"></label>
+      <label>마지막 ID<input id="last-id" type="number" min="0" value="15"></label>
+      <label>마커 크기(mm)<input id="marker-size" type="number" min="1" value="100"></label>
+      <label>흰색 여백(mm)<input id="marker-margin" type="number" min="0" value="20"></label>
       <label>DPI<input id="dpi" type="number" value="300"></label>
+      <label>이미지 형식<select id="format"><option value="png" selected>PNG</option><option value="svg">SVG</option></select></label>
+      <label>ZIP 파일명<input id="zip-output" value="aruco_markers.zip"></label>
     </div>
-    <button onclick="genBoard()">SVG/PNG 생성</button>
-    <div id="artifact" hidden><a id="download" download>결과 다운로드</a><img id="preview" alt="생성 결과 미리보기"></div>
+    <button onclick="genMarkers()">마커 이미지 ZIP 생성</button>
+    <div id="artifact" hidden><a id="download" download>ZIP 다운로드</a><iframe id="preview-frame" title="마커 미리보기"></iframe></div>
+    <h3>수동 배치 호모그래피 산출</h3>
+    <p class="hint">이미지를 올린 뒤 캔버스를 클릭해 원점과 축 방향을 표시합니다. ArUco의 ID와 네 모서리는 OpenCV가 자동 검출하며, 아래에는 각 ID의 실제 마커 좌상단 좌표만 입력합니다.</p>
+    <div class="row"><label>촬영 이미지<input id="solve-file" type="file" accept="image/*"></label><label>마커 한 변(mm)<input id="solve-size" type="number" value="100" min="1"></label><label>결과 파일명<input id="solve-output" value="homography_manual.json"></label></div>
+    <div class="row"><button onclick="placeTool('origin')">원점 + 배치</button><button onclick="placeTool('x')">X축 방향 지정</button><button onclick="placeTool('y')">Y축 방향 지정</button><span id="tool-status" class="hint">도구를 선택하세요.</span></div>
+    <canvas id="solve-image" width="1" height="1"></canvas>
+    <div class="row"><button onclick="addMarkerRow()">마커 좌표 추가</button><button onclick="solveManual()">호모그래피 산출</button></div>
+    <div id="marker-table"></div>
+    <div id="solve-artifact" hidden><a id="solve-download" download>JSON 다운로드</a> · <a id="solve-overlay" target="_blank">검증 이미지 열기</a><br><img id="solve-result-image" alt="검증 결과"></div>
     <h3>캘리브레이션</h3>
     <div class="row">
       <label>입력 이미지<input id="cal-input" value="capture.png"></label>
@@ -48,9 +60,17 @@
   <script>
     async function call(path, body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json()}
     async function selftest(){document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/selftest'),null,2)}
-    async function genBoard(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';const result=await call('/api/homography/gen-board',{config:v('#config'),output:v('#output'),board_width_mm:v('#width'),board_height_mm:v('#height'),margin_mm:v('#margin'),dpi:v('#dpi')});document.querySelector('#result').textContent=JSON.stringify(result,null,2);if(result.ok){const url=result.artifact_url+'?t='+Date.now();document.querySelector('#artifact').hidden=false;document.querySelector('#download').href=url;document.querySelector('#preview').src=url;}}
+    async function genMarkers(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';const result=await call('/api/homography/gen-markers',{config:v('#config'),last_id:v('#last-id'),size_mm:v('#marker-size'),margin_mm:v('#marker-margin'),dpi:v('#dpi'),format:v('#format'),output:v('#zip-output')});document.querySelector('#result').textContent=JSON.stringify(result,null,2);if(result.ok){document.querySelector('#artifact').hidden=false;document.querySelector('#download').href=result.artifact_url+'?t='+Date.now();document.querySelector('#preview-frame').src=result.preview_url+'?t='+Date.now();}}
     async function calibrate(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/calibrate',{config:v('#config'),input:v('#cal-input'),output:v('#cal-output'),channel:v('#cal-channel'),max_rmse_cm:v('#cal-gate')}),null,2)}
     async function viewResult(){const v=id=>document.querySelector(id).value;document.querySelector('#result').textContent='실행 중...';document.querySelector('#result').textContent=JSON.stringify(await call('/api/homography/view',{config:v('#config'),homography:v('#view-h'),input:v('#cal-input'),output_dir:v('#view-dir')}),null,2)}
+    const solveCanvas=document.querySelector('#solve-image'), solveCtx=solveCanvas.getContext('2d'); let solveImage=null, solveMode=''; let solveMarks={origin:null,x:null,y:null};
+    document.querySelector('#solve-file').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{solveImage=new Image();solveImage.onload=()=>{solveCanvas.width=solveImage.width;solveCanvas.height=solveImage.height;drawSolve();};solveImage.src=r.result;};r.readAsDataURL(f);});
+    function placeTool(mode){solveMode=mode;document.querySelector('#tool-status').textContent=mode==='origin'?'이미지에서 원점을 클릭하세요.':mode==='x'?'원점에서 X축 방향 끝을 클릭하세요.':'원점에서 Y축 방향 끝을 클릭하세요.';}
+    solveCanvas.addEventListener('click',e=>{if(!solveMode||!solveImage)return;const r=solveCanvas.getBoundingClientRect();solveMarks[solveMode]={x:(e.clientX-r.left)*solveCanvas.width/r.width,y:(e.clientY-r.top)*solveCanvas.height/r.height};solveMode='';document.querySelector('#tool-status').textContent='배치 완료';drawSolve();});
+    function drawSolve(){if(!solveImage)return;solveCtx.drawImage(solveImage,0,0);solveCtx.lineWidth=3;solveCtx.strokeStyle='#20a060';for(const k of ['origin','x','y']){const p=solveMarks[k];if(!p)continue;solveCtx.beginPath();solveCtx.moveTo(p.x-12,p.y);solveCtx.lineTo(p.x+12,p.y);solveCtx.moveTo(p.x,p.y-12);solveCtx.lineTo(p.x,p.y+12);solveCtx.stroke();}if(solveMarks.origin&&solveMarks.x){solveCtx.beginPath();solveCtx.moveTo(solveMarks.origin.x,solveMarks.origin.y);solveCtx.lineTo(solveMarks.x.x,solveMarks.x.y);solveCtx.stroke();}if(solveMarks.origin&&solveMarks.y){solveCtx.beginPath();solveCtx.moveTo(solveMarks.origin.x,solveMarks.origin.y);solveCtx.lineTo(solveMarks.y.x,solveMarks.y.y);solveCtx.stroke();}}
+    function addMarkerRow(id='',x='',y=''){const t=document.querySelector('#marker-table');if(!t.querySelector('table'))t.innerHTML='<table><thead><tr><th>ID</th><th>실제 X(mm)</th><th>실제 Y(mm)</th><th></th></tr></thead><tbody></tbody></table>';const tr=document.createElement('tr');tr.innerHTML=`<td><input class="mid" type="number" value="${id}"></td><td><input class="mx" type="number" step="0.1" value="${x}"></td><td><input class="my" type="number" step="0.1" value="${y}"></td><td><button type="button" onclick="this.closest('tr').remove()">삭제</button></td>`;t.querySelector('tbody').appendChild(tr);}
+    [0,1,2,3].forEach((id)=>addMarkerRow(id,'',''));
+    async function solveManual(){if(!solveImage){document.querySelector('#result').textContent='촬영 이미지를 먼저 선택하세요.';return;}const rows=[...document.querySelectorAll('#marker-table tbody tr')].map(tr=>({id:Number(tr.querySelector('.mid').value),x_mm:Number(tr.querySelector('.mx').value),y_mm:Number(tr.querySelector('.my').value)}));if(rows.some(p=>!Number.isFinite(p.id)||!Number.isFinite(p.x_mm)||!Number.isFinite(p.y_mm))){document.querySelector('#result').textContent='모든 마커의 ID와 X/Y 좌표를 입력하세요.';return;}document.querySelector('#result').textContent='실행 중...';const layout={marker_size_mm:Number(document.querySelector('#solve-size').value),markers:rows,reference:{origin_px:solveMarks.origin,x_axis_px:solveMarks.x,y_axis_px:solveMarks.y}};const result=await call('/api/homography/solve-manual',{config:document.querySelector('#config').value,image_data:solveCanvas.toDataURL('image/png'),layout,output:document.querySelector('#solve-output').value});document.querySelector('#result').textContent=JSON.stringify(result,null,2);if(result.ok){document.querySelector('#solve-artifact').hidden=false;document.querySelector('#solve-download').href=result.artifact_url;document.querySelector('#solve-overlay').href=result.overlay_url;document.querySelector('#solve-result-image').src=result.overlay_url+'?t='+Date.now();}}
   </script>
 </body>
 </html>
