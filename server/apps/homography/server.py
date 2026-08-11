@@ -85,6 +85,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/" or path == "/index.html":
             self.serve_file(STATIC / "index.html", "text/html; charset=utf-8")
             return
+        if path.startswith("/static/"):
+            relative = Path(path.removeprefix("/static/"))
+            candidate = (STATIC / relative).resolve()
+            if os.path.commonpath((str(STATIC.resolve()), str(candidate))) != str(STATIC.resolve()):
+                self.send_error(404)
+                return
+            self.serve_file(candidate)
+            return
         self.send_error(404)
 
     def do_POST(self):
