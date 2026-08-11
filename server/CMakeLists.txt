@@ -19,6 +19,9 @@ pkg_check_modules(GST REQUIRED IMPORTED_TARGET
 )
 pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 
+# 판정 결과(risk_event) MQTT 송신용. result_publisher.hpp가 <mosquitto.h>를 직접 쓴다.
+pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
+
 set(SERVER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # 벤더링한 외부 헤더 라이브러리 (nlohmann/json single-header). 출처·버전·왜 시스템
@@ -75,7 +78,9 @@ add_library(server_network STATIC
     src/network/result_publisher.cpp
 )
 target_include_directories(server_network PUBLIC ${SERVER_SRC_DIR})
-target_link_libraries(server_network PUBLIC server_judgment Threads::Threads)
+# libmosquitto는 PUBLIC이다 - ResultPublisher가 헤더 온리라서 이 헤더를 include하는 쪽
+# (main.cpp, 테스트)도 mosquitto.h와 링크가 함께 필요하다.
+target_link_libraries(server_network PUBLIC server_judgment Threads::Threads PkgConfig::MOSQUITTO)
 
 # 유일한 서버 실행 진입점. 기존 detection/object_detection/main.cpp을
 # src/main.cpp으로 승격해 수신 계층을 여기서 조립한다.
