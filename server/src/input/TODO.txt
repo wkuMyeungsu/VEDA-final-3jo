@@ -1,0 +1,31 @@
+[Task 35] 실물 카메라 XML 수신 + NTP/UTC 지연 실측 (진행중)
+담당: 박명수 / Jira KAN-10 / 목표: 오늘(8/6) delta_ms 실측 확정
+
+── 현재 상태 (완료된 코드) ──
+[x] rtp_metadata_receiver: RTP 수신 -> XML 재조립. marker bit 로 프레임 끝을 잡고,
+    시퀀스 번호 연속성을 검사해 중간 패킷 유실 시 깨진 프레임을 버린다.
+[x] metadata_router(classifyMetadata): 완성된 XML을 토픽으로 분기.
+    VideoAnalytics -> 객체탐지 파서, tns1:OpenApp/ArUCo_Detection/MarkerDetected -> ArUco 파서,
+    나머지 -> Unknown(건너뜀).
+[x] onvif_metadata_parser / aruco_metadata_parser: XML -> 구조체 파싱. 각각
+    tests/test_onvif_metadata_parser.cpp, test_aruco_metadata_parser.cpp 로 단위 테스트 작성됨.
+[x] makeMetadataTiming(metadata_timing.hpp): camera_utc(카메라 송신 시각),
+    server_received_utc(서버 수신 시각), delta_ms(둘의 차) 계산.
+    라즈베리파이 chrony NTP 서버 기준 offset 약 0.18ms 로 두 시각을 같은 기준에 맞춤.
+
+── 남은 일 (하드웨어 필요, 코드로는 불가) ──
+[ ] 실물 카메라 RTSP 스트림 연결 -> XML 이 실제로 도달하는지 확인.
+    실행:
+      forklift_safety_server "rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp"
+    (RTSP URL·camera_id 등은 config/camera_config.json 에 있음: rtsp_url 위와 동일,
+     camera_id "cam_01", metadata_topic tns1:OpenApp/ArUCo_Detection/MarkerDetected,
+     ntp_server 192.168.0.1.)
+    리눅스/윈도우 모두 giolibproxy 로딩 지연으로 RTSP 연결이 느려질 수 있으므로,
+    실행 전 환경변수 GIO_USE_PROXY_RESOLVER=dummy 설정을 권장한다.
+[ ] object 경로 / aruco 경로 각각의 delta_ms 로그 실측값을 확정해 Confluence 에 기록한다.
+[ ] 위 실측 지연 폭을 근거로 Task 27(world 좌표 전달 방식: 함수 호출 vs IPC)을 최종 결정한다.
+    (해당 결정·배선 항목은 src/app 디렉터리의 Task 27 작업이다.)
+
+── 메모 ──
+파서/라우터/타이밍 코드는 완성 상태다. 남은 건 순수 실연동 검증이라, 이 저장소에서
+코드를 바꿀 필요 없이 실행/계측만 하면 된다.
