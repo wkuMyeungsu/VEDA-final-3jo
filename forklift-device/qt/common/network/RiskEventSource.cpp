@@ -1,20 +1,24 @@
 #include "RiskEventSource.h"
 
+#include <mosquitto.h>
+
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QLoggingCategory>
-#include <QTimer>
+#include <QMetaObject>
 
 namespace {
-Q_LOGGING_CATEGORY(lcRiskEventSource, "safety.risk.tcp")                  // - 로깅 카테고리 정의: 위험 이벤트 통신 로그 분류용 이름 지정
+Q_LOGGING_CATEGORY(lcRiskEventSource, "safety.risk.mqtt")                // - 로깅 카테고리 정의: MQTT 기반 위험 이벤트 통신 로그 분류용 이름 지정
 
-constexpr int kReconnectBaseDelayMs = 3000;                               // - 재연결 시작 대기 시간 (3초): 첫 재시도 간격
-constexpr int kReconnectMaxDelayMs = 30000;                               // - 재연결 최대 대기 시간 (30초): 서버 장기 다운 시 재시도 폭주 방지
+constexpr int kReconnectDelayBaseSec = 3;                                 // - 재연결 시작 대기 시간(초): 기존 kReconnectBaseDelayMs(3초)와 동일
+constexpr int kReconnectDelayMaxSec = 30;                                 // - 재연결 최대 대기 시간(초): 기존 kReconnectMaxDelayMs(30초)와 동일, 지수 백오프 상한
+constexpr int kMqttKeepAliveSec = 60;                                     // - MQTT keepalive 주기(초): PINGREQ 전송 간격
+
 // - 하트비트 5배 마진: 서버가 200ms 주기로 값을 다시 보내므로(2026-08-03 정책
 //   확정, result_dispatcher.hpp), 네트워크 지연을 감안해도 1초 안엔 새 메시지가
-//   와야 정상. 그보다 오래된 메시지는 접속 직후 밀려온 백로그로 간주해 버림
+//   와야 정상. 그보다 오래된 메시지는 retain으로 밀려온 백로그로 간주해 버림
 constexpr qint64 kStaleThresholdMs = 1000;                                // - 오래된 메시지 기준 시간 (1초): 지연된 경보 발생 방지 목적
 
 // - 서버 publish 주기(현재 200ms, 2026-08-03 정책 확정)의 3배: 서버가 실험 후
@@ -22,65 +26,145 @@ constexpr qint64 kStaleThresholdMs = 1000;                                // - �
 constexpr int kServerHeartbeatMs = 200;                                   // - 서버 하트비트 주기: result_dispatcher.hpp의 확정값과 동일하게 유지
 constexpr int kWatchdogMultiplier = 3;                                    // - 워치독 배수: 하트비트 몇 배 무수신 시 끊김으로 볼지
 constexpr int kWatchdogThresholdMs = kServerHeartbeatMs * kWatchdogMultiplier; // - 워치독 만료 시간: 이 시간 동안 무수신이면 NetworkDisconnected 표시
+constexpr int kWatchdogPollIntervalMs = 100;                              // - 워치독 폴링 주기: MQTT keepalive는 "연결 자체가 끊긴 경우"만 감지하므로,
+                                                                           //   "연결은 살아있는데 publish가 멈춘 경우"를 잡기 위해 별도로 100ms마다 점검
 }
 
-RiskEventSource::RiskEventSource(QString host, quint16 port, QObject *parent)
+RiskEventSource::RiskEventSource(QString brokerHost, quint16 brokerPort, QString terminalId, QObject *parent)
     : IMetadataSource(parent)
-    , m_host(std::move(host))                                             // - 접속 주소 저장: 서버 호스트 정보 보관
-    , m_port(port)                                                         // - 접속 포트 저장: 서버 포트 번호 보관
+    , m_brokerHost(std::move(brokerHost))                                 // - 브로커 주소 저장
+    , m_brokerPort(brokerPort)                                            // - 브로커 포트 저장
+    , m_terminalId(std::move(terminalId))                                 // - 단말 ID 저장
+    , m_topic(QStringLiteral("forklift/risk/%1").arg(m_terminalId))       // - 구독 토픽 구성: forklift/risk/{terminal_id}
 {
-    m_reconnectDelayMs = kReconnectBaseDelayMs;                             // - 재연결 대기 시간 초기화: 첫 시도는 기본값(3초)부터 시작
-    connect(&m_socket, &QTcpSocket::connected, this, &RiskEventSource::handleConnected);       // - 연결 성공 이벤트 연결
-    connect(&m_socket, &QTcpSocket::disconnected, this, &RiskEventSource::handleDisconnected); // - 연결 끊김 이벤트 연결
-    connect(&m_socket, &QTcpSocket::readyRead, this, &RiskEventSource::handleReadyRead);       // - 데이터 수신 이벤트 연결
-    connect(&m_socket, &QTcpSocket::errorOccurred, this, &RiskEventSource::handleError);       // - 통신 오류 이벤트 연결
+    mosquitto_lib_init();                                                 // - mosquitto 라이브러리 초기화 (프로세스 내 인스턴스가 하나뿐이라는 전제 하에 생성자/소멸자에서 짝 호출)
 
-    m_watchdogTimer.setSingleShot(true);                                    // - 워치독 반복 방지: 만료마다 한 번만 발화, 재시작은 수동으로 처리
-    connect(&m_watchdogTimer, &QTimer::timeout, this, &RiskEventSource::handleWatchdogTimeout); // - 워치독 만료 이벤트 연결
+    m_watchdogTimer.setInterval(kWatchdogPollIntervalMs);                 // - 워치독 폴링 간격 설정: 100ms
+    connect(&m_watchdogTimer, &QTimer::timeout, this, &RiskEventSource::handleWatchdogTimeout); // - 워치독 폴링 이벤트 연결
+}
+
+RiskEventSource::~RiskEventSource()
+{
+    stop();                                                               // - mosquitto 핸들 및 워치독 정리
+    mosquitto_lib_cleanup();                                              // - mosquitto 라이브러리 정리
 }
 
 void RiskEventSource::start()
 {
-    m_stopRequested = false;                                              // - 수동 종료 플래그 초기화: 자동 재연결 기능 활성화
-    setConnectionState(RiskTypes::ConnectionState::Connecting);           // - 상태 변경: 연결 진행 중 상태로 설정
-    m_socket.connectToHost(m_host, m_port);                               // - 서버 접속 시도: 지정 주소 및 포트로 연결 요청
+    if (m_mosq)                                                          // - 중복 시작 방지: 이미 실행 중이면 무시
+        return;
+
+    setConnectionState(RiskTypes::ConnectionState::Connecting);          // - 상태 변경: 연결 진행 중 상태로 설정
+
+    const QByteArray clientId = (QStringLiteral("forklift-") + m_terminalId).toUtf8(); // - 클라이언트 ID 구성: 단말 ID 기반 식별자
+    m_mosq = mosquitto_new(clientId.constData(), true, this);             // - mosquitto 클라이언트 생성: clean session, userdata로 this 전달(콜백에서 사용)
+
+    mosquitto_reconnect_delay_set(m_mosq, kReconnectDelayBaseSec, kReconnectDelayMaxSec, true); // - 재연결 백오프 설정: 3초 시작, 최대 30초, 지수 증가
+
+    mosquitto_connect_callback_set(m_mosq, &RiskEventSource::onConnect);       // - 접속 콜백 등록
+    mosquitto_disconnect_callback_set(m_mosq, &RiskEventSource::onDisconnect); // - 연결 끊김 콜백 등록
+    mosquitto_message_callback_set(m_mosq, &RiskEventSource::onMessage);       // - 메시지 콜백 등록
+
+    mosquitto_connect_async(m_mosq, m_brokerHost.toUtf8().constData(), m_brokerPort, kMqttKeepAliveSec); // - 비동기 접속 시도
+    mosquitto_loop_start(m_mosq);                                        // - 네트워크 스레드 시작: 이후 접속/재접속/수신을 내부 스레드가 처리
+
+    m_lastMessageTimer.invalidate();                                     // - 수신 기준 시각 초기화: 아직 연결 전이므로 워치독 판단 보류
+    m_watchdogTimer.start();                                             // - 워치독 폴링 시작
 }
 
 void RiskEventSource::stop()
 {
-    m_stopRequested = true;                                               // - 수동 종료 설정: 자동 재연결 동작 차단
-    m_watchdogTimer.stop();                                                // - 워치독 정지: 의도적 종료는 무수신 경고 대상 아님
-    m_socket.disconnectFromHost();                                        // - 연결 해제: 서버와의 소켓 연결 종료
-    setConnectionState(RiskTypes::ConnectionState::Disconnected);          // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
+    m_watchdogTimer.stop();                                              // - 워치독 정지: 의도적 종료는 무수신 경고 대상 아님
+    if (m_mosq) {
+        mosquitto_disconnect(m_mosq);                                    // - 연결 해제 요청
+        mosquitto_loop_stop(m_mosq, true);                               // - 네트워크 스레드 정지
+        mosquitto_destroy(m_mosq);                                       // - 클라이언트 핸들 해제
+        m_mosq = nullptr;
+    }
+    setConnectionState(RiskTypes::ConnectionState::Disconnected);        // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
 }
 
-void RiskEventSource::handleConnected()
+void RiskEventSource::onConnect(struct mosquitto *mosq, void *obj, int rc)
 {
-    m_reconnectDelayMs = kReconnectBaseDelayMs;                            // - 재연결 대기 시간 초기화: 연결 성공 시 backoff 처음부터 다시
-    setConnectionState(RiskTypes::ConnectionState::Connected);            // - 상태 갱신: 연결 상태를 '연결됨'으로 변경
-    m_watchdogTimer.start(kWatchdogThresholdMs);                           // - 워치독 시작: 접속 직후부터 무수신 시간 감시
+    auto *self = static_cast<RiskEventSource *>(obj);
+
+    if (rc == 0)                                                         // - 접속 성공 시에만 구독: mosquitto_subscribe는 mosq 핸들만 사용하므로 라이브러리 스레드에서 바로 호출해도 안전
+        mosquitto_subscribe(mosq, nullptr, self->m_topic.toUtf8().constData(), 0);
+
+    QMetaObject::invokeMethod(self, [self, rc]() {                       // - Qt 상태(연결 상태, 워치독 기준 시각) 갱신은 메인 스레드로 위임
+        if (rc != 0) {
+            qCWarning(lcRiskEventSource) << "connect failed, rc=" << rc << mosquitto_connack_string(rc); // - 경고 로그: 접속 실패 원인 기록
+            return;
+        }
+        qCInfo(lcRiskEventSource) << "connected to broker, subscribed to" << self->m_topic; // - 정보 로그: 접속 및 구독 완료 기록
+        self->setConnectionState(RiskTypes::ConnectionState::Connected); // - 상태 갱신: 연결 상태를 '연결됨'으로 변경
+        self->m_lastMessageTimer.start();                                // - 워치독 기준 시각 재설정: 접속 시점부터 무수신 시간 감시
+    }, Qt::QueuedConnection);
 }
 
-void RiskEventSource::handleDisconnected()
+void RiskEventSource::onDisconnect(struct mosquitto *mosq, void *obj, int rc)
 {
-    m_buffer.clear();                                                     // - 버퍼 초기화: 이전 수신 데이터 비우기
-    m_watchdogTimer.stop();                                                // - 워치독 정지: 소켓 끊김은 ConnectionState로 이미 표시됨
-    setConnectionState(RiskTypes::ConnectionState::Disconnected);          // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
-    if (!m_stopRequested)                                                 // - 수동 종료 확인: 의도치 않은 끊김인 경우 재연결 진행
-        scheduleReconnect();                                              // - 재연결 예약: 일정 시간 후 접속 재시도
+    Q_UNUSED(mosq);
+    auto *self = static_cast<RiskEventSource *>(obj);
+
+    QMetaObject::invokeMethod(self, [self, rc]() {
+        qCWarning(lcRiskEventSource) << "disconnected from broker, rc=" << rc; // - 경고 로그: 연결 끊김 원인 기록
+        self->setConnectionState(RiskTypes::ConnectionState::Disconnected); // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경 (재연결은 라이브러리가 자동 처리)
+    }, Qt::QueuedConnection);
 }
 
-void RiskEventSource::handleError(QAbstractSocket::SocketError error)
+void RiskEventSource::onMessage(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
 {
-    qCWarning(lcRiskEventSource) << "socket error:" << error << m_socket.errorString(); // - 경고 로그 출력: 오류 내용 및 원인 기록
-    m_watchdogTimer.stop();                                                // - 워치독 정지: 소켓 오류는 ConnectionState로 이미 표시됨
-    setConnectionState(RiskTypes::ConnectionState::Disconnected);          // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
-    if (!m_stopRequested)                                                 // - 수동 종료 확인: 의도치 않은 에러인 경우 재연결 진행
-        scheduleReconnect();                                              // - 재연결 예약: 접속 실패 시 자동 복구 재시도
+    Q_UNUSED(mosq);
+    if (!message || !message->payload || message->payloadlen <= 0)
+        return;
+
+    auto *self = static_cast<RiskEventSource *>(obj);
+    const QByteArray payload(static_cast<const char *>(message->payload), message->payloadlen); // - 페이로드 즉시 복사: 콜백 반환 후 message는 무효화되므로 라이브러리 스레드에서 복사해 둠
+
+    QMetaObject::invokeMethod(self, [self, payload]() {                 // - 파싱 및 신호 emit은 메인 스레드에서 처리
+        self->processPayload(payload);
+    }, Qt::QueuedConnection);
+}
+
+void RiskEventSource::processPayload(const QByteArray &payload)
+{
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError); // - JSON 변환: 수신 페이로드 해석 및 데이터 파싱
+
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) { // - 유효성 검증: JSON 형식 에러 또는 객체가 아닌 경우 필터링
+        qCWarning(lcRiskEventSource) << "malformed payload, ignoring:" << parseError.errorString() << payload; // - 경고 로그: 손상된 데이터 기록
+        return;
+    }
+
+    const RiskMetadata metadata = RiskMetadata::fromJson(doc.object());   // - 데이터 객체 생성: JSON을 RiskMetadata로 변환
+
+    const QDateTime utcTime = metadata.utcTime();                         // - 시간 정보 추출: 메시지 생성 시각 확인
+    if (!utcTime.isValid()) {                                             // - 시각 검증: 시간 정보가 없거나 유효하지 않은 경우 처리
+        qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << payload; // - 경고 로그: 시간 정보 없음 기록
+        m_lastCameraId = metadata.cameraId();                             // - 마지막 카메라 ID 기록: 워치독 만료 시 표시용
+        m_lastMessageTimer.start();                                       // - 워치독 기준 시각 재설정: 데이터가 도착했으니 무수신 시계 초기화
+        emit metadataReceived(metadata);                                  // - 신호 발생: 시간 확인 불가 데이터 전달 처리
+        return;
+    }
+
+    const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc());// - 경과 시간 계산: 현재 시간과의 차이(ms) 측정
+    if (ageMs > kStaleThresholdMs) {                                      // - 시간 지연 검증: retain으로 수신된 오래된 값 여부 확인
+        qCInfo(lcRiskEventSource) << "discarding stale retained message, age(ms)=" << ageMs
+                                   << "utc_time=" << utcTime.toString(Qt::ISODateWithMs); // - 정보 로그: 오래된 데이터 폐기 기록
+        return;                                                           // - 데이터 폐기: 지나간 경보 데이터 반영 생략 (워치독 기준 시각도 갱신하지 않음)
+    }
+
+    m_lastCameraId = metadata.cameraId();                                 // - 마지막 카메라 ID 기록: 워치독 만료 시 표시용
+    m_lastMessageTimer.start();                                           // - 워치독 기준 시각 재설정: 정상 데이터 수신 시점으로 갱신
+    emit metadataReceived(metadata);                                      // - 신호 발생: 정상 위험 이벤트 데이터 전달
 }
 
 void RiskEventSource::handleWatchdogTimeout()
 {
+    if (!m_lastMessageTimer.isValid() || m_lastMessageTimer.elapsed() < kWatchdogThresholdMs) // - 아직 연결 전이거나 기준 시간 이내면 정상 상태로 판단
+        return;
+
     qCWarning(lcRiskEventSource) << "no data for" << kWatchdogThresholdMs << "ms, reporting NetworkDisconnected"; // - 경고 로그: 무수신 시간 초과 기록
 
     RiskMetadata metadata;                                                // - 임시 메타데이터 생성: 통신 끊김 표시 전용
@@ -89,68 +173,8 @@ void RiskEventSource::handleWatchdogTimeout()
     metadata.setUtcTime(QDateTime::currentDateTimeUtc());                  // - 시각 설정: 워치독 발화 시각으로 지정
     emit metadataReceived(metadata);                                       // - 신호 발생: 통신 끊김 상태를 화면에 전달
 
-    m_watchdogTimer.start(kWatchdogThresholdMs);                           // - 워치독 재시작: 계속 무수신이면 같은 경고를 주기적으로 재통지
-}
-
-void RiskEventSource::scheduleReconnect()
-{
-    if (m_reconnectPending)                                               // - 중복 시도 차단: 이미 예약된 경우 실행 생략
-        return;
-    m_reconnectPending = true;                                            // - 예약 상태 설정: 중복 타이머 생성 방지
-
-    const int delay = m_reconnectDelayMs;                                 // - 이번 대기 시간 확정: 다음 시도용 증가 전 값 사용
-    m_reconnectDelayMs = qMin(m_reconnectDelayMs * 2, kReconnectMaxDelayMs); // - 다음 대기 시간 증가: 실패할수록 간격을 2배씩 늘림(상한 30초)
-
-    QTimer::singleShot(delay, this, [this]() {                            // - 지연 실행 예약: 현재 backoff 간격만큼 대기 후 재접속 작업 진행
-        m_reconnectPending = false;                                        // - 예약 상태 해제: 대기 상태 초기화
-        if (m_stopRequested)                                              // - 수동 종료 확인: 대기 중 종료 요청 시 중단
-            return;
-        setConnectionState(RiskTypes::ConnectionState::Connecting);      // - 상태 변경: 연결 진행 중 상태로 설정
-        m_socket.connectToHost(m_host, m_port);                            // - 재접속 시도: 저장된 주소 및 포트로 접속 요청
-    });
-}
-
-void RiskEventSource::handleReadyRead()
-{
-    m_watchdogTimer.start(kWatchdogThresholdMs);                           // - 워치독 재시작: 데이터가 도착했으니 무수신 시계 초기화
-    m_buffer += m_socket.readAll();                                       // - 데이터 누적: 수신 데이터를 버퍼에 연속 저장
-
-    int newlineIndex;
-    while ((newlineIndex = m_buffer.indexOf('\n')) != -1) {               // - 줄 단위 처리: 개행 문자(\n) 검색 및 반복 처리
-        const QByteArray line = m_buffer.left(newlineIndex);              // - 한 줄 추출: 개행 문자 전까지 데이터 잘라내기
-        m_buffer.remove(0, newlineIndex + 1);                             // - 버퍼 정리: 처리된 데이터 및 개행 문자 제거
-        if (!line.trimmed().isEmpty())                                    // - 유효 검증: 공백이 아닌 경우 해석 함수 호출
-            processLine(line);
-    }
-}
-
-void RiskEventSource::processLine(const QByteArray &line)
-{
-    QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError); // - JSON 변환: 수신 문장 해석 및 데이터 파싱
-
-    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) { // - 유효성 검증: JSON 형식 에러 또는 객체가 아닌 경우 필터링
-        qCWarning(lcRiskEventSource) << "malformed line, ignoring:" << parseError.errorString() << line; // - 경고 로그: 손상된 데이터 기록
-        return;
-    }
-
-    const RiskMetadata metadata = RiskMetadata::fromJson(doc.object());   // - 데이터 객체 생성: JSON을 RiskMetadata로 변환
-
-    const QDateTime utcTime = metadata.utcTime();                         // - 시간 정보 추출: 메시지 생성 시각 확인
-    if (!utcTime.isValid()) {                                             // - 시각 검증: 시간 정보가 없거나 유효하지 않은 경우 처리
-        qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << line; // - 경고 로그: 시간 정보 없음 기록
-        m_lastCameraId = metadata.cameraId();                             // - 마지막 카메라 ID 기록: 워치독 만료 시 표시용
-        emit metadataReceived(metadata);                                  // - 신호 발생: 시간 확인 불가 데이터 전달 처리
-        return;
-    }
-
-    const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc());// - 경과 시간 계산: 현재 시간과의 차이(ms) 측정
-    if (ageMs > kStaleThresholdMs) {                                      // - 시간 지연 검증: 1초 이상 지난 지연 데이터 여부 확인
-        qCInfo(lcRiskEventSource) << "discarding stale backlog message, age(ms)=" << ageMs
-                                   << "utc_time=" << utcTime.toString(Qt::ISODateWithMs); // - 정보 로그: 오래된 데이터 폐기 기록
-        return;                                                           // - 데이터 폐기: 지나간 경보 데이터 반영 생략
-    }
-
-    m_lastCameraId = metadata.cameraId();                                 // - 마지막 카메라 ID 기록: 워치독 만료 시 표시용
-    emit metadataReceived(metadata);                                      // - 신호 발생: 정상 위험 이벤트 데이터 전달
+    // - 기준 시각을 지금으로 재설정: 계속 무수신이면 kWatchdogThresholdMs 후 다시 통지.
+    //   100ms마다 폴링하되 통지 자체는 기존 워치독과 동일한 주기(600ms)로 유지해
+    //   EventLogModel에 동일 이벤트가 100ms 간격으로 중복 쌓이는 것을 막는다.
+    m_lastMessageTimer.start();
 }

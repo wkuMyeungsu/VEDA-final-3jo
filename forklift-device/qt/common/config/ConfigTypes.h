@@ -14,9 +14,10 @@ struct ControlCenterConfig {
 // - 단말 설정 구조체 (terminal.json 데이터 보관)
 struct TerminalConfig {
     QString defaultCameraId;                                                            // - 기본 카메라 ID: 시작 시 초기 표출 카메라
-    QString serverHost = QStringLiteral("127.0.0.1");                                   // - 서버 주소: 단말 통신 대상 IP
-    quint16 riskPort = 9000;                                                            // - 위험 채널 포트: 위험 판정 데이터 수신 포트
+    QString serverHost = QStringLiteral("127.0.0.1");                                   // - 서버 주소: HandoverClient 제어 채널(TCP) 접속 대상 IP
     quint16 handoverPort = 9001;                                                        // - 제어 채널 포트: 카메라 전환 핸드오버 제어 포트
-    QString metadataSourceType = QStringLiteral("mock");                               // - 데이터 소스 유형: 가상(mock) 또는 통신(tcp)
-    QString terminalId;                                                                 // - 단말 식별자: 본인 명령 필터링용 단말 ID
+    QString mqttBrokerHost = QStringLiteral("127.0.0.1");                               // - MQTT 브로커 주소: RiskEventSource 위험 판정 데이터 구독 대상
+    quint16 mqttBrokerPort = 1883;                                                      // - MQTT 브로커 포트: RiskEventSource 위험 판정 데이터 구독 포트
+    QString metadataSourceType = QStringLiteral("mock");                               // - 데이터 소스 유형: 가상(mock) 또는 통신(mqtt)
+    QString terminalId;                                                                 // - 단말 식별자: 본인 명령 필터링 및 MQTT 구독 토픽 구성용 단말 ID
 };

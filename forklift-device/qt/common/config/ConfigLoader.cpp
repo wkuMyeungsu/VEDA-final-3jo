@@ -83,8 +83,10 @@ TerminalConfig ConfigLoader::loadTerminalConfig() const
 
     config.defaultCameraId = obj.value(QStringLiteral("default_camera_id")).toString(); // - 기본 카메라 ID 읽기: 설정값 적용
     config.serverHost = obj.value(QStringLiteral("server_host")).toString(config.serverHost); // - 서버 주소 읽기: 설정값 적용
-    config.riskPort = static_cast<quint16>(obj.value(QStringLiteral("risk_port")).toInt(config.riskPort)); // - 위험 통신 포트 읽기: 설정값 적용
     config.handoverPort = static_cast<quint16>(obj.value(QStringLiteral("handover_port")).toInt(config.handoverPort)); // - 제어 포트 읽기: 설정값 적용
+    config.mqttBrokerHost = obj.value(QStringLiteral("mqtt_broker_host")).toString(config.mqttBrokerHost); // - MQTT 브로커 주소 읽기: 설정값 적용
+    config.mqttBrokerPort =
+        static_cast<quint16>(obj.value(QStringLiteral("mqtt_broker_port")).toInt(config.mqttBrokerPort)); // - MQTT 브로커 포트 읽기: 설정값 적용
     config.metadataSourceType =
         obj.value(QStringLiteral("metadata_source_type")).toString(config.metadataSourceType); // - 소스 유형 읽기: 설정값 적용
     config.terminalId = obj.value(QStringLiteral("terminal_id")).toString();  // - 단말 ID 읽기: 설정값 적용
