@@ -45,6 +45,8 @@
 #include "network/result_publisher.hpp"
 #include "network/result_dispatcher.hpp"
 #include "network/camera_assignment_server.hpp"
+#include "network/sensor_uplink_receiver.hpp"
+#include "network/network_sensor_reader.hpp"
 #include "logging/event_logger.hpp"
 #include "logging/latency_logger.hpp"
 
@@ -136,7 +138,13 @@ struct AppState {
     // 신호를 주므로, 그 신호를 받아 9001 camera_assignment를 보낸다.
     MarkerChannelTracker markerTracker;
 
-    StubSensorReader sensorReader;
+    // 드라이버 연동 전 목업/테스트용으로 남겨둔다(실사용 자리는 아래 sensorReader).
+    StubSensorReader stubSensorReader;
+
+    // 단말 -> 서버 센서 업링크(MQTT, forklift/sensor/+). "최신값 캐시" 방식으로 팀 확정
+    // (박명수 확인 완료). NetworkSensorReader가 이 캐시를 ISensorReader로 감싼다.
+    risk_transport::SensorUplinkReceiver sensorUplinkReceiver;
+    NetworkSensorReader sensorReader;
     JudgmentPipeline judgmentPipeline;
 
     risk_transport::ResultPublisher resultPublisher;
@@ -153,6 +161,10 @@ struct AppState {
           markerTracker(config.forklift.marker_id,
                         config.handover.confirm_frames,
                         config.handover.lostGrace()),
+          // 브로커 주소는 기본값(127.0.0.1:1883, 로컬 mosquitto) 그대로 사용.
+          // 단말 식별자는 단일 지게차 데모라 기존 단말 설정값을 그대로 재사용한다.
+          sensorUplinkReceiver(),
+          sensorReader(sensorUplinkReceiver, config.forklift.terminal_id),
           judgmentPipeline(kUnknownCameraId, config.forklift.terminal_id, sensorReader),
           // 브로커 host/port는 생성자 기본값(localhost:1883)을 그대로 쓴다 - 브로커가
           // 서버와 같은 머신에 있는 현재 배치 기준. 다른 머신으로 옮기면 여기서 넘긴다.
@@ -572,6 +584,7 @@ int main(int argc, char* argv[]) {
     state.resultPublisher.start();
 
     state.cameraAssignmentServer.start();
+    state.sensorUplinkReceiver.start();
 
     state.eventLogger.start();
     state.latencyLogger.start();
@@ -635,6 +648,7 @@ int main(int argc, char* argv[]) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     state.resultPublisher.stop();
     state.cameraAssignmentServer.stop();
+    state.sensorUplinkReceiver.stop();
     state.eventLogger.stop();
     state.latencyLogger.stop();
 

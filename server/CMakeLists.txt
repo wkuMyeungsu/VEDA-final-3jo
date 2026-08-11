@@ -19,7 +19,7 @@ pkg_check_modules(GST REQUIRED IMPORTED_TARGET
 )
 pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 
-# 판정 결과(risk_event) MQTT 송신용. result_publisher.hpp가 <mosquitto.h>를 직접 쓴다.
+# risk_event 발행(ResultPublisher)과 센서 업링크 수신(SensorUplinkReceiver)이 공통으로 쓰는 MQTT 클라이언트 라이브러리.
 pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
 
 set(SERVER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -76,6 +76,8 @@ target_link_libraries(server_judgment PUBLIC server_tracking Threads::Threads)
 
 add_library(server_network STATIC
     src/network/result_publisher.cpp
+    src/network/sensor_uplink_receiver.cpp
+    src/network/network_sensor_reader.cpp
 )
 target_include_directories(server_network PUBLIC ${SERVER_SRC_DIR})
 # libmosquitto는 PUBLIC이다 - ResultPublisher가 헤더 온리라서 이 헤더를 include하는 쪽

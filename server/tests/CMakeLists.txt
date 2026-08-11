@@ -41,6 +41,11 @@ add_test(NAME event_logger_test COMMAND test_event_logger)
 # target_link_libraries(test_result_publisher PRIVATE server_judgment server_network Threads::Threads)
 # add_test(NAME result_publisher_test COMMAND test_result_publisher)
 
+# 단말→서버 센서 업링크(9002 제안) 수신기. loopback 소켓만 쓰므로 별도 의존성이 없다.
+add_executable(test_sensor_uplink_receiver test_sensor_uplink_receiver.cpp)
+target_link_libraries(test_sensor_uplink_receiver PRIVATE server_network Threads::Threads)
+add_test(NAME sensor_uplink_receiver_test COMMAND test_sensor_uplink_receiver)
+
 add_executable(test_terminal_config test_terminal_config.cpp)
 target_link_libraries(test_terminal_config PRIVATE server_config)
 add_test(NAME terminal_config_test COMMAND test_terminal_config)
