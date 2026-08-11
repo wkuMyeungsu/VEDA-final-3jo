@@ -85,7 +85,7 @@ void RtspVideoSource::start()
     QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
         + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
           " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
-          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false"; // - 파이프라인 문자열 생성: RTSP 영상 파이프라인 구성 (영상 브랜치는 항상 포함)
+          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true"; // - 파이프라인 문자열 생성: RTSP 영상 파이프라인 구성 (영상 브랜치는 항상 포함)
 
     // - 일부 배포판(라즈베리파이 OS 등)에 rtponvifmetadatadepay 미포함
     // - 없는 엘리먼트를 문자열에 넣으면 파싱 실패로 영상 브랜치까지 같이 죽음
