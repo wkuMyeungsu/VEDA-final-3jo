@@ -48,3 +48,27 @@ add_custom_command(TARGET control_center POST_BUILD
         ${SAFETY_CONFIG_SOURCE_DIR}
         $<TARGET_FILE_DIR:control_center>/config
 )
+
+# - mosquitto 의존 DLL들을 빌드 후 실행 파일 옆에 복사 (없으면 창 없이 조용히 종료)
+if(WIN32 AND MOSQUITTO_RUNTIME_DLL)
+    add_custom_command(TARGET control_center POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${MOSQUITTO_RUNTIME_DLL}
+            $<TARGET_FILE_DIR:control_center>
+    )
+endif()
+if(WIN32 AND MOSQUITTO_RUNTIME_EXTRA_DLLS)
+    add_custom_command(TARGET control_center POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${MOSQUITTO_RUNTIME_EXTRA_DLLS}
+            $<TARGET_FILE_DIR:control_center>
+    )
+endif()
+
+# - Qt DLL은 복사 대신 PATH로 참조 (windeployqt 복사본은 이 PC에서 불안정했음)
+# - 탐색기 더블클릭용 래퍼: Qt/GStreamer 경로를 PATH에 얹어서 실행
+if(WIN32)
+    file(GENERATE OUTPUT $<TARGET_FILE_DIR:control_center>/run_control_center.bat
+        CONTENT "@echo off\r\nset \"PATH=${QT6_INSTALL_PREFIX}/bin;C:\\Program Files\\gstreamer\\1.0\\mingw_x86_64\\bin;%PATH%\"\r\nstart \"\" \"%~dp0control_center.exe\" %*\r\n"
+    )
+endif()

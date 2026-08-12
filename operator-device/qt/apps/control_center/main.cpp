@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QGuiApplication>
+#include <QNetworkProxyFactory>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <gst/gst.h>
@@ -24,6 +25,7 @@ int main(int argc, char *argv[])
 
     // Qt GUI 앱 초기화
     QGuiApplication app(argc, argv);
+    QNetworkProxyFactory::setUseSystemConfiguration(false);                      // - 시스템 프록시 자동 탐색 끄기
     // Qt 앱 이름/조직명 설정 (설정 저장 시 사용됨)
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyControlCenter"));
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));
@@ -52,13 +54,17 @@ int main(int argc, char *argv[])
 
     MetadataDistributor metadataDistributor(cameras, appConfig.eventLogMaxEntries);
     MockMetadataSource metadataSource(cameras);
-    RiskEventSource riskEventSource(appConfig.serverHost, appConfig.serverPort); // - 실제 서버 데이터 소스 생성: TCP 통신 수신 객체
-    IMetadataSource *activeMetadataSource = &metadataSource;                    // - 활성 데이터 소스 지정: 기본값으로 가상 소스 설정
-    if (appConfig.metadataSourceType == QStringLiteral("tcp"))                  // - 소스 유형 확인: 설정값이 tcp인 경우 실제 소스로 변경
+    RiskEventSource riskEventSource(appConfig.mqttBrokerHost, appConfig.mqttBrokerPort, appConfig.terminalId); // - 실제 데이터 소스 생성
+    IMetadataSource *activeMetadataSource = &metadataSource;                    // - 활성 소스 기본값: mock
+    if (appConfig.metadataSourceType == QStringLiteral("mqtt"))                 // - mqtt 설정 시 실제 소스로 전환
         activeMetadataSource = &riskEventSource;
     metadataDistributor.setSource(activeMetadataSource);
 
     ServerConnectionService serverConnection;
+    // - 상단 바 서버 상태 표시를 실제 수신 상태에 연결
+    if (activeMetadataSource == &riskEventSource)                               // - 실통신 모드에서만 연결
+        QObject::connect(&riskEventSource, &IMetadataSource::connectionStateChanged,
+                         &serverConnection, &ServerConnectionService::setConnectionState);
     DemoController demoController(&metadataSource, &videoManager, &serverConnection);
     demoController.setDemoModeEnabled(parser.isSet(demoOption));
 
