@@ -403,4 +403,10 @@ terminal_id를 채운다. 서버 설정과 단말 설정(terminal.json의 termin
 - **유지보수성**: 실제 장비 장애 대응을 위해 Mock 모드는 항상 유지
 - **사전 검증**: 실제 카메라 연결 전 VLC 또는 `gst-launch-1.0`을 통한 RTSP 주소 및 코덱 검증
 - **스키마 동기화**: 서버 JSON 스키마(`exception_state` enum 값 포함: `NONE`, `SENSOR_FAULT`, `DEAD_RECKONING`, `EMERGENCY_IMPACT`) 사전 대조
+- **camera_id 동기화**: `cameras.json`의 각 카메라 `camera_id` 목록과
+  `terminal.json`의 `default_camera_id`가 서로 다른 파일에서 독립 관리됨.
+  어긋나면 실패로 드러나지 않고 조용히 무시/기본 화면 표시로 넘어갈 수 있으니,
+  배포 전 두 파일을 육안으로 대조할 것. 서버가 내려주는 `camera_assignment`
+  응답의 camera_id도 이 목록에 실존해야 하므로, 카메라 추가/제거 시
+  `cameras.json` 갱신을 빠뜨리지 않았는지 함께 확인.
 - **크로스 플랫폼 검증**: 연동 완료 후 Windows 및 Raspberry Pi 환경에서 각각 빌드/실행 검증 수행
