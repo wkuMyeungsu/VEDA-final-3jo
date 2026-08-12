@@ -66,8 +66,10 @@ ControlCenterConfig ConfigLoader::loadControlCenterConfig() const
         return config;
 
     config.systemName = obj.value(QStringLiteral("system_name")).toString(config.systemName);
-    config.serverHost = obj.value(QStringLiteral("server_host")).toString(config.serverHost);
-    config.serverPort = static_cast<quint16>(obj.value(QStringLiteral("server_port")).toInt(config.serverPort));
+    config.mqttBrokerHost = obj.value(QStringLiteral("mqtt_broker_host")).toString(config.mqttBrokerHost); // - 브로커 주소 읽기
+    config.mqttBrokerPort =
+        static_cast<quint16>(obj.value(QStringLiteral("mqtt_broker_port")).toInt(config.mqttBrokerPort)); // - 브로커 포트 읽기
+    config.terminalId = obj.value(QStringLiteral("terminal_id")).toString();  // - 단말 ID 읽기
     config.metadataSourceType =
         obj.value(QStringLiteral("metadata_source_type")).toString(config.metadataSourceType);
     config.eventLogMaxEntries = obj.value(QStringLiteral("event_log_max_entries")).toInt(config.eventLogMaxEntries);
