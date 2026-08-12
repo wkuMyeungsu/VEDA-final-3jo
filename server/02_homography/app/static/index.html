@@ -32,7 +32,7 @@
   </main>
   <section id="live-view" class="live-view" hidden>
     <header><h2>라이브 결과 검증</h2><div><button id="live-play">재생</button><button id="live-pause">일시 정지</button><button id="show-both">좌우 보기</button><button id="show-original">원본만</button><button id="show-top">탑뷰만</button><button id="fullscreen-live">전체 화면</button><button id="close-live">설정으로</button></div></header>
-    <div id="live-grid" class="live-grid"><figure id="original-pane"><figcaption>원본 RTSP</figcaption><img id="live-original" alt="원본 RTSP 영상"></figure><figure id="top-pane"><figcaption>선택 구간 탑뷰</figcaption><canvas id="live-top"></canvas></figure></div>
+    <div id="live-grid" class="live-grid"><figure id="original-pane"><figcaption>원본 RTSP</figcaption><div class="live-media"><img id="live-original" alt="원본 RTSP 영상"></div></figure><figure id="top-pane"><figcaption>선택 구간 탑뷰</figcaption><div class="live-media"><canvas id="live-top"></canvas><canvas id="live-measure-overlay" aria-label="라이브 거리 측정"></canvas></div></figure></div>
     <p id="live-status"></p>
   </section>
   <script src="/static/homography.js"></script>
