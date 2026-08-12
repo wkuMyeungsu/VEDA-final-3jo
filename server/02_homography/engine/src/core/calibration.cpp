@@ -12,8 +12,8 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
-#include <map>
 #include <stdexcept>
+#include <set>
 
 namespace homography {
 
@@ -85,98 +85,178 @@ void write_calibration(const std::string& path, const Config& config,
     output << std::setw(2) << value << '\n';
 }
 
+namespace {
+
+std::vector<cv::Point2f> transform_points(const std::vector<cv::Point2f>& points,
+                                          const cv::Mat& h) {
+    std::vector<cv::Point2f> output;
+    cv::perspectiveTransform(points, output, h);
+    return output;
+}
+
+std::vector<cv::Point2f> nearest_square(const std::vector<cv::Point2f>& points,
+                                        double side_mm) {
+    cv::Point2d center;
+    for (const auto& point : points) center += cv::Point2d(point.x, point.y);
+    center *= 0.25;
+    const double half = side_mm * 0.5;
+    const std::vector<cv::Point2d> canonical = {
+        {-half, -half}, {half, -half}, {half, half}, {-half, half}};
+    double dot = 0.0, cross = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        const cv::Point2d observed(points[i].x - center.x, points[i].y - center.y);
+        dot += canonical[i].dot(observed);
+        cross += canonical[i].x * observed.y - canonical[i].y * observed.x;
+    }
+    const double angle = std::atan2(cross, dot);
+    const double c = std::cos(angle), s = std::sin(angle);
+    std::vector<cv::Point2f> fitted;
+    for (const auto& point : canonical)
+        fitted.emplace_back(static_cast<float>(center.x + c * point.x - s * point.y),
+                            static_cast<float>(center.y + s * point.x + c * point.y));
+    return fitted;
+}
+
+}  // namespace
+
+ManualSolveResult solve_square_markers(
+        const std::vector<SquareMarkerObservation>& observations,
+        double side_mm, int reference_marker_id,
+        const std::vector<int>& excluded_ids) {
+    if (side_mm <= 0.0) throw std::runtime_error("marker_size_mm must be positive");
+    const std::set<int> excluded(excluded_ids.begin(), excluded_ids.end());
+    const SquareMarkerObservation* reference = nullptr;
+    std::vector<const SquareMarkerObservation*> used;
+    ManualSolveResult result;
+    result.reference_marker_id = reference_marker_id;
+    result.excluded_ids = excluded_ids;
+    for (const auto& marker : observations) {
+        result.detected_ids.push_back(marker.id);
+        if (marker.id == reference_marker_id) reference = &marker;
+        if (!excluded.count(marker.id) && marker.corners.size() == 4) used.push_back(&marker);
+    }
+    result.detected = static_cast<int>(observations.size());
+    if (!reference || reference->corners.size() != 4)
+        throw std::runtime_error("reference marker was not detected");
+    if (excluded.count(reference_marker_id))
+        throw std::runtime_error("reference marker cannot be excluded");
+    if (used.empty()) throw std::runtime_error("at least one marker is required");
+
+    const std::vector<cv::Point2f> reference_world = {
+        {0, 0}, {static_cast<float>(side_mm), 0},
+        {static_cast<float>(side_mm), static_cast<float>(side_mm)},
+        {0, static_cast<float>(side_mm)}};
+    cv::Mat h = cv::getPerspectiveTransform(reference->corners, reference_world);
+    for (int iteration = 0; iteration < 50; ++iteration) {
+        std::vector<cv::Point2f> pixels, targets;
+        for (const auto* marker : used) {
+            const auto world = transform_points(marker->corners, h);
+            const auto fitted = marker->id == reference_marker_id
+                ? reference_world : nearest_square(world, side_mm);
+            pixels.insert(pixels.end(), marker->corners.begin(), marker->corners.end());
+            targets.insert(targets.end(), fitted.begin(), fitted.end());
+        }
+        cv::Mat next = cv::findHomography(pixels, targets, 0);
+        if (next.empty()) throw std::runtime_error("findHomography failed");
+        next /= next.at<double>(2, 2);
+        const double change = cv::norm(next - h, cv::NORM_INF);
+        h = next;
+        result.iterations = iteration + 1;
+        if (change < 1e-9) break;
+    }
+    result.h_pixel_to_world = h;
+    result.h_world_to_pixel = h.inv();
+    result.used = static_cast<int>(used.size());
+    result.inliers = result.used * 4;
+    double total = 0.0;
+    for (const auto* marker : used) {
+        result.used_ids.push_back(marker->id);
+        const auto world = transform_points(marker->corners, h);
+        const auto fitted = marker->id == reference_marker_id
+            ? reference_world : nearest_square(world, side_mm);
+        double sum = 0.0;
+        for (int i = 0; i < 4; ++i) sum += cv::norm(world[i] - fitted[i]) * cv::norm(world[i] - fitted[i]);
+        const double error = std::sqrt(sum / 4.0);
+        total += sum;
+        const cv::Point2f edge = fitted[1] - fitted[0];
+        result.markers.push_back({marker->id, fitted[0].x, fitted[0].y,
+            std::atan2(edge.y, edge.x) * 180.0 / CV_PI, error});
+    }
+    result.rmse_mm = std::sqrt(total / std::max(1, result.inliers));
+    const double suspect_gate = std::max(2.0, side_mm * 0.03);
+    for (const auto& marker : result.markers)
+        if (marker.square_error_mm > suspect_gate) result.suspicious_ids.push_back(marker.id);
+    return result;
+}
+
 ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
                                      const json& layout, cv::Mat* overlay) {
     const double side_mm = layout.value("marker_size_mm", config.manual_solve.marker_size_mm);
-    if (side_mm <= 0.0) throw std::runtime_error("marker_size_mm must be positive");
-    if (!layout.contains("markers") || !layout.at("markers").is_array())
-        throw std::runtime_error("layout.markers must be an array");
-    std::map<int, std::pair<double, double>> positions;
-    // 수동 레이아웃은 각 마커의 좌상단 위치를 기준으로 함.
-    // 아래 네 점은 ArUco 검출 코너와 같은 시계 방향 순서.
-    for (const auto& item : layout.at("markers"))
-        positions[item.at("id").get<int>()] = {
-            item.at("x_mm").get<double>(), item.at("y_mm").get<double>()};
-
     ManualSolveResult result;
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners, rejected;
     cv::aruco::detectMarkers(image, dictionary(config), corners, ids);
-    result.detected = static_cast<int>(ids.size());
-    result.detected_ids = ids;
-    std::vector<cv::Point2f> pixels, worlds;
-    std::vector<int> used_ids;
+    std::vector<SquareMarkerObservation> observations;
     for (size_t i = 0; i < ids.size(); ++i) {
-        const auto it = positions.find(ids[i]);
-        if (it == positions.end() || corners[i].size() != 4) continue;
-        const double x = it->second.first;
-        const double y = it->second.second;
-        const std::vector<cv::Point2f> world = {
-            {static_cast<float>(x), static_cast<float>(y)},
-            {static_cast<float>(x + side_mm), static_cast<float>(y)},
-            {static_cast<float>(x + side_mm), static_cast<float>(y + side_mm)},
-            {static_cast<float>(x), static_cast<float>(y + side_mm)}};
-        for (int corner = 0; corner < 4; ++corner) {
-            pixels.push_back(corners[i][corner]);
-            worlds.push_back(world[corner]);
-        }
-        used_ids.push_back(ids[i]);
+        observations.push_back({ids[i], corners[i]});
     }
-    result.used = static_cast<int>(used_ids.size());
-    result.used_ids = used_ids;
-    for (const auto& position : positions)
-        if (std::find(ids.begin(), ids.end(), position.first) == ids.end())
-            result.missing_ids.push_back(position.first);
-    if (pixels.size() < 4)
-        throw std::runtime_error("at least one valid marker is required");
-
-    cv::Mat mask;
-    // 수동 산출은 픽셀→월드 변환을 구하며, world 좌표 단위는 mm.
-    result.h_pixel_to_world = cv::findHomography(
-        pixels, worlds, cv::RANSAC, config.manual_solve.ransac_threshold_mm, mask);
-    if (result.h_pixel_to_world.empty())
-        throw std::runtime_error("findHomography failed");
-    result.h_pixel_to_world /= result.h_pixel_to_world.at<double>(2, 2);
-    result.h_world_to_pixel = result.h_pixel_to_world.inv();
-    // overlay 요청 시 검출된 각 코너 주변에 오차 품질을 색으로 표시함.
-    double sum = 0.0;
-    int count = 0;
+    const int reference_id = layout.at("reference_marker_id").get<int>();
+    result = solve_square_markers(observations, side_mm, reference_id,
+                                  layout.value("excluded_ids", std::vector<int>{}));
     cv::Mat annotated;
     if (overlay) {
         if (image.channels() == 1) cv::cvtColor(image, annotated, cv::COLOR_GRAY2BGR);
         else annotated = image.clone();
-    }
-    for (int i = 0; i < static_cast<int>(pixels.size()); ++i) {
-        std::vector<cv::Point2f> projected;
-        const std::vector<cv::Point2f> source{pixels[i]};
-        cv::perspectiveTransform(source, projected, result.h_pixel_to_world);
-        const double dx = projected[0].x - worlds[i].x;
-        const double dy = projected[0].y - worlds[i].y;
-        const double error = std::sqrt(dx * dx + dy * dy);
-        if (mask.empty() || mask.at<uchar>(i)) {
-            sum += error * error;
-            ++count;
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const bool excluded = std::find(result.excluded_ids.begin(), result.excluded_ids.end(), ids[i]) != result.excluded_ids.end();
+            const bool suspicious = std::find(result.suspicious_ids.begin(), result.suspicious_ids.end(), ids[i]) != result.suspicious_ids.end();
+            std::vector<cv::Point> outline;
+            for (const auto& point : corners[i]) outline.emplace_back(cvRound(point.x), cvRound(point.y));
+            cv::polylines(annotated, outline, true,
+                excluded ? cv::Scalar(120, 120, 120) : suspicious ? cv::Scalar(0, 165, 255) : cv::Scalar(0, 200, 0), 3);
+            cv::putText(annotated, "ID " + std::to_string(ids[i]), corners[i][0],
+                cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 80, 0), 2, cv::LINE_AA);
         }
-        if (overlay)
-            cv::circle(annotated, pixels[i], 5,
-                       error <= 2.0 ? cv::Scalar(0, 200, 0) : cv::Scalar(0, 0, 255),
-                       2);
-    }
-    result.inliers = count;
-    result.rmse_mm = count ? std::sqrt(sum / count)
-                           : std::numeric_limits<double>::infinity();
-    if (overlay) {
-        for (size_t i = 0; i < ids.size(); ++i)
-            if (positions.count(ids[i]) && corners[i].size() == 4)
-                cv::putText(annotated, "ID " + std::to_string(ids[i]),
-                    corners[i][0] + cv::Point2f(4, -6), cv::FONT_HERSHEY_SIMPLEX,
-                    0.6, cv::Scalar(255, 80, 0), 2, cv::LINE_AA);
         cv::putText(annotated, "RMSE=" + std::to_string(result.rmse_mm) + " mm",
                     {12, 28}, cv::FONT_HERSHEY_SIMPLEX, 0.8,
                     cv::Scalar(20, 20, 20), 2, cv::LINE_AA);
         *overlay = annotated;
     }
     return result;
+}
+
+cv::Mat align_marker_images(const Config& config, const cv::Mat& source,
+                            const cv::Mat& destination,
+                            std::vector<int>* common_ids, double* rmse_px) {
+    std::vector<int> source_ids, destination_ids;
+    std::vector<std::vector<cv::Point2f>> source_corners, destination_corners;
+    cv::aruco::detectMarkers(source, dictionary(config), source_corners, source_ids);
+    cv::aruco::detectMarkers(destination, dictionary(config), destination_corners, destination_ids);
+    std::vector<cv::Point2f> from, to;
+    if (common_ids) common_ids->clear();
+    for (size_t i = 0; i < source_ids.size(); ++i) {
+        const auto found = std::find(destination_ids.begin(), destination_ids.end(), source_ids[i]);
+        if (found == destination_ids.end()) continue;
+        const size_t j = static_cast<size_t>(found - destination_ids.begin());
+        if (source_corners[i].size() != 4 || destination_corners[j].size() != 4) continue;
+        from.insert(from.end(), source_corners[i].begin(), source_corners[i].end());
+        to.insert(to.end(), destination_corners[j].begin(), destination_corners[j].end());
+        if (common_ids) common_ids->push_back(source_ids[i]);
+    }
+    if (from.size() < 4) throw std::runtime_error("no common ArUco marker for RTSP alignment");
+    cv::Mat mask;
+    cv::Mat h = cv::findHomography(from, to, cv::RANSAC, 3.0, mask);
+    if (h.empty()) throw std::runtime_error("RTSP alignment failed");
+    h /= h.at<double>(2, 2);
+    double sum = 0.0; int count = 0;
+    const auto projected = transform_points(from, h);
+    for (size_t i = 0; i < projected.size(); ++i) {
+        if (!mask.empty() && !mask.at<uchar>(static_cast<int>(i))) continue;
+        const double error = cv::norm(projected[i] - to[i]);
+        sum += error * error; ++count;
+    }
+    if (rmse_px) *rmse_px = count ? std::sqrt(sum / count) : std::numeric_limits<double>::infinity();
+    return h;
 }
 
 }  // namespace homography

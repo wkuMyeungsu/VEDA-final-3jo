@@ -97,6 +97,91 @@ void test_calibration() {
     expect(result.rmse_cm < 0.25, "calibration reprojection error");
 }
 
+std::vector<cv::Point2f> project(const std::vector<cv::Point2f>& points,
+                                 const cv::Mat& h) {
+    std::vector<cv::Point2f> output;
+    cv::perspectiveTransform(points, output, h);
+    return output;
+}
+
+void test_irregular_square_calibration() {
+    const double side = 80.0;
+    const cv::Mat world_to_pixel = (cv::Mat_<double>(3, 3) <<
+        1.7, 0.18, 430.0, -0.09, 1.35, 210.0, 0.00035, -0.00022, 1.0);
+    std::vector<homography::SquareMarkerObservation> observations;
+    const std::vector<cv::Point2f> poses = {{0, 0}, {245, 47}, {-90, 230}, {330, 310}};
+    const std::vector<double> angles = {0.0, 0.43, -0.71, 1.08};
+    for (int marker = 0; marker < 4; ++marker) {
+        const double c = std::cos(angles[marker]), s = std::sin(angles[marker]);
+        const std::vector<cv::Point2f> local = {{0, 0}, {80, 0}, {80, 80}, {0, 80}};
+        std::vector<cv::Point2f> world;
+        for (const auto& p : local)
+            world.emplace_back(poses[marker].x + c * p.x - s * p.y,
+                               poses[marker].y + s * p.x + c * p.y);
+        observations.push_back({20 + marker, project(world, world_to_pixel)});
+    }
+    // 한 코너에 잡음을 넣어도 여러 정사각형의 공통 평면 제약으로 안정적으로 복원해야 함.
+    observations[2].corners[2] += cv::Point2f(2.0f, -1.5f);
+    const auto result = homography::solve_square_markers(observations, side, 20, {});
+    expect(result.used == 4, "all irregular markers should be used");
+    expect(result.rmse_mm < 0.8, "square fit should tolerate corner noise");
+    for (const auto& marker : result.markers) {
+        const auto found = std::find_if(observations.begin(), observations.end(),
+            [&](const auto& value) { return value.id == marker.id; });
+        const auto recovered = project(found->corners, result.h_pixel_to_world);
+        for (int edge = 0; edge < 4; ++edge)
+            expect_near(cv::norm(recovered[(edge + 1) % 4] - recovered[edge]), side,
+                        1.5, "recovered marker side");
+    }
+    const auto changed_reference = homography::solve_square_markers(observations, side, 22, {});
+    const cv::Point2f a = project(observations[1].corners, result.h_pixel_to_world)[0];
+    const cv::Point2f b = project(observations[3].corners, result.h_pixel_to_world)[0];
+    const cv::Point2f c = project(observations[1].corners, changed_reference.h_pixel_to_world)[0];
+    const cv::Point2f d = project(observations[3].corners, changed_reference.h_pixel_to_world)[0];
+    expect_near(cv::norm(a - b), cv::norm(c - d), 1.0,
+                "changing reference must preserve relative distance");
+    const auto excluded = homography::solve_square_markers(observations, side, 20, {22});
+    expect(excluded.used == 3 && excluded.excluded_ids[0] == 22,
+           "explicit marker exclusion");
+    auto corrupted = observations;
+    corrupted[3].corners[2] += cv::Point2f(35.0f, -28.0f);
+    const auto suspicious = homography::solve_square_markers(corrupted, side, 20, {});
+    expect(std::find(suspicious.suspicious_ids.begin(), suspicious.suspicious_ids.end(), 23)
+               != suspicious.suspicious_ids.end(),
+           "grossly distorted marker should be an exclusion candidate");
+}
+
+void test_rtsp_capture_alignment() {
+    const Config config = test_config();
+    const cv::Mat board = homography::render_board(config, 20);
+    const std::vector<cv::Point2f> board_extent = {{0, 0},
+        {static_cast<float>(board.cols), 0},
+        {static_cast<float>(board.cols), static_cast<float>(board.rows)},
+        {0, static_cast<float>(board.rows)}};
+    const std::vector<cv::Point2f> rtsp_extent = {{90, 80}, {690, 65}, {720, 530}, {65, 550}};
+    const std::vector<cv::Point2f> capture_extent = {{330, 180}, {2240, 120}, {2350, 1370}, {210, 1430}};
+    const cv::Mat board_to_rtsp = cv::getPerspectiveTransform(board_extent, rtsp_extent);
+    const cv::Mat board_to_capture = cv::getPerspectiveTransform(board_extent, capture_extent);
+    cv::Mat rtsp(600, 800, CV_8UC1, cv::Scalar(255));
+    cv::Mat capture(1520, 2592, CV_8UC1, cv::Scalar(255));
+    cv::warpPerspective(board, rtsp, board_to_rtsp, rtsp.size(), cv::INTER_NEAREST,
+                        cv::BORDER_TRANSPARENT);
+    cv::warpPerspective(board, capture, board_to_capture, capture.size(), cv::INTER_NEAREST,
+                        cv::BORDER_TRANSPARENT);
+    std::vector<int> common;
+    double rmse = 0.0;
+    const cv::Mat aligned = homography::align_marker_images(
+        config, rtsp, capture, &common, &rmse);
+    expect(!common.empty(), "RTSP alignment needs common marker IDs");
+    expect(rmse < 2.0, "RTSP-to-capture marker alignment RMSE");
+    const std::vector<cv::Point2f> sample_board = {{240, 180}};
+    const cv::Point2f rtsp_point = project(sample_board, board_to_rtsp)[0];
+    const cv::Point2f expected_capture = project(sample_board, board_to_capture)[0];
+    const cv::Point2f actual_capture = project({rtsp_point}, aligned)[0];
+    expect_near(cv::norm(actual_capture - expected_capture), 0.0, 3.0,
+                "800x600 RTSP must be aligned before capture homography");
+}
+
 }  // namespace
 
 int main() {
@@ -105,7 +190,9 @@ int main() {
         test_matrix_json_roundtrip();
         test_board_rendering();
         test_calibration();
-        std::cout << "homography_unit_tests: 4 tests passed\n";
+        test_irregular_square_calibration();
+        test_rtsp_capture_alignment();
+        std::cout << "homography_unit_tests: 6 tests passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "homography_unit_tests: FAILED: " << error.what() << '\n';

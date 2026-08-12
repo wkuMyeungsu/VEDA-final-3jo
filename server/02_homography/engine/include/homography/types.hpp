@@ -70,6 +70,24 @@ struct ManualSolveResult {
     std::vector<int> detected_ids;
     std::vector<int> used_ids;
     std::vector<int> missing_ids;
+    int reference_marker_id = -1;
+    int iterations = 0;
+    std::vector<int> excluded_ids;
+    std::vector<int> suspicious_ids;
+    struct MarkerPose {
+        int id = -1;
+        double x_mm = 0.0;
+        double y_mm = 0.0;
+        double rotation_deg = 0.0;
+        double square_error_mm = 0.0;
+    };
+    std::vector<MarkerPose> markers;
+};
+
+// 이미지 검출과 분리해 합성 데이터에서도 정사각형 제약 산출을 검증할 수 있음.
+struct SquareMarkerObservation {
+    int id = -1;
+    std::vector<cv::Point2f> corners;
 };
 
 }  // namespace homography

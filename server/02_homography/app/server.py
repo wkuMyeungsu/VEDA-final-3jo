@@ -54,7 +54,7 @@ def configured_input_name(key, fallback):
     return Path(str(value)).name or fallback
 
 
-def camera_urls(channel_id=1):
+def camera_urls(channel_id=1, profile_override=None):
     """카메라 기본 정보로 RTSP와 스냅샷 URL을 조합함."""
     camera = CAMERA.get("camera", {})
     connection = CAMERA.get("connection", {})
@@ -66,13 +66,34 @@ def camera_urls(channel_id=1):
     channel_id = int(channel_id)
     if channel_id not in range(1, 5):
         raise ValueError("camera.channel_id must be between 1 and 4")
-    profile = str(camera.get("profile", "profile2")).strip("/")
+    profile = str(profile_override or camera.get("profile", "profile2")).strip("/")
     auth = f"{username}:{password}@" if username else ""
     rtsp_url = f"rtsp://{auth}{ip}:{rtsp_port}/{channel_id - 1}/onvif/{profile}/media.smp"
+    capture_profile = str(camera.get("capture_profile", "1")).strip("/")
+    if capture_profile.lower().startswith("profile"):
+        capture_profile = capture_profile[7:]
+    capture_profile = quote(capture_profile, safe="")
     snapshot_url = (
         f"http://{ip}:{http_port}/stw-cgi/video.cgi?msubmenu=snapshot&action=view"
+        f"&Profile={capture_profile}&Channel={channel_id - 1}"
     )
     return connection, camera, rtsp_url, snapshot_url
+
+
+def capture_high_resolution_frame(channel_id, timeout):
+    """캡처 전용 HTTP 스냅샷에서 원본 JPEG 한 장을 가져옴."""
+    connection, camera, _, snapshot_url = camera_urls(channel_id)
+    capture_source = str(connection.get("capture_source", "snapshot")).lower()
+    if capture_source != "snapshot":
+        raise RuntimeError("capture_source must be snapshot")
+    manager = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+    manager.add_password(None, snapshot_url, camera.get("username", ""), camera.get("password", ""))
+    opener = urllib.request.build_opener(urllib.request.HTTPDigestAuthHandler(manager))
+    with opener.open(snapshot_url, timeout=timeout) as response:
+        frame = response.read()
+    if not frame.startswith(b"\xff\xd8"):
+        raise RuntimeError("high-resolution camera snapshot is not JPEG")
+    return frame
 
 
 class CameraStream:
@@ -337,6 +358,27 @@ def cleanup_results():
             pass
 
 
+def capture_directory(capture_id):
+    """외부 입력 capture_id를 결과 루트 바로 아래의 안전한 디렉터리로 제한함."""
+    if not isinstance(capture_id, str) or len(capture_id) != 32 or any(
+            character not in "0123456789abcdef" for character in capture_id):
+        raise ValueError("invalid capture_id")
+    directory = RESULT_ROOT / capture_id
+    if not directory.is_dir() or not (directory / "capture.jpg").is_file():
+        raise ValueError("capture_id not found or expired")
+    return directory
+
+
+def multiply_homographies(left, right):
+    """중간 라이브러리 없이 3×3 호모그래피를 합성하고 정규화함."""
+    matrix = [[sum(float(left[row][k]) * float(right[k][column]) for k in range(3))
+               for column in range(3)] for row in range(3)]
+    scale = matrix[2][2]
+    if abs(scale) < 1e-12:
+        raise ValueError("invalid composed homography")
+    return [[value / scale for value in row] for row in matrix]
+
+
 class Handler(BaseHTTPRequestHandler):
     """정적 파일, 상태 확인, 호모그래피 CLI 호출을 제공하는 HTTP 핸들러."""
 
@@ -516,7 +558,13 @@ class Handler(BaseHTTPRequestHandler):
                 channel_id = int(payload.get("channel", 1))
                 image_path = job_dir / "capture.jpg"
                 CAMERA_STREAM.ensure_worker(channel_id)
-                _, frame = CAMERA_STREAM.latest_packet(channel_id, activate=False)
+                preview_connection, _, _, _ = camera_urls(channel_id)
+                capture_timeout = float(preview_connection.get("timeout_sec", 10))
+                _, preview_frame = CAMERA_STREAM.latest_packet(channel_id, timeout=capture_timeout,
+                                                                activate=False)
+                preview_path = job_dir / "rtsp-capture.jpg"
+                preview_path.write_bytes(preview_frame)
+                frame = capture_high_resolution_frame(channel_id, capture_timeout)
                 image_path.write_bytes(frame)
                 CAMERA_DETECTION_STREAM.stop(channel_id)
                 CAMERA_STREAM.stop(channel_id)
@@ -528,13 +576,109 @@ class Handler(BaseHTTPRequestHandler):
                 if not result["ok"]:
                     raise RuntimeError(result["stderr"] or "marker detection failed")
                 detected = json.loads(output_path.read_text(encoding="utf-8"))
+                rtsp_output_path = job_dir / "rtsp-markers.json"
+                rtsp_result = run_tool(["detect-markers", "--config", str(CONFIG),
+                                        "--input", str(preview_path), "--output", str(rtsp_output_path)])
+                if not rtsp_result["ok"]:
+                    raise RuntimeError(rtsp_result["stderr"] or "RTSP marker detection failed")
+                rtsp_detected = json.loads(rtsp_output_path.read_text(encoding="utf-8"))
+                alignment_path = job_dir / "rtsp-alignment.json"
+                alignment_result = run_tool(["align-markers", "--config", str(CONFIG),
+                    "--source", str(preview_path), "--destination", str(image_path),
+                    "--output", str(alignment_path)])
+                alignment = None
+                alignment_error = ""
+                if alignment_result["ok"]:
+                    alignment = json.loads(alignment_path.read_text(encoding="utf-8"))
+                else:
+                    alignment_error = alignment_result["stderr"].strip() or "공통 마커가 부족합니다."
                 detected["overlay_url"] = f"/artifacts/{job_id}/markers-overlay.png"
                 detected["image_url"] = f"/artifacts/{job_id}/capture.jpg"
+                detected["capture_id"] = job_id
+                detected["channel"] = channel_id
+                detected["rtsp_detection"] = rtsp_detected
+                detected["rtsp_image_url"] = f"/artifacts/{job_id}/rtsp-capture.jpg"
+                detected["rtsp_alignment"] = alignment
+                detected["rtsp_alignment_error"] = alignment_error
+                (job_dir / "capture-meta.json").write_text(json.dumps({
+                    "capture_id": job_id, "channel": channel_id,
+                    "capture_image_size": detected.get("image_size", {}),
+                    "rtsp_image_size": rtsp_detected.get("image_size", {})
+                }, ensure_ascii=False, indent=2), encoding="utf-8")
                 self.send_json({"ok": True, "result": detected})
             except (OSError, urllib.error.URLError, subprocess.SubprocessError, RuntimeError,
-                    json.JSONDecodeError) as error:
+                    ValueError, TypeError, json.JSONDecodeError) as error:
                 shutil.rmtree(job_dir, ignore_errors=True)
                 self.send_json({"ok": False, "error": str(error)}, 502)
+            return
+        if path == "/api/homography/solve":
+            try:
+                capture_id = payload.get("capture_id")
+                job_dir = capture_directory(capture_id)
+                marker_size_mm = float(payload.get("marker_size_mm"))
+                reference_marker_id = int(payload.get("reference_marker_id"))
+                excluded_ids = sorted(set(int(value) for value in payload.get("excluded_ids", [])))
+                if marker_size_mm <= 0 or marker_size_mm > 100000:
+                    raise ValueError("marker_size_mm must be positive")
+                layout = {"marker_size_mm": marker_size_mm,
+                          "reference_marker_id": reference_marker_id,
+                          "excluded_ids": excluded_ids}
+                layout_file = job_dir / "layout.json"
+                layout_file.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
+                output_name = configured_output_name("manual", "homography_manual.json")
+                if Path(output_name).suffix.lower() != ".json":
+                    output_name += ".json"
+                output_file = job_dir / output_name
+                overlay_name = "homography-overlay.png"
+                result = run_tool(["solve-manual", "--config", str(CONFIG),
+                    "--input", str(job_dir / "capture.jpg"), "--layout", str(layout_file),
+                    "--output", str(output_file), "--overlay", str(job_dir / overlay_name)])
+                if not result["ok"]:
+                    self.send_json(result, 422)
+                    return
+                value = json.loads(output_file.read_text(encoding="utf-8"))
+                alignment_file = job_dir / "rtsp-alignment.json"
+                if alignment_file.is_file():
+                    alignment = json.loads(alignment_file.read_text(encoding="utf-8"))
+                    value["H_rtsp_pixel_to_capture"] = alignment["H_source_to_destination"]
+                    value["H_rtsp_pixel_to_world"] = multiply_homographies(
+                        value["H_capture_pixel_to_world"], alignment["H_source_to_destination"])
+                    value["rtsp_image_size"] = alignment["source_size"]
+                    value["rtsp_alignment_rmse_px"] = alignment["rmse_px"]
+                    value["rtsp_common_ids"] = alignment["common_ids"]
+                else:
+                    value["H_rtsp_pixel_to_world"] = None
+                    value["rtsp_alignment_error"] = "캡처 시 공통 마커가 부족해 RTSP 정합을 만들지 못했습니다."
+                value["capture_id"] = capture_id
+                value["channel"] = json.loads((job_dir / "capture-meta.json").read_text(
+                    encoding="utf-8"))["channel"] if (job_dir / "capture-meta.json").is_file() else None
+                value.setdefault("verification_region_world", None)
+                output_file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+                                       encoding="utf-8")
+                self.send_json({"ok": True, "result": value,
+                    "artifact_url": f"/artifacts/{capture_id}/{output_name}",
+                    "overlay_url": f"/artifacts/{capture_id}/{overlay_name}"})
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                self.send_json({"ok": False, "error": str(error)}, 400)
+            return
+        if path == "/api/homography/region":
+            try:
+                job_dir = capture_directory(payload.get("capture_id"))
+                region = payload.get("verification_region_world")
+                if not isinstance(region, list) or len(region) != 4 or any(
+                        not isinstance(point, list) or len(point) != 2 for point in region):
+                    raise ValueError("verification_region_world must contain four [x,y] points")
+                region = [[float(value) for value in point] for point in region]
+                output_name = configured_output_name("manual", "homography_manual.json")
+                if Path(output_name).suffix.lower() != ".json": output_name += ".json"
+                output_file = job_dir / output_name
+                value = json.loads(output_file.read_text(encoding="utf-8"))
+                value["verification_region_world"] = region
+                output_file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+                                       encoding="utf-8")
+                self.send_json({"ok": True, "result": value})
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                self.send_json({"ok": False, "error": str(error)}, 400)
             return
         if path == "/api/homography/calibrate":
             args = ["calibrate", "--config", str(CONFIG), "--input",
@@ -610,6 +754,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 

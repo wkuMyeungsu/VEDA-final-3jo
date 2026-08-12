@@ -136,10 +136,16 @@ int solve_manual_command(int argc, char** argv) {
     const std::string overlay_path = argument(argc, argv, "--overlay");
     const ManualSolveResult result = solve_manual_image(
         config, image, layout, overlay_path.empty() ? nullptr : &overlay);
+    json marker_results = json::array();
+    for (const auto& marker : result.markers)
+        marker_results.push_back({{"id", marker.id}, {"x_mm", marker.x_mm},
+            {"y_mm", marker.y_mm}, {"rotation_deg", marker.rotation_deg},
+            {"square_error_mm", marker.square_error_mm}});
     const json output_value = {
-        {"schema_version", 1}, {"ok", true},
+        {"schema_version", 2}, {"ok", true},
         {"marker_size_mm", layout.value("marker_size_mm", config.manual_solve.marker_size_mm)},
         {"H_pixel_to_world", matrix_to_json(result.h_pixel_to_world)},
+        {"H_capture_pixel_to_world", matrix_to_json(result.h_pixel_to_world)},
         {"H_world_to_pixel", matrix_to_json(result.h_world_to_pixel)},
         {"image_size", {{"width", image.cols}, {"height", image.rows}}},
         {"detected_marker_count", result.detected},
@@ -147,7 +153,10 @@ int solve_manual_command(int argc, char** argv) {
         {"inlier_corner_count", result.inliers},
         {"reproj_rmse_mm", result.rmse_mm},
         {"detected_ids", result.detected_ids}, {"used_ids", result.used_ids},
-        {"missing_ids", result.missing_ids}, {"layout", layout},
+        {"excluded_ids", result.excluded_ids}, {"suspicious_ids", result.suspicious_ids},
+        {"reference_marker_id", result.reference_marker_id},
+        {"iterations", result.iterations}, {"markers", marker_results},
+        {"layout", layout},
         {"created_utc", utc_now()}};
     std::ofstream output_file(output);
     if (!output_file) throw std::runtime_error("cannot write output: " + output);
@@ -156,6 +165,29 @@ int solve_manual_command(int argc, char** argv) {
         throw std::runtime_error("cannot write overlay: " + overlay_path);
     std::cout << "solved markers=" << result.used
               << ", RMSE=" << result.rmse_mm << " mm\n";
+    return 0;
+}
+
+int align_markers_command(int argc, char** argv) {
+    const Config config = read_config(argument(argc, argv, "--config"));
+    const std::string source_path = argument(argc, argv, "--source");
+    const std::string destination_path = argument(argc, argv, "--destination");
+    const std::string output_path = argument(argc, argv, "--output");
+    if (source_path.empty() || destination_path.empty() || output_path.empty())
+        throw std::runtime_error("align-markers requires --source, --destination and --output");
+    const cv::Mat source = cv::imread(source_path);
+    const cv::Mat destination = cv::imread(destination_path);
+    if (source.empty() || destination.empty()) throw std::runtime_error("cannot read alignment image");
+    std::vector<int> common_ids;
+    double rmse_px = 0.0;
+    const cv::Mat h = align_marker_images(config, source, destination, &common_ids, &rmse_px);
+    const json value = {{"H_source_to_destination", matrix_to_json(h)},
+        {"source_size", {{"width", source.cols}, {"height", source.rows}}},
+        {"destination_size", {{"width", destination.cols}, {"height", destination.rows}}},
+        {"common_ids", common_ids}, {"rmse_px", rmse_px}};
+    std::ofstream output(output_path);
+    if (!output) throw std::runtime_error("cannot write output: " + output_path);
+    output << std::setw(2) << value << '\n';
     return 0;
 }
 
@@ -245,6 +277,7 @@ int main(int argc, char** argv) {
         if (command == "gen-marker") return generate_marker(argc, argv);
         if (command == "calibrate") return calibrate_command(argc, argv);
         if (command == "solve-manual") return solve_manual_command(argc, argv);
+        if (command == "align-markers") return align_markers_command(argc, argv);
         if (command == "view") return view_command(argc, argv);
         print_usage();
         return 1;

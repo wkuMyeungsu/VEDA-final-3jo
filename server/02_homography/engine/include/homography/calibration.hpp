@@ -27,4 +27,15 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
                                      const nlohmann::json& layout,
                                      cv::Mat* overlay);
 
+ManualSolveResult solve_square_markers(
+    const std::vector<SquareMarkerObservation>& observations,
+    double marker_size_mm, int reference_marker_id,
+    const std::vector<int>& excluded_ids);
+
+// 두 이미지의 공통 ArUco 코너로 source 픽셀→destination 픽셀 정합을 구함.
+cv::Mat align_marker_images(const Config& config, const cv::Mat& source,
+                            const cv::Mat& destination,
+                            std::vector<int>* common_ids = nullptr,
+                            double* rmse_px = nullptr);
+
 }  // namespace homography
