@@ -622,7 +622,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("marker_size_mm must be positive")
                 layout = {"marker_size_mm": marker_size_mm,
                           "reference_marker_id": reference_marker_id,
-                          "excluded_ids": excluded_ids}
+                          "excluded_ids": excluded_ids,
+                          "axis_origin_px": payload.get("axis_origin_px"),
+                          "axis_x_end_px": payload.get("axis_x_end_px"),
+                          "axis_y_end_px": payload.get("axis_y_end_px")}
                 layout_file = job_dir / "layout.json"
                 layout_file.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
                 output_name = configured_output_name("manual", "homography_manual.json")

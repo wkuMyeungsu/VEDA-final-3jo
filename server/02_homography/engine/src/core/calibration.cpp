@@ -203,6 +203,32 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
     const int reference_id = layout.at("reference_marker_id").get<int>();
     result = solve_square_markers(observations, side_mm, reference_id,
                                   layout.value("excluded_ids", std::vector<int>{}));
+    // 사용자가 그은 원점과 X/Y 방향으로 월드 좌표계를 다시 정렬함.
+    if (layout.contains("axis_origin_px") && layout.contains("axis_x_end_px") &&
+        layout.contains("axis_y_end_px") && !layout.at("axis_origin_px").is_null()) {
+        auto point_from_json = [](const json& value) {
+            return cv::Point2f(value.at("x").get<float>(), value.at("y").get<float>());
+        };
+        const cv::Point2f origin_px = point_from_json(layout.at("axis_origin_px"));
+        const cv::Point2f x_end_px = point_from_json(layout.at("axis_x_end_px"));
+        const cv::Point2f y_end_px = point_from_json(layout.at("axis_y_end_px"));
+        const auto origin_world = transform_points({origin_px}, result.h_pixel_to_world)[0];
+        const auto x_world = transform_points({x_end_px}, result.h_pixel_to_world)[0] - origin_world;
+        const auto y_world = transform_points({y_end_px}, result.h_pixel_to_world)[0] - origin_world;
+        const double x_length = cv::norm(x_world);
+        if (x_length < 1e-6 || cv::norm(y_world) < 1e-6)
+            throw std::runtime_error("drawn X/Y axes are too short");
+        const cv::Point2f ex = x_world * static_cast<float>(1.0 / x_length);
+        cv::Point2f ey(-ex.y, ex.x);
+        if (ey.dot(y_world) < 0) ey = -ey;
+        const cv::Mat axes_to_world = (cv::Mat_<double>(3, 3) <<
+            ex.x, ex.y, -(ex.x * origin_world.x + ex.y * origin_world.y),
+            ey.x, ey.y, -(ey.x * origin_world.x + ey.y * origin_world.y),
+            0, 0, 1);
+        result.h_pixel_to_world = axes_to_world * result.h_pixel_to_world;
+        result.h_pixel_to_world /= result.h_pixel_to_world.at<double>(2, 2);
+        result.h_world_to_pixel = result.h_pixel_to_world.inv();
+    }
     cv::Mat annotated;
     if (overlay) {
         if (image.channels() == 1) cv::cvtColor(image, annotated, cv::COLOR_GRAY2BGR);
