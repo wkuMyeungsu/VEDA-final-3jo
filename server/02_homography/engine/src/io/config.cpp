@@ -15,6 +15,7 @@ using json = nlohmann::json;
 void print_usage() {
     std::cout << R"(homography_tool <command> [options]
 commands:
+  detect-markers --config CONFIG --input IMAGE --output JSON [--overlay IMAGE]
   gen-marker --config CONFIG --id ID --output FILE
              [--size-mm MM] [--margin-mm MM] [--label TEXT] [--dpi DPI]
   calibrate  --config CONFIG --input IMAGE --output JSON [--channel N]

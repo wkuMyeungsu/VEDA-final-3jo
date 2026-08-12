@@ -4,6 +4,7 @@
 #include "homography/json.hpp"
 #include "homography/render.hpp"
 
+#include <opencv2/aruco.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -24,6 +25,41 @@ namespace fs = std::filesystem;
 namespace homography {
 
 namespace {
+
+// detect-markers 명령으로 이미지의 ArUco ID와 코너를 추출함.
+int detect_markers_command(int argc, char** argv) {
+    const Config config = read_config(argument(argc, argv, "--config"));
+    const std::string input = argument(argc, argv, "--input");
+    const std::string output = argument(argc, argv, "--output");
+    const std::string overlay = argument(argc, argv, "--overlay");
+    if (input.empty() || output.empty())
+        throw std::runtime_error("detect-markers requires --input and --output");
+    const cv::Mat image = cv::imread(input);
+    if (image.empty()) throw std::runtime_error("cannot read image: " + input);
+    std::vector<int> ids;
+    std::vector<std::vector<cv::Point2f>> corners, rejected;
+    cv::aruco::detectMarkers(image, dictionary(config), corners, ids);
+    nlohmann::json value = {
+        {"image_size", {{"width", image.cols}, {"height", image.rows}}},
+        {"ids", ids}, {"corners", nlohmann::json::array()}};
+    for (const auto& marker : corners) {
+        nlohmann::json points = nlohmann::json::array();
+        for (const auto& point : marker)
+            points.push_back({{"x", point.x}, {"y", point.y}});
+        value["corners"].push_back(points);
+    }
+    std::ofstream output_file(output);
+    if (!output_file) throw std::runtime_error("cannot write output: " + output);
+    output_file << std::setw(2) << value << '\n';
+    if (!overlay.empty()) {
+        cv::Mat annotated = image.clone();
+        cv::aruco::drawDetectedMarkers(annotated, corners, ids);
+        if (!cv::imwrite(overlay, annotated))
+            throw std::runtime_error("cannot write overlay: " + overlay);
+    }
+    std::cout << "detected " << ids.size() << " markers\n";
+    return 0;
+}
 
 // gen-marker 명령으로 단일 ArUco 마커 출력물 생성함.
 int generate_marker(int argc, char** argv) {
@@ -205,6 +241,7 @@ int main(int argc, char** argv) {
     }
     try {
         const std::string command = argv[1];
+        if (command == "detect-markers") return detect_markers_command(argc, argv);
         if (command == "gen-marker") return generate_marker(argc, argv);
         if (command == "calibrate") return calibrate_command(argc, argv);
         if (command == "solve-manual") return solve_manual_command(argc, argv);

@@ -59,7 +59,7 @@ Y는 아래 방향
   "calibration": {
     "max_rmse_cm": 2.0,
     "ransac_threshold_cm": 3.0,
-    "channel": -1
+    "channel": 1
   },
   "manual_solve": {
     "marker_size_mm": 100.0,
@@ -67,7 +67,7 @@ Y는 아래 방향
   },
   "outputs": {
     "markers_zip": "aruco_markers.zip",
-    "calibration": "homography.json",
+    "calibration": "homography_ch1.json",
     "manual": "homography_manual.json",
     "view_dir": "view_result"
   },
@@ -121,7 +121,7 @@ Y는 아래 방향
 
 - `max_rmse_cm`: `calibrate` 명령이 성공으로 인정할 최대 평균 오차.
 - `ransac_threshold_cm`: 일부 코너를 이상값으로 제외할 거리 기준.
-- `channel`: 결과 JSON에 기록할 채널 번호. 모든 채널은 `-1` 사용.
+- `channel`: 결과 JSON에 기록할 채널 번호. 채널 1은 `1` 입력.
 - `manual_solve`의 두 값: 수동 배치 방식에서 사용하며 길이 단위는 `mm`.
 - `preview.scale`: 검증 이미지에서 1 cm를 그리는 픽셀 수.
 - `good_error_cm`, `warning_error_cm`: 검증 이미지의 초록·노랑·빨강 기준.

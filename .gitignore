@@ -5,6 +5,7 @@
 *.crt
 *.csr
 rtsp_credentials*
+server/02_homography/config/camera_config.json
 .env
 forklift-device/qt/config/cameras.json
 operator-device/qt/config/cameras.json

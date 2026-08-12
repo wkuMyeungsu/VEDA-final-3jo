@@ -18,7 +18,7 @@
   "calibration": {
     "max_rmse_cm": 2.0,
     "ransac_threshold_cm": 3.0,
-    "channel": -1
+    "channel": 1
   },
   "manual_solve": {
     "marker_size_mm": 100.0,
@@ -26,7 +26,7 @@
   },
   "outputs": {
     "markers_zip": "aruco_markers.zip",
-    "calibration": "homography.json",
+    "calibration": "homography_ch1.json",
     "manual": "homography_manual.json",
     "view_dir": "view_result"
   },

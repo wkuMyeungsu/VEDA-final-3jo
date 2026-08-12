@@ -16,9 +16,18 @@ LAN 웹 UI/API임.
 
 호모그래피 계산 자체와 CLI 사용법은 [engine 문서](../engine/README.md) 참고.
 
-## 2. 서버 실행
+## 2. CCTV 설정
 
-### 2.1 systemd 서비스로 실행
+`../config/camera_config.json`에 카메라 IP, 포트, 계정, 프로필을 입력함.
+비밀번호는 `camera.password`에만 입력하며 URL에 직접 넣지 않음.
+서버가 입력값으로 RTSP와 스냅샷 주소를 조합함.
+호모그래피 산출 화면의 채널 버튼으로 1~4번 영상을 런타임에 선택함.
+백엔드는 RTSP 연결을 유지하고 `/api/camera/video`로 최신 프레임을 MJPEG로 전달함.
+캡처 버튼은 수신 중인 최신 프레임만 별도 파일로 저장해 검출에 사용함.
+
+## 3. 서버 실행
+
+### 3.1 systemd 서비스로 실행
 
 ```sh
 sudo systemctl start homography-app.service
@@ -31,7 +40,7 @@ sudo systemctl status homography-app.service --no-pager
 sudo systemctl enable homography-app.service
 ```
 
-### 2.2 개발용 직접 실행
+### 3.2 개발용 직접 실행
 
 저장소의 `server/` 디렉터리에서 실행함.
 
@@ -41,9 +50,9 @@ HOMOGRAPHY_TOOL=02_homography/engine/build/homography_tool \
   python3 02_homography/app/server.py
 ```
 
-## 3. 접속
+## 4. 접속
 
-### 3.1 라즈베리파이에서 접속
+### 4.1 라즈베리파이에서 접속
 
 라즈베리파이 자체의 브라우저에서는 다음 주소 사용.
 
@@ -51,7 +60,7 @@ HOMOGRAPHY_TOOL=02_homography/engine/build/homography_tool \
 http://127.0.0.1:8001
 ```
 
-### 3.2 다른 PC에서 접속
+### 4.2 다른 PC에서 접속
 
 같은 LAN의 다른 PC에서는 라즈베리파이 IP 주소 사용.
 
@@ -61,9 +70,9 @@ http://192.168.0.13:8001
 
 `127.0.0.1`은 접속한 장치 자신을 의미하므로, 다른 PC에서는 사용 불가.
 
-## 4. 파일 수정 시 반영
+## 5. 파일 수정 시 반영
 
-### 4.1 Python 웹 앱 수정
+### 5.1 Python 웹 앱 수정
 
 ```sh
 sudo systemctl restart homography-app.service
@@ -71,7 +80,7 @@ sudo systemctl status homography-app.service --no-pager
 curl -fsS http://127.0.0.1:8001/api/status
 ```
 
-### 4.2 systemd 서비스 파일 수정
+### 5.2 systemd 서비스 파일 수정
 
 ```sh
 cd /home/veda3/01_Workspace/server
@@ -82,7 +91,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart homography-app.service
 ```
 
-### 4.3 로그 확인
+### 5.3 로그 확인
 
 ```sh
 journalctl -u homography-app.service -n 100 --no-pager
