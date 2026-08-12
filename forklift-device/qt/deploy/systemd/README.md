@@ -34,10 +34,12 @@ cp ~/VEDA_Final_project/forklift-device/qt/deploy/systemd/operator-terminal-auto
    ~/.config/autostart/
 chmod +x ~/VEDA_Final_project/forklift-device/qt/deploy/systemd/operator-terminal-launch.sh
 
-# 2. 경로 확인/수정 (클론 위치가 ~/VEDA_Final_project가 아니면 둘 다 수정)
-#    - operator-terminal.service: WorkingDirectory / ExecStart (%h는 자동 치환됨)
-#    - operator-terminal-autostart.desktop: Exec (절대경로, %h 치환 안 됨 — .desktop
-#      스펙상 Exec에는 셸 변수/물결표 확장이 없으므로 실제 경로를 직접 적어야 함)
+# 2. 경로 확인/수정 (클론 위치가 ~/VEDA_Final_project가 아닌 경우에만)
+#    - operator-terminal.service: WorkingDirectory / ExecStart (%h 자동 치환)
+#    - operator-terminal-autostart.desktop: Exec
+#      .desktop 스펙상 Exec은 물결표/환경변수 미확장 -> sh -c로 감싸 $HOME 사용
+#      절대경로 하드코딩 시 사용자명이 다른 보드에서 실패, 오류 로그도 없음
+#      (2026-08-12 /home/pi 하드코딩으로 발생, 원인 파악에 시간 소요)
 
 # 3. 빌드 산출물 위치 확인 (README.md 기준 build/operator_terminal)
 ls ~/VEDA_Final_project/forklift-device/qt/build/operator_terminal

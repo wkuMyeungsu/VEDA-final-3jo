@@ -2,7 +2,7 @@
 Type=Application
 Name=Operator Terminal (systemd bootstrap)
 Comment=DISPLAY/XAUTHORITY를 systemd --user에 넘기고 operator-terminal.service를 기동
-Exec=/home/pi/VEDA_Final_project/forklift-device/qt/deploy/systemd/operator-terminal-launch.sh
+Exec=sh -c "$HOME/VEDA_Final_project/forklift-device/qt/deploy/systemd/operator-terminal-launch.sh"
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 Terminal=false
