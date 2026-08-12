@@ -1,0 +1,47 @@
+// cross_camera_reid.h
+// 카메라 간 객체 ID 유지 (크로스카메라 Re-ID) - 공개 인터페이스
+// 담당: 검출·추적 & IMU·ToF 센서 (박수빈)
+//
+// 목적: 카메라 핸드오버(A -> B) 시 동일 인물에게 동일 tracking ID를 유지시킨다.
+//   - 기본: 같은 카메라 내 프레임 간 연속성은 IoU(bbox 겹침 비율)로 매칭
+//   - 카메라 전환(핸드오버) 시점: world 좌표(호모그래피 변환 결과) 근접도로 매칭
+// 매칭 로직 구현은 cross_camera_reid.cpp 참고. 이 헤더는 데이터 구조와
+// CrossCameraTracker의 공개 인터페이스만 선언한다.
+//
+// BoundingBox/WorldPoint/Track은 여기서 새로 정의하지 않고 기존 타입을 재사용한다:
+//   - BoundingBox: input/onvif_metadata_parser.hpp (ONVIF 파서 출력, 픽셀 좌표)
+//   - Track/WorldPoint: logic/tracking/nearest_person_selector.h
+//     (nearest_person_selector가 이 트래커의 출력(update()의 반환값)을 그대로
+//      받아 쓰므로, 두 모듈이 Track 타입을 공유해야 변환 코드가 필요 없다.)
+
+#pragma once
+
+#include <vector>
+
+#include "input/onvif_metadata_parser.hpp"            // BoundingBox
+#include "logic/tracking/nearest_person_selector.h"   // Track, WorldPoint
+
+// 한 프레임에서 들어온 검출 결과 (아직 track_id 없음)
+struct Detection {
+    int         camera_id;
+    BoundingBox bbox;    // 자기 카메라 픽셀 좌표 (ONVIF BoundingBox 그대로)
+    WorldPoint  world;   // world 좌표 (카메라가 달라도 비교 가능)
+    double      timestamp_s;
+};
+
+// 크로스카메라 트래커. 한 프레임의 검출 목록을 넣으면 IoU(동일 카메라)/world 거리
+// (카메라 전환 포함) 매칭으로 track_id를 유지한 트랙 목록을 돌려준다.
+class CrossCameraTracker {
+public:
+    // 임계값들 - 실측/실험 통해 조정 예정 [확실하지 않음: 초기값, 실측 필요]
+    double iou_threshold = 0.3;           // 동일 카메라 프레임 간 매칭
+    double world_dist_threshold_m = 1.0;  // 카메라 전환(핸드오버) 매칭
+    int    max_missed_frames = 5;         // 이 프레임 수 넘게 못 찾으면 트랙 소멸
+
+    // 한 프레임의 검출 목록을 받아 트랙을 갱신하고, 현재 트랙 목록을 반환
+    std::vector<Track> update(const std::vector<Detection>& detections, double now_s);
+
+private:
+    std::vector<Track> tracks_;
+    int next_id_ = 1;
+};

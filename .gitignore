@@ -30,6 +30,7 @@ server/judgment/latency.csv
 # 로컬 개발 환경
 .venv/
 .claude/settings.local.json
+.claude/settings.json
 
 # IntelliSense용으로 로컬에 복사해둔 SDK 헤더 (도커 이미지에서 추출, 빌드엔 안 씀)
 .sdk_stub/
@@ -67,3 +68,13 @@ forklift-device/sensors/kernel/*.cmd
 forklift-device/sensors/kernel/.*.cmd
 forklift-device/sensors/kernel/Module.symvers
 forklift-device/sensors/kernel/modules.order
+
+# 판정 이벤트 로그 DB / 지연 로그 (실제 생성 경로 — server/judgment/가 아니라 루트 storage/)
+storage/events.db
+storage/events.db-wal
+storage/events.db-shm
+storage/latency.csv
+
+# ArUco/검출 CSV 로그 (실행마다 타임스탬프로 자동 생성)
+aruco_markers_*.csv
+detections_*.csv
