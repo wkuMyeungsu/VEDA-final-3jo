@@ -29,23 +29,23 @@
 #include <string>
 #include <vector>
 
+#include "input/onvif_metadata_parser.hpp"           // BoundingBox
 #include "logic/judgment/danger_judgment_engine.h"   // WorldPoint
 
 // ============================================================
 // 1. 데이터 구조 정의
 // ============================================================
 
-// cross_camera_reid.cpp의 Track과 동일한 필드 구성 (실제로는 그쪽 출력이 그대로 들어옴)
-//
-// [주의] 지금 cross_camera_reid.cpp의 Track은 여기보다 필드가 많다(last_bbox, last_seen_s).
-//        두 파일을 한 실행파일에 링크하면 같은 이름의 서로 다른 정의가 되어 ODR 위반이다.
-//        cross_camera_reid.cpp를 빌드에 넣을 때 Track 정의를 이 헤더로 통일해야 한다.
-//        (그 파일은 지금 어떤 CMake 타깃에도 안 들어가 있어 당장 문제는 없다.)
+// cross_camera_reid.cpp(CrossCameraTracker)의 출력 타입. 두 파일이 같은 정의를
+// 공유해야 ODR 위반 없이 한 실행파일에 링크할 수 있어서, Track은 여기 한 곳에서만
+// 정의하고 cross_camera_reid.h/.cpp는 이 헤더를 include해서 재사용한다.
 struct Track {
-    int        track_id;
-    int        camera_id;
-    WorldPoint last_world;
-    int        missed_frames = 0;
+    int         track_id;
+    int         camera_id;
+    BoundingBox last_bbox;
+    WorldPoint  last_world;
+    double      last_seen_s = 0.0;
+    int         missed_frames = 0;
 };
 
 // 최근접 사람 선택 결과
@@ -61,8 +61,8 @@ struct NearestPersonResult {
 // 2. 선택 로직
 // ============================================================
 
-// [주의] cross_camera_reid.cpp도 같은 이름의 전역 함수를 정의하고 있다. 그 파일을
-//        빌드에 넣으면 중복 정의로 링크가 깨지므로, 그때 이 헤더 쪽으로 통일해야 한다.
+// cross_camera_reid.cpp도 매칭 점수 계산에 이 함수를 쓴다(자체 정의하지 않고
+// 이 선언을 그대로 include해서 재사용 - 중복 정의로 인한 링크 충돌을 피한다).
 double euclideanDistance(const WorldPoint& a, const WorldPoint& b);
 
 // 지게차 world 좌표 기준, tracks 중 가장 가까운 사람 1명을 찾는다.

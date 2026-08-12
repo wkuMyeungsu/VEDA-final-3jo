@@ -30,6 +30,7 @@ server/judgment/latency.csv
 # 로컬 개발 환경
 .venv/
 .claude/settings.local.json
+.claude/settings.json
 
 # IntelliSense용으로 로컬에 복사해둔 SDK 헤더 (도커 이미지에서 추출, 빌드엔 안 씀)
 .sdk_stub/

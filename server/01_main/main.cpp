@@ -29,8 +29,8 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
-#include <limits>
 #include <optional>
+#include <vector>
 
 #include "input/rtp_metadata_receiver.hpp"
 #include "input/onvif_metadata_parser.hpp"
@@ -41,6 +41,7 @@
 #include "logging/aruco_csv_logger.hpp"
 #include "config/terminal_config.hpp"
 #include "logic/judgment/judgment_pipeline.h"
+#include "logic/tracking/cross_camera_reid.h"
 #include "logic/tracking/marker_channel_tracker.hpp"
 #include "network/result_publisher.hpp"
 #include "network/result_dispatcher.hpp"
@@ -137,6 +138,11 @@ struct AppState {
     // 지게차 마커가 어느 카메라 채널에 보이는지 추적. 액티브 채널이 바뀌는 순간에만
     // 신호를 주므로, 그 신호를 받아 9001 camera_assignment를 보낸다.
     MarkerChannelTracker markerTracker;
+
+    // 크로스카메라 Re-ID 트래커. ObjectDetection 프레임마다 update()를 호출해
+    // track_id를 유지시킨다 - appsink 콜백(단일 스레드)에서만 쓰이므로 상태를
+    // 그대로 멤버로 둔다(재사용, 매 프레임 새로 만들지 않음).
+    CrossCameraTracker crossCameraTracker;
 
     // 드라이버 연동 전 목업/테스트용으로 남겨둔다(실사용 자리는 아래 sensorReader).
     StubSensorReader stubSensorReader;
@@ -282,38 +288,44 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                     if (state->objectLogger) state->objectLogger->logFrame(frame);
 
                     // ── 위험 판정 트리거 ─────────────────────────────────
-                    // 호모그래피(3단계)가 아직 없으므로 WorldPoint 좌표는 상수 더미로
-                    // 고정한다. 픽셀 좌표를 미터인 것처럼 넣으면 거짓 정밀도로 위험
-                    // 판정을 그르치므로 절대 쓰지 않는다. 불리언 신호(person_detected/
-                    // forklift_localized)만 실제 검출값을 반영한다.
+                    // 호모그래피(3단계)가 아직 없으므로 Detection.world/forkliftPoint는
+                    // 상수 더미로 고정한다. 픽셀 좌표를 미터인 것처럼 넣으면 거짓 정밀도로
+                    // 위험 판정을 그르치므로 절대 쓰지 않는다 - 좌표정합 PoC 완료 후
+                    // cv::perspectiveTransform 결과로 교체 예정. bbox(픽셀)는 실제 ONVIF
+                    // 값을 그대로 CrossCameraTracker에 넘긴다.
                     {
-                        bool person_detected = false;
-                        for (const auto& obj : frame.objects) {
-                            if (obj.classInfo.type == "Human") {
-                                person_detected = true;
-                                break;
-                            }
-                        }
                         const bool forklift_localized =
                             state->lastAruco.has_value() && !state->lastAruco->markers.empty();
 
                         // [더미] 호모그래피 도입 전까지 안전거리(5m)로 고정.
                         const WorldPoint forkliftPoint{0.0, 0.0};
-                        const WorldPoint personPoint{5.0, 0.0};
 
-                        NearestPersonResult nearest;
-                        nearest.found = person_detected;
-                        // 사람이 어느 카메라에서 보였는지는 아직 상류에서 안 올라온다
-                        // (호모그래피/Re-ID 미연동). 지금 담당 중인 카메라를 그대로 쓴다 -
-                        // 이렇게 두면 isCameraIdMismatch()가 항상 false라 핸드오버 의심
-                        // 플래그가 오탐하지 않는다. 마커가 아직 안 잡혀 담당 카메라가
-                        // 미확정(-1)이면 그 값이 그대로 내려가 하류 JSON에서 null이 된다.
-                        nearest.camera_id =
-                            person_detected ? state->judgmentPipeline.activeCameraId() : -1;
-                        nearest.position = person_detected ? personPoint : WorldPoint{};
-                        nearest.distance_m = person_detected
-                                                  ? 5.0
-                                                  : std::numeric_limits<double>::max();
+                        const double now_s = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now().time_since_epoch()).count();
+
+                        // 사람 검출을 Detection으로 변환 -> CrossCameraTracker로 track_id
+                        // 유지 -> 지게차와 가장 가까운 사람 1명 선택.
+                        std::vector<Detection> detections;
+                        for (const auto& obj : frame.objects) {
+                            if (obj.classInfo.type != "Human") continue;
+                            Detection det;
+                            // 사람이 어느 카메라에서 보였는지는 아직 상류에서 안 올라온다
+                            // (호모그래피/카메라 간 Re-ID 좌표 연동 미완료). 지금 담당
+                            // 중인 카메라를 그대로 쓴다 - 이렇게 두면 isCameraIdMismatch()가
+                            // 항상 false라 핸드오버 의심 플래그가 오탐하지 않는다.
+                            det.camera_id = state->judgmentPipeline.activeCameraId();
+                            det.bbox = obj.bbox;
+                            // [더미] world 좌표는 좌표정합(호모그래피) PoC 완료 전까지
+                            //        안전거리(5m)로 고정. bbox는 실좌표, world만 더미다.
+                            det.world = WorldPoint{5.0, 0.0};
+                            det.timestamp_s = now_s;
+                            detections.push_back(det);
+                        }
+
+                        const std::vector<Track> tracks =
+                            state->crossCameraTracker.update(detections, now_s);
+                        const NearestPersonResult nearest =
+                            selectNearestPerson(forkliftPoint, tracks);
 
                         const PipelineOutput judgmentOut = state->judgmentPipeline.processFrame(
                             forkliftPoint, forklift_localized, nearest);
