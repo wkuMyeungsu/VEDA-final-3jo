@@ -203,6 +203,10 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
     const int reference_id = layout.at("reference_marker_id").get<int>();
     result = solve_square_markers(observations, side_mm, reference_id,
                                   layout.value("excluded_ids", std::vector<int>{}));
+    // 오검출 판정은 사용자가 그은 축/측정선의 보정과 독립적인 검출 품질로 계산한다.
+    // 사용자 기준선이 약간 비직교여도 모든 마커가 함께 의심 판정되지 않도록
+    // 정사각형 제약만으로 구한 행렬을 품질 평가용으로 보존한다.
+    const cv::Mat marker_quality_h = result.h_pixel_to_world.clone();
     // 사용자가 그은 원점과 X/Y 방향으로 월드 좌표계를 다시 정렬함.
     if (layout.contains("axis_origin_px") && layout.contains("axis_x_end_px") &&
         layout.contains("axis_y_end_px") && !layout.at("axis_origin_px").is_null()) {
@@ -219,18 +223,28 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
         const double y_length = cv::norm(y_world);
         if (x_length < 1e-6 || y_length < 1e-6)
             throw std::runtime_error("drawn X/Y axes are too short");
-        const cv::Point2f ex = x_world * static_cast<float>(1.0 / x_length);
-        cv::Point2f ey(-ex.y, ex.x);
-        if (ey.dot(y_world) < 0) ey = -ey;
         const double requested_x = layout.contains("axis_x_length_mm") && !layout.at("axis_x_length_mm").is_null()
             ? layout.at("axis_x_length_mm").get<double>() : x_length;
         const double requested_y = layout.contains("axis_y_length_mm") && !layout.at("axis_y_length_mm").is_null()
             ? layout.at("axis_y_length_mm").get<double>() : y_length;
         if (requested_x <= 0.0 || requested_y <= 0.0)
             throw std::runtime_error("axis lengths must be positive");
+        // 사용자가 실제로 잰 두 선분을 그대로 좌표축 기준으로 사용한다.
+        // X 방향에 임의의 직교 벡터를 만들어 Y를 근사하면, 두 선분이
+        // 화면에서 정확히 직각이 아닐 때 Y 끝점의 실제 길이가 틀어진다.
+        // 두 관측 벡터를 직접 (Lx,0), (0,Ly)에 대응시킨다.
+        const double determinant = x_world.x * y_world.y - y_world.x * x_world.y;
+        if (std::abs(determinant) < 1e-9)
+            throw std::runtime_error("drawn X/Y axes must not be parallel");
+        const cv::Mat basis_inverse = (cv::Mat_<double>(2, 2) <<
+            y_world.y / determinant, -y_world.x / determinant,
+            -x_world.y / determinant, x_world.x / determinant);
+        const cv::Mat axis_linear = (cv::Mat_<double>(2, 2) <<
+            requested_x, 0.0, 0.0, requested_y) * basis_inverse;
+        const cv::Point2f origin = origin_world;
         const cv::Mat axes_to_world = (cv::Mat_<double>(3, 3) <<
-            ex.x * requested_x / x_length, ex.y * requested_x / x_length, -(ex.x * origin_world.x + ex.y * origin_world.y) * requested_x / x_length,
-            ey.x * requested_y / y_length, ey.y * requested_y / y_length, -(ey.x * origin_world.x + ey.y * origin_world.y) * requested_y / y_length,
+            axis_linear.at<double>(0, 0), axis_linear.at<double>(0, 1), -(axis_linear.at<double>(0, 0) * origin.x + axis_linear.at<double>(0, 1) * origin.y),
+            axis_linear.at<double>(1, 0), axis_linear.at<double>(1, 1), -(axis_linear.at<double>(1, 0) * origin.x + axis_linear.at<double>(1, 1) * origin.y),
             0, 0, 1);
         result.h_pixel_to_world = axes_to_world * result.h_pixel_to_world;
         result.h_pixel_to_world /= result.h_pixel_to_world.at<double>(2, 2);
@@ -261,6 +275,19 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
         for (int iteration = 0; iteration < 20 && !constraints.empty(); ++iteration) {
             std::vector<cv::Point2f> pixels;
             std::vector<cv::Point2f> targets;
+            // X/Y 기준선은 최종 좌표계의 고정 기준이다. 측정선 제약만으로
+            // 새 호모그래피를 구하면 측정선이 기준선 스케일을 끌고 가므로,
+            // 매 반복마다 원점과 두 축 끝점을 함께 고정한다.
+            if (layout.contains("axis_origin_px") && layout.contains("axis_x_end_px") &&
+                layout.contains("axis_y_end_px") && layout.contains("axis_x_length_mm") &&
+                layout.contains("axis_y_length_mm") && !layout.at("axis_origin_px").is_null()) {
+                pixels.push_back(point_from_json(layout.at("axis_origin_px")));
+                targets.emplace_back(0.0f, 0.0f);
+                pixels.push_back(point_from_json(layout.at("axis_x_end_px")));
+                targets.emplace_back(static_cast<float>(layout.at("axis_x_length_mm").get<double>()), 0.0f);
+                pixels.push_back(point_from_json(layout.at("axis_y_end_px")));
+                targets.emplace_back(0.0f, static_cast<float>(layout.at("axis_y_length_mm").get<double>()));
+            }
             for (const auto& marker : observations) {
                 if (std::find(result.used_ids.begin(), result.used_ids.end(), marker.id) == result.used_ids.end() ||
                     marker.corners.size() != 4) continue;
@@ -300,10 +327,12 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
         if (std::find(result.used_ids.begin(), result.used_ids.end(), marker.id) == result.used_ids.end() ||
             marker.corners.size() != 4) continue;
         const auto world = transform_points(marker.corners, result.h_pixel_to_world);
+        const auto quality_world = transform_points(marker.corners, marker_quality_h);
         const auto fitted = nearest_square(world, side_mm);
+        const auto quality_fitted = nearest_square(quality_world, side_mm);
         double sum = 0.0;
         for (int i = 0; i < 4; ++i) {
-            const double error = cv::norm(world[i] - fitted[i]);
+            const double error = cv::norm(quality_world[i] - quality_fitted[i]);
             sum += error * error;
         }
         const double square_error = std::sqrt(sum / 4.0);
