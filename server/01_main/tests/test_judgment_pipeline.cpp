@@ -309,10 +309,15 @@ void testProcessFrame() {
 
     std::cout << "  -- 다른 카메라에서 온 사람 (핸드오버 미구현 상태의 동작 고정) --\n";
     {
+        // 별도 pipeline 인스턴스를 쓴다 - 위 마커 폐색 케이스가 남긴 DEAD_RECKONING 해제
+        // 유예 상태(dead_reckoning_release_grace_ms, danger_judgment_engine.h)가 이 블록의
+        // exception 판정에 섞이면 안 된다. 위쪽 pipeline을 그대로 재사용하면 아래 두 호출은
+        // 아직 유예 시간(500ms) 안이라 exception이 NONE이 아니라 DEAD_RECKONING으로 나온다.
+        JudgmentPipeline fresh_pipeline(kActiveCamera, kTerminalId, sensors);
         const PipelineOutput same =
-            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
+            fresh_pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
         const PipelineOutput other =
-            pipeline.processFrame(kForklift, true, makeFound(3, 2, kPersonDanger));
+            fresh_pipeline.processFrame(kForklift, true, makeFound(3, 2, kPersonDanger));
 
         // 사람을 드랍하는 쪽이 안전 측면에서 더 위험하므로 판정은 그대로 진행한다.
         expectBool("mismatch 플래그만 켜짐", other.camera_id_mismatch, true);

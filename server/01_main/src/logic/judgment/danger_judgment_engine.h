@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 
 #include "common/types.hpp"
@@ -160,6 +161,14 @@ public:
     // 상향 조정함. 근거: analyze_imu.py 결과(result_1a_conservative.csv)
     double impact_accel_threshold_g = 2.1246;
 
+    // DEAD_RECKONING 해제 유예시간 (히스테리시스).
+    // 진입(위치 놓침 -> DEAD_RECKONING)은 안전 방향이라 유예 없이 즉시 반영하지만,
+    // 해제(위치 재확보 -> NONE 복귀)는 이 시간 동안 미확보 프레임이 한 번도 없어야 반영한다.
+    // 마커가 잠깐 다시 잡혔다가 곧바로 놓치는 진동 상황에서 exception_state가 프레임마다
+    // DEAD_RECKONING <-> NONE으로 튀는 걸 막기 위함(in_emergency_의 거리 히스테리시스와
+    // 같은 목적, 축만 거리 대신 시간이다). 다른 임계값들처럼 조정 가능한 멤버로 둔다.
+    std::chrono::milliseconds dead_reckoning_release_grace_ms{500};
+
     // 한 프레임 처리: 카메라 입력 + 센서 입력 -> 최종 판정
     //
     // [주의] EMERGENCY 히스테리시스 때문에 이 호출은 프레임 간 상태(in_emergency_)를 남긴다.
@@ -167,9 +176,11 @@ public:
     //        const를 유지한 건 기존 호출부/테스트가 const 참조로 엔진을 쓰고 있어서다.
     JudgmentResult evaluate(const CameraInput& cam, const SensorInput& sen) const;
 
-    // 히스테리시스 상태를 초기화한다(EMERGENCY 래치 해제).
+    // 히스테리시스 상태를 초기화한다(EMERGENCY 래치 + DEAD_RECKONING 해제 유예 상태 해제).
     // 판정 대상이 바뀌거나(카메라 전환 등) 테스트에서 이전 프레임 영향을 지울 때 쓴다.
-    void resetHysteresis() { in_emergency_ = false; }
+    // dead_reckoning_active_도 같이 지우는 이유는 in_emergency_와 같다 - 직전 카메라 기준으로
+    // 걸린 상태를 시야도 좌표계도 다른 새 카메라의 첫 프레임에 그대로 물려주면 안 된다.
+    void resetHysteresis() { in_emergency_ = false; dead_reckoning_active_ = false; }
 
     // 지금 EMERGENCY 래치가 걸려 있는지 (디버깅·테스트용)
     bool inEmergencyLatch() const { return in_emergency_; }
@@ -195,6 +206,19 @@ private:
     // danger_judgment_engine.cpp의 evaluate() 주석 참고.
     // evaluate()가 const라 mutable로 둔다(위 evaluate() 주석의 스레드 주의사항과 한 쌍).
     mutable bool in_emergency_ = false;
+
+    // DEAD_RECKONING 해제 히스테리시스 래치. 진입(raw 조건 참)은 즉시 걸리고,
+    // 해제는 raw 조건이 거짓으로 돌아온 뒤에도 dead_reckoning_release_grace_ms만큼
+    // last_dead_reckoning_time_로부터 시간이 지나야 풀린다. in_emergency_와 같은 이유로
+    // mutable(단일 스레드 전제, evaluate()가 const).
+    mutable bool dead_reckoning_active_ = false;
+
+    // 가장 최근에 raw 조건(!forklift_localized || is_dead_reckoning)이 참이었던(위치 미확보)
+    // 시각. dead_reckoning_active_ 해제 여부를 이 시각 기준으로 판단한다 - 위치를 다시
+    // 놓치면 이 값이 매 프레임 갱신되어 유예 타이머가 계속 리셋된다.
+    // steady_clock 사용 이유는 LatencyStamps와 동일(서버 프로세스 내부 상대 구간 계측 -
+    // latency_stamps.hpp 주석 참고).
+    mutable std::chrono::steady_clock::time_point last_dead_reckoning_time_{};
 };
 
 // ============================================================

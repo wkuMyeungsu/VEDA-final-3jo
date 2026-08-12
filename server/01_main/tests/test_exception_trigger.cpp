@@ -109,23 +109,25 @@ void testBoundaryValues() {
 
     std::cout << "[테스트 1] 임계값 경계값 - 판정이 갈리는 지점 확인\n";
 
-    // (1) EMERGENCY_IMPACT: imu_accel_g >= 2.0g
+    // (1) EMERGENCY_IMPACT: imu_accel_g >= 2.1246g
+    //     [2026-08-12] IMU 실측 기반으로 impact_accel_threshold_g가 2.0 -> 2.1246으로
+    //     갱신되어(danger_judgment_engine.h 참고) 경계값도 함께 갱신했다.
     //     카메라·ToF는 모두 SAFE로 중립화 -> 충돌 트리거만 관측된다.
-    std::cout << "  -- EMERGENCY_IMPACT (impact_accel_threshold_g = 2.0g) --\n";
+    std::cout << "  -- EMERGENCY_IMPACT (impact_accel_threshold_g = 2.1246g) --\n";
     runCases(engine, {
         {"accel 1.99g (임계 바로 아래)",
          CameraInput{true, true, kFarA, kFarB, "", ""},
          SensorInput{true, true, 5.0, 1.99, false},
          ExceptionState::NONE,             RiskLevel::SAFE},
 
-        {"accel 2.00g (임계 정확히)",
+        {"accel 2.1246g (임계 정확히)",
          CameraInput{true, true, kFarA, kFarB, "", ""},
-         SensorInput{true, true, 5.0, 2.00, false},
+         SensorInput{true, true, 5.0, 2.1246, false},
          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER},
 
-        {"accel 2.01g (임계 바로 위)",
+        {"accel 2.13g (임계 바로 위)",
          CameraInput{true, true, kFarA, kFarB, "", ""},
-         SensorInput{true, true, 5.0, 2.01, false},
+         SensorInput{true, true, 5.0, 2.13, false},
          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER},
     });
 
@@ -207,15 +209,16 @@ void testPriorityMatrix() {
 
     runCases(engine, {
         // C1: 충돌 vs ToF 고장 -> 충돌 우선. 보정으로 무조건 DANGER.
-        {"C1 충돌2.1g + ToF고장",
+        // [2026-08-12] impact_accel_threshold_g 갱신(2.0 -> 2.1246)에 맞춰 2.1 -> 2.13.
+        {"C1 충돌2.13g + ToF고장",
          CameraInput{true, true, kFarA, kFarB, "", ""},
-         SensorInput{true, false, 0.0, 2.1, false},
+         SensorInput{true, false, 0.0, 2.13, false},
          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER},
 
         // C2: 충돌 vs 마커 폐색 -> 충돌 우선. 보정으로 무조건 DANGER.
-        {"C2 충돌2.1g + 마커폐색",
+        {"C2 충돌2.13g + 마커폐색",
          CameraInput{false, true, kFarA, kFarB, "", ""},
-         SensorInput{true, true, 5.0, 2.1, false},
+         SensorInput{true, true, 5.0, 2.13, false},
          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER},
 
         // C3: ToF 고장 vs 마커 폐색 -> 센서고장 우선.
@@ -233,9 +236,9 @@ void testPriorityMatrix() {
          ExceptionState::DEAD_RECKONING,   RiskLevel::DANGER},
 
         // C5: 충돌 vs 미확인 근접 -> 충돌 우선.
-        {"C5 충돌2.1g + 사람미검출 + tof0.4",
+        {"C5 충돌2.13g + 사람미검출 + tof0.4",
          CameraInput{true, false, kFarA, kFarB, "", ""},
-         SensorInput{true, true, 0.4, 2.1, false},
+         SensorInput{true, true, 0.4, 2.13, false},
          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER},
     });
 }
@@ -265,17 +268,17 @@ void testEmergencyTierVsImpact() {
     }
     {
         DangerJudgmentEngine engine;
-        runCase(engine, {"카메라 0.3m + 충돌2.1g",
+        runCase(engine, {"카메라 0.3m + 충돌2.13g",
                          CameraInput{true, true, kNearA, kNearB, "", ""},
-                         SensorInput{true, true, 5.0, 2.1, false},
+                         SensorInput{true, true, 5.0, 2.13, false},
                          // 예외는 EMERGENCY_IMPACT로 태깅되되 위험도는 3에서 안 내려가야 한다.
                          ExceptionState::EMERGENCY_IMPACT, RiskLevel::EMERGENCY});
     }
     {
         DangerJudgmentEngine engine;
-        runCase(engine, {"카메라 원거리 + 충돌2.1g (기존 동작)",
+        runCase(engine, {"카메라 원거리 + 충돌2.13g (기존 동작)",
                          CameraInput{true, true, kFarA, kFarB, "", ""},
-                         SensorInput{true, true, 5.0, 2.1, false},
+                         SensorInput{true, true, 5.0, 2.13, false},
                          // 카메라가 EMERGENCY가 아닐 때는 예전과 똑같이 DANGER로 올라간다.
                          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER});
     }

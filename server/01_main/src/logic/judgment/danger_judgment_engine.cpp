@@ -149,9 +149,25 @@ ExceptionState DangerJudgmentEngine::detectException(const CameraInput& cam, con
     if (!sen.imu_ok || !sen.tof_ok) {
         return ExceptionState::SENSOR_FAULT;
     }
-    if (!cam.forklift_localized || sen.is_dead_reckoning) {
+
+    // ── DEAD_RECKONING 진입/해제 히스테리시스 ─────────────────────
+    // 진입은 즉시(안전 방향이라 늦추면 안 됨), 해제만 dead_reckoning_release_grace_ms
+    // 동안 미확보 프레임이 한 번도 없어야 반영한다. classifyByDistance()의 in_emergency_
+    // 히스테리시스와 같은 원칙이고, 축만 거리 대신 시간이다.
+    const bool raw_dead_reckoning = !cam.forklift_localized || sen.is_dead_reckoning;
+    if (raw_dead_reckoning) {
+        dead_reckoning_active_ = true;
+        last_dead_reckoning_time_ = std::chrono::steady_clock::now();
         return ExceptionState::DEAD_RECKONING;
     }
+    if (dead_reckoning_active_) {
+        const auto elapsed = std::chrono::steady_clock::now() - last_dead_reckoning_time_;
+        if (elapsed < dead_reckoning_release_grace_ms) {
+            return ExceptionState::DEAD_RECKONING;  // 해제 유예 중 - 아직 grace 시간 미달
+        }
+        dead_reckoning_active_ = false;  // grace 시간 경과 -> 해제, 다음 판정으로 진행
+    }
+
     // [신규] 지게차 좌표는 정상인데 카메라에 사람이 안 잡히고, ToF는 근접(CAUTION 이상)을 보고 -> 미확인 근접
     if (!cam.person_detected && tof_risk != RiskLevel::SAFE) {
         return ExceptionState::UNCONFIRMED_PROXIMITY;
