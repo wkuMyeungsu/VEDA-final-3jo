@@ -15,13 +15,12 @@
 // 예전에는 nearest_person_selector.cpp가 WorldPoint를 자체 정의했다. 그런데
 // judgment_pipeline이 이 헤더와 danger_judgment_engine.h를 같은 TU에서 include하는
 // 순간 같은 이름의 구조체가 두 번 정의돼 컴파일이 안 된다. 그래서 여기서는 정의하지 않고
-// danger_judgment_engine.h 쪽 정의를 재사용한다 (원래도 두 정의의 필드 구성이 동일했으므로
+// common/types.hpp 쪽 정의를 재사용한다 (원래도 두 정의의 필드 구성이 동일했으므로
 // 동작 차이는 없다).
 //
-// [교체 지점] 원래 계획대로 server/common/types.hpp가 생기면 WorldPoint를 거기로 옮기고
-//             이 헤더와 danger_judgment_engine.h가 모두 그걸 include하게 바꾼다.
-//             지금은 엔진 헤더가 수정 범위 밖이라 "추적 -> 판정" 방향으로 헤더를 참조한다.
-//             심볼은 필요 없고 타입 정의만 필요하므로 라이브러리 링크 의존성은 아니다.
+// [교체 완료] common/types.hpp가 생겨 WorldPoint가 그쪽으로 옮겨졌다. 이제
+//             danger_judgment_engine.h를 거치지 않고 common/types.hpp를 직접
+//             참조한다. tracking -> judgment 방향 헤더 참조가 사라졌다.
 
 #pragma once
 
@@ -30,7 +29,9 @@
 #include <vector>
 
 #include "input/onvif_metadata_parser.hpp"           // BoundingBox
-#include "logic/judgment/danger_judgment_engine.h"   // WorldPoint
+#include "common/types.hpp"                          // WorldPoint
+
+using WorldPoint = forklift::common::WorldPoint;
 
 // ============================================================
 // 1. 데이터 구조 정의
