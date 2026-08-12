@@ -38,7 +38,7 @@ int detect_markers_command(int argc, char** argv) {
     if (image.empty()) throw std::runtime_error("cannot read image: " + input);
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners, rejected;
-    cv::aruco::detectMarkers(image, dictionary(config), corners, ids);
+    detect_marker_corners(config, image, corners, ids);
     nlohmann::json value = {
         {"image_size", {{"width", image.cols}, {"height", image.rows}}},
         {"ids", ids}, {"corners", nlohmann::json::array()}};
@@ -152,6 +152,9 @@ int solve_manual_command(int argc, char** argv) {
         {"used_marker_count", result.used},
         {"inlier_corner_count", result.inliers},
         {"reproj_rmse_mm", result.rmse_mm},
+        {"axis_max_error_mm", result.axis_max_error_mm},
+        {"measurement_rmse_mm", result.measurement_rmse_mm},
+        {"measurement_errors_mm", result.measurement_errors_mm},
         {"detected_ids", result.detected_ids}, {"used_ids", result.used_ids},
         {"excluded_ids", result.excluded_ids}, {"suspicious_ids", result.suspicious_ids},
         {"reference_marker_id", result.reference_marker_id},

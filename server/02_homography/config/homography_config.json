@@ -25,7 +25,6 @@
     "ransac_threshold_mm": 3.0
   },
   "outputs": {
-    "markers_zip": "aruco_markers.zip",
     "calibration": "homography_ch1.json",
     "manual": "homography_manual.json",
     "view_dir": "view_result"

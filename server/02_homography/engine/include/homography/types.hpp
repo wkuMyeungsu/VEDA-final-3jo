@@ -72,6 +72,9 @@ struct ManualSolveResult {
     std::vector<int> missing_ids;
     int reference_marker_id = -1;
     int iterations = 0;
+    double axis_max_error_mm = 0.0;
+    double measurement_rmse_mm = 0.0;
+    std::vector<double> measurement_errors_mm;
     std::vector<int> excluded_ids;
     std::vector<int> suspicious_ids;
     struct MarkerPose {
@@ -88,6 +91,27 @@ struct ManualSolveResult {
 struct SquareMarkerObservation {
     int id = -1;
     std::vector<cv::Point2f> corners;
+};
+
+// 선택적인 픽셀 전처리(향후 undistort) 뒤 최적화에 전달되는 실측 제약.
+struct ManualDistanceConstraint {
+    cv::Point2f origin_px;
+    cv::Point2f target_px;
+    double distance_mm = 0.0;
+};
+
+struct ManualAxisConstraint {
+    bool enabled = false;
+    cv::Point2f origin_px;
+    cv::Point2f x_end_px;
+    cv::Point2f y_end_px;
+    double x_length_mm = 0.0;
+    double y_length_mm = 0.0;
+};
+
+struct ManualSolveOptions {
+    ManualAxisConstraint axes;
+    std::vector<ManualDistanceConstraint> measurements;
 };
 
 }  // namespace homography

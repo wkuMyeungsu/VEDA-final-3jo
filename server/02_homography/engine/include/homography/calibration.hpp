@@ -11,6 +11,14 @@
 // ArUco 검출과 자동·수동 호모그래피 산출 인터페이스.
 namespace homography {
 
+// 모든 ArUco 검출의 공통 픽셀 입력 경로. 선택 인자는 후속 undistort 연결용이며
+// 이번 버전에서는 계수를 적용하지 않는다.
+void detect_marker_corners(const Config& config, const cv::Mat& image,
+                           std::vector<std::vector<cv::Point2f>>& corners,
+                           std::vector<int>& ids,
+                           const cv::Mat& camera_matrix = {},
+                           const cv::Mat& dist_coeffs = {});
+
 // 이미지에서 ArUco 마커를 검출하고 픽셀→cm 호모그래피 계산함.
 // 유효한 마커 두 개 이상 필요. 입력은 같은 카메라의 보정 영상.
 DetectionResult calibrate_image(const Config& config, const cv::Mat& image);
@@ -30,7 +38,8 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
 ManualSolveResult solve_square_markers(
     const std::vector<SquareMarkerObservation>& observations,
     double marker_size_mm, int reference_marker_id,
-    const std::vector<int>& excluded_ids);
+    const std::vector<int>& excluded_ids,
+    const ManualSolveOptions& options = {});
 
 // 두 이미지의 공통 ArUco 코너로 source 픽셀→destination 픽셀 정합을 구함.
 cv::Mat align_marker_images(const Config& config, const cv::Mat& source,

@@ -151,6 +151,53 @@ void test_irregular_square_calibration() {
            "grossly distorted marker should be an exclusion candidate");
 }
 
+void test_free_markers_with_axis_and_distance_constraints() {
+    const double side = 60.0;
+    const cv::Mat world_to_pixel = (cv::Mat_<double>(3, 3) <<
+        2.1, 0.24, 510.0, -0.13, 1.72, 260.0, 0.00042, -0.00031, 1.0);
+    std::vector<homography::SquareMarkerObservation> observations;
+    const std::vector<cv::Point2f> poses = {
+        {25, 35}, {240, 28}, {75, 205}, {315, 245}, {175, 390}};
+    const std::vector<double> angles = {0.08, 0.61, -0.47, 1.17, -0.92};
+    const std::vector<cv::Point2f> local = {
+        {0, 0}, {static_cast<float>(side), 0},
+        {static_cast<float>(side), static_cast<float>(side)},
+        {0, static_cast<float>(side)}};
+    for (int marker = 0; marker < static_cast<int>(poses.size()); ++marker) {
+        const double c = std::cos(angles[marker]), s = std::sin(angles[marker]);
+        std::vector<cv::Point2f> world;
+        for (const auto& point : local)
+            world.emplace_back(poses[marker].x + c * point.x - s * point.y,
+                               poses[marker].y + s * point.x + c * point.y);
+        observations.push_back({40 + marker, project(world, world_to_pixel)});
+    }
+    // 검출 코너 수준의 작은 잡음에도 축과 독립 실측 거리는 유지되어야 한다.
+    observations[1].corners[2] += cv::Point2f(0.35f, -0.25f);
+    observations[3].corners[0] += cv::Point2f(-0.2f, 0.3f);
+    homography::ManualSolveOptions options;
+    const auto axis_pixels = project({{0, 0}, {360, 0}, {0, 300}}, world_to_pixel);
+    options.axes = {true, axis_pixels[0], axis_pixels[1], axis_pixels[2], 360.0, 300.0};
+    const std::vector<cv::Point2f> measured_world = {{45, 80}, {330, 265}};
+    const auto measured_pixels = project(measured_world, world_to_pixel);
+    options.measurements.push_back({measured_pixels[0], measured_pixels[1],
+                                    cv::norm(measured_world[1] - measured_world[0])});
+    const auto result = homography::solve_square_markers(
+        observations, side, 40, {}, options);
+    expect(result.axis_max_error_mm < 0.05,
+           "axis coordinates must behave as hard constraints");
+    expect(result.measurement_rmse_mm < 0.1,
+           "measured distance must be optimized as a true distance residual");
+    expect(result.rmse_mm < 0.5,
+           "free marker rotations must retain low square error (actual=" +
+           std::to_string(result.rmse_mm) + ")");
+    const auto mapped_axes = project(axis_pixels, result.h_pixel_to_world);
+    expect_near(cv::norm(mapped_axes[0]), 0.0, 0.05, "axis origin mapping");
+    expect_near(cv::norm(mapped_axes[1] - cv::Point2f(360, 0)), 0.0, 0.05,
+                "X axis endpoint mapping");
+    expect_near(cv::norm(mapped_axes[2] - cv::Point2f(0, 300)), 0.0, 0.05,
+                "Y axis endpoint mapping");
+}
+
 void test_rtsp_capture_alignment() {
     const Config config = test_config();
     const cv::Mat board = homography::render_board(config, 20);
@@ -182,6 +229,48 @@ void test_rtsp_capture_alignment() {
                 "800x600 RTSP must be aligned before capture homography");
 }
 
+void test_mirrored_axis_frame_is_reflection_invariant() {
+    // 사용자가 X/Y 축을 좌수(거울) 방향으로 그으면 픽셀->월드 변환의 선형부 det가
+    // 음수(반사)가 된다. 정사각형은 뒤집어도 정사각형이므로, 이 경우에도 오차가
+    // 폭발하지 않고 우수(정상) 프레임과 동일한 품질이 나와야 한다.
+    // (nearest_square 가 회전뿐 아니라 반사까지 맞추는지 검증)
+    const double side = 60.0;
+    const cv::Mat world_to_pixel = (cv::Mat_<double>(3, 3) <<
+        2.1, 0.24, 510.0, -0.13, 1.72, 260.0, 0.00042, -0.00031, 1.0);
+    std::vector<homography::SquareMarkerObservation> observations;
+    const std::vector<cv::Point2f> poses = {
+        {25, 35}, {240, 28}, {75, 205}, {315, 245}, {175, 390}};
+    const std::vector<double> angles = {0.08, 0.61, -0.47, 1.17, -0.92};
+    const std::vector<cv::Point2f> local = {
+        {0, 0}, {static_cast<float>(side), 0},
+        {static_cast<float>(side), static_cast<float>(side)},
+        {0, static_cast<float>(side)}};
+    for (int marker = 0; marker < static_cast<int>(poses.size()); ++marker) {
+        const double c = std::cos(angles[marker]), s = std::sin(angles[marker]);
+        std::vector<cv::Point2f> world;
+        for (const auto& point : local)
+            world.emplace_back(poses[marker].x + c * point.x - s * point.y,
+                               poses[marker].y + s * point.x + c * point.y);
+        observations.push_back({40 + marker, project(world, world_to_pixel)});
+    }
+    homography::ManualSolveOptions options;
+    const auto axis_pixels = project({{0, 0}, {360, 0}, {0, 300}}, world_to_pixel);
+    // X끝점과 Y끝점(및 길이)을 서로 바꿔 좌수(거울) 좌표계를 정의한다.
+    options.axes = {true, axis_pixels[0], axis_pixels[2], axis_pixels[1], 300.0, 360.0};
+    const auto result = homography::solve_square_markers(
+        observations, side, 40, {}, options);
+    const cv::Mat& h = result.h_pixel_to_world;
+    const double det = h.at<double>(0, 0) * h.at<double>(1, 1) -
+                       h.at<double>(0, 1) * h.at<double>(1, 0);
+    expect(det < 0.0,
+           "swapped axes must actually produce a mirrored (left-handed) frame");
+    expect(result.rmse_mm < 0.5,
+           "mirrored frame must not inflate square error (actual=" +
+           std::to_string(result.rmse_mm) + ")");
+    expect(result.suspicious_ids.empty(),
+           "mirrored frame must not flag every marker as suspicious");
+}
+
 }  // namespace
 
 int main() {
@@ -191,8 +280,10 @@ int main() {
         test_board_rendering();
         test_calibration();
         test_irregular_square_calibration();
+        test_free_markers_with_axis_and_distance_constraints();
         test_rtsp_capture_alignment();
-        std::cout << "homography_unit_tests: 6 tests passed\n";
+        test_mirrored_axis_frame_is_reflection_invariant();
+        std::cout << "homography_unit_tests: 8 tests passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "homography_unit_tests: FAILED: " << error.what() << '\n';

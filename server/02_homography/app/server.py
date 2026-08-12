@@ -13,7 +13,6 @@ import tempfile
 import threading
 import time
 import uuid
-import zipfile
 import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -486,69 +485,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": "invalid JSON"}, 400)
             return
 
-        if path == "/api/homography/gen-markers":
-            config = str(CONFIG)
-            try:
-                last_id = int(payload.get("last_id", 15))
-                size_mm = float(payload.get("size_mm", 100))
-                dpi = float(payload.get("dpi", 300))
-                margin_mm = float(payload.get("margin_mm", 20))
-            except (TypeError, ValueError):
-                self.send_json({"ok": False, "error": "last_id, size_mm, margin_mm and dpi must be numbers"}, 400)
-                return
-            fmt = str(payload.get("format", "png")).lower()
-            if last_id < 0 or last_id > 999 or size_mm <= 0 or dpi <= 0 or fmt not in ("png", "svg"):
-                self.send_json({"ok": False, "error": "invalid marker generation parameters"}, 400)
-                return
-            cleanup_results()
-            job_id = uuid.uuid4().hex
-            job_dir = RESULT_ROOT / job_id
-            job_dir.mkdir(parents=True)
-            generated = []
-            if margin_mm < 0:
-                self.send_json({"ok": False, "error": "margin_mm must be non-negative"}, 400)
-                return
-            for marker_id in range(last_id + 1):
-                name = f"aruco_id_{marker_id:03d}.{fmt}"
-                label = f"{marker_id:02d}"
-                result = run_tool(["gen-marker", "--config", config, "--id", str(marker_id),
-                                   "--output", str(job_dir / name), "--size-mm", str(size_mm),
-                                   "--margin-mm", str(margin_mm), "--label", label,
-                                   "--dpi", str(dpi)])
-                if not result["ok"]:
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                    self.send_json(result, 500)
-                    return
-                generated.append(name)
-            zip_name = configured_output_name("markers_zip", "aruco_markers.zip")
-            if Path(zip_name).suffix.lower() != ".zip":
-                zip_name += ".zip"
-            zip_path = job_dir / zip_name
-            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for name in generated:
-                    archive.write(job_dir / name, arcname=name)
-                manifest = {
-                    "config": config, "first_id": 0, "last_id": last_id,
-                    "count": len(generated), "size_mm": size_mm, "margin_mm": margin_mm, "dpi": dpi,
-                    "format": fmt
-                }
-                archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-            preview_name = "preview.html"
-            preview = ["<!doctype html><meta charset='utf-8'><title>ArUco marker preview</title>",
-                       "<style>body{font-family:system-ui;margin:24px} .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px} figure{margin:0;text-align:center} img{max-width:100%;border:1px solid #bbb} figcaption{margin-top:6px}</style>",
-                       "<h1>ArUco markers</h1>",
-                       f"<p>마커 {size_mm:g} mm / 여백 {margin_mm:g} mm / 총 {len(generated)}개</p>", "<div class='grid'>"]
-            for name in generated:
-                preview.append(f"<figure><img src='{name}'><figcaption>{name}</figcaption></figure>")
-            preview.append("</div>")
-            (job_dir / preview_name).write_text("\n".join(preview), encoding="utf-8")
-            result = {"ok": True, "stdout": f"generated {len(generated)} markers\n", "stderr": "",
-                      "returncode": 0, "count": len(generated),
-                      "artifact_url": f"/artifacts/{job_id}/{zip_name}",
-                      "preview_url": f"/artifacts/{job_id}/{preview_name}",
-                      "note": "ZIP 안에 ID별 이미지와 manifest.json이 들어 있습니다. 결과는 임시 파일이며 자동 만료됩니다."}
-            self.send_json(result)
-            return
         if path == "/api/camera/detect":
             cleanup_results()
             job_id = uuid.uuid4().hex

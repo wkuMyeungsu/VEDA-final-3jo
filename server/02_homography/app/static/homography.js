@@ -6,7 +6,7 @@ const state={channel:1,playing:false,mode:'empty',capture:null,image:null,refere
   excluded:new Set(),result:null,view:{scale:1,x:0,y:0},space:false,pan:null,hoverMarker:null,
   topCanvas:null,topBounds:null,region:[],measurements:[],measurementDraft:null,dragVertex:-1,dragLine:null,liveRunning:false};
 
-function setStep(step){document.querySelectorAll('.steps li').forEach(item=>item.classList.toggle('active',item.dataset.step===step));}
+function setStep(step){const normalized={capture:'calibration',reference:'calibration',solve:'calibration',live:'validation'}[step]||step;document.querySelectorAll('.steps li').forEach(item=>item.classList.toggle('active',item.dataset.step===normalized));for(const [name,id] of [['calibration','#calibration-panels'],['region','#region-panels'],['validation','#validation-panels']]){const panel=$(id);if(panel)panel.hidden=name!==normalized}const visual=$('#validation-visual');if(visual)visual.hidden=normalized!=='validation';viewport.hidden=normalized==='validation';const subtitles={calibration:'캡처하고 실제 좌표 기준을 설정하세요.',region:'원근이 제거된 이미지에서 출력 영역을 정하세요.',validation:'원본 픽셀과 변환된 월드 위치를 나란히 비교하세요.'};if($('#workflow-subtitle'))$('#workflow-subtitle').textContent=subtitles[normalized]||subtitles.calibration}
 function log(value){$('#result-log').textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
 async function post(path,body){const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const value=await response.json();if(!response.ok||value.ok===false)throw new Error(value.error||value.stderr||`HTTP ${response.status}`);return value}
 function resizeCanvas(){const rect=viewport.getBoundingClientRect(),ratio=devicePixelRatio||1;canvas.width=Math.round(rect.width*ratio);canvas.height=Math.round(rect.height*ratio);canvas.style.width=`${rect.width}px`;canvas.style.height=`${rect.height}px`;draw()}
@@ -91,7 +91,7 @@ function updateMeasurements(){const list=$('#measurement-list');if(!state.measur
 function setMeasurementDistance(key,distance){if(!Number.isFinite(distance)||distance<=0)return;const measurement=state.measurements.find(value=>value.key===key);if(!measurement)return;measurement.requestedDistanceMm=distance;measurement.distance=distance;updateMeasurements();draw()}
 
 $('#solve-homography').onclick=async()=>{try{$('#solve-homography').disabled=true;const preSolveH=measurementHomography();if(!Number.isFinite(state.axisLengthMm.x))state.axisLengthMm.x=axisLengthMm(state.axes.x,'x');if(!Number.isFinite(state.axisLengthMm.y))state.axisLengthMm.y=axisLengthMm(state.axes.y,'y');log('정사각형 제약, 기준선, 측정선 제약을 반영하는 중…');const payload=await post('/api/homography/solve',{capture_id:state.capture.capture_id,marker_size_mm:Number($('#marker-size-mm').value),reference_marker_id:state.solveReferenceId,excluded_ids:[...state.excluded],axis_origin_px:state.axes.x.start,axis_x_end_px:state.axes.x.end,axis_y_end_px:state.axes.y.end,axis_x_length_mm:state.axisLengthMm.x,axis_y_length_mm:state.axisLengthMm.y,measurements:state.measurements.map(measurement=>({origin_px:measurement.originPixel,target_px:measurement.pixel,distance_mm:measurement.requestedDistanceMm??measurement.distance}))});state.result=payload.result;$('#result-download').href=payload.artifact_url;$('#result-download').hidden=false;$('#measure-panel').hidden=false;showQuality();buildMarkerList();updateMeasurements();draw();setStep('solve');$('#camera-status').textContent='산출 완료 · 다른 점은 누른 채 드래그해서 측정하세요.'}catch(error){log(`산출 실패: ${error.message}`)}finally{updateSolveButton()}};
-function showQuality(){const r=state.result;$('#quality-summary').hidden=false;$('#quality-summary').innerHTML=`<strong>RMSE ${r.reproj_rmse_mm.toFixed(3)} mm</strong><br>사용 ${r.used_marker_count}개 · 제외 ${r.excluded_ids.length}개 · 반복 ${r.iterations}회<table>${r.markers.map(marker=>`<tr><td>ID ${marker.id}</td><td>${marker.square_error_mm.toFixed(3)} mm · ${marker.rotation_deg.toFixed(1)}°</td></tr>`).join('')}</table>`;log(r)}
+function showQuality(){const r=state.result,axisError=r.axis_max_error_mm??0,measurementError=r.measurement_rmse_mm??0;$('#quality-summary').hidden=false;$('#quality-summary').innerHTML=`<strong>마커 정사각형 RMSE ${r.reproj_rmse_mm.toFixed(3)} mm</strong><br>축 최대 오차 <strong>${axisError.toFixed(3)} mm</strong> · 측정선 RMSE <strong>${measurementError.toFixed(3)} mm</strong><br>사용 ${r.used_marker_count}개 · 제외 ${r.excluded_ids.length}개 · 반복 ${r.iterations}회<table>${r.markers.map(marker=>`<tr><td>ID ${marker.id}</td><td>${marker.square_error_mm.toFixed(3)} mm · ${marker.rotation_deg.toFixed(1)}°</td></tr>`).join('')}</table>`;log(r)}
 $('#clear-measurements').onclick=()=>{state.measurements=[];updateMeasurements();draw()};
 $('#continue-topview').onclick=()=>{$('#measure-panel').hidden=true;enterTopView().catch(error=>log(`탑뷰 전환 실패: ${error.message}`))};
 $('#marker-list').addEventListener('click',event=>{if(event.target.matches('button')){event.preventDefault();event.stopImmediatePropagation();$('#camera-status').textContent='기준 마커를 클릭하지 말고, 캔버스에서 X축과 Y축을 드래그하세요.'}},{capture:true});
@@ -149,7 +149,6 @@ renderLive=()=>{originalRenderLive();if(state.liveRunning)$('#live-status').text
 $('#start-live').onclick=startLive;$('#live-play').onclick=()=>{if(!state.liveRunning){state.liveRunning=true;$('#live-original').src=`/api/camera/video?channel=${state.channel}&t=${Date.now()}`;requestAnimationFrame(renderLive)}};$('#live-pause').onclick=()=>{state.liveRunning=false;cancelAnimationFrame(liveFrame);$('#live-original').src=''};$('#close-live').onclick=()=>{$('#live-pause').click();$('#live-view').hidden=true;setStep('region')};$('#fullscreen-live').onclick=()=>$('#live-view').requestFullscreen?.();
 function liveLayout(mode){const grid=$('#live-grid'),original=$('#original-pane'),top=$('#top-pane');grid.classList.toggle('single',mode!=='both');original.hidden=mode==='top';top.hidden=mode==='original'}$('#show-both').onclick=()=>liveLayout('both');$('#show-original').onclick=()=>liveLayout('original');$('#show-top').onclick=()=>liveLayout('top');
 
-$('#generate-markers').onclick=async()=>{try{const result=await post('/api/homography/gen-markers',{last_id:$('#last-id').value,size_mm:$('#marker-size').value,margin_mm:$('#marker-margin').value,dpi:$('#dpi').value,format:$('#format').value});$('#marker-download').href=result.artifact_url;$('#marker-download').hidden=false;log(result.note)}catch(error){log(error.message)}};
 resizeCanvas();updateRegionUI();
 
 // 작업 단계를 왕복할 수 있도록 캔버스 편집 화면으로 복귀한다.
@@ -180,16 +179,61 @@ state.validationMode=false;state.validationDraft=null;state.validationItems=[];
 function validationPoint(event){const pixel=capturePoint(screenPoint(event)),world=transformPoint(state.result.H_capture_pixel_to_world,pixel);return{pixel,world}}
 function drawValidation(){if(!state.validationMode)return;ctx.save();ctx.lineWidth=3;ctx.strokeStyle='#ffe45c';ctx.fillStyle='#ffe45c';state.validationItems.forEach(item=>{const a=toScreen(item.start.pixel);ctx.beginPath();ctx.arc(a.x,a.y,7,0,Math.PI*2);ctx.fill();if(item.end){const b=toScreen(item.end.pixel);ctx.beginPath();ctx.arc(b.x,b.y,7,0,Math.PI*2);ctx.fill();ctx.setLineDash([8,5]);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);const label=`${distance(item.start.world,item.end.world).toFixed(1)} mm`;ctx.font='700 13px system-ui';ctx.fillStyle='rgba(12,18,25,.9)';const width=ctx.measureText(label).width;ctx.fillRect((a.x+b.x)/2-width/2-6,(a.y+b.y)/2-22,width+12,20);ctx.fillStyle='#ffe45c';ctx.fillText(label,(a.x+b.x)/2-width/2,(a.y+b.y)/2-7)}});if(state.validationDraft){const a=toScreen(state.validationDraft.start.pixel),b=toScreen(state.validationDraft.current.pixel);ctx.strokeStyle='#fff3a1';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.beginPath();ctx.arc(a.x,a.y,7,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(b.x,b.y,7,0,Math.PI*2);ctx.fill()}ctx.restore()}
 const baseDraw=draw;draw=()=>{baseDraw();drawValidation()};
-function validationAutomaticSummary(){const result=state.result;if(!result)return'산출 결과가 없습니다.';const values=(result.markers||[]).map(marker=>marker.square_error_mm);const max=Math.max(0,...values);return`<span class="validation-badge">자동 검증</span> 마커 ${result.used_marker_count}개 · 내부 RMSE <strong>${(result.reproj_rmse_mm??0).toFixed(3)} mm</strong> · 마커 최대 오차 <strong>${max.toFixed(3)} mm</strong>`}
-function updateValidationUI(){const summary=$('#validation-summary');if(!state.result){summary.textContent='산출 결과가 없습니다.';return}summary.innerHTML=validationAutomaticSummary();const list=$('#validation-list');if(!state.validationItems.length){list.hidden=true;list.innerHTML='';return}list.hidden=false;list.innerHTML=state.validationItems.map((item,index)=>{const calculated=item.end?distance(item.start.world,item.end.world):null;const error=item.actualDistanceMm===null||calculated===null?null:calculated-item.actualDistanceMm;return`<div class="validation-row"><strong>${index+1}. ${item.end?'거리':'점'}</strong> · 픽셀 (${item.start.pixel.x.toFixed(1)}, ${item.start.pixel.y.toFixed(1)}) → (${item.start.world.x.toFixed(1)}, ${item.start.world.y.toFixed(1)}) mm${item.end?`<br>계산 ${calculated.toFixed(2)} mm · 실제 <input data-validation-index="${index}" type="number" min="0.1" step="0.1" value="${item.actualDistanceMm??''}" placeholder="실측 mm"> mm${error===null?'':` · 오차 <span class="validation-error">${error.toFixed(2)} mm</span>`}`:''}</div>`}).join('');list.querySelectorAll('input').forEach(input=>input.onchange=()=>{const value=Number(input.value);if(Number.isFinite(value)&&value>0)state.validationItems[Number(input.dataset.validationIndex)].actualDistanceMm=value;updateValidationUI()})}
+function validationAutomaticSummary(){const result=state.result;if(!result)return'산출 결과가 없습니다.';const values=(result.markers||[]).map(marker=>marker.square_error_mm),max=Math.max(0,...values);return`<span class="validation-badge">자동 검증</span> 마커 ${result.used_marker_count}개 · 정사각형 RMSE <strong>${(result.reproj_rmse_mm??0).toFixed(3)} mm</strong> · 축 <strong>${(result.axis_max_error_mm??0).toFixed(3)} mm</strong> · 측정선 <strong>${(result.measurement_rmse_mm??0).toFixed(3)} mm</strong> · 마커 최대 <strong>${max.toFixed(3)} mm</strong>`}
+function updateValidationUI(){
+  const summary=$('#validation-summary'),list=$('#validation-list');
+  if(!state.result){summary.textContent='산출 결과가 없습니다.';list.hidden=true;return}
+  summary.innerHTML=validationAutomaticSummary();
+  if(!state.validationItems.length){list.hidden=true;list.innerHTML='';drawValidationComparison();return}
+  list.hidden=false;
+  list.innerHTML=state.validationItems.map((item,index)=>{
+    if(item.end){const calculated=distance(item.start.world,item.end.world),error=item.actualDistanceMm===null?null:calculated-item.actualDistanceMm;return`<div class="validation-row"><strong>${index+1}. 거리</strong> · 계산 ${calculated.toFixed(2)} mm<br>실제 <input data-validation-index="${index}" data-field="distance" type="number" min="0.1" step="0.1" value="${item.actualDistanceMm??''}" placeholder="실측"> mm${error===null?'':` · 오차 <span class="validation-point-error">${error.toFixed(2)} mm</span>`}</div>`}
+    const actual=item.actualWorld,hasActual=actual&&Number.isFinite(actual.x)&&Number.isFinite(actual.y),pointError=hasActual?distance(item.start.world,actual):null;
+    return`<div class="validation-row"><strong>${index+1}. 점</strong> · 픽셀 (${item.start.pixel.x.toFixed(1)}, ${item.start.pixel.y.toFixed(1)})<br>변환 (${item.start.world.x.toFixed(1)}, ${item.start.world.y.toFixed(1)}) mm<br>실제 X <input data-validation-index="${index}" data-field="world-x" type="number" step="0.1" value="${actual?.x??''}" placeholder="X"> Y <input data-validation-index="${index}" data-field="world-y" type="number" step="0.1" value="${actual?.y??''}" placeholder="Y"> mm${pointError===null?'':` · 오차 <span class="validation-point-error">${pointError.toFixed(2)} mm</span>`}</div>`
+  }).join('');
+  list.querySelectorAll('input').forEach(input=>input.onchange=()=>{const item=state.validationItems[Number(input.dataset.validationIndex)],value=input.value.trim()===''?null:Number(input.value);if(input.dataset.field==='distance'){item.actualDistanceMm=Number.isFinite(value)&&value>0?value:null}else{item.actualWorld=item.actualWorld||{x:null,y:null};item.actualWorld[input.dataset.field==='world-x'?'x':'y']=Number.isFinite(value)?value:null}updateValidationUI()});
+  drawValidationComparison();
+}
 function enterValidation(){if(!state.result)return;state.validationMode=true;canvas.classList.add('validation-active');$('#enter-validation').hidden=true;$('#camera-status').textContent='검증 모드 · 이미지에서 클릭하거나 누른 채 드래그하세요. 이 작업은 H를 변경하지 않습니다.';updateValidationUI();draw()}
 function leaveValidation(){state.validationMode=false;state.validationDraft=null;canvas.classList.remove('validation-active');$('#enter-validation').hidden=false;draw()}
 window.addEventListener('pointerdown',event=>{if(!state.validationMode||event.target!==canvas||event.button!==0)return;event.preventDefault();event.stopPropagation();state.validationDraft={start:validationPoint(event),current:validationPoint(event)};canvas.setPointerCapture?.(event.pointerId);draw()},{capture:true});
 window.addEventListener('pointermove',event=>{if(!state.validationDraft)return;event.preventDefault();event.stopPropagation();state.validationDraft.current=validationPoint(event);draw()},{capture:true});
 window.addEventListener('pointerup',event=>{if(!state.validationDraft)return;event.preventDefault();event.stopPropagation();const draft=state.validationDraft;state.validationDraft=null;try{canvas.releasePointerCapture?.(event.pointerId)}catch(error){}const moved=distance(draft.start.pixel,draft.current.pixel);if(moved>=12)state.validationItems.push({start:draft.start,end:draft.current,actualDistanceMm:null});else state.validationItems.push({start:draft.start,end:null,actualDistanceMm:null});updateValidationUI();draw()},{capture:true});
-$('#enter-validation').onclick=enterValidation;$('#clear-validation').onclick=()=>{state.validationItems=[];updateValidationUI();draw()};
-$('#exit-validation').onclick=leaveValidation;
-const oldShowQuality=showQuality;showQuality=()=>{oldShowQuality();$('#enter-validation').hidden=false;$('#validation-panel').hidden=false;updateValidationUI()};
+$('#enter-validation')?.addEventListener('click',enterValidation);$('#clear-validation')?.addEventListener('click',()=>{state.validationItems=[];updateValidationUI();draw()});
+$('#exit-validation')?.addEventListener('click',leaveValidation);
+const oldShowQuality=showQuality;showQuality=()=>{oldShowQuality();$('#validation-panel').hidden=false;updateValidationUI()};
+
+let validationWorldRenderer=null;
+function prepareValidationComparison(){
+  if(!state.result||!state.image)return;
+  const source=$('#validation-source-image'),sourceOverlay=$('#validation-source-overlay'),sourceFrame=$('#validation-source-frame');
+  source.width=sourceOverlay.width=state.image.naturalWidth;source.height=sourceOverlay.height=state.image.naturalHeight;
+  sourceFrame.style.aspectRatio=`${source.width} / ${source.height}`;source.getContext('2d').drawImage(state.image,0,0,source.width,source.height);
+  const h=state.result.H_capture_pixel_to_world,corners=[{x:0,y:0},{x:source.width,y:0},{x:source.width,y:source.height},{x:0,y:source.height}].map(point=>transformPoint(h,point));
+  if(corners.some(point=>!Number.isFinite(point.x)||!Number.isFinite(point.y)))return;
+  const margin=Math.max(10,Number(state.result.marker_size_mm)||10),minX=Math.min(...corners.map(point=>point.x))-margin,maxX=Math.max(...corners.map(point=>point.x))+margin,minY=Math.min(...corners.map(point=>point.y))-margin,maxY=Math.max(...corners.map(point=>point.y))+margin;
+  state.validationWorldBounds={minX,maxX,minY,maxY};
+  const aspect=Math.max(.15,Math.min(6,(maxX-minX)/(maxY-minY))),world=$('#validation-world-image'),worldOverlay=$('#validation-world-overlay'),worldFrame=$('#validation-world-frame'),width=1400,height=Math.max(300,Math.round(width/aspect));
+  world.width=worldOverlay.width=width;world.height=worldOverlay.height=height;worldFrame.style.aspectRatio=`${width} / ${height}`;
+  validationWorldRenderer=createWarpRenderer(world);validationWorldRenderer.render(state.image,invert3(h),state.validationWorldBounds);drawValidationComparison();
+}
+function validationWorldPixel(point){const b=state.validationWorldBounds,overlay=$('#validation-world-overlay');return{x:(point.x-b.minX)/(b.maxX-b.minX)*overlay.width,y:(point.y-b.minY)/(b.maxY-b.minY)*overlay.height}}
+function validationColor(index){return['#ffe45c','#ff9f43','#d98cff','#7bed9f','#70a1ff','#ff7f8f'][index%6]}
+function drawValidationMarker(context,point,index,color,label){const radius=Math.max(7,context.canvas.width*.006);context.strokeStyle='#081018';context.lineWidth=Math.max(3,radius*.35);context.fillStyle=color;context.beginPath();context.arc(point.x,point.y,radius,0,Math.PI*2);context.fill();context.stroke();context.fillStyle='#081018';context.font=`800 ${Math.max(12,radius*1.35)}px system-ui`;context.textAlign='center';context.textBaseline='middle';context.fillText(String(index+1),point.x,point.y);if(label){context.font=`700 ${Math.max(14,radius*1.4)}px system-ui`;context.textAlign='left';context.textBaseline='bottom';const width=context.measureText(label).width;context.fillStyle='rgba(4,10,16,.84)';context.fillRect(point.x+radius+5,point.y-radius-22,width+12,24);context.fillStyle=color;context.fillText(label,point.x+radius+11,point.y-radius)}}
+function drawValidationComparison(){
+  const source=$('#validation-source-overlay'),world=$('#validation-world-overlay');if(!source||!world||!state.validationWorldBounds)return;
+  const sourceCtx=source.getContext('2d'),worldCtx=world.getContext('2d');sourceCtx.clearRect(0,0,source.width,source.height);worldCtx.clearRect(0,0,world.width,world.height);
+  state.validationItems.forEach((item,index)=>{const color=validationColor(index),sourceStart=item.start.pixel,worldStart=validationWorldPixel(item.start.world);drawValidationMarker(sourceCtx,sourceStart,index,color,`px ${sourceStart.x.toFixed(0)}, ${sourceStart.y.toFixed(0)}`);drawValidationMarker(worldCtx,worldStart,index,color,`${item.start.world.x.toFixed(1)}, ${item.start.world.y.toFixed(1)} mm`);
+    if(item.end){const sourceEnd=item.end.pixel,worldEnd=validationWorldPixel(item.end.world),calculated=distance(item.start.world,item.end.world);sourceCtx.strokeStyle=color;sourceCtx.lineWidth=Math.max(4,source.width*.002);sourceCtx.setLineDash([16,10]);sourceCtx.beginPath();sourceCtx.moveTo(sourceStart.x,sourceStart.y);sourceCtx.lineTo(sourceEnd.x,sourceEnd.y);sourceCtx.stroke();sourceCtx.setLineDash([]);drawValidationMarker(sourceCtx,sourceEnd,index,color,'');worldCtx.strokeStyle=color;worldCtx.lineWidth=Math.max(4,world.width*.003);worldCtx.beginPath();worldCtx.moveTo(worldStart.x,worldStart.y);worldCtx.lineTo(worldEnd.x,worldEnd.y);worldCtx.stroke();drawValidationMarker(worldCtx,worldEnd,index,color,`${calculated.toFixed(1)} mm`);
+      if(Number.isFinite(item.actualDistanceMm)){const dx=item.end.world.x-item.start.world.x,dy=item.end.world.y-item.start.world.y,length=Math.hypot(dx,dy)||1,actualWorld={x:item.start.world.x+dx/length*item.actualDistanceMm,y:item.start.world.y+dy/length*item.actualDistanceMm},actual=validationWorldPixel(actualWorld);worldCtx.strokeStyle='#ff5d73';worldCtx.lineWidth=Math.max(4,world.width*.003);worldCtx.beginPath();worldCtx.moveTo(worldEnd.x,worldEnd.y);worldCtx.lineTo(actual.x,actual.y);worldCtx.stroke();drawValidationMarker(worldCtx,actual,index,'#26d9ff',`실제 ${item.actualDistanceMm.toFixed(1)} · 오차 ${(calculated-item.actualDistanceMm).toFixed(1)} mm`)}}
+    else if(item.actualWorld&&Number.isFinite(item.actualWorld.x)&&Number.isFinite(item.actualWorld.y)){const actual=validationWorldPixel(item.actualWorld),error=distance(item.start.world,item.actualWorld);worldCtx.strokeStyle='#ff5d73';worldCtx.lineWidth=Math.max(4,world.width*.003);worldCtx.beginPath();worldCtx.moveTo(worldStart.x,worldStart.y);worldCtx.lineTo(actual.x,actual.y);worldCtx.stroke();drawValidationMarker(worldCtx,actual,index,'#26d9ff',`실제 위치 · 오차 ${error.toFixed(1)} mm`)}});
+  if(state.validationDraft){const a=state.validationDraft.start.pixel,b=state.validationDraft.current.pixel;sourceCtx.strokeStyle='#fff';sourceCtx.lineWidth=Math.max(3,source.width*.0015);sourceCtx.beginPath();sourceCtx.moveTo(a.x,a.y);sourceCtx.lineTo(b.x,b.y);sourceCtx.stroke()}
+}
+function validationSourcePoint(event){const overlay=$('#validation-source-overlay'),rect=overlay.getBoundingClientRect(),pixel={x:(event.clientX-rect.left)/rect.width*overlay.width,y:(event.clientY-rect.top)/rect.height*overlay.height};return{pixel,world:transformPoint(state.result.H_capture_pixel_to_world,pixel)}}
+const validationSourceOverlay=$('#validation-source-overlay');
+validationSourceOverlay.addEventListener('pointerdown',event=>{if(!state.validationMode||event.button!==0)return;event.preventDefault();validationSourceOverlay.setPointerCapture?.(event.pointerId);const point=validationSourcePoint(event);state.validationDraft={start:point,current:point};drawValidationComparison()});
+validationSourceOverlay.addEventListener('pointermove',event=>{if(!state.validationDraft)return;event.preventDefault();state.validationDraft.current=validationSourcePoint(event);drawValidationComparison()});
+validationSourceOverlay.addEventListener('pointerup',event=>{if(!state.validationDraft)return;event.preventDefault();const draft=state.validationDraft,rect=validationSourceOverlay.getBoundingClientRect(),threshold=10*validationSourceOverlay.width/Math.max(1,rect.width);state.validationDraft=null;try{validationSourceOverlay.releasePointerCapture?.(event.pointerId)}catch(error){}if(distance(draft.start.pixel,draft.current.pixel)>=threshold)state.validationItems.push({start:draft.start,end:draft.current,actualDistanceMm:null});else state.validationItems.push({start:draft.start,end:null,actualDistanceMm:null,actualWorld:null});updateValidationUI()});
 
 let contextTarget=null;
 function pointToSegmentDistance(point,a,b){const dx=b.x-a.x,dy=b.y-a.y,t=Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.y-a.y)*dy)/(dx*dx+dy*dy||1)));return Math.hypot(point.x-(a.x+t*dx),point.y-(a.y+t*dy))}
@@ -203,3 +247,137 @@ function hideCanvasContextMenu(){const menu=$('#canvas-context-menu');if(menu)me
 canvas.addEventListener('contextmenu',event=>{if(state.mode!=='capture')return;const target=nearestCanvasLine(screenPoint(event));if(!target){hideCanvasContextMenu();return}event.preventDefault();contextTarget=target;const menu=$('#canvas-context-menu');menu.style.left=`${Math.min(event.clientX,window.innerWidth-140)}px`;menu.style.top=`${Math.min(event.clientY,window.innerHeight-90)}px`;menu.hidden=false});
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('#canvas-context-menu'))hideCanvasContextMenu()});
 $('#canvas-context-menu').addEventListener('click',event=>{const action=event.target.dataset.contextAction,target=contextTarget;hideCanvasContextMenu();if(!target)return;if(target.type==='measurement'){const measurement=state.measurements[target.index];if(!measurement)return;if(action==='delete'){invalidateSolve();state.measurements.splice(target.index,1);updateMeasurements();draw()}else if(action==='edit'){const a=toScreen(measurement.originPixel),b=toScreen(measurement.pixel),mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};openLengthEditor({x:mid.x,y:mid.y-24},measurement.distance,value=>setMeasurementDistance(measurement.key,value))}return}const value=axisLengthMm(state.axes[target.axis],target.axis);if(action==='delete'){invalidateSolve();state.axes[target.axis]=null;if(target.axis==='x')state.axes.y=null;state.axisMode=state.axes.x?'y':'x';state.solveReferenceId=null;$('#measure-panel').hidden=true;draw();updateSolveButton()}else if(action==='edit'&&value!==null){openLengthEditor(toScreen(state.axes[target.axis].end),value,next=>setAxisLength(target.axis,next))}});
+
+// 명시적인 도구와 3단계 작업 흐름을 제공한다.
+state.activeTool='select';state.explicitDraft=null;
+const toolInfo={
+  select:['선택/수정','끝점을 드래그해 이동하거나 선을 우클릭해 수정·삭제하세요.'],
+  'axis-x':['X 기준선','실제로 잰 X 선분의 시작점부터 끝점까지 드래그하세요.'],
+  'axis-y':['Y 기준선','X 기준선과 같은 시작점에서 실제 Y 끝점까지 드래그하세요.'],
+  measurement:['보정 측정선','이미지의 임의 위치에서 드래그한 뒤 실제 길이를 입력하세요.']
+};
+function updateWorkflowUI(){
+  const info=toolInfo[state.activeTool]||toolInfo.select;$('#tool-title').textContent=info[0];$('#tool-help').textContent=info[1];
+  document.querySelectorAll('#drawing-tools button').forEach(button=>button.classList.toggle('active',button.dataset.tool===state.activeTool));
+  const x=state.axes.x?axisLengthMm(state.axes.x,'x'):null,y=state.axes.y?axisLengthMm(state.axes.y,'y'):null;
+  $('#tool-context').innerHTML=`<div class="tool-row"><span>X 기준선</span><strong>${x===null?'미설정':`${x.toFixed(1)} mm`}</strong></div><div class="tool-row"><span>Y 기준선</span><strong>${y===null?'미설정':`${y.toFixed(1)} mm`}</strong></div><div class="tool-row"><span>보정 측정선</span><strong>${state.measurements.length}개</strong></div>`;
+  const ready=state.capture&&state.axes.x&&state.axes.y;$('#solve-state').textContent=state.result?'산출 완료':ready?'산출 가능':state.capture?'기준 설정 중':'캡처 대기';
+  $('#solve-input-summary').innerHTML=ready?`마커 ${state.capture.ids.length}개 · X ${x?.toFixed(1)??'—'}mm · Y ${y?.toFixed(1)??'—'}mm · 보정선 ${state.measurements.length}개${state.result?`<br><strong>RMSE ${state.result.reproj_rmse_mm.toFixed(3)}mm</strong>`:''}`:'X/Y 기준선을 설정하세요.';
+  $('#marker-compact').textContent=state.capture?`${state.excluded.size?`${state.excluded.size}개 제외`:'모두 사용'}`:'캡처 대기';
+  $('#drawing-tools').hidden=!state.capture;
+  $('#continue-topview').hidden=!state.result;
+  document.querySelector('[data-step="region"] button').disabled=!state.result;
+  document.querySelector('[data-step="validation"] button').disabled=!state.result;
+  $('#open-live-validation').disabled=!(state.result?.H_rtsp_pixel_to_world&&state.region.length===4);
+}
+function selectTool(tool){if(!state.capture)return;leaveValidation();state.activeTool=tool;state.axisDraft=null;state.measurementDraft=null;updateWorkflowUI();draw()}
+document.querySelectorAll('#drawing-tools button').forEach(button=>button.onclick=()=>selectTool(button.dataset.tool));
+
+function finishExplicitDraft(event){
+  const draft=state.explicitDraft;if(!draft)return;state.explicitDraft=null;const end=capturePoint(screenPoint(event));
+  try{canvas.releasePointerCapture(event.pointerId)}catch(error){}
+  if(Math.hypot(end.x-draft.start.x,end.y-draft.start.y)<12){state.axisDraft=null;state.measurementDraft=null;draw();return}
+  if(draft.tool==='axis-x'){invalidateSolve();state.axes.x={start:draft.start,end};state.axes.y=null;state.axisLengthMm={x:null,y:null};state.solveReferenceId=null;state.axisDraft=null;state.activeTool='axis-y';$('#camera-status').textContent='X 기준선 저장됨 · 같은 시작점에서 Y 기준선을 그리세요.'}
+  else if(draft.tool==='axis-y'){invalidateSolve();state.axes.y={start:{...state.axes.x.start},end};state.axisLengthMm.y=null;state.axisDraft=null;finishUserAxes();state.activeTool='select'}
+  else{invalidateSolve();state.measurementDraft=null;const target=nearestDetectedCorner(screenPoint(event),24);if(target)addMeasurement(target,draft.start,null);else addFreeMeasurement(end,draft.start,null)}
+  updateWorkflowUI();draw();
+}
+window.addEventListener('pointerdown',event=>{
+  if(event.target!==canvas||state.mode!=='capture'||state.validationMode||event.button!==0)return;
+  if(state.activeTool==='select'){const screen=screenPoint(event);if(!nearestMeasurementHandle(screen)&&!nearestAxisHandles(screen).length){event.preventDefault();event.stopImmediatePropagation()}return}
+  event.preventDefault();event.stopImmediatePropagation();const point=capturePoint(screenPoint(event));
+  if(state.activeTool==='axis-y'&&!state.axes.x){$('#camera-status').textContent='X 기준선을 먼저 그리세요.';return}
+  if(state.activeTool==='measurement'&&(!state.axes.x||!state.axes.y)){$('#camera-status').textContent='X/Y 기준선을 먼저 설정하세요.';return}
+  const start=state.activeTool==='axis-y'?{...state.axes.x.start}:point;state.explicitDraft={tool:state.activeTool,start};
+  if(state.activeTool==='measurement')state.measurementDraft={originPixel:start,targetPixel:point,axis:null};else{state.axisMode=state.activeTool==='axis-x'?'x':'y';state.axisDraft={start,end:point}}
+  canvas.setPointerCapture(event.pointerId);draw();
+},{capture:true});
+window.addEventListener('pointermove',event=>{if(!state.explicitDraft)return;event.preventDefault();event.stopImmediatePropagation();const point=capturePoint(screenPoint(event));if(state.explicitDraft.tool==='measurement')state.measurementDraft.targetPixel=point;else state.axisDraft.end=point;draw()},{capture:true});
+window.addEventListener('pointerup',event=>{if(!state.explicitDraft)return;event.preventDefault();event.stopImmediatePropagation();finishExplicitDraft(event)},{capture:true});
+
+function openCalibrationStage(){leaveValidation();returnToCanvasEditor();setStep('calibration');updateWorkflowUI()}
+async function openRegionStage(){if(!state.result)return;leaveValidation();await enterTopView();setStep('region');updateWorkflowUI()}
+function openValidationStage(){if(!state.result)return;returnToCanvasEditor();setStep('validation');prepareValidationComparison();enterValidation();updateValidationUI();updateWorkflowUI()}
+document.querySelectorAll('.steps li button').forEach(button=>button.onclick=()=>{const stage=button.parentElement.dataset.step;if(stage==='calibration')openCalibrationStage();else if(stage==='region')openRegionStage().catch(error=>log(error.message));else openValidationStage()});
+$('#continue-topview').onclick=()=>openRegionStage().catch(error=>log(`탑뷰 전환 실패: ${error.message}`));
+$('#edit-canvas-from-region').onclick=openCalibrationStage;$('#back-to-calibration').onclick=openCalibrationStage;
+$('#start-live').onclick=openValidationStage;$('#open-live-validation').onclick=()=>{updateLiveQuality();startLive()};
+$('#enter-validation')?.addEventListener('click',()=>{openValidationStage();enterValidation()});
+$('#exit-validation')?.addEventListener('click',leaveValidation);
+
+const workflowShowQuality=showQuality;showQuality=()=>{workflowShowQuality();updateWorkflowUI();updateValidationUI()};
+const workflowUpdateMeasurements=updateMeasurements;updateMeasurements=()=>{workflowUpdateMeasurements();updateWorkflowUI()};
+const workflowInvalidateSolve=invalidateSolve;invalidateSolve=()=>{workflowInvalidateSolve();state.validationItems=[];leaveValidation();$('#continue-topview').hidden=true;updateWorkflowUI()};
+const workflowCapture=captureCamera;captureCamera=async(...args)=>{const value=await workflowCapture(...args);state.activeTool='axis-x';state.validationItems=[];setStep('calibration');updateWorkflowUI();return value};
+$('#clear-measurements').onclick=()=>{invalidateSolve();state.measurements=[];updateMeasurements();draw()};
+$('#marker-size-mm').addEventListener('change',()=>{invalidateSolve();updateWorkflowUI()});
+$('#marker-list').addEventListener('change',()=>{invalidateSolve();updateWorkflowUI()});
+setStep('calibration');updateWorkflowUI();
+
+// 검증은 사용자가 정답 좌표를 입력하는 방식이 아니라, 검출된 마커 자체를
+// ground truth로 삼아 H의 예측 정사각형과 겹쳐 보는 방식으로 제공한다.
+state.reprojectionVisible=true;
+function nearestSquare(points,side){
+  const center=points.reduce((sum,point)=>({x:sum.x+point.x/4,y:sum.y+point.y/4}),{x:0,y:0});
+  const half=side/2,canonical=[{x:-half,y:-half},{x:half,y:-half},{x:half,y:half},{x:-half,y:half}];
+  // 회전뿐 아니라 반사(거울)까지 후보로 두어 좌표계 손잡이(handedness)와 무관하게 맞춘다.
+  // 사용자가 X/Y 축을 어떻게 긋느냐에 따라 픽셀->월드 변환이 좌수(거울)가 되면 관측 코너의
+  // winding이 뒤집혀 회전만으로는 canonical에 맞지 않는다. 정사각형은 뒤집어도 정사각형이므로
+  // 회전 해와 반사 해 중 잔차가 작은 쪽을 택한다. (엔진 nearest_square 와 동일 정책)
+  const fit=reflect=>{
+    let dot=0,cross=0;
+    canonical.forEach((point,index)=>{const cy=reflect?-point.y:point.y,observed={x:points[index].x-center.x,y:points[index].y-center.y};dot+=point.x*observed.x+cy*observed.y;cross+=point.x*observed.y-cy*observed.x});
+    const angle=Math.atan2(cross,dot),c=Math.cos(angle),s=Math.sin(angle);
+    const fitted=canonical.map(point=>{const cy=reflect?-point.y:point.y;return{x:center.x+c*point.x-s*cy,y:center.y+s*point.x+c*cy}});
+    let error=0;fitted.forEach((p,i)=>{const dx=points[i].x-p.x,dy=points[i].y-p.y;error+=dx*dx+dy*dy});
+    return{error,fitted};
+  };
+  const rotation=fit(false),reflection=fit(true);
+  return reflection.error<rotation.error?reflection.fitted:rotation.fitted;
+}
+function reprojectionRecords(){
+  const result=state.result,h=result?.H_capture_pixel_to_world,back=h&&invert3(h),side=Number(result?.marker_size_mm);
+  if(!h||!back||!Number.isFinite(side)||!state.capture)return[];
+  const records=[];
+  state.capture.ids.forEach((id,index)=>{
+    if(state.excluded.has(id))return;
+    const actual=markerCorners(index);if(actual.length!==4)return;
+    const world=actual.map(point=>transformPoint(h,point));
+    const ideal=nearestSquare(world,side),predicted=ideal.map(point=>transformPoint(back,point));
+    const pixelGaps=actual.map((point,corner)=>Math.hypot(point.x-predicted[corner].x,point.y-predicted[corner].y));
+    const worldGaps=world.map((point,corner)=>Math.hypot(point.x-ideal[corner].x,point.y-ideal[corner].y));
+    records.push({id,actual,predicted,world,ideal,pixelGaps,worldGaps,pixelMean:pixelGaps.reduce((a,b)=>a+b,0)/4,worldMean:worldGaps.reduce((a,b)=>a+b,0)/4,pixelMax:Math.max(...pixelGaps),worldMax:Math.max(...worldGaps),metric:markerResult(id)});
+  });
+  return records;
+}
+function reprojectionColor(error,max){const ratio=max>0?Math.min(1,error/max):0;return`rgb(${Math.round(30+210*ratio)},${Math.round(205-145*ratio)},${Math.round(120-80*ratio)})`}
+function drawPolygon(context,points,color,width,dash=[]){context.save();context.strokeStyle=color;context.lineWidth=width;context.setLineDash(dash);context.beginPath();context.moveTo(points[0].x,points[0].y);points.slice(1).forEach(point=>context.lineTo(point.x,point.y));context.closePath();context.stroke();context.restore()}
+function drawReprojectionMarker(context,actual,predicted,index,record,scale=1){
+  const color=reprojectionColor(record.worldMean,Math.max(1,record.worldMax));
+  if(state.reprojectionVisible){context.save();context.strokeStyle='rgba(255,93,115,.72)';context.lineWidth=Math.max(1,2*scale);context.setLineDash([5*scale,4*scale]);actual.forEach((point,corner)=>{context.beginPath();context.moveTo(point.x,point.y);context.lineTo(predicted[corner].x,predicted[corner].y);context.stroke()});context.restore();drawPolygon(context,predicted,'#ff5d73',Math.max(2,3*scale),[])}
+  drawPolygon(context,actual,'#26d98a',Math.max(2,3*scale),[]);
+  const center=actual.reduce((sum,point)=>({x:sum.x+point.x/4,y:sum.y+point.y/4}),{x:0,y:0});context.save();context.fillStyle=color;context.strokeStyle='#071017';context.lineWidth=Math.max(2,scale);context.beginPath();context.arc(center.x,center.y,Math.max(7,8*scale),0,Math.PI*2);context.fill();context.stroke();context.fillStyle='#071017';context.font=`800 ${Math.max(10,12*scale)}px system-ui`;context.textAlign='center';context.textBaseline='middle';context.fillText(String(index+1),center.x,center.y);context.restore();
+}
+function drawValidationComparison(){
+  const source=$('#validation-source-overlay'),worldOverlay=$('#validation-world-overlay');if(!source||!worldOverlay||!state.validationWorldBounds)return;
+  const sourceCtx=source.getContext('2d'),worldCtx=worldOverlay.getContext('2d');sourceCtx.clearRect(0,0,source.width,source.height);worldCtx.clearRect(0,0,worldOverlay.width,worldOverlay.height);
+  const records=reprojectionRecords();records.forEach((record,index)=>{drawReprojectionMarker(sourceCtx,record.actual,record.predicted,index,record,source.width/1400);const actual=record.world.map(validationWorldPixel),ideal=record.ideal.map(validationWorldPixel);drawReprojectionMarker(worldCtx,actual,ideal,index,record,worldOverlay.width/1400)});
+}
+function reprojectionStats(){
+  const records=reprojectionRecords(),pixelValues=records.flatMap(record=>record.pixelGaps),mmValues=records.flatMap(record=>record.worldGaps);
+  return{records,count:records.length,pixelMean:pixelValues.length?pixelValues.reduce((a,b)=>a+b,0)/pixelValues.length:0,pixelMax:pixelValues.length?Math.max(...pixelValues):0,mmMean:mmValues.length?mmValues.reduce((a,b)=>a+b,0)/mmValues.length:0,mmMax:mmValues.length?Math.max(...mmValues):0};
+}
+function validationAutomaticSummary(){
+  const result=state.result;if(!result)return'산출 결과가 없습니다.';const stats=reprojectionStats();
+  return`<span class="validation-badge">자동 리프로젝션</span> 사용 마커 <strong>${stats.count}개</strong><br>평균 gap <strong>${stats.pixelMean.toFixed(2)} px</strong> / <strong>${stats.mmMean.toFixed(3)} mm</strong> · 최대 gap <strong>${stats.pixelMax.toFixed(2)} px</strong> / <strong>${stats.mmMax.toFixed(3)} mm</strong><br>엔진 RMSE ${Number(result.reproj_rmse_mm??0).toFixed(3)} mm · 축 ${Number(result.axis_max_error_mm??0).toFixed(3)} mm · 측정선 ${Number(result.measurement_rmse_mm??0).toFixed(3)} mm`;
+}
+function updateValidationUI(){
+  const summary=$('#validation-summary'),list=$('#validation-list');if(!summary||!list)return;
+  if(!state.result){summary.textContent='산출 결과가 없습니다.';list.hidden=true;return}
+  const stats=reprojectionStats();summary.innerHTML=validationAutomaticSummary();list.hidden=!stats.records.length;
+  list.innerHTML=stats.records.map((record,index)=>`<div class="validation-row"><strong>ID ${record.id}</strong> · 평균 오차 <span class="reprojection-gap">${record.pixelMean.toFixed(2)} px / ${record.worldMean.toFixed(3)} mm</span> · 최대 오차 ${record.pixelMax.toFixed(2)} px / ${record.worldMax.toFixed(3)} mm</div>`).join('');
+  drawValidationComparison();
+}
+function enterValidation(){if(!state.result)return;state.validationMode=false;state.validationDraft=null;canvas.classList.remove('validation-active');$('#camera-status').textContent='검증 모드 · 초록 실제 마커와 빨강 예측 마커의 간격을 확인하세요.';updateValidationUI();drawValidationComparison()}
+function leaveValidation(){state.validationMode=false;state.validationDraft=null;canvas.classList.remove('validation-active');draw()}
+$('#reprojection-toggle').onchange=event=>{state.reprojectionVisible=event.target.checked;drawValidationComparison()};

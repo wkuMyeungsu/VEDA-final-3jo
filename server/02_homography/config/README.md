@@ -66,7 +66,6 @@ Y는 아래 방향
     "ransac_threshold_mm": 3.0
   },
   "outputs": {
-    "markers_zip": "aruco_markers.zip",
     "calibration": "homography_ch1.json",
     "manual": "homography_manual.json",
     "view_dir": "view_result"
@@ -100,7 +99,6 @@ Y는 아래 방향
 
 ### 결과 파일
 
-- `outputs.markers_zip`: 마커 묶음 ZIP 파일명.
 - `outputs.calibration`: 고정 격자 호모그래피 결과 파일명.
 - `outputs.manual`: 수동 배치 호모그래피 결과 파일명.
 - `outputs.view_dir`: 검증 이미지 출력 디렉터리명.
