@@ -386,11 +386,16 @@ void testSelectorIntegration() {
 
     std::cout << "  -- 3명 중 최근접 선택 (selector 시나리오 1) --\n";
     {
-        const std::vector<Track> tracks = {
-            {1, 1, {8.0, 8.0}, 0},   // 약 4.24m
-            {2, 1, {5.5, 5.5}, 0},   // 약 0.71m <- 선택돼야 함
-            {3, 2, {1.0, 1.0}, 0},   // 약 5.66m
-        };
+        // Track은 위치 기반 중괄호 초기화 대신 필드별 대입으로 만든다 - 이 프로젝트는
+        // C++17 고정(CMAKE_CXX_EXTENSIONS OFF)이라 지정 초기화(.field = value)는 표준
+        // 범위 밖(C++20)이다. last_bbox/last_seen_s는 지정하지 않아 기본값(0)으로 둔다.
+        Track track1; track1.track_id = 1; track1.camera_id = 1;
+        track1.last_world = {8.0, 8.0}; track1.missed_frames = 0;   // 약 4.24m
+        Track track2; track2.track_id = 2; track2.camera_id = 1;
+        track2.last_world = {5.5, 5.5}; track2.missed_frames = 0;   // 약 0.71m <- 선택돼야 함
+        Track track3; track3.track_id = 3; track3.camera_id = 2;
+        track3.last_world = {1.0, 1.0}; track3.missed_frames = 0;   // 약 5.66m
+        const std::vector<Track> tracks = {track1, track2, track3};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
         // selector 쪽 결과부터 확인 (여기가 틀리면 아래 판정은 볼 의미가 없다)
@@ -406,10 +411,11 @@ void testSelectorIntegration() {
 
     std::cout << "  -- 미검출 트랙 제외 후 차순위 선택 (selector 시나리오 2) --\n";
     {
-        const std::vector<Track> tracks = {
-            {4, 1, {5.1, 5.1}, 2},   // 매우 가깝지만 미검출 -> 제외
-            {5, 1, {7.0, 7.0}, 0},   // 약 2.83m <- 선택돼야 함
-        };
+        Track track4; track4.track_id = 4; track4.camera_id = 1;
+        track4.last_world = {5.1, 5.1}; track4.missed_frames = 2;   // 매우 가깝지만 미검출 -> 제외
+        Track track5; track5.track_id = 5; track5.camera_id = 1;
+        track5.last_world = {7.0, 7.0}; track5.missed_frames = 0;   // 약 2.83m <- 선택돼야 함
+        const std::vector<Track> tracks = {track4, track5};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
         report("선택된 track_id=5", nearest.track_id == 5, "5", std::to_string(nearest.track_id));
@@ -420,10 +426,11 @@ void testSelectorIntegration() {
 
     std::cout << "  -- 전부 미검출 (selector 시나리오 4) --\n";
     {
-        const std::vector<Track> tracks = {
-            {6, 1, {5.2, 5.2}, 1},
-            {7, 1, {6.0, 6.0}, 3},
-        };
+        Track track6; track6.track_id = 6; track6.camera_id = 1;
+        track6.last_world = {5.2, 5.2}; track6.missed_frames = 1;
+        Track track7; track7.track_id = 7; track7.camera_id = 1;
+        track7.last_world = {6.0, 6.0}; track7.missed_frames = 3;
+        const std::vector<Track> tracks = {track6, track7};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
         expectBool("selector가 사람을 못 찾음", nearest.found, false);
@@ -437,10 +444,11 @@ void testSelectorIntegration() {
     std::cout << "  -- 다른 카메라 트랙만 남은 경우 --\n";
     {
         // camera_id=2 트랙만 유효 -> selector는 그걸 고르고, glue는 mismatch로 표시한다.
-        const std::vector<Track> tracks = {
-            {8, 1, {5.2, 5.2}, 1},   // 활성 카메라 트랙이지만 미검출 -> 제외
-            {9, 2, {5.5, 5.5}, 0},   // 다른 카메라 트랙 -> 이게 선택됨
-        };
+        Track track8; track8.track_id = 8; track8.camera_id = 1;
+        track8.last_world = {5.2, 5.2}; track8.missed_frames = 1;   // 활성 카메라 트랙이지만 미검출 -> 제외
+        Track track9; track9.track_id = 9; track9.camera_id = 2;
+        track9.last_world = {5.5, 5.5}; track9.missed_frames = 0;   // 다른 카메라 트랙 -> 이게 선택됨
+        const std::vector<Track> tracks = {track8, track9};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
         report("선택된 camera_id=2", nearest.camera_id == 2, "2", std::to_string(nearest.camera_id));
