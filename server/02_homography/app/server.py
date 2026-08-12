@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Small LAN-only web shell for server tools.
+"""서버 도구를 호출하는 LAN용 웹 셸.
 
-The dashboard is deliberately read-only for the server itself at this stage.
-Homography actions are allow-listed subprocess calls; no shell is used.
+호모그래피 명령은 허용된 인자만 셸 없이 subprocess로 실행함.
 """
 import json
 import base64
@@ -18,8 +17,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+# 웹 앱은 CLI 엔진을 직접 구현하지 않고, 허용된 인자만 subprocess로 전달함.
+# 결과 파일은 임시 작업 디렉터리에 저장하고 TTL이 지난 뒤 정리함.
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
+CONFIG = ROOT.parent / "config" / "homography_config.json"
+CONFIG_VALUE = json.loads(CONFIG.read_text(encoding="utf-8"))
+OUTPUTS = CONFIG_VALUE.get("outputs", {})
+INPUTS = CONFIG_VALUE.get("inputs", {})
 HOST = os.environ.get("ADMIN_GUI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOMOGRAPHY_APP_PORT", "8001"))
 TOOL = os.environ.get("HOMOGRAPHY_TOOL", "homography_tool")
@@ -29,7 +34,20 @@ RESULT_TTL_SEC = int(os.environ.get("ADMIN_GUI_RESULT_TTL_SEC", "3600"))
 RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
+def configured_output_name(key, fallback):
+    """설정된 결과 파일명을 경로 없이 반환함."""
+    value = OUTPUTS.get(key, fallback)
+    return Path(str(value)).name or fallback
+
+
+def configured_input_name(key, fallback):
+    """설정된 입력 파일명을 경로 없이 반환함."""
+    value = INPUTS.get(key, fallback)
+    return Path(str(value)).name or fallback
+
+
 def run_tool(args):
+    """실행 파일을 셸 없이 호출하고 웹 API용 결과 객체로 변환함."""
     try:
         result = subprocess.run([TOOL, *args], capture_output=True, text=True,
                                 timeout=TIMEOUT, check=False)
@@ -44,6 +62,7 @@ def run_tool(args):
 
 
 def cleanup_results():
+    """보관 시간이 지난 결과 파일과 작업 디렉터리 삭제함."""
     now = time.time()
     for path in RESULT_ROOT.iterdir():
         try:
@@ -54,10 +73,13 @@ def cleanup_results():
 
 
 class Handler(BaseHTTPRequestHandler):
+    """정적 파일, 상태 확인, 호모그래피 CLI 호출을 제공하는 HTTP 핸들러."""
+
     def log_message(self, fmt, *args):
         print(f"[admin-gui] {self.address_string()} - {fmt % args}")
 
     def send_json(self, value, status=200):
+        """JSON 응답의 헤더와 본문을 일관된 형식으로 전송함."""
         body = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -66,6 +88,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        """정적 리소스·임시 산출물·상태 API 처리함."""
         path = urlparse(self.path).path
         if path.startswith("/artifacts/"):
             parts = path.split("/")
@@ -96,6 +119,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        """JSON 요청 검증 및 허용된 호모그래피 명령 실행함."""
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length", "0"))
         try:
@@ -104,47 +128,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": "invalid JSON"}, 400)
             return
 
-        if path == "/api/homography/selftest":
-            self.send_json(run_tool(["selftest", "--verbose"]))
-            return
-        if path == "/api/homography/gen-board":
-            required = ("config", "output")
-            if any(not isinstance(payload.get(key), str) or not payload[key] for key in required):
-                self.send_json({"ok": False, "error": "config and output are required"}, 400)
-                return
-            output_name = Path(payload["output"]).name
-            if Path(output_name).suffix.lower() not in (".svg", ".png"):
-                self.send_json({"ok": False, "error": "output must end with .svg or .png"}, 400)
-                return
-            cleanup_results()
-            job_id = uuid.uuid4().hex
-            job_dir = RESULT_ROOT / job_id
-            job_dir.mkdir()
-            output_path = job_dir / output_name
-            args = ["gen-board", "--config", payload["config"], "--output", str(output_path)]
-            options = (("board_width_mm", "--board-width-mm"),
-                       ("board_height_mm", "--board-height-mm"),
-                       ("margin_mm", "--margin-mm"), ("dpi", "--dpi"))
-            for key, flag in options:
-                if payload.get(key) not in (None, ""):
-                    args.extend((flag, str(payload[key])))
-            for key, flag in (("no_ids", "--no-ids"), ("no_origin", "--no-origin"),
-                              ("no_grid", "--no-grid")):
-                if payload.get(key): args.append(flag)
-            result = run_tool(args)
-            if result["ok"]:
-                result["artifact_url"] = f"/artifacts/{job_id}/{output_name}"
-                result["preview_url"] = result["artifact_url"]
-                result["note"] = "결과는 임시 파일이며 자동 만료됩니다. 브라우저에서 다운로드하세요."
-            else:
-                shutil.rmtree(job_dir, ignore_errors=True)
-            self.send_json(result)
-            return
         if path == "/api/homography/gen-markers":
-            config = payload.get("config", "")
-            if not isinstance(config, str) or not config:
-                self.send_json({"ok": False, "error": "config is required"}, 400)
-                return
+            config = str(CONFIG)
             try:
                 last_id = int(payload.get("last_id", 15))
                 size_mm = float(payload.get("size_mm", 100))
@@ -177,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(result, 500)
                     return
                 generated.append(name)
-            zip_name = Path(payload.get("output", "aruco_markers.zip")).name
+            zip_name = configured_output_name("markers_zip", "aruco_markers.zip")
             if Path(zip_name).suffix.lower() != ".zip":
                 zip_name += ".zip"
             zip_path = job_dir / zip_name
@@ -207,22 +192,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(result)
             return
         if path == "/api/homography/calibrate":
-            required = ("config", "input", "output")
-            if any(not isinstance(payload.get(key), str) or not payload[key] for key in required):
-                self.send_json({"ok": False, "error": "config, input and output are required"}, 400)
-                return
-            args = ["calibrate", "--config", payload["config"], "--input", payload["input"],
-                    "--output", payload["output"]]
+            args = ["calibrate", "--config", str(CONFIG), "--input",
+                    configured_input_name("image", "capture.png"),
+                    "--output", configured_output_name("calibration", "homography.json")]
             for key, flag in (("channel", "--channel"), ("max_rmse_cm", "--max-rmse-cm")):
                 if payload.get(key) not in (None, ""):
                     args.extend((flag, str(payload[key])))
             self.send_json(run_tool(args))
             return
         if path == "/api/homography/solve-manual":
-            config = payload.get("config", "")
             layout = payload.get("layout")
-            if not isinstance(config, str) or not config or not isinstance(layout, dict):
-                self.send_json({"ok": False, "error": "config and layout are required"}, 400)
+            if not isinstance(layout, dict):
+                self.send_json({"ok": False, "error": "layout is required"}, 400)
                 return
             image_data = payload.get("image_data", "")
             input_path = payload.get("input", "")
@@ -251,28 +232,26 @@ class Handler(BaseHTTPRequestHandler):
                 return
             layout_file = job_dir / "layout.json"
             layout_file.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
-            output_name = Path(payload.get("output", "homography.json")).name
-            if Path(output_name).suffix.lower() != ".json": output_name += ".json"
+            manual_name = configured_output_name("manual", "homography_manual.json")
+            if Path(manual_name).suffix.lower() != ".json": manual_name += ".json"
             overlay_name = "homography-overlay.png"
-            result = run_tool(["solve-manual", "--config", config, "--input", str(input_file),
-                               "--layout", str(layout_file), "--output", str(job_dir / output_name),
+            result = run_tool(["solve-manual", "--config", str(CONFIG), "--input", str(input_file),
+                               "--layout", str(layout_file), "--output", str(job_dir / manual_name),
                                "--overlay", str(job_dir / overlay_name)])
             if result["ok"]:
-                result["artifact_url"] = f"/artifacts/{job_id}/{output_name}"
+                result["artifact_url"] = f"/artifacts/{job_id}/{manual_name}"
                 result["overlay_url"] = f"/artifacts/{job_id}/{overlay_name}"
-                result["result"] = json.loads((job_dir / output_name).read_text(encoding="utf-8"))
+                result["result"] = json.loads((job_dir / manual_name).read_text(encoding="utf-8"))
                 result["note"] = "호모그래피 JSON과 검증용 오버레이를 생성했습니다. 결과는 임시 파일입니다."
             else:
                 shutil.rmtree(job_dir, ignore_errors=True)
             self.send_json(result, 200 if result["ok"] else 500)
             return
         if path == "/api/homography/view":
-            required = ("config", "homography", "input", "output_dir")
-            if any(not isinstance(payload.get(key), str) or not payload[key] for key in required):
-                self.send_json({"ok": False, "error": "config, homography, input and output_dir are required"}, 400)
-                return
-            args = ["view", "--config", payload["config"], "--homography", payload["homography"],
-                    "--input", payload["input"], "--output-dir", payload["output_dir"]]
+            args = ["view", "--config", str(CONFIG), "--homography",
+                    configured_output_name("calibration", "homography.json"),
+                    "--input", configured_input_name("image", "capture.png"), "--output-dir",
+                    configured_output_name("view_dir", "view_result")]
             self.send_json(run_tool(args))
             return
         self.send_json({"ok": False, "error": "unknown endpoint"}, 404)

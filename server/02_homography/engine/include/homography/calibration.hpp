@@ -1,0 +1,30 @@
+#pragma once
+
+#include "homography/types.hpp"
+
+#include "nlohmann/json.hpp"
+
+#include <opencv2/core.hpp>
+
+#include <string>
+
+// ArUco 검출과 자동·수동 호모그래피 산출 인터페이스.
+namespace homography {
+
+// 이미지에서 ArUco 마커를 검출하고 픽셀→cm 호모그래피 계산함.
+// 유효한 마커 두 개 이상 필요. 입력은 같은 카메라의 보정 영상.
+DetectionResult calibrate_image(const Config& config, const cv::Mat& image);
+
+// 자동 캘리브레이션 결과와 당시 설정을 JSON으로 저장함.
+// H_pixel_to_world의 world 단위는 cm. gate는 판정 임계값(cm).
+void write_calibration(const std::string& path, const Config& config,
+                       const DetectionResult& detection, const cv::Size& size,
+                       int channel, double gate);
+
+// layout의 x_mm/y_mm은 좌상단 위치. marker_size_mm로 네 코너 확장함.
+// overlay가 있으면 입력 영상 크기의 진단 이미지 생성함.
+ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
+                                     const nlohmann::json& layout,
+                                     cv::Mat* overlay);
+
+}  // namespace homography

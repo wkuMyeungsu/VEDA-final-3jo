@@ -11,8 +11,8 @@ server/
 │   ├── tests/
 │   └── tools/
 ├── 02_homography/
-│   ├── app/       # 8001 웹 GUI/API
-│   ├── tool/      # OpenCV CLI
+│   ├── web/       # 8001 웹 GUI/API
+│   ├── engine/    # C++ ArUco·호모그래피 계산
 │   ├── config/    # 호모그래피 전용 설정
 │   └── tests/
 ├── 03_server_monitoring/
@@ -31,9 +31,9 @@ ctest --test-dir build --output-on-failure
 ## Homography app
 
 ```sh
-cmake -S 02_homography/tool -B 02_homography/build
-cmake --build 02_homography/build -j2
-02_homography/build/homography_tool selftest --verbose
+cmake -S 02_homography/engine -B 02_homography/engine/build
+cmake --build 02_homography/engine/build -j2
+02_homography/engine/build/homography_tool selftest --verbose
 ```
 
 웹 앱은 `02_homography/app/systemd/homography-app.service`를 사용하며 기본 포트는
