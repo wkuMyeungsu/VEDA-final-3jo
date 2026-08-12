@@ -1,12 +1,21 @@
 [Unit]
 Description=Forklift Safety Operator Terminal (operator_terminal)
 # [Install] 섹션 의도적으로 없음 -> 부팅 시 자동기동 안 함 (DISPLAY 준비 전이라 실패함, 이유는 README 참고)
+# systemd 유닛 파일은 줄 맨 앞 '#'만 주석 취급 -> 값 뒤 트레일링 주석 금지, 전부 값에 붙어버림
+# StartLimit*는 최신 systemd부터 [Service]가 아니라 [Unit] 소속 (예전 버전 문서와 다름 주의)
+# 재시작 횟수 제한 구간
+StartLimitIntervalSec=60
+# 구간 내 5회 넘으면 failed
+StartLimitBurst=5
 
 [Service]
-Type=exec                                                                                   # exec 성공 확인 후 active 처리
-WorkingDirectory=%h/VEDA_Final_project/forklift-device/qt/build                             # TODO: 클론 경로 확인
-ExecStart=%h/VEDA_Final_project/forklift-device/qt/build/operator_terminal --camera CAM_01  # TODO: 경로/카메라 확인
-Restart=on-failure                                                                          # 크래시 시만 재시작
-RestartSec=3                                                                                # 재시작 대기 시간
-StartLimitIntervalSec=60                                                                    # 재시작 횟수 제한 구간
-StartLimitBurst=5                                                                           # 구간 내 5회 넘으면 failed
+# exec 성공 확인 후 active 처리
+Type=exec
+# 실제 빌드 출력 경로, apps/operator_terminal 하위에 생김
+WorkingDirectory=%h/VEDA_Final_project/forklift-device/qt/build/apps/operator_terminal
+# 경로 확인됨, 카메라 ID는 실배치 시 재확인
+ExecStart=%h/VEDA_Final_project/forklift-device/qt/build/apps/operator_terminal/operator_terminal --camera CAM_01
+# 크래시 시만 재시작
+Restart=on-failure
+# 재시작 대기 시간
+RestartSec=3
