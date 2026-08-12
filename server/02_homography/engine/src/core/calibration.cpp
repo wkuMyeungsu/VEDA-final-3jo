@@ -216,19 +216,109 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
         const auto x_world = transform_points({x_end_px}, result.h_pixel_to_world)[0] - origin_world;
         const auto y_world = transform_points({y_end_px}, result.h_pixel_to_world)[0] - origin_world;
         const double x_length = cv::norm(x_world);
-        if (x_length < 1e-6 || cv::norm(y_world) < 1e-6)
+        const double y_length = cv::norm(y_world);
+        if (x_length < 1e-6 || y_length < 1e-6)
             throw std::runtime_error("drawn X/Y axes are too short");
         const cv::Point2f ex = x_world * static_cast<float>(1.0 / x_length);
         cv::Point2f ey(-ex.y, ex.x);
         if (ey.dot(y_world) < 0) ey = -ey;
+        const double requested_x = layout.contains("axis_x_length_mm") && !layout.at("axis_x_length_mm").is_null()
+            ? layout.at("axis_x_length_mm").get<double>() : x_length;
+        const double requested_y = layout.contains("axis_y_length_mm") && !layout.at("axis_y_length_mm").is_null()
+            ? layout.at("axis_y_length_mm").get<double>() : y_length;
+        if (requested_x <= 0.0 || requested_y <= 0.0)
+            throw std::runtime_error("axis lengths must be positive");
         const cv::Mat axes_to_world = (cv::Mat_<double>(3, 3) <<
-            ex.x, ex.y, -(ex.x * origin_world.x + ex.y * origin_world.y),
-            ey.x, ey.y, -(ey.x * origin_world.x + ey.y * origin_world.y),
+            ex.x * requested_x / x_length, ex.y * requested_x / x_length, -(ex.x * origin_world.x + ex.y * origin_world.y) * requested_x / x_length,
+            ey.x * requested_y / y_length, ey.y * requested_y / y_length, -(ey.x * origin_world.x + ey.y * origin_world.y) * requested_y / y_length,
             0, 0, 1);
         result.h_pixel_to_world = axes_to_world * result.h_pixel_to_world;
         result.h_pixel_to_world /= result.h_pixel_to_world.at<double>(2, 2);
         result.h_world_to_pixel = result.h_pixel_to_world.inv();
     }
+    // 사용자가 입력한 측정선의 실제 길이를 추가 제약으로 반영한다.
+    // 선의 픽셀 위치는 고정하고, 현재 H가 계산한 방향을 유지한 채 목표 길이의
+    // 월드 끝점을 만들어 마커 코너 제약과 함께 반복 보정한다.
+    if (layout.contains("measurements") && layout.at("measurements").is_array()) {
+        struct DistanceConstraint {
+            cv::Point2f origin_px;
+            cv::Point2f target_px;
+            double distance_mm;
+        };
+        std::vector<DistanceConstraint> constraints;
+        auto point_from_json = [](const json& value) {
+            return cv::Point2f(value.at("x").get<float>(), value.at("y").get<float>());
+        };
+        for (const auto& item : layout.at("measurements")) {
+            if (!item.contains("origin_px") || !item.contains("target_px") ||
+                !item.contains("distance_mm") || item.at("distance_mm").is_null()) continue;
+            const double distance_mm = item.at("distance_mm").get<double>();
+            const auto origin_px = point_from_json(item.at("origin_px"));
+            const auto target_px = point_from_json(item.at("target_px"));
+            if (distance_mm > 0.0 && cv::norm(target_px - origin_px) > 1e-3)
+                constraints.push_back({origin_px, target_px, distance_mm});
+        }
+        for (int iteration = 0; iteration < 20 && !constraints.empty(); ++iteration) {
+            std::vector<cv::Point2f> pixels;
+            std::vector<cv::Point2f> targets;
+            for (const auto& marker : observations) {
+                if (std::find(result.used_ids.begin(), result.used_ids.end(), marker.id) == result.used_ids.end() ||
+                    marker.corners.size() != 4) continue;
+                const auto world = transform_points(marker.corners, result.h_pixel_to_world);
+                const auto fitted = nearest_square(world, side_mm);
+                pixels.insert(pixels.end(), marker.corners.begin(), marker.corners.end());
+                targets.insert(targets.end(), fitted.begin(), fitted.end());
+            }
+            for (const auto& constraint : constraints) {
+                const auto origin = transform_points({constraint.origin_px}, result.h_pixel_to_world)[0];
+                const auto target = transform_points({constraint.target_px}, result.h_pixel_to_world)[0];
+                const cv::Point2f direction = target - origin;
+                const double length = cv::norm(direction);
+                if (length < 1e-6) continue;
+                const cv::Point2f requested_target = origin + direction * static_cast<float>(constraint.distance_mm / length);
+                pixels.push_back(constraint.origin_px);
+                targets.push_back(origin);
+                pixels.push_back(constraint.target_px);
+                targets.push_back(requested_target);
+            }
+            const cv::Mat next = cv::findHomography(pixels, targets, 0);
+            if (next.empty()) throw std::runtime_error("findHomography with measurements failed");
+            cv::Mat normalized = next / next.at<double>(2, 2);
+            const double change = cv::norm(normalized - result.h_pixel_to_world, cv::NORM_INF);
+            result.h_pixel_to_world = normalized;
+            if (change < 1e-8) break;
+        }
+        result.h_world_to_pixel = result.h_pixel_to_world.inv();
+    }
+    // 축 방향/스케일을 적용한 최종 행렬 기준으로 마커 위치와 오차를 다시 계산한다.
+    // 산출 전 행렬의 품질값을 그대로 내보내면 저장된 H와 화면의 RMSE가 불일치한다.
+    result.markers.clear();
+    result.suspicious_ids.clear();
+    double total = 0.0;
+    int corner_count = 0;
+    for (const auto& marker : observations) {
+        if (std::find(result.used_ids.begin(), result.used_ids.end(), marker.id) == result.used_ids.end() ||
+            marker.corners.size() != 4) continue;
+        const auto world = transform_points(marker.corners, result.h_pixel_to_world);
+        const auto fitted = nearest_square(world, side_mm);
+        double sum = 0.0;
+        for (int i = 0; i < 4; ++i) {
+            const double error = cv::norm(world[i] - fitted[i]);
+            sum += error * error;
+        }
+        const double square_error = std::sqrt(sum / 4.0);
+        const cv::Point2f edge = fitted[1] - fitted[0];
+        result.markers.push_back({marker.id, fitted[0].x, fitted[0].y,
+            std::atan2(edge.y, edge.x) * 180.0 / CV_PI, square_error});
+        total += sum;
+        corner_count += 4;
+    }
+    result.inliers = corner_count;
+    result.rmse_mm = corner_count ? std::sqrt(total / corner_count)
+                                  : std::numeric_limits<double>::infinity();
+    const double suspect_gate = std::max(2.0, side_mm * 0.03);
+    for (const auto& marker : result.markers)
+        if (marker.square_error_mm > suspect_gate) result.suspicious_ids.push_back(marker.id);
     cv::Mat annotated;
     if (overlay) {
         if (image.channels() == 1) cv::cvtColor(image, annotated, cv::COLOR_GRAY2BGR);

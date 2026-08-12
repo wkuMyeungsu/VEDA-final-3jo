@@ -625,7 +625,10 @@ class Handler(BaseHTTPRequestHandler):
                           "excluded_ids": excluded_ids,
                           "axis_origin_px": payload.get("axis_origin_px"),
                           "axis_x_end_px": payload.get("axis_x_end_px"),
-                          "axis_y_end_px": payload.get("axis_y_end_px")}
+                          "axis_y_end_px": payload.get("axis_y_end_px"),
+                          "axis_x_length_mm": payload.get("axis_x_length_mm"),
+                          "axis_y_length_mm": payload.get("axis_y_length_mm"),
+                          "measurements": payload.get("measurements", [])}
                 layout_file = job_dir / "layout.json"
                 layout_file.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
                 output_name = configured_output_name("manual", "homography_manual.json")
