@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake --build build -j4)",
+      "Bash(./test_result_publisher)",
+      "Bash(ctest)",
+      "Bash(cmake --build . -j4)",
+      "Bash(timeout 8 ./build/forklift_safety_server)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(FORKLIFT_DEBUG_SEND_LOG=1 ctest --output-on-failure)",
+      "Bash(./tests/test_result_publisher)"
+    ]
+  }
+}

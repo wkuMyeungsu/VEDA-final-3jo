@@ -1,0 +1,37 @@
+{
+  "dictionary": "DICT_4X4_100",
+  "cols": 4,
+  "rows": 8,
+  "marker_len_cm": 8.0,
+  "gap_cm": 4.3,
+  "id_offset": 0,
+  "origin_corner": "TL",
+  "inputs": {
+    "image": "capture.png"
+  },
+  "marker_output": {
+    "size_mm": 100.0,
+    "margin_mm": 20.0,
+    "dpi": 300.0,
+    "label": ""
+  },
+  "calibration": {
+    "max_rmse_cm": 2.0,
+    "ransac_threshold_cm": 3.0,
+    "channel": 1
+  },
+  "manual_solve": {
+    "marker_size_mm": 100.0,
+    "ransac_threshold_mm": 3.0
+  },
+  "outputs": {
+    "calibration": "homography_ch1.json",
+    "manual": "homography_manual.json",
+    "view_dir": "view_result"
+  },
+  "preview": {
+    "scale": 20,
+    "good_error_cm": 0.5,
+    "warning_error_cm": 1.0
+  }
+}
