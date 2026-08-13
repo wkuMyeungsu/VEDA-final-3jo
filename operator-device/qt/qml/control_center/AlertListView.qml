@@ -16,6 +16,21 @@ Item {
         spacing: Theme.spacingXs
         model: alertListModel
 
+        // 새 경보 행은 페이드 인, 해제된 행은 페이드+높이 축소 -- 어느 경보가
+        // 해제됐는지 인지 가능하게(즉시 사라져서 아래 행이 튀는 대신)
+        add: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animationNormal }
+        }
+        remove: Transition {
+            ParallelAnimation {
+                NumberAnimation { property: "opacity"; to: 0; duration: Theme.animationNormal }
+                NumberAnimation { property: "height"; to: 0; duration: Theme.animationNormal }
+            }
+        }
+        displaced: Transition {
+            NumberAnimation { property: "y"; duration: Theme.animationNormal }
+        }
+
         // model.xxx는 AlertListModel::roleNames()에 등록된 이름들
         delegate: Rectangle {
             id: delegateRoot
@@ -54,9 +69,9 @@ Item {
                 }
             }
 
-            MouseArea {
+            HoverOverlay {
                 anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
+                overlayRadius: Theme.radiusSm
                 onClicked: root.cameraFocusRequested(model.cameraId)
             }
         }

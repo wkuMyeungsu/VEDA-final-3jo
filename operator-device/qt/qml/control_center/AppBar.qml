@@ -4,9 +4,15 @@ import Safety.Common
 // Top app bar: system name, live clock, server connection badge.
 Rectangle {
     id: root
-    color: Theme.colorSurface
-    border.color: Theme.colorBorder
-    border.width: Theme.borderWidthHairline
+    color: Theme.colorBackground
+
+    Rectangle {
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: Theme.borderWidthHairline
+        color: Theme.colorBorder
+    }
 
     Text {
         anchors.left: parent.left

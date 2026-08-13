@@ -6,9 +6,15 @@ import Safety.Common
 // 평상시(SAFE + 예외없음) 이벤트는 애초에 C++ 쪽에서 안 쌓아서 여기 안 뜸.
 Rectangle {
     id: root
-    color: Theme.colorSurface
-    border.color: Theme.colorBorder
-    border.width: Theme.borderWidthHairline
+    color: Theme.colorBackground
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: Theme.borderWidthHairline
+        color: Theme.colorBorder
+    }
 
     Column {
         anchors.fill: parent

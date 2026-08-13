@@ -184,4 +184,16 @@ QtObject {
         default: return colorTextMuted
         }
     }
+
+    // 카드/확대뷰가 공유하는 "경보 중" 테두리 규칙 -- 한쪽만 고치고 잊어버리는
+    // 드리프트 방지용 (CameraCard·ExpandedCameraView가 각자 복제해서 쓰던 로직)
+    function alertBorderColor(riskLevel, exceptionState) {
+        if (exceptionState !== 0)
+            return colorUnknown
+        return (riskLevel !== 0) ? riskColor(riskLevel) : colorBorder
+    }
+
+    function alertBorderWidth(riskLevel, exceptionState) {
+        return (riskLevel !== 0 || exceptionState !== 0) ? borderWidthAlert : borderWidthHairline
+    }
 }

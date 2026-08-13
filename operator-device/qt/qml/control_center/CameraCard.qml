@@ -23,13 +23,14 @@ Rectangle {
 
     color: Theme.colorSurface
     radius: Theme.radiusMd
-    border.width: isAlert ? Theme.borderWidthAlert : Theme.borderWidthHairline
-    // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
-    border.color: exceptionState !== 0 ? Theme.colorUnknown
-                  : (isAlert ? Theme.riskColor(riskLevel) : Theme.colorBorder)
+    // ExpandedCameraView와 동일 규칙(Theme.alertBorderColor/Width) -- 한쪽만
+    // 고치는 드리프트 방지
+    border.width: Theme.alertBorderWidth(riskLevel, exceptionState)
+    border.color: Theme.alertBorderColor(riskLevel, exceptionState)
 
-    // 테두리 색이 바뀔 때 뚝 끊기지 않고 부드럽게 전환 (예: SAFE -> DANGER)
+    // 색·굵기 둘 다 뚝 끊기지 않고 부드럽게 전환 (예: SAFE -> DANGER)
     Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
+    Behavior on border.width { NumberAnimation { duration: Theme.animationNormal } }
 
     RiskBanner {
         id: banner
@@ -54,17 +55,34 @@ Rectangle {
         anchors.rightMargin: Theme.spacingSm
         clip: true
 
+        // 카드 표면보다 어두운 웰 -- 영상이 오목한 자리에서 튀어나오는 인상을 줌
+        Rectangle {
+            id: videoWell
+            anchors.fill: parent
+            radius: Theme.radiusSm
+            color: Theme.colorSurfaceSunken
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: Theme.borderWidthHairline
+                color: Theme.colorHairlineTop
+            }
+        }
+
         CameraVideoView {
             anchors.fill: parent
+            anchors.margins: 2
             cameraId: root.cameraId
             distanceM: root.distanceM
             distanceValid: root.distanceValid
             riskLevel: root.riskLevel
         }
 
-        MouseArea {
+        HoverOverlay {
             anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
+            overlayRadius: Theme.radiusSm
             onClicked: root.clicked()
         }
     }
