@@ -144,7 +144,6 @@ private:
 // 3. 출력 헬퍼
 // ============================================================
 
-// camera_id 표기 방식: danger_judgment_engine.h의 CameraInput 주석에 적힌 결정사항대로
-// int를 std::to_string()으로 단순 변환한다. 음수(미확정)는 빈 문자열 -> 하류 JSON에서 null.
-// 라벨링(cam_01 등)으로 바꿀 거면 이 함수 하나만 고치면 된다.
+// camera_id 표기 방식: "CAM_01" 같은 "CAM_%02d" 포맷 (단말(Qt) 인터페이스 규약,
+// cameras.json 키 포맷과 일치). 음수(미확정)는 빈 문자열 -> 하류 JSON에서 null.
 std::string cameraIdToString(int camera_id);

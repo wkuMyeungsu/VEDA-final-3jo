@@ -200,7 +200,7 @@ void testCameraInputMapping() {
         expectBool("found=true -> person_detected",  cam.person_detected, true);
         expectNear("person.x <- nearest.position.x", cam.person.x, kPersonDanger.x);
         expectNear("person.y <- nearest.position.y", cam.person.y, kPersonDanger.y);
-        expectStr ("camera_id <- 활성 camera_id",    cam.camera_id, "1");
+        expectStr ("camera_id <- 활성 camera_id",    cam.camera_id, "CAM_01");
         expectStr ("zone은 매핑 미확정이라 공백",     cam.zone, "");
     }
 
@@ -212,7 +212,7 @@ void testCameraInputMapping() {
         expectNear("person 좌표는 기본값(0,0)",       cam.person.x, 0.0);
         expectNear("person 좌표는 기본값(0,0)",       cam.person.y, 0.0);
         // 사람이 안 보여도 "어느 카메라에서 안 보였는지"는 하류에 남아야 한다.
-        expectStr ("사람 미검출에도 camera_id 유지",  cam.camera_id, "1");
+        expectStr ("사람 미검출에도 camera_id 유지",  cam.camera_id, "CAM_01");
     }
 
     std::cout << "  -- 마커 폐색 (지게차 좌표 없음) --\n";
@@ -241,7 +241,7 @@ void testCameraInputMapping() {
             pipeline.toCameraInput(kForklift, true, makeFound(3, 2, kPersonDanger));
 
         // 판정 대상 카메라는 이 파이프라인의 활성 카메라이므로 nearest.camera_id를 쓰지 않는다.
-        expectStr("nearest.camera_id=2여도 활성 id 사용", cam.camera_id, "1");
+        expectStr("nearest.camera_id=2여도 활성 id 사용", cam.camera_id, "CAM_01");
     }
 }
 
@@ -285,7 +285,7 @@ void testProcessFrame() {
         expectExc ("예외 없음",           out.result.exception,  ExceptionState::NONE);
         // nearest.distance_m(999.0)이 아니라 엔진이 좌표로 재계산한 값이어야 한다.
         expectNear("거리는 엔진 재계산값", out.result.distance_m, std::sqrt(0.5));
-        expectStr ("결과에 camera_id 전달", out.result.camera_id, "1");
+        expectStr ("결과에 camera_id 전달", out.result.camera_id, "CAM_01");
         expectBool("mismatch 아님",        out.camera_id_mismatch, false);
     }
     {
@@ -308,7 +308,7 @@ void testProcessFrame() {
         expectRisk("사람 없음 -> SAFE",        out.result.final_risk, RiskLevel::SAFE);
         expectExc ("사람 없음 -> 예외 없음",    out.result.exception,  ExceptionState::NONE);
         expectNear("거리 판정 불가 -> -1",      out.result.distance_m, -1.0);
-        expectStr ("camera_id는 그대로 유지",   out.result.camera_id, "1");
+        expectStr ("camera_id는 그대로 유지",   out.result.camera_id, "CAM_01");
     }
 
     std::cout << "  -- 마커 폐색 --\n";
@@ -357,7 +357,7 @@ void testJsonCarriesCameraId() {
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
         const std::string json = toJson(out.result);
 
-        expectContains("camera_id가 문자열로 실림", json, "\"camera_id\":\"1\"");
+        expectContains("camera_id가 문자열로 실림", json, "\"camera_id\":\"CAM_01\"");
         expectContains("zone은 미확정이라 null",     json, "\"zone\":null");
         expectContains("terminal_id가 문자열로 실림", json, "\"terminal_id\":\"" + kTerminalId + "\"");
         // 단말이 toInt()로 읽으므로 정수여야 한다. 따옴표가 붙으면 항상 0(Safe)이 된다.
@@ -423,7 +423,7 @@ void testSelectorIntegration() {
         const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
         expectRisk("최근접 0.71m -> DANGER",   out.result.final_risk, RiskLevel::DANGER);
         expectNear("거리 일치",                out.result.distance_m, nearest.distance_m);
-        expectStr ("camera_id 전달",            out.result.camera_id, "1");
+        expectStr ("camera_id 전달",            out.result.camera_id, "CAM_01");
         expectBool("같은 카메라 -> mismatch 아님", out.camera_id_mismatch, false);
     }
 
