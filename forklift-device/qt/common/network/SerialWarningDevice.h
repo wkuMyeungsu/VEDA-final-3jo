@@ -32,6 +32,7 @@ private slots:
     void handleWatchdogTxTimer();                                                      // - 100ms마다 마지막 위험도로 SET_RISK 재전송
     void handleHeartbeatWatchTimer();                                                  // - 마지막 수신 이후 600ms 초과 시 FPGA 연결 끊김 처리
     void handleSerialError(QSerialPort::SerialPortError error);                        // - 포트 오류 시 재연결 예약
+    void handleReconnectTimer();                                                       // - 대기 시간이 지난 뒤 포트 열기 재시도
     void openPort();                                                                   // - 포트 열기 시도 (실패 시 재연결 예약)
 
 private:
@@ -49,6 +50,7 @@ private:
 
     QTimer m_watchdogTxTimer;                                                          // - 100ms 송신 타이머 (FPGA watchdog 타임아웃 500ms 대비 5배 여유)
     QTimer m_heartbeatWatchTimer;                                                      // - 무수신 감시 폴링 타이머 (100ms 간격 점검)
+    QTimer m_reconnectTimer;                                                           // - 재연결 대기 타이머 (타이머가 1개라 예약도 항상 최대 1건)
     QElapsedTimer m_lastRxTimer;                                                       // - 마지막 정상 수신 프레임 이후 경과 시간 측정
 
     bool m_intentionalDisconnect = false;                                              // - stop() 호출로 인한 정지인지 (재연결 억제용)

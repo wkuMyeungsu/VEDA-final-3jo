@@ -35,6 +35,9 @@ SerialWarningDevice::SerialWarningDevice(QString portName, qint32 baudRate, QObj
     connect(&m_port, &QSerialPort::errorOccurred, this, &SerialWarningDevice::handleSerialError); // - 포트 오류 시 재연결
     connect(&m_watchdogTxTimer, &QTimer::timeout, this, &SerialWarningDevice::handleWatchdogTxTimer); // - 100ms 송신
     connect(&m_heartbeatWatchTimer, &QTimer::timeout, this, &SerialWarningDevice::handleHeartbeatWatchTimer); // - 무수신 감시
+
+    m_reconnectTimer.setSingleShot(true);                                                     // - 1회성 설정: 발화 후 스스로 정지
+    connect(&m_reconnectTimer, &QTimer::timeout, this, &SerialWarningDevice::handleReconnectTimer); // - 대기 시간 후 재시도
 }
 
 SerialWarningDevice::~SerialWarningDevice()
@@ -53,6 +56,7 @@ void SerialWarningDevice::stop()
     m_intentionalDisconnect = true; // - 이후 포트 오류가 나도 재연결 예약하지 않음
     m_watchdogTxTimer.stop();
     m_heartbeatWatchTimer.stop();
+    m_reconnectTimer.stop();        // - 예약된 재시도 취소
     if (m_port.isOpen())
         m_port.close();
     setFpgaConnectionState(RiskTypes::ConnectionState::Disconnected);
@@ -86,17 +90,30 @@ void SerialWarningDevice::openPort()
     handleWatchdogTxTimer();                                    // - 다음 100ms 주기까지 기다리지 않고 연결 즉시 1회 선전송
 }
 
+// - 열기 실패 1회에 예약이 두 번 걸리는 것을 막는 게 핵심이다.
+//   m_port.open()이 실패하면 그 안에서 errorOccurred가 바로 발생해 handleSerialError()가 먼저 여기를 부르고,
+//   open()이 false를 돌려준 뒤 openPort()가 또 한 번 여기를 부른다.
+//   예전처럼 QTimer::singleShot을 쓰면 취소가 안 돼서 예약이 매번 2개로 불어나고,
+//   그 2개가 각각 다시 2개를 만들어 3초마다 배로 늘어났다(실측: 로그의 오류 쌍이 1 -> 2 -> 4 -> 8개).
+//   멤버 타이머는 start()를 다시 불러도 재시작될 뿐이라 예약이 항상 최대 1건으로 유지된다.
 void SerialWarningDevice::scheduleReconnect()
 {
     setFpgaConnectionState(RiskTypes::ConnectionState::Disconnected);
     m_watchdogTxTimer.stop();
     m_heartbeatWatchTimer.stop();
 
-    QTimer::singleShot(kReconnectDelayMs, this, [this]() {
-        if (m_intentionalDisconnect)
-            return;
-        openPort();
-    });
+    if (m_intentionalDisconnect)    // - 수동 정지 확인: stop()으로 멈춘 장치는 되살리지 않음
+        return;
+
+    m_reconnectTimer.start(kReconnectDelayMs); // - 재시도 예약: 이미 돌고 있으면 재시작될 뿐 중복 예약 안 됨
+}
+
+void SerialWarningDevice::handleReconnectTimer()
+{
+    if (m_intentionalDisconnect)    // - 수동 정지 확인: 대기 중 정지 요청이 들어온 경우 중단
+        return;
+
+    openPort();                     // - 포트 재시도: 실패하면 다시 한 건만 예약됨
 }
 
 void SerialWarningDevice::handleSerialError(QSerialPort::SerialPortError error)
