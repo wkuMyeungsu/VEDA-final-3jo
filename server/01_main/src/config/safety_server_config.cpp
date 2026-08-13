@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <set>
 
@@ -248,21 +249,37 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             s.camera_id = camera_id;
             s.camera_model = camera_model;
             s.camera_channel_count = expected_channels;
-            s.channel = item.at("channel").get<int>();
-            s.rtsp_url = item.at("rtsp_url").get<std::string>();
-            s.homography_file = item.at("homography_file").get<std::string>();
-            s.image_width_px = item.at("image_width_px").get<int>();
-            s.image_height_px = item.at("image_height_px").get<int>();
-            if (s.channel < 1 || s.channel > expected_channels || s.rtsp_url.rfind("rtsp://", 0) != 0 || s.homography_file.empty() ||
-                s.image_width_px < 1 || s.image_height_px < 1 || channels[{camera_id,s.channel}])
-                schema(camera_path.string(), "채널 설정 범위/중복 오류");
-            configured_channels.insert(s.channel);
+            try {
+                s.channel = item.at("channel").get<int>();
+                s.rtsp_url = item.at("rtsp_url").get<std::string>();
+                s.homography_file = item.at("homography_file").get<std::string>();
+                s.image_width_px = item.at("image_width_px").get<int>();
+                s.image_height_px = item.at("image_height_px").get<int>();
+            } catch (const std::exception&) {
+                std::cerr << "[경고] " << camera_id
+                          << " 채널 설정을 읽을 수 없어 해당 채널을 제외합니다.\n";
+                continue;
+            }
+            if (s.channel < 1 || s.channel > expected_channels ||
+                s.rtsp_url.rfind("rtsp://", 0) != 0 || s.homography_file.empty() ||
+                s.image_width_px < 1 || s.image_height_px < 1 || channels[{camera_id, s.channel}]) {
+                std::cerr << "[경고] " << camera_id << " 채널 " << s.channel
+                          << " 설정이 잘못되어 해당 채널을 제외합니다.\n";
+                continue;
+            }
             channels[{camera_id,s.channel}] = true;
             s.stream_id = camera_id + "_CH_" + (s.channel < 10 ? "0" : "") + std::to_string(s.channel);
-            if (stream_ids[s.stream_id]) schema(camera_path.string(), "stream_id 중복");
+            if (stream_ids[s.stream_id]) {
+                std::cerr << "[경고] stream_id 중복으로 " << s.stream_id
+                          << " 스트림을 제외합니다.\n";
+                continue;
+            }
             stream_ids[s.stream_id] = true;
-            if (!std::filesystem::exists(dir / s.homography_file))
-                schema(camera_path.string(), "호모그래피 파일 누락: " + s.homography_file);
+            if (!std::filesystem::exists(dir / s.homography_file)) {
+                std::cerr << "[경고] " << s.stream_id << " 호모그래피 파일이 없어"
+                          << " 해당 스트림을 제외합니다: " << s.homography_file << "\n";
+                continue;
+            }
             const auto h_path = (dir / s.homography_file).lexically_normal();
             // H는 실행 중 매 프레임마다 읽지 않는다. 기동 시 단위·행렬·해상도를
             // 모두 확인하고 메모리에 올려, 잘못된 좌표가 위험 판정으로 흘러가지 않게 한다.
@@ -285,8 +302,16 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                     for (const auto& cell : row) if (!cell.is_number() || !std::isfinite(cell.get<double>()))
                         schema(h_path.string(), "H_pixel_to_world에 유효하지 않은 수가 있음");
                 }
-            } catch (const SafetyServerConfigError&) { throw; }
-            catch (const std::exception& e) { schema(h_path.string(), std::string("H 파일 형식 오류: ") + e.what()); }
+            } catch (const SafetyServerConfigError& error) {
+                std::cerr << "[경고] " << s.stream_id << " 호모그래피가 유효하지 않아"
+                          << " 해당 스트림을 제외합니다: " << error.what() << "\n";
+                continue;
+            } catch (const std::exception& e) {
+                std::cerr << "[경고] " << s.stream_id << " 호모그래피를 읽을 수 없어"
+                          << " 해당 스트림을 제외합니다: " << e.what() << "\n";
+                continue;
+            }
+            configured_channels.insert(s.channel);
             c.homography.stream_files[s.stream_id] = h_path.string();
             c.homography.stream_image_sizes[s.stream_id] = {s.image_width_px, s.image_height_px};
             if (c.homography.image_width_px == 0) {
@@ -295,17 +320,20 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             }
             c.streams.push_back(std::move(s));
         }
-        if (configured_channels.size() != static_cast<std::size_t>(expected_channels))
-            schema(camera_path.string(), "모델의 channel_count와 channels 설정 수가 다름");
-        for (int channel = 1; channel <= expected_channels; ++channel)
-            if (!configured_channels.count(channel)) schema(camera_path.string(), "모델 채널 번호가 누락됨");
+        if (configured_channels.size() != static_cast<std::size_t>(expected_channels)) {
+            std::cerr << "[경고] " << camera_id << "는 모델상 " << expected_channels
+                      << "개 채널이지만 사용 가능한 스트림은 " << configured_channels.size()
+                      << "개입니다. 동작 가능한 채널만 사용합니다.\n";
+        }
     }
     const auto& fl = devices.at("forklifts");
     if (!fl.is_array() || fl.empty()) schema(device_path.string(), "forklifts는 비어 있지 않은 배열이어야 함");
     std::map<std::string,bool> terminals; std::map<int,bool> markers;
     for (const auto& item : fl) {
         ForkliftDevice f{item.at("terminal_id").get<std::string>(), item.at("marker_id").get<int>(), item.at("collision_radius_mm").get<double>()};
-        if (f.terminal_id.empty() || terminals[f.terminal_id] || f.marker_id < 0 || markers[f.marker_id] || !std::isfinite(f.collision_radius_mm) || f.collision_radius_mm <= 0)
+        // 반경 0은 기존 중심점 거리 판정을 그대로 쓰겠다는 의미이므로 허용한다.
+        if (f.terminal_id.empty() || terminals[f.terminal_id] || f.marker_id < 0 || markers[f.marker_id] ||
+            !std::isfinite(f.collision_radius_mm) || f.collision_radius_mm < 0)
             schema(device_path.string(), "terminal/marker/radius 중복 또는 범위 오류");
         terminals[f.terminal_id] = true; markers[f.marker_id] = true; c.forklifts.push_back(std::move(f));
     }

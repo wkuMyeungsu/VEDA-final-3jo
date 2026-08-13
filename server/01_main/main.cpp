@@ -279,6 +279,11 @@ struct CentralServer::StreamWorker {
             GstElement* graph = gst_parse_launch(description.c_str(), &error);
             if (!graph) {
                 if (error) { std::cerr << "[오류] " << stream.stream_id << ": " << error->message << "\n"; g_error_free(error); }
+                if (++failures >= server.config().stream.max_retries) {
+                    std::cerr << "[스트림 제외] " << stream.stream_id
+                              << " 파이프라인 생성이 계속 실패해 해당 스트림을 제외합니다.\n";
+                    break;
+                }
                 retry();
                 continue;
             }
@@ -319,6 +324,7 @@ struct CentralServer::StreamWorker {
                     GstState old_state, new_state, pending;
                     gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
                     reached_playing = new_state == GST_STATE_PLAYING;
+                    if (reached_playing) failures = 0;
                 }
                 gst_message_unref(message);
                 break;
@@ -329,7 +335,8 @@ struct CentralServer::StreamWorker {
             pipeline = nullptr;
             if (!retry_needed || stop_requested) break;
             if (++failures >= server.config().stream.max_retries) {
-                std::cerr << "[재연결 포기] " << stream.stream_id << " 최대 재시도 횟수 초과\n";
+                std::cerr << "[스트림 제외] " << stream.stream_id
+                          << " 최대 재시도 횟수 초과로 해당 스트림만 제외합니다.\n";
                 break;
             }
             retry();

@@ -108,6 +108,19 @@ int main() {
     } catch (const std::exception& error) {
         check(false, error.what());
     }
+
+    // 일부 채널의 H가 아직 없거나 손상돼도 중앙 서버 전체를 막지 않고,
+    // 보정이 준비된 스트림만 남겨서 기동할 수 있어야 한다.
+    std::filesystem::remove(multi_dir / "homography/cam02_1.json");
+    try {
+        const auto partial = loadMultiCameraServerConfig(multi_dir.string());
+        check(partial.streams.size() == 1,
+              "H가 없는 카메라 채널은 제외하고 사용 가능한 스트림만 유지함");
+        check(partial.streams.front().stream_id == "CAM_01_CH_01",
+              "사용 가능한 다른 카메라 스트림은 계속 유지함");
+    } catch (const std::exception& error) {
+        check(false, error.what());
+    }
     std::filesystem::remove_all(multi_dir);
     return failures == 0 ? 0 : 1;
 }
