@@ -1,0 +1,6 @@
+{
+  "models": [
+    {"model": "PNO-A9081RG", "channel_count": 1},
+    {"model": "PNM-C16083RVQ", "channel_count": 4}
+  ]
+}

@@ -31,6 +31,14 @@ forklift::config::SafetyServerConfig configFor(const std::string& path) {
     config.homography.files[1] = path;
     return config;
 }
+
+forklift::config::SafetyServerConfig streamConfigFor(const std::string& path) {
+    auto config = configFor(path);
+    config.homography.files.clear();
+    config.homography.stream_files["CAM_02_CH_01"] = path;
+    config.homography.stream_image_sizes["CAM_02_CH_01"] = {2592, 1520};
+    return config;
+}
 }  // namespace
 
 int main() {
@@ -57,5 +65,12 @@ int main() {
         R"({"world_unit":"mm","H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,0]],"image_size":{"width":2592,"height":1520}})");
     forklift::logic::HomographyTransformer denominatorGuard(configFor(singular.path()));
     check(!denominatorGuard.pixelToWorld(1, {5.0, 7.0}), "동차좌표 분모가 0인 변환을 거부함");
+
+    forklift::logic::HomographyTransformer streamTransformer(streamConfigFor(valid.path()));
+    const auto streamPoint = streamTransformer.pixelToWorld("CAM_02_CH_01", {5.0, 7.0});
+    check(streamPoint && streamPoint->x == 20.0 && streamPoint->y == 41.0,
+          "stream_id별 H로 서로 다른 CCTV의 같은 채널을 변환함");
+    check(!streamTransformer.pixelToWorld("CAM_01_CH_01", {5.0, 7.0}),
+          "등록되지 않은 stream_id를 거부함");
     return failures == 0 ? 0 : 1;
 }

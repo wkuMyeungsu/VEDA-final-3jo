@@ -15,8 +15,8 @@ struct mosquitto_message;
 
 // SensorUplinkReceiver - 단말->서버 센서 업링크 수신기 (MQTT 구독)
 //
-// [배경] 9000(ResultPublisher)/9001(CameraAssignmentServer)은 둘 다 서버->단말 방향의
-// TCP 채널이다. 이 채널은 반대 방향으로, 단말(forklift-device)에 붙은 IMU/ToF 원시값을
+// [배경] 위험 결과와 카메라 전환은 MQTT로 단말에 보낸다. 이 클래스는 반대 방향으로,
+// 단말(forklift-device)에 붙은 IMU/ToF 원시값을
 // 서버가 받는다. 센서와 판정 엔진이 물리적으로 다른 보드(단말 RPi4 / veda3)에 있어서
 // 프로세스 내부 결선(SensorCollectorReader)으로는 값을 넘길 수 없기 때문에 생긴 채널이다.
 //

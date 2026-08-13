@@ -91,6 +91,7 @@ target_link_libraries(server_frame_pipeline PUBLIC
 )
 
 add_library(server_network STATIC
+    src/network/assignment_publisher.cpp
     src/network/result_publisher.cpp
     src/network/sensor_uplink_receiver.cpp
     src/network/network_sensor_reader.cpp

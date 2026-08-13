@@ -203,6 +203,8 @@ void testCreatesDbAndSchema() {
         "id:INTEGER;"
         "utc_time:TEXT:NOT_NULL;"
         "camera_id:TEXT;"
+        "stream_id:TEXT;"
+        "channel:INTEGER;"
         "terminal_id:TEXT;"
         "risk_level:INTEGER:NOT_NULL;"
         "previous_risk_level:INTEGER;"

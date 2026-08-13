@@ -1,45 +1,58 @@
-# 공통 안전 서버 설정
+# 중앙 안전 서버 설정
 
-운영 서버는 단말별 설정을 만들지 않고 `safety_server_config.json` 하나를 공유한다.
-`TERMINAL_ID`는 공통 안전 규칙이 아니므로 JSON에 넣지 않고 실행 인자로 받는다.
+서버는 다음 명령으로 실행한다.
 
 ```text
-forklift_safety_server <RTSP_URL> <TERMINAL_ID> [CONFIG_PATH]
+forklift_safety_server [--config-dir PATH]
 ```
 
-`CONFIG_PATH`를 생략하면 실행 위치를 기준으로
-`config/safety_server_config.json` 또는 `server/01_main/config/safety_server_config.json`을 찾는다.
-필수 항목이 빠지거나 단위가 `mm`가 아니면 기본값으로 대체하지 않고 기동을 중단한다.
+`PATH`를 생략하면 `server/01_main/config`를 찾는다. 운영 설정은 장비마다 달라지므로
+Git에는 샘플만 남기고 실제 값은 별도 파일로 둔다.
 
-## 설정 구조
+## 파일 역할
 
-- `danger_judgment`: 주의·위험·비상 거리, ToF, IMU, 지게차 충돌 반경
-- `forklift_detection`: 지게차를 식별할 ArUco 마커 ID
-- `homography`: 채널별 H 파일과 보정 해상도
-- `handover`: 카메라 전환 확정 프레임과 마커 유실 유예 시간
-- `tracking`: 동일 인물 추적을 위한 bbox 겹침률, 월드 거리(mm), 유실 허용 프레임
-- `sensor`: Stub ToF 거리와 MQTT 센서 신선도 제한
-- `network`: MQTT, 카메라 할당 서버, 판정 하트비트
-- `stream`: RTSP 지연, appsink 버퍼, EOS·연결 타임아웃, 재시도 정책
+- `camera_model.json`: 카메라 모델별 채널 수
+- `camera_config.json`: CCTV 장비, RTSP 주소, 채널별 H 파일과 해상도
+- `forklift_device_config.json`: TERM, ArUco marker, 지게차 충돌 반경
+- `danger_judgment_config.json`: 모든 TERM이 공유하는 위험 임계값과 단위
+- `system_config.json`: MQTT, 추적, 핸드오버, 센서, 스트림, 저장 경로
 
-모든 월드 좌표와 거리는 mm다. 코드에서 `*10` 또는 `/1000` 변환을 추가하지 않는다.
+예를 들어 `PNO-A9081RG`는 `channel_count: 1`, `PNM-C16083RVQ`는
+`channel_count: 4`로 `camera_model.json`에 정의한다. `camera_config.json`은 모델명을
+참조하고, 그 모델의 채널 번호 1부터 `channel_count`까지 모두 작성해야 한다.
 
-## 호모그래피 파일
+## 식별자 규칙
 
-`homography.files` 값은 이 설정 파일이 있는 디렉터리를 기준으로 해석한다.
-예를 들어 `homography/homography_channel_1_mm.json`은
-`server/01_main/config/homography/homography_channel_1_mm.json`을 가리킨다.
+`camera_id`는 물리 CCTV 장비 이름이다. `channel`은 그 장비 내부 채널 번호다.
+서버는 둘을 합쳐 전역 스트림 이름을 자동으로 만든다.
 
-런타임 로더는 다음을 검증한다.
+```text
+CAM_01 + channel 1  -> CAM_01_CH_01
+CAM_02 + channel 1  -> CAM_02_CH_01
+```
 
-- `world_unit == "mm"`
-- `H_pixel_to_world`가 유한한 숫자로 이루어진 3×3 행렬인지
-- `image_size`가 공통 설정의 보정 해상도와 같은지
+따라서 서로 다른 CCTV의 channel 1은 충돌하지 않는다. 위험 결과와 CSV에는
+`stream_id`, `camera_id`, `channel`을 함께 기록한다.
 
-검증에 실패한 채널은 항등행렬이나 더미 좌표로 대체하지 않고 위치 미확정으로 처리한다.
+## 기동 검증
 
-## TLS/mTLS
+설정 하나라도 틀리면 서버는 기동하지 않는다.
 
-기존 TLS 연결을 사용할 때는 `network`에 `tls_enabled`, `ca_cert_path`,
-`client_cert_path`, `client_key_path`를 추가한다. `tls_enabled`가 없거나 `false`면
-기존 평문 MQTT 연결을 유지한다.
+- 모델·카메라·TERM·marker·stream_id 중복
+- 모델이 정한 채널 수와 실제 채널 목록 불일치
+- RTSP 주소, H 파일, 인증서 파일 누락
+- H의 단위가 mm가 아니거나 3×3 행렬·해상도가 잘못됨
+- 거리 임계값 순서, 포트, 추적·스트림 정책 범위 오류
+
+H 파일의 상대 경로와 저장 경로는 설정 디렉터리를 기준으로 해석한다. 모든 월드 좌표와
+거리는 mm이며 실행 중 단위 변환을 하지 않는다.
+
+## MQTT
+
+- 센서: `forklift/sensor/TERM_N`
+- 위험 결과: `forklift/risk/TERM_N`
+- 카메라 전환: `forklift/assignment/TERM_N` (QoS 1, retain)
+- 서버 상태: `forklift/status/server`
+
+assignment는 `type`, `terminal_id`, `stream_id`, `camera_id`, `channel`, `utc_time`을
+포함한다. TCP 9001 카메라 할당 서버는 사용하지 않는다.

@@ -1,0 +1,5 @@
+{
+  "forklifts": [
+    {"terminal_id": "TERM_01", "marker_id": 1, "collision_radius_mm": 500.0}
+  ]
+}

@@ -15,7 +15,7 @@ CsvLogger::CsvLogger(const std::string& filePath) {
     if (!fileExists) {
         file_ << "camera_utc,server_received_utc,delta_ms,object_id,parent_id,class,likelihood,"
                  "bbox_left,bbox_top,bbox_right,bbox_bottom,"
-                 "ground_x,ground_y\n";
+                 "ground_x,ground_y,stream_id,camera_id,channel\n";
     }
 }
 
@@ -37,7 +37,8 @@ void CsvLogger::logFrame(const MetadataFrame& frame) {
               << obj.classInfo.likelihood << ","
               << obj.bbox.left << "," << obj.bbox.top << ","
               << obj.bbox.right << "," << obj.bbox.bottom << ","
-              << obj.bbox.groundX() << "," << obj.bbox.groundY() << "\n";
+              << obj.bbox.groundX() << "," << obj.bbox.groundY() << ","
+              << frame.stream_id << "," << frame.camera_id << "," << frame.channel << "\n";
     }
     file_.flush();  // 중간에 프로그램이 꺼져도 지금까지 쓴 줄은 보존되게
 }

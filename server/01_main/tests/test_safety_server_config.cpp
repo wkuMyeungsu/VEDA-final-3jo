@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -29,7 +30,7 @@ std::string validJson() {
       "handover":{"confirm_frames":3,"lost_grace_ms":500},
       "tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"max_missed_frames":5},
       "sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},
-      "network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"camera_assignment_bind_host":"0.0.0.0","camera_assignment_port":9001,"result_heartbeat_ms":200},
+      "network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"result_heartbeat_ms":200},
       "stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":5,"retry_delay_s":10}
     })";
 }
@@ -77,5 +78,36 @@ int main() {
     bad = validJson();
     bad.replace(bad.find("\"marker_id\":0"), 13, "\"marker_id\":-1");
     expectSchemaInvalid("test_safety_server_marker_id.json", bad, "음수 마커 ID를 거부함");
+
+    // 모델 파일이 채널 수를 결정하고, 서로 다른 CCTV의 같은 채널 번호도
+    // 전역 stream_id로 분리되는지 확인한다.
+    const auto multi_dir = std::filesystem::temp_directory_path() / "forklift_multi_config_test";
+    std::filesystem::remove_all(multi_dir);
+    std::filesystem::create_directories(multi_dir / "homography");
+    const auto write = [](const std::filesystem::path& path, const std::string& text) {
+        std::ofstream(path) << text;
+    };
+    const std::string h = R"({"world_unit":"mm","image_size":{"width":640,"height":480},"H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,1]]})";
+    write(multi_dir / "homography/cam01.json", h);
+    write(multi_dir / "homography/cam02_1.json", h);
+    write(multi_dir / "camera_model.json", R"({"models":[{"model":"PNO-A9081RG","channel_count":1},{"model":"PNM-C16083RVQ","channel_count":4}]})");
+    write(multi_dir / "camera_config.json", R"({"cameras":[
+      {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"homography/cam01.json","image_width_px":640,"image_height_px":480}]},
+      {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480}]}
+    ]})");
+    write(multi_dir / "forklift_device_config.json", R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
+    write(multi_dir / "danger_judgment_config.json", R"({"units":{"world":"mm","distance":"mm"},"danger_judgment":{"caution_threshold_mm":3000,"danger_threshold_mm":1500,"emergency_threshold_mm":400,"emergency_release_margin_mm":100,"tof_caution_mm":1000,"tof_danger_mm":500,"impact_accel_threshold_g":2}})");
+    write(multi_dir / "system_config.json", R"({"network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"result_heartbeat_ms":200,"tls_enabled":false},"handover":{"confirm_frames":2,"lost_grace_ms":500},"tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"max_missed_frames":5},"sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},"stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":2,"retry_delay_s":1},"output_storage":{"object_csv":"storage/objects.csv","aruco_csv":"storage/aruco.csv","event_db":"storage/events.db","latency_csv":"storage/latency.csv"}})");
+    try {
+        const auto multi = loadMultiCameraServerConfig(multi_dir.string());
+        check(multi.streams.size() == 5, "모델별 채널 수에 맞춰 스트림을 읽음");
+        check(multi.streams[0].stream_id == "CAM_01_CH_01" && multi.streams[1].stream_id == "CAM_02_CH_01",
+              "서로 다른 CCTV의 같은 채널을 다른 stream_id로 분리함");
+        check(multi.forklifts.size() == 2 && multi.forklifts[1].collision_radius_mm == 600,
+              "TERM별 marker와 충돌 반경을 읽음");
+    } catch (const std::exception& error) {
+        check(false, error.what());
+    }
+    std::filesystem::remove_all(multi_dir);
     return failures == 0 ? 0 : 1;
 }

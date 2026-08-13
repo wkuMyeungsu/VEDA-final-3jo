@@ -30,8 +30,7 @@
 //       인프라가 필요하다 - 지금 짜여있는 "로컬 브로커에 직접 연결" 방식 테스트 그대로는
 //       재현하기 어려워서 별도 합의 후 넣기로 하고 이번 범위에서는 제외했다.
 //
-// [테스트 방식] result_publisher/camera_assignment_server 계열 테스트가 loopback 소켓을
-// 직접 여는 것과 같은 원칙으로, 이 테스트도 실제 로컬 mosquitto 브로커(127.0.0.1:1883)에
+// [테스트 방식] 실제 로컬 mosquitto 브로커(127.0.0.1:1883)에
 // 붙는다(이 저장소 개발 환경에는 mosquitto 브로커가 시스템 서비스로 이미 떠 있다).
 // 브로커가 없는 환경에서 돌리면 접속 자체가 안 돼 타임아웃으로 실패한다 - 별도 mock
 // 브로커를 두지 않은 이유는 SensorUplinkReceiver가 mosquitto C 클라이언트 API를 얇게
@@ -402,6 +401,23 @@ int main() {
     std::cout << "=== SensorUplinkReceiver(단말->서버 센서 업링크, MQTT) 테스트 ===\n\n";
     std::cout << "※ 로컬 mosquitto 브로커(127.0.0.1:" << kBrokerPort
               << ")가 떠 있어야 통과합니다.\n\n";
+
+    // 네트워크가 막힌 빌드 환경에서는 MQTT 통합 테스트를 오래 기다리지 않고
+    // 건너뛴다. 실제 브로커가 있는 장비에서는 아래 연결 확인을 통과해 전체 검증을 수행한다.
+    mosquitto_lib_init();
+    mosquitto* probe = mosquitto_new(nullptr, true, nullptr);
+    const int probe_rc = probe ? mosquitto_connect(probe, "127.0.0.1", kBrokerPort, 2)
+                               : MOSQ_ERR_NOMEM;
+    if (probe) {
+        if (probe_rc == MOSQ_ERR_SUCCESS) mosquitto_disconnect(probe);
+        mosquitto_destroy(probe);
+    }
+    mosquitto_lib_cleanup();
+    if (probe_rc != MOSQ_ERR_SUCCESS) {
+        std::cout << "[건너뜀] MQTT 브로커에 연결할 수 없습니다: "
+                  << mosquitto_strerror(probe_rc) << "\n";
+        return 0;
+    }
 
     testReceivesLatestSample();
     testSurvivesMalformedPayloads();

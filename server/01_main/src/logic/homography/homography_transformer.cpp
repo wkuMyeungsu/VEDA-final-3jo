@@ -43,13 +43,43 @@ HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& c
         try { channels_.emplace(channel, loadOne(path, config.homography.image_width_px, config.homography.image_height_px)); }
         catch (const std::exception& e) { load_errors_[channel] = path + ": " + e.what(); }
     }
+    for (const auto& [stream_id, configured_path] : config.homography.stream_files) {
+        const auto size_it = config.homography.stream_image_sizes.find(stream_id);
+        if (size_it == config.homography.stream_image_sizes.end()) {
+            stream_load_errors_[stream_id] = "이미지 해상도 설정 누락";
+            continue;
+        }
+        try {
+            streams_.emplace(stream_id, loadOne(configured_path, size_it->second.first,
+                                                size_it->second.second));
+        } catch (const std::exception& e) {
+            stream_load_errors_[stream_id] = configured_path + ": " + e.what();
+        }
+    }
 }
 
 bool HomographyTransformer::hasChannel(int channel) const { return channels_.count(channel) != 0; }
 
+bool HomographyTransformer::hasStream(const std::string& stream_id) const {
+    return streams_.count(stream_id) != 0;
+}
+
 std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(int channel, const common::PixelPoint& pixel) const {
     const auto it = channels_.find(channel);
     if (it == channels_.end() || !std::isfinite(pixel.x) || !std::isfinite(pixel.y)) return std::nullopt;
+    const auto& h = it->second.h;
+    const double denominator = h[6] * pixel.x + h[7] * pixel.y + h[8];
+    if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;
+    const double x = (h[0] * pixel.x + h[1] * pixel.y + h[2]) / denominator;
+    const double y = (h[3] * pixel.x + h[4] * pixel.y + h[5]) / denominator;
+    if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
+    return common::WorldPoint{x, y};
+}
+
+std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(
+    const std::string& stream_id, const common::PixelPoint& pixel) const {
+    const auto it = streams_.find(stream_id);
+    if (it == streams_.end() || !std::isfinite(pixel.x) || !std::isfinite(pixel.y)) return std::nullopt;
     const auto& h = it->second.h;
     const double denominator = h[6] * pixel.x + h[7] * pixel.y + h[8];
     if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;

@@ -3,13 +3,15 @@
 #include <chrono>
 #include <cstdint>
 #include <map>
+#include <vector>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace forklift::config {
 
-// 이 헤더는 설정의 형태만 정의한다. 운영값은 기본값으로 둔갑하지 않고
-// safety_server_config.json에서 모두 읽어야 하며, 누락된 항목은 로드 단계에서 실패한다.
+// 설정 파일에서 읽은 값을 서버 전체가 공유하는 자료 구조다.
+// 운영값이 빠졌을 때 임의의 기본값으로 계속 실행하지 않고 기동 단계에서 실패한다.
 struct DangerJudgmentConfig {
     double caution_threshold_mm{};
     double danger_threshold_mm{};
@@ -24,10 +26,13 @@ struct DangerJudgmentConfig {
 struct ForkliftDetectionConfig { int marker_id{}; };
 
 struct HomographyConfig {
-    // 키는 지게차 번호가 아니라 카메라 채널 식별자다.
+    // 구버전 테스트와 호환하기 위한 채널별 H 목록이다.
     std::map<int, std::string> files;
     int image_width_px{};
     int image_height_px{};
+    // 새 운영 경로에서 사용하는 전역 stream_id별 H 목록이다.
+    std::map<std::string, std::string> stream_files;
+    std::map<std::string, std::pair<int, int>> stream_image_sizes;
 };
 
 struct HandoverConfig {
@@ -50,8 +55,6 @@ struct SensorConfig {
 struct NetworkConfig {
     std::string mqtt_host;
     uint16_t mqtt_port{};
-    std::string camera_assignment_bind_host;
-    uint16_t camera_assignment_port{};
     int result_heartbeat_ms{};
     bool tls_enabled{};
     std::string ca_cert_path;
@@ -68,6 +71,31 @@ struct StreamConfig {
     int retry_delay_s{};
 };
 
+struct CameraStreamConfig {
+    std::string stream_id;          // 서버가 입력 스트림을 구분하는 키
+    std::string camera_id;          // 물리 CCTV 장비 이름
+    std::string camera_model;       // camera_model.json의 모델 이름
+    int camera_channel_count{};     // 모델이 허용하는 전체 채널 수
+    int channel{};                  // 해당 CCTV 안의 채널 번호
+    std::string rtsp_url;           // 이 채널의 메타데이터 RTSP 주소
+    std::string homography_file;    // 픽셀을 mm 월드 좌표로 바꾸는 H 파일
+    int image_width_px{};           // H 보정 당시 영상 너비
+    int image_height_px{};          // H 보정 당시 영상 높이
+};
+
+struct ForkliftDevice {
+    std::string terminal_id;        // 위험 결과를 받을 운전자 단말
+    int marker_id{};                // 이 지게차를 식별하는 ArUco ID
+    double collision_radius_mm{};   // 지게차 외곽을 고려해 거리에서 뺄 반경
+};
+
+struct OutputStorageConfig {
+    std::string object_csv;         // 객체 메타데이터 CSV
+    std::string aruco_csv;          // ArUco 메타데이터 CSV
+    std::string event_db;           // 위험 상태 변화 SQLite
+    std::string latency_csv;        // 서버 처리 지연 CSV
+};
+
 struct SafetyServerConfig {
     DangerJudgmentConfig danger_judgment;
     ForkliftDetectionConfig forklift_detection;
@@ -78,6 +106,12 @@ struct SafetyServerConfig {
     NetworkConfig network;
     StreamConfig stream;
     std::string source_path;
+
+    // 새 다중 카메라·다중 TERM 운영 경로에서 사용하는 목록이다.
+    // 위의 구버전 필드는 기존 단위 테스트와 H 변환 모듈 호환을 위해 남겨 두었다.
+    std::vector<CameraStreamConfig> streams;
+    std::vector<ForkliftDevice> forklifts;
+    OutputStorageConfig output_storage;
 };
 
 class SafetyServerConfigError : public std::runtime_error {
@@ -93,8 +127,11 @@ private:
 
 std::string toString(SafetyServerConfigError::Code code);
 SafetyServerConfig loadSafetyServerConfig(const std::string& path);
-std::string resolveSafetyServerConfigPath();
 // 상대 H 경로는 실행 디렉터리가 아니라 공통 설정 파일의 디렉터리를 기준으로 한다.
 std::string resolveConfigRelativePath(const SafetyServerConfig& config, const std::string& path);
+
+// 한 디렉터리의 운영 설정 파일들을 읽고, 서로 연결되는 값까지 한 번에 검증한다.
+SafetyServerConfig loadMultiCameraServerConfig(const std::string& config_dir);
+std::string resolveConfigDirectory();
 
 }  // namespace forklift::config
