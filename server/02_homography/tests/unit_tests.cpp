@@ -21,14 +21,14 @@ Config test_config() {
     config.dictionary = "DICT_4X4_50";
     config.cols = 4;
     config.rows = 3;
-    config.marker_len_cm = 4.0;
-    config.gap_cm = 2.0;
+    config.marker_len_mm = 40.0;
+    config.gap_mm = 20.0;
     config.id_offset = 10;
     config.origin_corner = "TL";
     config.marker_output = {100.0, 20.0, 300.0, ""};
-    config.calibration = {2.0, 3.0, -1};
-    config.manual_solve = {100.0, 3.0};
-    config.preview = {20, 0.5, 1.0};
+    config.calibration = {20.0, 30.0, -1};
+    config.manual_solve = {100.0, 30.0};
+    config.preview = {2, 5.0, 10.0};
     return config;
 }
 
@@ -46,10 +46,10 @@ void test_grid_coordinates() {
     const Config config = test_config();
     const auto corners = homography::world_corners(config, 11);
     expect(corners.size() == 4, "valid marker must have four world corners");
-    expect_near(corners[0].x, 6.0, 1e-6, "second marker x coordinate in cm");
+    expect_near(corners[0].x, 60.0, 1e-6, "second marker x coordinate in mm");
     expect_near(corners[0].y, 0.0, 1e-6, "second marker y coordinate");
-    expect_near(corners[2].x, 10.0, 1e-6, "marker right edge in cm");
-    expect_near(corners[2].y, 4.0, 1e-6, "marker bottom edge in cm");
+    expect_near(corners[2].x, 100.0, 1e-6, "marker right edge in mm");
+    expect_near(corners[2].y, 40.0, 1e-6, "marker bottom edge in mm");
     expect(homography::world_corners(config, 9).empty(),
            "marker before id offset must be rejected");
     expect_near(homography::grid_width_mm(config), 220.0, 1e-6,
@@ -71,15 +71,15 @@ void test_matrix_json_roundtrip() {
 
 void test_board_rendering() {
     const Config config = test_config();
-    const cv::Mat board = homography::render_board(config, 20);
+    const cv::Mat board = homography::render_board(config, 2);
     expect(board.type() == CV_8UC1, "rendered board must be grayscale");
-    expect(board.cols == 480 && board.rows == 360,
+    expect(board.cols == 444 && board.rows == 324,
            "rendered board dimensions");
 }
 
 void test_calibration() {
     const Config config = test_config();
-    const cv::Mat board = homography::render_board(config, 20);
+    const cv::Mat board = homography::render_board(config, 2);
     const std::vector<cv::Point2f> source = {
         {0, 0}, {static_cast<float>(board.cols), 0},
         {static_cast<float>(board.cols), static_cast<float>(board.rows)},
@@ -94,7 +94,7 @@ void test_calibration() {
     const auto result = homography::calibrate_image(config, warped);
     expect(result.ids.size() == 6, "calibration marker count");
     expect(result.inliers == 24, "calibration inlier corner count");
-    expect(result.rmse_cm < 0.25, "calibration reprojection error");
+    expect(result.rmse_mm < 2.5, "calibration reprojection error");
 }
 
 std::vector<cv::Point2f> project(const std::vector<cv::Point2f>& points,
@@ -200,7 +200,7 @@ void test_free_markers_with_axis_and_distance_constraints() {
 
 void test_rtsp_capture_alignment() {
     const Config config = test_config();
-    const cv::Mat board = homography::render_board(config, 20);
+    const cv::Mat board = homography::render_board(config, 2);
     const std::vector<cv::Point2f> board_extent = {{0, 0},
         {static_cast<float>(board.cols), 0},
         {static_cast<float>(board.cols), static_cast<float>(board.rows)},

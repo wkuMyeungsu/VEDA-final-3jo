@@ -120,7 +120,7 @@ public:
     //   기본값 스냅샷(tof_distance_mm=0)을 진짜 측정값으로 오해해 근거 없는 DANGER를 내거나,
     //   반대로 조용히 SAFE로 흘려보낼 수 있다. 둘 다 안전 측면에서 나쁘므로
     //   "받은 게 없으면 stale"로 통일했다.
-    //   (ResultDispatcher의 idle 프라이밍이 distance_m을 0.0이 아니라 null로 내보내는 것과
+    //   (ResultDispatcher의 idle 프라이밍이 distance_mm을 0.0이 아니라 null로 내보내는 것과
     //    같은 원칙이다.)
     bool isStale(const std::string& terminal_id, int timeout_ms = kDefaultStaleTimeoutMs) const;
 

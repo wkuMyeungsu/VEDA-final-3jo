@@ -27,8 +27,8 @@
 //   놓는 건 신중하게(4번)" 적용한다. 마커가 한두 프레임 가려졌다고 운전석 화면이
 //   왔다갔다하면 운전자가 볼 수 없는 화면이 된다.
 //
-//   confirm_frames와 lost_grace_ms는 설정 파일(server/01_main/config/terminal_*.json)의
-//   handover 절에서 온다. 엔진 임계값들과 마찬가지로 현장 실측 전까지는 잠정값이다.
+//   marker_id, confirm_frames, lost_grace_ms는 공통 safety_server_config.json의
+//   forklift_detection 및 handover 절에서 읽는다.
 //
 // ── 동시성 ────────────────────────────────────────────────────
 //   ArUco 프레임은 카메라별 비동기 스레드에서 들어올 수 있으므로, 내부 상태를
@@ -55,7 +55,7 @@ public:
     // "유예 시간이 지났는가" 같은 경과시간 판단에 쓰면 안 된다.
     using Clock = std::chrono::steady_clock;
 
-    // marker_id     : 추적할 지게차 마커 ID (설정의 forklift.marker_id)
+    // marker_id     : 추적할 지게차 마커 ID (설정의 forklift_detection.marker_id)
     // confirm_frames: 후보 확정에 필요한 연속 검출 프레임 수 (1 이상)
     // lost_grace    : 액티브 카메라가 마커를 놓쳐도 유지해주는 시간
     MarkerChannelTracker(int marker_id, int confirm_frames, std::chrono::milliseconds lost_grace);

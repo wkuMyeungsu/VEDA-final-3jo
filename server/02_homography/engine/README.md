@@ -1,4 +1,4 @@
-# Homography Tool
+# 호모그래피 도구
 
 OpenCV 기반 호모그래피 CLI 도구임. ArUco 마커 생성, 촬영 이미지의
 마커 검출·호모그래피 계산·결과 검증 기능 제공함.
@@ -26,7 +26,7 @@ CLI 옵션 지정 시 해당 실행에 한해 설정 파일의 기본값을 덮�
 
 주요 설정 그룹은 다음과 같음.
 
-- 기본 격자: `dictionary`, `cols`, `rows`, `marker_len_cm`, `gap_cm`
+- 기본 격자: `dictionary`, `cols`, `rows`, `marker_len_mm`, `gap_mm`
 - 마커 출력: `marker_output`
 - 결과 파일: `outputs`
 - 고정 격자 산출: `calibration`
@@ -37,8 +37,8 @@ CLI 옵션 지정 시 해당 실행에 한해 설정 파일의 기본값을 덮�
 먼저 확인함. 실제 설정 JSON에는 주석을 넣을 수 없으므로, 항목별
 설명과 복사 가능한 예시를 별도 문서로 제공함.
 
-길이 단위 확인 필요. 고정 격자의 `marker_len_cm`, `gap_cm`와
-자동 산출 오차는 cm, 출력 크기와 수동 배치 좌표는 mm임.
+길이 단위 확인 필요. 고정 격자의 `marker_len_mm`, `gap_mm`와
+자동 산출 오차를 포함한 모든 거리 값은 mm임.
 
 ## 3. 제공 기능
 
@@ -67,7 +67,7 @@ homography_tool calibrate \
   --config ../config/homography_config.json \
   --input capture.png \
   --output homography.json \
-  --max-rmse-cm 2
+  --max-rmse-mm 20
 ```
 
 설정 파일에 정의된 격자의 ID와 실제 위치를 기준으로 마커를 검출하고,

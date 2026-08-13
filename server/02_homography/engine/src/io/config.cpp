@@ -19,7 +19,7 @@ commands:
   gen-marker --config CONFIG --id ID --output FILE
              [--size-mm MM] [--margin-mm MM] [--label TEXT] [--dpi DPI]
   calibrate  --config CONFIG --input IMAGE --output JSON [--channel N]
-             [--max-rmse-cm CM]
+             [--max-rmse-mm MM]
   solve-manual --config CONFIG --input IMAGE --layout JSON --output JSON
                [--overlay IMAGE]
   view       --config CONFIG --homography JSON --input IMAGE
@@ -58,8 +58,8 @@ Config read_config(const std::string& path) {
     config.dictionary = value.at("dictionary").get<std::string>();
     config.cols = value.at("cols").get<int>();
     config.rows = value.at("rows").get<int>();
-    config.marker_len_cm = value.at("marker_len_cm").get<double>();
-    config.gap_cm = value.at("gap_cm").get<double>();
+    config.marker_len_mm = value.at("marker_len_mm").get<double>();
+    config.gap_mm = value.at("gap_mm").get<double>();
     config.id_offset = value.at("id_offset").get<int>();
     config.origin_corner = value.at("origin_corner").get<std::string>();
     const auto& marker_output = value.at("marker_output");
@@ -68,24 +68,24 @@ Config read_config(const std::string& path) {
     config.marker_output.dpi = marker_output.at("dpi").get<double>();
     config.marker_output.label = marker_output.at("label").get<std::string>();
     const auto& calibration = value.at("calibration");
-    config.calibration.max_rmse_cm = calibration.at("max_rmse_cm").get<double>();
-    config.calibration.ransac_threshold_cm = calibration.at("ransac_threshold_cm").get<double>();
+    config.calibration.max_rmse_mm = calibration.at("max_rmse_mm").get<double>();
+    config.calibration.ransac_threshold_mm = calibration.at("ransac_threshold_mm").get<double>();
     config.calibration.channel = calibration.at("channel").get<int>();
     const auto& manual_solve = value.at("manual_solve");
     config.manual_solve.marker_size_mm = manual_solve.at("marker_size_mm").get<double>();
     config.manual_solve.ransac_threshold_mm = manual_solve.at("ransac_threshold_mm").get<double>();
     const auto& preview = value.at("preview");
     config.preview.scale = preview.at("scale").get<int>();
-    config.preview.good_error_cm = preview.at("good_error_cm").get<double>();
-    config.preview.warning_error_cm = preview.at("warning_error_cm").get<double>();
-    if (config.cols <= 0 || config.rows <= 0 || config.marker_len_cm <= 0 ||
-        config.gap_cm < 0 || config.marker_output.size_mm <= 0 ||
+    config.preview.good_error_mm = preview.at("good_error_mm").get<double>();
+    config.preview.warning_error_mm = preview.at("warning_error_mm").get<double>();
+    if (config.cols <= 0 || config.rows <= 0 || config.marker_len_mm <= 0 ||
+        config.gap_mm < 0 || config.marker_output.size_mm <= 0 ||
         config.marker_output.margin_mm < 0 || config.marker_output.dpi <= 0 ||
-        config.calibration.max_rmse_cm <= 0 ||
-        config.calibration.ransac_threshold_cm <= 0 ||
+        config.calibration.max_rmse_mm <= 0 ||
+        config.calibration.ransac_threshold_mm <= 0 ||
         config.manual_solve.marker_size_mm <= 0 ||
         config.manual_solve.ransac_threshold_mm <= 0 || config.preview.scale <= 0 ||
-        config.preview.good_error_cm < 0 || config.preview.warning_error_cm < 0)
+        config.preview.good_error_mm < 0 || config.preview.warning_error_mm < 0)
         throw std::runtime_error("invalid grid dimensions or lengths");
     if (config.origin_corner != "TL")
         throw std::runtime_error("only origin_corner=TL is supported");
@@ -112,10 +112,10 @@ std::vector<cv::Point2f> world_corners(const Config& config, int id) {
     const int row = index / config.cols;
     const int col = index % config.cols;
     // ArUco ID는 행 우선(row-major) 배치함. 원점은 좌상단(TL).
-    const double pitch = config.marker_len_cm + config.gap_cm;
+    const double pitch = config.marker_len_mm + config.gap_mm;
     const double x = col * pitch;
     const double y = row * pitch;
-    const double length = config.marker_len_cm;
+    const double length = config.marker_len_mm;
     return {{static_cast<float>(x), static_cast<float>(y)},
             {static_cast<float>(x + length), static_cast<float>(y)},
             {static_cast<float>(x + length), static_cast<float>(y + length)},
@@ -123,15 +123,13 @@ std::vector<cv::Point2f> world_corners(const Config& config, int id) {
 }
 
 double grid_width_mm(const Config& config) {
-    // marker_len_cm와 gap_cm를 cm에서 mm로 변환해 출력용 크기 계산함.
-    return config.cols * config.marker_len_cm * 10.0 +
-           (config.cols - 1) * config.gap_cm * 10.0;
+    return config.cols * config.marker_len_mm +
+           (config.cols - 1) * config.gap_mm;
 }
 
 double grid_height_mm(const Config& config) {
-    // marker_len_cm와 gap_cm를 cm에서 mm로 변환해 출력용 크기 계산함.
-    return config.rows * config.marker_len_cm * 10.0 +
-           (config.rows - 1) * config.gap_cm * 10.0;
+    return config.rows * config.marker_len_mm +
+           (config.rows - 1) * config.gap_mm;
 }
 
 }  // namespace homography

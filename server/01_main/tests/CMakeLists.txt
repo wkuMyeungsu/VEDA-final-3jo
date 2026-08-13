@@ -46,9 +46,13 @@ add_executable(test_sensor_uplink_receiver test_sensor_uplink_receiver.cpp)
 target_link_libraries(test_sensor_uplink_receiver PRIVATE server_network Threads::Threads)
 add_test(NAME sensor_uplink_receiver_test COMMAND test_sensor_uplink_receiver)
 
-add_executable(test_terminal_config test_terminal_config.cpp)
-target_link_libraries(test_terminal_config PRIVATE server_config)
-add_test(NAME terminal_config_test COMMAND test_terminal_config)
+add_executable(test_safety_server_config test_safety_server_config.cpp)
+target_link_libraries(test_safety_server_config PRIVATE server_config)
+add_test(NAME safety_server_config_test COMMAND test_safety_server_config)
+
+add_executable(test_homography_transformer test_homography_transformer.cpp)
+target_link_libraries(test_homography_transformer PRIVATE server_homography)
+add_test(NAME homography_transformer_test COMMAND test_homography_transformer)
 
 # 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
 add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)

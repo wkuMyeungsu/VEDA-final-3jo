@@ -5,12 +5,13 @@
 // 확인 목적:
 //   [테스트 1] DB 파일/테이블 자동 생성 (없으면 만들고, 스키마가 확정 스펙과 일치)
 //   [테스트 2] log() 단독 - 값이 컬럼에 그대로 들어가는지 + NULL 규칙
-//              (previous_risk_level 음수 -> NULL, camera_id "" -> NULL, distance_m -1 -> NULL)
+//              (previous_risk_level 음수 -> NULL, camera_id "" -> NULL, distance_mm -1 -> NULL)
 //   [테스트 3] ResultDispatcher 연동 - 같은 값을 반복 submit해도 "변화가 있을 때만" 행이 쌓이고
 //              previous_risk_level 체인이 정확한지  <- 이 테스트가 핵심
 //   [테스트 4] 하트비트 재전송은 로그를 남기지 않는지 (무변화 재전송이 로그를 오염시키지 않음)
 //   [테스트 5] 백프레셔 - 큐 초과 시 가장 오래된 것부터 드랍 + 드랍 카운터/로그
 //   [테스트 6] 재실행 - 기존 DB에 이어붙이기 (CREATE TABLE IF NOT EXISTS)
+//   [테스트 7] 예전 distance_m DB를 열 때 distance_mm 컬럼을 안전하게 추가
 //
 // 모든 테스트는 임시 디렉터리의 전용 DB 파일을 쓰고 시작·종료 시 지운다.
 // (운영 경로 server/judgment/events.db는 건드리지 않는다.)
@@ -73,7 +74,7 @@ struct EventRow {
     int         previous_risk_level = -1;
     std::string exception_state;
     bool        distance_null = false;
-    double      distance_m = 0.0;
+    double      distance_mm = 0.0;
 };
 
 // id 오름차순(= 삽입 순서)으로 전부 읽는다.
@@ -87,7 +88,7 @@ std::vector<EventRow> readAll(const std::string& db_path) {
     sqlite3_busy_timeout(db, 3000);
 
     const char* sql =
-        "SELECT utc_time, camera_id, risk_level, previous_risk_level, exception_state, distance_m"
+        "SELECT utc_time, camera_id, risk_level, previous_risk_level, exception_state, distance_mm"
         " FROM events ORDER BY id ASC";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -112,7 +113,7 @@ std::vector<EventRow> readAll(const std::string& db_path) {
         r.exception_state = e ? reinterpret_cast<const char*>(e) : "";
 
         r.distance_null = sqlite3_column_type(stmt, 5) == SQLITE_NULL;
-        if (!r.distance_null) r.distance_m = sqlite3_column_double(stmt, 5);
+        if (!r.distance_null) r.distance_mm = sqlite3_column_double(stmt, 5);
 
         rows.push_back(std::move(r));
     }
@@ -144,18 +145,35 @@ std::string readSchema(const std::string& db_path) {
     return out;
 }
 
+// 단위 통일 이전 스키마를 만들어 실제 운영 DB 업그레이드 경로를 재현한다.
+bool createLegacyMeterDb(const std::string& db_path) {
+    sqlite3* db = nullptr;
+    if (sqlite3_open(db_path.c_str(), &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    const char* sql =
+        "CREATE TABLE events ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, utc_time TEXT NOT NULL, camera_id TEXT,"
+        "terminal_id TEXT, risk_level INTEGER NOT NULL, previous_risk_level INTEGER,"
+        "exception_state TEXT NOT NULL, distance_m REAL)";
+    const bool ok = sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(db);
+    return ok;
+}
+
 // ── 테스트용 판정 결과 ──────────────────────────────────────
 // ResultDispatcher::sameState()의 비교 대상은 final_risk / exception / camera_id / zone이다.
-// distance_m은 일부러 제외돼 있으므로(거리만 흔들려도 매 프레임 전송되는 걸 막기 위함)
+// distance_mm은 일부러 제외돼 있으므로(거리만 흔들려도 매 프레임 전송되는 걸 막기 위함)
 // 거리만 다른 결과는 "변화 없음"으로 취급돼야 한다 - 테스트 3에서 확인한다.
 JudgmentResult makeResult(RiskLevel risk, ExceptionState exc = ExceptionState::NONE,
-                          double distance_m = 2.0, const std::string& camera_id = "") {
+                          double distance_mm = 2000.0, const std::string& camera_id = "") {
     JudgmentResult r{};
     r.camera_risk = risk;
     r.tof_risk    = risk;
     r.final_risk  = risk;
     r.exception   = exc;
-    r.distance_m  = distance_m;
+    r.distance_mm  = distance_mm;
     r.camera_id   = camera_id;
     return r;
 }
@@ -189,7 +207,7 @@ void testCreatesDbAndSchema() {
         "risk_level:INTEGER:NOT_NULL;"
         "previous_risk_level:INTEGER;"
         "exception_state:TEXT:NOT_NULL;"
-        "distance_m:REAL;";
+        "distance_mm:REAL;";
     const std::string actual = readSchema(db);
     check(actual == expected, "스키마가 확정 스펙과 일치");
     if (actual != expected) {
@@ -212,9 +230,9 @@ void testLogWritesValuesAndNulls() {
     if (!logger.start()) { check(false, "start() 성공"); return; }
 
     // (1) 전부 값이 있는 경우
-    logger.log(makeResult(RiskLevel::CAUTION, ExceptionState::NONE, 2.75, "cam_01"), 0);
+    logger.log(makeResult(RiskLevel::CAUTION, ExceptionState::NONE, 2750.0, "cam_01"), 0);
     // (2) 최초 이벤트 - previous_risk_level 없음
-    logger.log(makeResult(RiskLevel::DANGER, ExceptionState::SENSOR_FAULT, 1.25, "cam_02"),
+    logger.log(makeResult(RiskLevel::DANGER, ExceptionState::SENSOR_FAULT, 1250.0, "cam_02"),
                risk_log::EventLogger::kNoPreviousRisk);
     // (3) camera_id 미연결(빈 문자열) + 거리 판정 불가(-1)
     logger.log(makeResult(RiskLevel::EMERGENCY, ExceptionState::UNCONFIRMED_PROXIMITY, -1.0, ""), 2);
@@ -236,8 +254,8 @@ void testLogWritesValuesAndNulls() {
               "1행: risk_level=1, previous_risk_level=0");
         check(!rows[0].camera_id_null && rows[0].camera_id == "cam_01", "1행: camera_id=cam_01");
         check(rows[0].exception_state == "NONE", "1행: exception_state=NONE");
-        check(!rows[0].distance_null && rows[0].distance_m > 2.74 && rows[0].distance_m < 2.76,
-              "1행: distance_m=2.75");
+        check(!rows[0].distance_null && rows[0].distance_mm == 2750.0,
+              "1행: distance_mm=2750");
 
         check(rows[1].risk_level == 2 && rows[1].prev_null,
               "2행: 최초 이벤트라 previous_risk_level이 NULL");
@@ -246,7 +264,7 @@ void testLogWritesValuesAndNulls() {
         check(rows[2].risk_level == 3 && !rows[2].prev_null && rows[2].previous_risk_level == 2,
               "3행: risk_level=3(EMERGENCY), previous_risk_level=2");
         check(rows[2].camera_id_null, "3행: camera_id 빈 문자열 -> NULL");
-        check(rows[2].distance_null, "3행: distance_m -1(판정 불가) -> NULL");
+        check(rows[2].distance_null, "3행: distance_mm -1(판정 불가) -> NULL");
         check(rows[2].exception_state == "UNCONFIRMED_PROXIMITY",
               "3행: exception_state=UNCONFIRMED_PROXIMITY");
     }
@@ -280,13 +298,13 @@ void testOnlyLogsOnStateChange() {
     dispatcher.submit(makeResult(RiskLevel::SAFE));                                  // 1) 최초 -> 기록
     dispatcher.submit(makeResult(RiskLevel::SAFE));                                  // 2) 동일 -> 기록 X
     dispatcher.submit(makeResult(RiskLevel::SAFE));                                  // 3) 동일 -> 기록 X
-    dispatcher.submit(makeResult(RiskLevel::SAFE, ExceptionState::NONE, 2.9));       // 4) 거리만 변함 -> 기록 X
-    dispatcher.submit(makeResult(RiskLevel::CAUTION, ExceptionState::NONE, 2.9));    // 5) 위험도 변화 -> 기록
+    dispatcher.submit(makeResult(RiskLevel::SAFE, ExceptionState::NONE, 2900.0));    // 4) 거리만 변함 -> 기록 X
+    dispatcher.submit(makeResult(RiskLevel::CAUTION, ExceptionState::NONE, 2900.0)); // 5) 위험도 변화 -> 기록
     dispatcher.submit(makeResult(RiskLevel::CAUTION));                               // 6) 동일 -> 기록 X
-    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1.2));     // 7) 위험도 변화 -> 기록
-    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1.1));     // 8) 거리만 변함 -> 기록 X
-    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::EMERGENCY_IMPACT, 1.1)); // 9) 예외 변화 -> 기록
-    dispatcher.submit(makeResult(RiskLevel::SAFE, ExceptionState::EMERGENCY_IMPACT, 8.0));   // 10) 위험도 변화 -> 기록
+    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1200.0));  // 7) 위험도 변화 -> 기록
+    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1100.0));  // 8) 거리만 변함 -> 기록 X
+    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::EMERGENCY_IMPACT, 1100.0)); // 9) 예외 변화 -> 기록
+    dispatcher.submit(makeResult(RiskLevel::SAFE, ExceptionState::EMERGENCY_IMPACT, 8000.0));   // 10) 위험도 변화 -> 기록
 
     check(logger.flushWithin(std::chrono::seconds(3)), "워커가 3초 안에 큐를 비움");
     logger.stop();
@@ -347,7 +365,7 @@ void testHeartbeatDoesNotLog() {
         [&logger](const JudgmentResult& r, int prev) { logger.log(r, prev); });
     dispatcher.start();
 
-    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1.2));
+    dispatcher.submit(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1200.0));
     std::this_thread::sleep_for(std::chrono::milliseconds(400));   // 50ms 주기 -> 하트비트 여러 회
     dispatcher.stop();
 
@@ -388,7 +406,7 @@ void testBackpressureDropsOldest() {
     std::streambuf* saved = std::cerr.rdbuf(captured.rdbuf());
     for (int i = 0; i < kCount; ++i) {
         // risk_level 자리에 순번을 넣을 수는 없으므로(0~3만 유효) camera_id로 순번을 식별한다.
-        logger.log(makeResult(RiskLevel::SAFE, ExceptionState::NONE, 2.0,
+        logger.log(makeResult(RiskLevel::SAFE, ExceptionState::NONE, 2000.0,
                               "seq_" + std::to_string(i)),
                    risk_transport::ResultDispatcher::kNoPreviousRisk);
     }
@@ -460,6 +478,35 @@ void testReopenAppends() {
     removeDb(db);
 }
 
+// ============================================================
+// [테스트 7] 단위 통일 이전 DB 스키마 마이그레이션
+// ============================================================
+void testLegacyDistanceColumnMigration() {
+    std::cout << "\n[테스트 7] 기존 distance_m DB에 distance_mm 컬럼 추가\n";
+
+    const std::string db = tempDbPath("legacy_distance");
+    removeDb(db);
+    check(createLegacyMeterDb(db), "단위 통일 이전 스키마 준비");
+
+    risk_log::EventLogger logger(db);
+    if (!logger.start()) { check(false, "기존 DB로 start() 성공"); removeDb(db); return; }
+    logger.log(makeResult(RiskLevel::DANGER, ExceptionState::NONE, 1234.0, "cam_01"),
+               risk_log::EventLogger::kNoPreviousRisk);
+    check(logger.flushWithin(std::chrono::seconds(3)), "마이그레이션 뒤 이벤트 기록 완료");
+    logger.stop();
+
+    const std::string schema = readSchema(db);
+    check(schema.find("distance_m:REAL;") != std::string::npos,
+          "기존 distance_m 컬럼은 사후 분석 호환을 위해 보존됨");
+    check(schema.find("distance_mm:REAL;") != std::string::npos,
+          "신규 distance_mm 컬럼이 추가됨");
+    const auto rows = readAll(db);
+    check(rows.size() == 1 && !rows[0].distance_null && rows[0].distance_mm == 1234.0,
+          "추가된 distance_mm 컬럼에 신규 이벤트를 기록함");
+
+    removeDb(db);
+}
+
 } // namespace
 
 int main() {
@@ -471,6 +518,7 @@ int main() {
     testHeartbeatDoesNotLog();
     testBackpressureDropsOldest();
     testReopenAppends();
+    testLegacyDistanceColumnMigration();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";

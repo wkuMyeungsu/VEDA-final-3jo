@@ -22,8 +22,8 @@ namespace {
 
 // 스키마. 컬럼 구성은 팀 확정 스펙 그대로다.
 // - previous_risk_level만 NULL 허용: 최초 이벤트에는 직전 상태가 존재하지 않는다.
-// - camera_id / terminal_id / distance_m도 NULL 허용: 상류 미연결(camera_id/terminal_id) 및
-//   거리 판정 불가(폐색/사람 미검출 -> distance_m = -1) 상황을 "값 없음"으로 구분해서 남기기
+// - camera_id / terminal_id / distance_mm도 NULL 허용: 상류 미연결(camera_id/terminal_id) 및
+//   거리 판정 불가(폐색/사람 미검출 -> distance_mm = -1) 상황을 "값 없음"으로 구분해서 남기기
 //   위함. toJson()이 같은 상황을 JSON null로 내보내는 것과 규칙을 맞췄다.
 // - terminal_id는 CREATE TABLE IF NOT EXISTS라서 기존 events.db 파일에는 자동으로 붙지
 //   않는다 -> start()가 ensureTerminalIdColumn()으로 별도 보강한다.
@@ -36,12 +36,12 @@ constexpr const char* kCreateTableSql =
     "  risk_level INTEGER NOT NULL,"
     "  previous_risk_level INTEGER,"
     "  exception_state TEXT NOT NULL,"
-    "  distance_m REAL"
+    "  distance_mm REAL"
     ")";
 
 constexpr const char* kInsertSql =
     "INSERT INTO events"
-    " (utc_time, camera_id, terminal_id, risk_level, previous_risk_level, exception_state, distance_m)"
+    " (utc_time, camera_id, terminal_id, risk_level, previous_risk_level, exception_state, distance_mm)"
     " VALUES (?, ?, ?, ?, ?, ?, ?)";
 
 } // namespace
@@ -60,6 +60,7 @@ bool EventLogger::start() {
     if (!openDatabase()) return false;
     if (!exec(kCreateTableSql))       { closeDatabase(); return false; }
     if (!ensureTerminalIdColumn())    { closeDatabase(); return false; }
+    if (!ensureDistanceMmColumn())    { closeDatabase(); return false; }
     if (!prepareStatement())          { closeDatabase(); return false; }
 
     running_.store(true);
@@ -87,7 +88,7 @@ void EventLogger::log(const JudgmentResult& r, int previous_risk_level) {
     row.risk_level          = static_cast<int>(r.final_risk);
     row.previous_risk_level = previous_risk_level;
     row.exception_state     = toString(r.exception);
-    row.distance_m          = r.distance_m;
+    row.distance_mm          = r.distance_mm;
 
     {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -185,6 +186,26 @@ bool EventLogger::ensureTerminalIdColumn() {
     std::cerr << "[EventLogger] 기존 events.db에 terminal_id 컬럼이 없어 ALTER TABLE로 추가합니다\n";
     if (!exec("ALTER TABLE events ADD COLUMN terminal_id TEXT")) return false;
     return true;
+}
+
+bool EventLogger::ensureDistanceMmColumn() {
+    sqlite3_stmt* statement = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &statement, nullptr) != SQLITE_OK) {
+        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
+        return false;
+    }
+    bool found = false;
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char* name = sqlite3_column_text(statement, 1);
+        if (name && std::string(reinterpret_cast<const char*>(name)) == "distance_mm") {
+            found = true;
+            break;
+        }
+    }
+    sqlite3_finalize(statement);
+    if (found) return true;
+    std::cerr << "[EventLogger] 기존 events.db에 distance_mm 컬럼을 추가합니다\n";
+    return exec("ALTER TABLE events ADD COLUMN distance_mm REAL");
 }
 
 bool EventLogger::prepareStatement() {
@@ -311,11 +332,11 @@ bool EventLogger::insertRow(const Row& row) {
 
     sqlite3_bind_text(stmt_, 6, row.exception_state.c_str(), -1, SQLITE_TRANSIENT);
 
-    // distance_m의 -1은 "거리 판정 불가" sentinel이지 측정값이 아니다 -> NULL.
-    if (row.distance_m < 0) {
+    // distance_mm의 -1은 "거리 판정 불가" sentinel이지 측정값이 아니다 -> NULL.
+    if (row.distance_mm < 0) {
         sqlite3_bind_null(stmt_, 7);
     } else {
-        sqlite3_bind_double(stmt_, 7, row.distance_m);
+        sqlite3_bind_double(stmt_, 7, row.distance_mm);
     }
 
     if (sqlite3_step(stmt_) != SQLITE_DONE) {

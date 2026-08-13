@@ -32,8 +32,8 @@
 //        dispatcher가 넘겨준 JSON 한 줄을 "보내기만" 한다 - 통신 수단이 바뀌어도
 //        판단 로직은 건드릴 필요가 없게 처음부터 분리돼 있었다.
 //
-// 토픽은 "forklift/risk/<terminal_id>"로 단말마다 갈린다. terminal_id는 생성자 인자로
-// 받는다(설정 파일의 forklift.terminal_id). publish()가 받는 건 이미 직렬화된 JSON
+// 토픽은 "forklift/risk/<terminal_id>"로 단말마다 갈린다. terminal_id는 서버 실행
+// 인자에서 받아 생성자에 전달한다. publish()가 받는 건 이미 직렬화된 JSON
 // 문자열이라 여기서 판정 결과 필드를 다시 들여다볼 수 없기 때문인데, JudgmentPipeline과
 // idle 프라이밍이 둘 다 같은 설정값을 채워 넣으므로 payload 안의 terminal_id와 항상 같다.
 

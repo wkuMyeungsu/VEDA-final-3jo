@@ -19,12 +19,12 @@ void detect_marker_corners(const Config& config, const cv::Mat& image,
                            const cv::Mat& camera_matrix = {},
                            const cv::Mat& dist_coeffs = {});
 
-// 이미지에서 ArUco 마커를 검출하고 픽셀→cm 호모그래피 계산함.
+// 이미지에서 ArUco 마커를 검출하고 픽셀→mm 호모그래피를 계산함.
 // 유효한 마커 두 개 이상 필요. 입력은 같은 카메라의 보정 영상.
 DetectionResult calibrate_image(const Config& config, const cv::Mat& image);
 
 // 자동 캘리브레이션 결과와 당시 설정을 JSON으로 저장함.
-// H_pixel_to_world의 world 단위는 cm. gate는 판정 임계값(cm).
+// H_pixel_to_world의 월드 단위와 gate 판정 임계값은 모두 mm임.
 void write_calibration(const std::string& path, const Config& config,
                        const DetectionResult& detection, const cv::Size& size,
                        int channel, double gate);

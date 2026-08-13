@@ -6,15 +6,15 @@
 
 ## 먼저 확인할 것
 
-- `marker_len_cm`, `gap_cm`: 실제 인쇄·배치 마커의 크기와 간격.
+- `marker_len_mm`, `gap_mm`: 실제 인쇄·배치 마커의 크기와 간격.
 - `cols`, `rows`: 가로·세로 마커 개수.
 - `id_offset`: 왼쪽 위 마커의 ID. ID가 10부터 시작하면 `10` 입력.
 - `inputs.image`: 고정 격자 산출과 검증에 사용할 서버 내 촬영 이미지 파일명.
-- 길이 단위: 기본 격자와 자동 산출은 `cm`, 출력 크기와 수동 산출은 `mm`.
+- 길이 단위: 기본 격자, 자동·수동 산출, 출력 크기를 모두 `mm`로 통일함.
 - `origin_corner`: 현재 `TL`(왼쪽 위)만 지원. 좌표의 X는 오른쪽,
   Y는 아래쪽 방향.
 
-`marker_len_cm`는 실제 보드에서 검출할 검은 마커 한 변이고,
+`marker_len_mm`는 실제 보드에서 검출할 검은 마커 한 변이고,
 `marker_output.size_mm`는 개별 마커 파일을 만들 때 출력할 영역의 한 변.
 두 값은 같은 마커를 가리킬 수 있지만 단위와 용도가 달라 별도 설정함.
 
@@ -35,16 +35,16 @@ Y는 아래 방향
 
 ## 설정 예시
 
-아래는 4열 × 8행 보드 예시임. 마커 한 변은 8 cm, 마커 사이 간격은
-4.3 cm, 첫 번째 마커의 ID는 0.
+아래는 4열 × 8행 보드 예시임. 마커 한 변은 80 mm, 마커 사이 간격은
+43 mm, 첫 번째 마커의 ID는 0.
 
 ```json
 {
   "dictionary": "DICT_4X4_100",
   "cols": 4,
   "rows": 8,
-  "marker_len_cm": 8.0,
-  "gap_cm": 4.3,
+  "marker_len_mm": 80.0,
+  "gap_mm": 43.0,
   "id_offset": 0,
   "origin_corner": "TL",
   "inputs": {
@@ -57,13 +57,13 @@ Y는 아래 방향
     "label": ""
   },
   "calibration": {
-    "max_rmse_cm": 2.0,
-    "ransac_threshold_cm": 3.0,
+    "max_rmse_mm": 20.0,
+    "ransac_threshold_mm": 30.0,
     "channel": 1
   },
   "manual_solve": {
     "marker_size_mm": 100.0,
-    "ransac_threshold_mm": 3.0
+    "ransac_threshold_mm": 30.0
   },
   "outputs": {
     "calibration": "homography_ch1.json",
@@ -71,9 +71,9 @@ Y는 아래 방향
     "view_dir": "view_result"
   },
   "preview": {
-    "scale": 20,
-    "good_error_cm": 0.5,
-    "warning_error_cm": 1.0
+    "scale": 2,
+    "good_error_mm": 5.0,
+    "warning_error_mm": 10.0
   }
 }
 ```
@@ -86,8 +86,8 @@ Y는 아래 방향
 | --- | --- | --- |
 | `dictionary` | ArUco ID를 읽는 규칙. 인쇄에 사용한 사전과 같아야 함. | `DICT_4X4_100` |
 | `cols`, `rows` | 보드의 열·행 개수. | `4`, `8` |
-| `marker_len_cm` | 마커 검은 사각형 한 변의 실제 길이. | `8.0` |
-| `gap_cm` | 이웃한 마커의 검은 사각형 사이 실제 간격. | `4.3` |
+| `marker_len_mm` | 마커 검은 사각형 한 변의 실제 길이. | `80.0` |
+| `gap_mm` | 이웃한 마커의 검은 사각형 사이 실제 간격. | `43.0` |
 | `id_offset` | 왼쪽 위 마커의 시작 ID. 이후 왼쪽에서 오른쪽, 위에서 아래 순서로 1씩 증가함. | `0` |
 
 예를 들어 위 설정에서 ID `5`는 두 번째 행의 두 번째 마커임. 보드
@@ -108,21 +108,21 @@ Y는 아래 방향
 
 | 값 | 단위 | 기준 |
 | --- | --- | --- |
-| `marker_len_cm`, `gap_cm` | cm | 실제 고정 격자의 검출 좌표 |
-| `max_rmse_cm`, `ransac_threshold_cm` | cm | 자동 산출 오차 |
+| `marker_len_mm`, `gap_mm` | mm | 실제 고정 격자의 검출 좌표 |
+| `max_rmse_mm`, `ransac_threshold_mm` | mm | 자동 산출 오차 |
 | `marker_output.size_mm` | mm | 개별 마커 출력물의 실제 크기 |
 | `marker_size_mm`, `x_mm`, `y_mm` | mm | 수동 배치의 실제 좌표 |
 | `dpi` | DPI | PNG 출력 해상도 |
-| `preview.scale` | px/cm | 검증용 합성 이미지 배율 |
+| `preview.scale` | px/mm | 검증용 합성 이미지 배율 |
 
 ### 정확도 판정
 
-- `max_rmse_cm`: `calibrate` 명령이 성공으로 인정할 최대 평균 오차.
-- `ransac_threshold_cm`: 일부 코너를 이상값으로 제외할 거리 기준.
+- `max_rmse_mm`: `calibrate` 명령이 성공으로 인정할 최대 평균 오차.
+- `ransac_threshold_mm`: 일부 코너를 이상값으로 제외할 거리 기준.
 - `channel`: 결과 JSON에 기록할 채널 번호. 채널 1은 `1` 입력.
 - `manual_solve`의 두 값: 수동 배치 방식에서 사용하며 길이 단위는 `mm`.
-- `preview.scale`: 검증 이미지에서 1 cm를 그리는 픽셀 수.
-- `good_error_cm`, `warning_error_cm`: 검증 이미지의 초록·노랑·빨강 기준.
+- `preview.scale`: 검증 이미지에서 1 mm를 그리는 픽셀 수.
+- `good_error_mm`, `warning_error_mm`: 검증 이미지의 초록·노랑·빨강 기준.
 
 정확도 기준을 바꾸기 전에 실제 촬영 이미지의 RMSE 확인 권장.
 기준을 너무 크게 잡으면 잘못된 보드도 통과할 수 있고, 너무 작게 잡으면

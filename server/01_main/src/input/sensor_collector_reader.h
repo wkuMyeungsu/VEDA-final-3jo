@@ -15,7 +15,7 @@
 // ISensorReader 시그니처만 구현하고 JudgmentPipeline 쪽은 전혀 건드리지 않는다.
 //
 // 값 변환 (SensorCollector -> SensorInput):
-//   - TofSample.distance_mm(정수, mm) -> tof_distance_m(double, m): /1000.0
+//   - TofSample.distance_mm(정수, mm) -> tof_distance_mm(double, mm): 변환 없음
 //   - ImuSample.accel_x/y/z_g(3축)   -> imu_accel_g(스칼라 "크기"): sqrt(x^2+y^2+z^2)
 //     (danger_judgment_engine.h 주석: "IMU 가속도 크기 (g 단위, 급정지/충돌 감지용)".
 //      정지 상태에서도 중력으로 약 1.0g가 나오므로, 임계값은 그 점을 감안해 엔진 쪽에서 잡는다.)

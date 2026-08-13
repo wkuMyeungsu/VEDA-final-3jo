@@ -9,7 +9,7 @@
 - 출처: <https://github.com/nlohmann/json/releases/tag/v3.11.3>
   (`single_include/nlohmann/json.hpp` 파일 하나)
 - 라이선스: MIT (파일 상단 헤더 주석 참고)
-- 용도: `src/config/terminal_config.*`의 단말 설정 JSON 파싱.
+- 용도: `src/config/safety_server_config.*`의 단말 설정 JSON 파싱.
 
 ### 왜 시스템 패키지(`nlohmann-json3-dev`)가 아니라 벤더링인가
 
@@ -24,7 +24,7 @@
 
 - 이 헤더는 하나에 약 900KB / 2만 5천 줄이라 빌드 시간에 영향을 준다. 그래서
   `server_config` 한 타깃 안에서만 include하고(PRIVATE), 다른 계층 헤더에는
-  노출하지 않는다. `terminal_config.hpp`가 nlohmann 타입을 공개 API에 쓰지 않는
+  노출하지 않는다. `safety_server_config.hpp`가 nlohmann 타입을 공개 API에 쓰지 않는
   것도 같은 이유다.
 - 서버의 다른 JSON 처리(판정 결과 직렬화 `toJson()`, 9001 hello 파싱)는 기존
   수작업 방식 그대로다. 이미 확정된 하류 계약이라 굳이 갈아엎지 않았다.

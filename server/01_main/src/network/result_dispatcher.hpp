@@ -148,9 +148,9 @@ public:
     //   risk_level = SAFE      : 아직 위험 근거가 없다. 모르는 상태를 CAUTION 이상으로
     //                            올리면 단말이 기동 직후 상시 경보를 울린다.
     //   exception  = NONE      : 센서 고장/폐색이 확인된 게 아니다(그냥 입력이 없을 뿐).
-    //   distance_m = -1        : 엔진이 "거리 판정 불가"에 쓰는 것과 같은 sentinel.
+    //   distance_mm = -1        : 엔진이 "거리 판정 불가"에 쓰는 것과 같은 sentinel.
     //                            toJson()이 음수를 null로 내보낸다(0.0으로 두면 하류가
-    //                            "0m 밀착"으로 읽는다 - 기본값 {}를 그대로 쓰면 안 되는 이유).
+    //                            "0mm 밀착"으로 읽는다 - 기본값 {}를 그대로 쓰면 안 되는 이유).
     //   camera_id/zone/terminal_id = "" : 빈 문자열 -> JSON null (기존 미확정 규약 그대로).
     //                            terminal_id는 기동 시점에 이미 아는 값이라 호출부가
     //                            채워 넣을 수 있다(primeIdle 인자).
@@ -162,7 +162,7 @@ public:
         r.tof_risk    = RiskLevel::SAFE;
         r.final_risk  = RiskLevel::SAFE;
         r.exception   = ExceptionState::NONE;
-        r.distance_m  = -1.0;
+        r.distance_mm  = -1.0;
         return r;
     }
 
@@ -209,7 +209,7 @@ public:
     //
     // 비교 대상: risk_level / exception_state / camera_id / zone
     //   = 단말이 경보 동작을 결정할 때 쓰는 필드들.
-    // distance_m을 일부러 제외한 이유: 사람이 조금만 움직여도 매 프레임 값이 흔들려서
+    // distance_mm을 일부러 제외한 이유: 사람이 조금만 움직여도 매 프레임 값이 흔들려서
     // 포함하면 사실상 "프레임마다 전송"이 되어 하이브리드 방식의 의미가 없어진다.
     // 거리가 임계값을 넘어가면 risk_level이 바뀌므로 위험 전이는 그대로 즉시 전송되고,
     // 표시용 거리 값은 200ms 하트비트에 최신 값이 실려 나간다.

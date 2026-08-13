@@ -139,13 +139,13 @@ bool waitForState(const risk_transport::ResultPublisher& p, risk_transport::Link
 
 // 정책 테스트용 판정 결과. 상태 비교 대상(final_risk/exception)과 무관한 필드는 고정한다.
 JudgmentResult makeResult(RiskLevel risk, ExceptionState exc = ExceptionState::NONE,
-                          double distance_m = 2.0) {
+                          double distance_mm = 2.0) {
     JudgmentResult r{};
     r.camera_risk = risk;
     r.tof_risk    = risk;
     r.final_risk  = risk;
     r.exception   = exc;
-    r.distance_m  = distance_m;
+    r.distance_mm  = distance_mm;
     return r;
 }
 
@@ -464,8 +464,8 @@ void testIdlePrimingStartsHeartbeat() {
               "idle JSON risk_level=0(SAFE)");
         check(!lines.empty() && first.find("\"exception_state\":\"NONE\"") != std::string::npos,
               "idle JSON exception_state=NONE");
-        check(!lines.empty() && first.find("\"distance_m\":null") != std::string::npos,
-              "idle JSON distance_m=null (기본값 0.0이 '0m 밀착'으로 새지 않음)");
+        check(!lines.empty() && first.find("\"distance_mm\":null") != std::string::npos,
+              "idle JSON distance_mm=null (기본값 0.0이 '0mm 밀착'으로 새지 않음)");
         check(!lines.empty() && first.find("\"camera_id\":null") != std::string::npos
                              && first.find("\"zone\":null") != std::string::npos,
               "idle JSON camera_id/zone=null (미확정 규약)");

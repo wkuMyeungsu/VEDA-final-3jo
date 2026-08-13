@@ -37,12 +37,12 @@ NearestPersonResult selectNearestPerson(const WorldPoint& forklift,
         if (t.missed_frames > 0) continue; // 이번 프레임에 실제로 안 보인 트랙은 제외
 
         double d = euclideanDistance(forklift, t.last_world);
-        if (d < result.distance_m) {
+        if (d < result.distance_mm) {
             result.found      = true;
             result.track_id   = t.track_id;
             result.camera_id  = t.camera_id;  // 선택된 트랙의 값을 그대로 통과시킴 (판정 로직과 무관)
             result.position   = t.last_world;
-            result.distance_m = d;
+            result.distance_mm = d;
         }
     }
     return result;
@@ -60,7 +60,7 @@ void printResult(const std::string& scenario, const WorldPoint& forklift,
         std::cout << "  -> 최근접 사람: track_id=" << r.track_id
                   << " | camera_id=" << r.camera_id
                   << " | 위치=(" << r.position.x << ", " << r.position.y << ")"
-                  << " | 거리=" << std::fixed << std::setprecision(2) << r.distance_m << "m\n";
+                  << " | 거리=" << std::fixed << std::setprecision(2) << r.distance_mm << "mm\n";
     } else {
         std::cout << "  -> 근처에 유효한 사람 트랙 없음\n";
     }

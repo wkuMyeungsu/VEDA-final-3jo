@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::string sql =
-        "SELECT utc_time, camera_id, terminal_id, risk_level, exception_state, distance_m FROM "
+        "SELECT utc_time, camera_id, terminal_id, risk_level, exception_state, distance_mm FROM "
         + std::string(risk_log::EventLogger::kTableName) + " ORDER BY id DESC LIMIT ?";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {

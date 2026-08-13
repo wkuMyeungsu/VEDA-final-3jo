@@ -55,7 +55,7 @@ struct NearestPersonResult {
     int        track_id = -1;
     int        camera_id = -1;   // 선택된 트랙을 보고 있던 카메라 (found=false면 -1 유지)
     WorldPoint position;
-    double     distance_m = std::numeric_limits<double>::max();
+    double     distance_mm = std::numeric_limits<double>::max();
 };
 
 // ============================================================

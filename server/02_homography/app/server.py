@@ -36,6 +36,9 @@ TIMEOUT = int(os.environ.get("HOMOGRAPHY_COMMAND_TIMEOUT_SEC", "120"))
 RESULT_ROOT = Path(os.environ.get("HOMOGRAPHY_RESULT_DIR", "/tmp/homography-results"))
 RESULT_TTL_SEC = int(os.environ.get("ADMIN_GUI_RESULT_TTL_SEC", "3600"))
 RESULT_ROOT.mkdir(parents=True, exist_ok=True)
+OPERATIONAL_HOMOGRAPHY_ROOT = Path(os.environ.get(
+    "SAFETY_SERVER_HOMOGRAPHY_DIR",
+    str(ROOT.parents[1] / "01_main" / "config" / "homography")))
 CAMERA_RETRY_DELAY_SEC = 0.5
 LIVE_CAMERA_ROOT = RESULT_ROOT / "live-camera"
 LIVE_CAMERA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -597,9 +600,20 @@ class Handler(BaseHTTPRequestHandler):
                 value.setdefault("verification_region_world", None)
                 output_file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
                                        encoding="utf-8")
+                channel = int(value["channel"])
+                if channel < 1:
+                    raise ValueError("보정 채널은 1 이상이어야 합니다")
+                if value.get("world_unit") != "mm":
+                    raise ValueError("호모그래피 world_unit은 mm여야 합니다")
+                OPERATIONAL_HOMOGRAPHY_ROOT.mkdir(parents=True, exist_ok=True)
+                operational_file = OPERATIONAL_HOMOGRAPHY_ROOT / f"homography_channel_{channel}_mm.json"
+                temporary_file = operational_file.with_suffix(".json.tmp")
+                shutil.copyfile(output_file, temporary_file)
+                temporary_file.replace(operational_file)
                 self.send_json({"ok": True, "result": value,
                     "artifact_url": f"/artifacts/{capture_id}/{output_name}",
-                    "overlay_url": f"/artifacts/{capture_id}/{overlay_name}"})
+                    "overlay_url": f"/artifacts/{capture_id}/{overlay_name}",
+                    "operational_path": str(operational_file)})
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
                 self.send_json({"ok": False, "error": str(error)}, 400)
             return
@@ -626,7 +640,7 @@ class Handler(BaseHTTPRequestHandler):
             args = ["calibrate", "--config", str(CONFIG), "--input",
                     configured_input_name("image", "capture.png"),
                     "--output", configured_output_name("calibration", "homography.json")]
-            for key, flag in (("channel", "--channel"), ("max_rmse_cm", "--max-rmse-cm")):
+            for key, flag in (("channel", "--channel"), ("max_rmse_mm", "--max-rmse-mm")):
                 if payload.get(key) not in (None, ""):
                     args.extend((flag, str(payload[key])))
             self.send_json(run_tool(args))
