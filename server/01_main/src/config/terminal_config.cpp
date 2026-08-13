@@ -74,6 +74,54 @@ bool fileExists(const std::string& path) {
     return f.good();
 }
 
+// "mqtt" 절은 선택 사항이라 requireObject/require*()(없으면 예외)를 쓰지 않는다 - 키가
+// 있으면 타입만 검증하고, 없으면 MqttConfig의 기본값을 그대로 둔다.
+void parseOptionalMqttSection(const json& root, const std::string& path, MqttConfig& out) {
+    auto section_it = root.find("mqtt");
+    if (section_it != root.end()) {
+        if (!section_it->is_object()) {
+            throwSchema(path, "\"mqtt\" 는 객체여야 함");
+        }
+        const json& mqtt = *section_it;
+
+        if (auto it = mqtt.find("tls_enabled"); it != mqtt.end()) {
+            if (!it->is_boolean()) throwSchema(path, "\"mqtt.tls_enabled\" 는 불리언이어야 함");
+            out.tls_enabled = it->get<bool>();
+        }
+        if (auto it = mqtt.find("broker_host"); it != mqtt.end()) {
+            if (!it->is_string()) throwSchema(path, "\"mqtt.broker_host\" 는 문자열이어야 함");
+            out.broker_host = it->get<std::string>();
+        }
+        if (auto it = mqtt.find("broker_port"); it != mqtt.end()) {
+            if (!it->is_number_integer()) throwSchema(path, "\"mqtt.broker_port\" 는 정수여야 함");
+            const int v = it->get<int>();
+            if (v < 0 || v > 65535) {
+                throwSchema(path, "\"mqtt.broker_port\" 는 0~65535 범위여야 함 (실제: " +
+                                      std::to_string(v) + ")");
+            }
+            out.broker_port = static_cast<uint16_t>(v);
+        }
+        if (auto it = mqtt.find("ca_cert_path"); it != mqtt.end()) {
+            if (!it->is_string()) throwSchema(path, "\"mqtt.ca_cert_path\" 는 문자열이어야 함");
+            out.ca_cert_path = it->get<std::string>();
+        }
+        if (auto it = mqtt.find("client_cert_path"); it != mqtt.end()) {
+            if (!it->is_string()) throwSchema(path, "\"mqtt.client_cert_path\" 는 문자열이어야 함");
+            out.client_cert_path = it->get<std::string>();
+        }
+        if (auto it = mqtt.find("client_key_path"); it != mqtt.end()) {
+            if (!it->is_string()) throwSchema(path, "\"mqtt.client_key_path\" 는 문자열이어야 함");
+            out.client_key_path = it->get<std::string>();
+        }
+    }
+
+    // broker_port 미지정(0, "mqtt" 절 자체가 없는 경우 포함)이면 tls_enabled에 맞춰
+    // 관례 포트를 채운다 - JSON에서 명시했으면(0이 아니면) 그대로 둔다.
+    if (out.broker_port == 0) {
+        out.broker_port = out.tls_enabled ? 8883 : 1883;
+    }
+}
+
 }  // namespace
 
 TerminalConfigError::TerminalConfigError(Code code, std::string path, const std::string& detail)
@@ -123,6 +171,8 @@ TerminalConfig loadTerminalConfig(const std::string& path) {
     cfg.forklift.terminal_id = requireString(forklift, "forklift", "terminal_id", path);
     cfg.handover.confirm_frames = requireInt(handover, "handover", "confirm_frames", path);
     cfg.handover.lost_grace_ms  = requireInt(handover, "handover", "lost_grace_ms", path);
+
+    parseOptionalMqttSection(root, path, cfg.mqtt);
 
     // ── 값 범위 검증 ────────────────────────────────────────────
     // 여기서 거르지 않으면 MarkerChannelTracker가 조용히 이상하게 동작한다:

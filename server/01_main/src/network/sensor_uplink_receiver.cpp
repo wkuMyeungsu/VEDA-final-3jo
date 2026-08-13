@@ -143,8 +143,9 @@ void mosqLibRelease() {
 
 } // namespace
 
-SensorUplinkReceiver::SensorUplinkReceiver(std::string broker_host, int broker_port)
-    : broker_host_(std::move(broker_host)), broker_port_(broker_port) {
+SensorUplinkReceiver::SensorUplinkReceiver(std::string broker_host, int broker_port,
+                                            MqttTlsOptions tls)
+    : broker_host_(std::move(broker_host)), broker_port_(broker_port), tls_(std::move(tls)) {
     mosqLibAcquire();
 }
 
@@ -258,6 +259,27 @@ void SensorUplinkReceiver::start() {
     // 끊긴 뒤 재접속 지연: 3초에서 시작해 최대 30초까지 지수적으로 늘어남(마지막 true).
     // 단말/브로커가 잠깐 흔들려도 재접속 폭주로 브로커를 두들기지 않게 하기 위함.
     mosquitto_reconnect_delay_set(mosq_, 3, 30, true);
+
+    // TLS/mTLS는 connect 전에 걸어야 한다(ResultPublisher::connectBroker()와 같은 이유).
+    // 실패하면 평문으로 폴백하지 않고 여기서 포기한다 - "TLS 켰다고 착각했는데 실제로는
+    // 안 걸린" 상태를 만들지 않기 위함.
+    if (tls_.enabled) {
+        const int trc = mosquitto_tls_set(mosq_,
+                                          tls_.ca_cert_path.c_str(),
+                                          /*capath=*/nullptr,
+                                          tls_.client_cert_path.c_str(),
+                                          tls_.client_key_path.c_str(),
+                                          /*pw_callback=*/nullptr);
+        if (trc != MOSQ_ERR_SUCCESS) {
+            std::cerr << "[SensorUplinkReceiver] mosquitto_tls_set 실패 (" << mosquitto_strerror(trc)
+                      << ") - ca=" << tls_.ca_cert_path << " cert=" << tls_.client_cert_path
+                      << " key=" << tls_.client_key_path << " - MQTT 수신 비활성\n";
+            mosquitto_destroy(mosq_);
+            mosq_ = nullptr;
+            running_ = false;
+            return;
+        }
+    }
 
     const int rc = mosquitto_connect_async(mosq_, broker_host_.c_str(), broker_port_, /*keepalive=*/60);
     if (rc != MOSQ_ERR_SUCCESS) {

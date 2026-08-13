@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <map>
 
+#include "network/mqtt_tls_options.hpp"
+
 struct mosquitto;
 struct mosquitto_message;
 
@@ -85,8 +87,12 @@ public:
     // 구독 토픽. 단말별 토픽(forklift/sensor/<terminal_id>)을 와일드카드 1개로 전부 받는다.
     static constexpr const char* kSubscribeTopic = "forklift/sensor/+";
 
+    // tls: 기본값 MqttTlsOptions{}(enabled=false) - 평문 연결 그대로 유지. enabled=true면
+    //      start()가 mosquitto_connect_async() 전에 mosquitto_tls_set()을 건다
+    //      (ResultPublisher와 같은 규약).
     explicit SensorUplinkReceiver(std::string broker_host = kDefaultBrokerHost,
-                                  int broker_port = kDefaultBrokerPort);
+                                  int broker_port = kDefaultBrokerPort,
+                                  MqttTlsOptions tls = {});
     ~SensorUplinkReceiver();
 
     SensorUplinkReceiver(const SensorUplinkReceiver&) = delete;
@@ -140,6 +146,7 @@ private:
 
     std::string broker_host_;
     int         broker_port_;
+    MqttTlsOptions tls_;
 
     mosquitto* mosq_ = nullptr;
 

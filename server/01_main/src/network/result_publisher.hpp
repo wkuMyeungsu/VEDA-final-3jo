@@ -14,6 +14,8 @@
 
 #include <mosquitto.h>
 
+#include "network/mqtt_tls_options.hpp"
+
 // ResultPublisher - 판정 결과 MQTT 송신기 (헤더 온리)
 //
 // [구조 변경 2026-08-03] client(connect) -> server(listen/accept)
@@ -82,12 +84,16 @@ public:
     // terminal_id: 토픽을 가르는 단말 식별자 (설정 파일의 forklift.terminal_id).
     // broker_host/broker_port: 브로커 주소. 기본값은 서버와 같은 머신에 브로커를 두는
     //                          현재 배치 기준이며, 다른 머신으로 옮기면 호출부가 넘긴다.
+    // tls: 기본값 MqttTlsOptions{}(enabled=false) - 평문 연결 그대로 유지. enabled=true면
+    //      connectBroker()가 mosquitto_connect() 전에 mosquitto_tls_set()을 건다.
     explicit ResultPublisher(std::string terminal_id,
                              std::string broker_host = "localhost",
-                             uint16_t broker_port = 1883)
+                             uint16_t broker_port = 1883,
+                             MqttTlsOptions tls = {})
         : terminal_id_(std::move(terminal_id)),
           broker_host_(std::move(broker_host)),
           broker_port_(broker_port),
+          tls_(std::move(tls)),
           topic_(std::string(kRiskTopicPrefix) + terminal_id_) {}
 
     ~ResultPublisher() { stop(); }
@@ -262,6 +268,29 @@ private:
         mosquitto_reconnect_delay_set(mosq_, kReconnectDelayMinSec, kReconnectDelayMaxSec,
                                       /*reconnect_exponential_backoff=*/true);
 
+        // TLS/mTLS는 mosquitto_connect() 전에 걸어야 한다 - 이후에 부르면 다음 연결부터만
+        // 적용되고 이번 시도는 평문으로 나간다. 실패 시 여기서 포기하는 이유: 인증서 경로가
+        // 잘못됐는데 평문으로 폴백하면 "TLS를 켰다고 착각한 채 실제로는 안 걸린" 상태가
+        // 조용히 만들어진다 - 그건 켜는 것보다 나쁘다.
+        if (tls_.enabled) {
+            int trc = mosquitto_tls_set(mosq_,
+                                        tls_.ca_cert_path.c_str(),
+                                        /*capath=*/nullptr,
+                                        tls_.client_cert_path.c_str(),
+                                        tls_.client_key_path.c_str(),
+                                        /*pw_callback=*/nullptr);
+            if (trc != MOSQ_ERR_SUCCESS) {
+                std::cerr << "[ResultPublisher] mosquitto_tls_set 실패 (" << mosquitto_strerror(trc)
+                          << ") - ca=" << tls_.ca_cert_path << " cert=" << tls_.client_cert_path
+                          << " key=" << tls_.client_key_path << " - MQTT 송신 비활성\n";
+                mosquitto_destroy(mosq_);
+                mosq_ = nullptr;
+                libRelease();
+                setState(LinkState::DISCONNECTED);
+                return false;
+            }
+        }
+
         mosquitto_connect_callback_set(mosq_, &ResultPublisher::onConnectCb);
         mosquitto_disconnect_callback_set(mosq_, &ResultPublisher::onDisconnectCb);
 
@@ -378,6 +407,7 @@ private:
     std::string terminal_id_;
     std::string broker_host_;
     uint16_t    broker_port_;
+    MqttTlsOptions tls_;
     std::string topic_;                  // "forklift/risk/<terminal_id>" (생성자에서 1회 계산)
 
     struct mosquitto* mosq_ = nullptr;   // libmosquitto 핸들 (start()~stop() 동안만 유효)
