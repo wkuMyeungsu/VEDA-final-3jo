@@ -7,8 +7,9 @@
 namespace {
 Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")
 
-// appsink("sink")에 새 프레임 도착 시 GStreamer가 호출 (GStreamer 스레드에서 실행)
-// invokeMethod(QueuedConnection)로 Qt 메인 스레드로 안전하게 넘겨서 emit
+// appsink("sink")에 새 프레임 도착 시 GStreamer가 호출 (GStreamer 스트리밍 스레드에서 실행)
+// 익명 네임스페이스의 자유 함수라 RtspVideoSource의 private 멤버에 직접 접근할 수 없어서,
+// 복사한 프레임을 public 진입점인 pushFrame()에 그대로 넘긴다. 큐잉/배압 처리는 그 안에서 담당.
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
 {
     auto *self = static_cast<RtspVideoSource *>(userData);
@@ -32,9 +33,7 @@ GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
         QImage copy = frame.copy();
         gst_buffer_unmap(buffer, &map);
 
-        QMetaObject::invokeMethod(self, [self, copy]() {
-            emit self->frameReady(copy);
-        }, Qt::QueuedConnection);
+        self->pushFrame(copy);
     }
 
     gst_sample_unref(sample);
@@ -124,7 +123,69 @@ void RtspVideoSource::stop()
         m_bus = nullptr;
     }
 
+    // 대기 중이던 프레임을 비워 메모리를 즉시 반환한다.
+    // m_deliveryQueued는 여기서 리셋하지 않는다 -- "플래그 true = 이벤트가 정확히 1건 큐에
+    // 있다"는 불변식을 유지하기 위해서다. 리셋해버리면 stop() 이후에도 큐에 남아있던
+    // deliverPending() 이벤트가 도착했을 때 플래그가 이미 false라, 그 뒤에 재시작된
+    // 스트림이 올린 진짜 예약과 뒤섞여 이벤트가 중복 등록될 수 있다.
+    int dropped = 0;
+    {
+        QMutexLocker locker(&m_pendingMutex);
+        m_pendingFrame = QImage();
+        dropped = m_droppedFrames.exchange(0);
+    }
+    if (dropped > 0)
+        qCInfo(lcRtsp) << "camera" << m_cameraId << "dropped" << dropped
+                        << "frame(s) while consumer lagged behind";
+
     setConnectionState(RiskTypes::ConnectionState::Disconnected);
+}
+
+// GStreamer 스트리밍 스레드에서 호출됨. 슬롯에 최신 프레임을 덮어쓰고 메인 스레드로
+// 배달을 예약한다 -- 이미 슬롯에 프레임이 있었다면 그건 소비되지 못하고 버려진 것.
+void RtspVideoSource::pushFrame(const QImage &frame)
+{
+    {
+        QMutexLocker locker(&m_pendingMutex);
+        if (!m_pendingFrame.isNull())
+            m_droppedFrames.fetch_add(1);
+        m_pendingFrame = frame;
+    }
+    scheduleDelivery();
+}
+
+// 메인 스레드로의 배달을 최대 1건만 큐에 올린다. exchange(true)가 이미 true를
+// 반환했다면(=이미 예약된 이벤트가 있다면) 곧 그 이벤트가 슬롯의 최신 프레임을
+// 가져갈 것이므로 여기서는 그냥 리턴 -- Qt 이벤트 큐에 중복으로 쌓이는 것을 막는다.
+void RtspVideoSource::scheduleDelivery()
+{
+    if (m_deliveryQueued.exchange(true))
+        return;
+
+    QMetaObject::invokeMethod(this, [this]() { deliverPending(); }, Qt::QueuedConnection);
+}
+
+// 메인 스레드에서 실행. 슬롯에서 최신 프레임을 꺼내 frameReady로 emit한다.
+void RtspVideoSource::deliverPending()
+{
+    // 플래그를 먼저 내린 다음 슬롯을 비운다. 순서를 반대로 하면 "슬롯 비우기"와
+    // "플래그 내리기" 사이에 들어온 push가 scheduleDelivery()에서 예약을 건너뛰게
+    // 되는데(플래그가 아직 true라서), 정작 배달은 이미 끝난 뒤라 그 프레임은 다음
+    // push가 올 때까지 슬롯에 갇힌다. 스트림이 그 직후 끊기면 그 프레임이 메모리에
+    // 영구히 남는다. 먼저 내리면 최악의 경우 이벤트가 2건 큐에 들어갈 수 있지만
+    // (여전히 상한 내) 영구 정체는 구조적으로 불가능하다.
+    m_deliveryQueued.store(false);
+
+    QImage frame;
+    {
+        QMutexLocker locker(&m_pendingMutex);
+        if (m_pendingFrame.isNull())
+            return; // stop() 등으로 슬롯이 비었으면 emit할 것이 없음
+        frame = std::move(m_pendingFrame);
+        m_pendingFrame = QImage();
+    }
+
+    emit frameReady(frame);
 }
 
 void RtspVideoSource::scheduleReconnect()
