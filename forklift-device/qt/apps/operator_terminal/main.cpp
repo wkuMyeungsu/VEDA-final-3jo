@@ -84,7 +84,6 @@ int main(int argc, char *argv[])
     OperatorDemoController demoController(&mockMetadataSource, &videoManager, &serverConnection, &activeCamera); // - 데모 제어기 생성: 데모 패널 동작 객체 초기화
     demoController.setDemoModeEnabled(parser.isSet(demoOption));                // - 데모 모드 설정: 실행 옵션에 따른 데모 모드 활성화
 
-    videoManager.startAll();                                                     // - 영상 소스 구동: 모든 카메라 영상 수신 시작
     handoverClient.setTerminalId(appConfig.terminalId);                          // - 단말 ID 설정: 핸도버 클라이언트에 식별자 지정
     handoverClient.connectToServer(appConfig.serverHost, appConfig.handoverPort);// - 제어 채널 접속: 서버 핸도버 포트로 연결 시도
     metadataDistributor.start();                                                 // - 데이터 분배 시작: 메타데이터 수신 및 분배 개시

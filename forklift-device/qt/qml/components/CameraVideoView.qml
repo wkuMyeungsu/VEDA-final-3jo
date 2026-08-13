@@ -26,7 +26,7 @@ Item {
 
     DetectionOverlay {
         anchors.fill: parent
-        visible: root.showOverlay
+        visible: root.showOverlay && !videoItem.switching
         videoSize: videoItem.videoSize
         personBBox: root.personBBox
         forkliftBBox: root.forkliftBBox

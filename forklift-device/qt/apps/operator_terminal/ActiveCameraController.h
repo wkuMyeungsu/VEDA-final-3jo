@@ -15,6 +15,7 @@ class MetadataDistributor;
 class VideoSourceManager;
 class IWarningDevice;
 class IVideoSource;
+class QTimer;                                                                                                     // - 전방 선언: 전환 마감 타이머 타입
 
 // - 활성 카메라 제어 클래스 (현재 화면에 표시할 카메라 선택 및 해당 카메라의 메타데이터/영상 상태 관리)
 class ActiveCameraController : public QObject
@@ -79,9 +80,14 @@ private slots:
 
 private:
     void attachVideoConnection();                                                                                 // - 영상 연결 수립: 새로 선택된 카메라의 영상 및 메타데이터 신호 연결
+    void commitCameraSwap(QString cameraId);                                                                      // - 전환 확정: 대기 중이던 카메라를 활성 카메라로 승격 (값으로 받음: 실행 중에 원본 대기 ID가 지워짐)
+    void cancelPendingSwap();                                                                                     // - 전환 대기 취소: 첫 프레임 대기 연결과 마감 타이머 해제
 
     QHash<QString, CameraInfo> m_cameras;                                                                         // - 카메라 정보 맵: 카메라 ID 기준 정보 저장소
     QString m_activeCameraId;                                                                                     // - 활성 카메라 ID: 현재 화면 표시 카메라 ID 보관
+    QString m_pendingCameraId;                                                                                    // - 대기 카메라 ID: 첫 프레임을 기다리는 중인 다음 카메라 ID 보관
+    QMetaObject::Connection m_pendingFrameConnection;                                                             // - 첫 프레임 신호 연결: 대기 카메라의 frameReady 1회성 연결
+    QTimer *m_swapDeadlineTimer = nullptr;                                                                        // - 전환 마감 타이머: 첫 프레임이 안 와도 일정 시간 뒤 강제 전환
     QString m_zone;                                                                                               // - 설치 구역: 현재 카메라 설치 위치 보관
     QString m_cameraName;                                                                                         // - 카메라 이름: 현재 카메라 명칭 보관
     RiskMetadata m_latest;                                                                                        // - 최신 위험 데이터: 수신된 위험 메타데이터 보관
