@@ -1,0 +1,16 @@
+{
+  "camera": {
+    "ip": "CAMERA_IP",
+    "rtsp_port": 554,
+    "http_port": 80,
+    "username": "CAMERA_USERNAME",
+    "password": "CHANGE_ME",
+    "profile": "PROFILE_NAME",
+    "capture_profile": "CAPTURE_PROFILE_NAME"
+  },
+  "connection": {
+    "source_type": "rtsp",
+    "capture_source": "snapshot",
+    "timeout_sec": 10
+  }
+}
