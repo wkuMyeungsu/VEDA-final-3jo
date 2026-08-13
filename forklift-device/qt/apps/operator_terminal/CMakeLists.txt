@@ -23,6 +23,7 @@ set(OPERATOR_TERMINAL_QML_FILES
     ${CMAKE_SOURCE_DIR}/qml/operator_terminal/StatusStrip.qml
     ${CMAKE_SOURCE_DIR}/qml/operator_terminal/RiskHud.qml
     ${CMAKE_SOURCE_DIR}/qml/operator_terminal/EdgeWarningFrame.qml
+    ${CMAKE_SOURCE_DIR}/qml/operator_terminal/EstopOverlay.qml
     ${CMAKE_SOURCE_DIR}/qml/operator_terminal/DemoPanel.qml
 )
 foreach(qml_file ${OPERATOR_TERMINAL_QML_FILES})

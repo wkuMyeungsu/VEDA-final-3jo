@@ -20,4 +20,7 @@ struct TerminalConfig {
     quint16 mqttBrokerPort = 1883;                                                      // - MQTT 브로커 포트: RiskEventSource 위험 판정 데이터 구독 포트
     QString metadataSourceType = QStringLiteral("mock");                               // - 데이터 소스 유형: 가상(mock) 또는 통신(mqtt)
     QString terminalId;                                                                 // - 단말 식별자: 본인 명령 필터링 및 MQTT 구독 토픽 구성용 단말 ID
+    QString fpgaSerialPort = QStringLiteral("/dev/serial0");                            // - FPGA 경고 보드 UART 포트: Pi GPIO 8/10번 핀(TXD/RXD) 직결 기준 기본값
+    qint32 fpgaBaudRate = 115200;                                                        // - FPGA 경고 보드 UART 보레이트: gpio-control/src/top.v 기본값과 일치
+    QString warningDeviceType = QStringLiteral("noop");                                 // - 경고 장치 유형: 비활성(noop) 또는 실장치(serial)
 };

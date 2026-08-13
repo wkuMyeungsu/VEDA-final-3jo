@@ -25,6 +25,17 @@ ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, Meta
         connect(m_metadataDistributor, &MetadataDistributor::metadataUpdated, this,
                 &ActiveCameraController::handleMetadataUpdated);
 
+    if (m_warningDevice) {                                                 // - 경고 장치 상태 신호 연결: FPGA 상태 변화를 캐시에 반영
+        connect(m_warningDevice, &IWarningDevice::estopActiveChanged, this,
+                &ActiveCameraController::handleWarningDeviceStateChanged);
+        connect(m_warningDevice, &IWarningDevice::movementCutoffActiveChanged, this,
+                &ActiveCameraController::handleWarningDeviceStateChanged);
+        connect(m_warningDevice, &IWarningDevice::errorLatchChanged, this,
+                &ActiveCameraController::handleWarningDeviceStateChanged);
+        connect(m_warningDevice, &IWarningDevice::fpgaConnectionStateChanged, this,
+                &ActiveCameraController::handleWarningDeviceStateChanged);
+    }
+
     m_onvifParser = new OnvifBBoxParser(this);                             // - ONVIF 파서 생성: BBox 좌표 추출용 객체 생성
     connect(m_onvifParser, &OnvifBBoxParser::personDetected, this, &ActiveCameraController::handlePersonDetected); // - 사람 검출 신호 연결
 }
@@ -87,6 +98,32 @@ void ActiveCameraController::handlePersonDetected(const BBox &bbox)
         return;
     m_onvifPersonBBox = bbox;                                              // - 영역 상자 갱신: 사람 위치 좌표 저장
     emit metadataChanged();                                                // - 메타데이터 변경 신호 발생: 화면 영역 알림
+}
+
+void ActiveCameraController::handleWarningDeviceStateChanged()
+{
+    if (!m_warningDevice)
+        return;
+
+    if (m_estopActive != m_warningDevice->estopActive()) {                 // - 비상정지 상태 갱신: 값이 바뀐 경우에만 신호 발생
+        m_estopActive = m_warningDevice->estopActive();
+        emit estopActiveChanged();
+    }
+    if (m_movementCutoffActive != m_warningDevice->movementCutoffActive()) { // - 전진 차단 상태 갱신: 값이 바뀐 경우에만 신호 발생
+        m_movementCutoffActive = m_warningDevice->movementCutoffActive();
+        emit movementCutoffActiveChanged();
+    }
+    if (m_fpgaConnectionState != m_warningDevice->fpgaConnectionState()) { // - FPGA 연결 상태 갱신: 값이 바뀐 경우에만 신호 발생
+        m_fpgaConnectionState = m_warningDevice->fpgaConnectionState();
+        emit fpgaConnectionStateChanged();
+    }
+
+    const bool errorLatched = m_warningDevice->checksumErrorLatched() || m_warningDevice->protocolErrorLatched()
+        || m_warningDevice->timeoutErrorLatched();                        // - 3개 누적 플래그를 하나로 합산 (CLEAR_ERROR 전까지 유지)
+    if (m_fpgaErrorLatched != errorLatched) {
+        m_fpgaErrorLatched = errorLatched;
+        emit fpgaErrorLatchedChanged();
+    }
 }
 
 void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)

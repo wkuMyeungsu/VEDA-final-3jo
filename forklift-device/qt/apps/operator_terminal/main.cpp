@@ -10,6 +10,7 @@
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
 #include "network/NoopWarningDevice.h"
+#include "network/SerialWarningDevice.h"
 #include "network/HandoverClient.h"
 #include "network/RiskEventSource.h" 
 #include "services/MetadataDistributor.h"
@@ -68,9 +69,15 @@ int main(int argc, char *argv[])
     QObject::connect(&handoverClient, &HandoverClient::connectionStateChanged, &serverConnection,
                      &ServerConnectionService::setConnectionState);              // - 상태 변경 신호 연결: 제어 채널 상태를 서버 연결 서비스에 전달
     
-    NoopWarningDevice warningDevice;                                             // - 경고 장치 생성: 테스트용 비활성 경고 장치 객체
+    NoopWarningDevice noopWarningDevice;                                         // - 경고 장치 생성: 테스트용 비활성 경고 장치 객체
+    SerialWarningDevice serialWarningDevice(appConfig.fpgaSerialPort, appConfig.fpgaBaudRate); // - 경고 장치 생성: FPGA UART 통신 객체
+    IWarningDevice *warningDevice = &noopWarningDevice;                          // - 활성 경고 장치 지정: 기본값으로 비활성 장치 설정
+    if (appConfig.warningDeviceType == QStringLiteral("serial")) {               // - 장치 유형 확인: 설정값이 serial인 경우 실제 장치로 변경
+        warningDevice = &serialWarningDevice;
+        serialWarningDevice.start();                                            // - 포트 열기 및 watchdog 송신/무수신 감시 타이머 구동
+    }
 
-    ActiveCameraController activeCamera(cameras, &metadataDistributor, &videoManager, &warningDevice); // - 활성 카메라 제어기 생성: 화면 제어 객체 초기화
+    ActiveCameraController activeCamera(cameras, &metadataDistributor, &videoManager, warningDevice); // - 활성 카메라 제어기 생성: 화면 제어 객체 초기화
     QObject::connect(&handoverClient, &HandoverClient::cameraHandoverRequested, &activeCamera,
                   &ActiveCameraController::setActiveCameraId);                   // - 핸도버 신호 연결: 카메라 전환 요청 시 활성 카메라 ID 변경
 
