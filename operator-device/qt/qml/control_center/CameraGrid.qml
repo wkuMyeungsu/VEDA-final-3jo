@@ -18,7 +18,7 @@ Item {
         anchors.fill: parent
         clip: true
         cellWidth: root.width / root.columns
-        cellHeight: cellWidth * 9 / 16 + 40  // 16:9 영상 비율 + 하단 정보줄 40px
+        cellHeight: cellWidth * 9 / 16 + Theme.cameraCardChromeHeight  // 16:9 영상 비율 + 하단 정보줄
         model: cameraListModel
 
         // delegate 안의 "model.xxx"는 CameraListModel::roleNames()에서

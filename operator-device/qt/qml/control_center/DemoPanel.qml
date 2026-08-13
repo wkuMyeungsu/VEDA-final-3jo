@@ -10,7 +10,7 @@ Rectangle {
     id: root
     color: Theme.colorSurfaceElevated
     border.color: Theme.colorBorderStrong
-    border.width: 1
+    border.width: Theme.borderWidthHairline
 
     Flickable {
         anchors.fill: parent
@@ -26,7 +26,7 @@ Rectangle {
             Text {
                 text: "데모 패널"
                 color: Theme.colorTextPrimary
-                font.pixelSize: Theme.fontSizeLg
+                font.pixelSize: Theme.typeHeading.size
                 font.bold: true
             }
 
@@ -42,7 +42,7 @@ Rectangle {
                 onToggled: demoController.setServerConnected(checked)
             }
 
-            Text { text: "대상 카메라"; color: Theme.colorTextSecondary; font.pixelSize: Theme.fontSizeSm }
+            Text { text: "대상 카메라"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
 
             ComboBox {
                 id: cameraCombo
@@ -58,7 +58,7 @@ Rectangle {
                 onToggled: demoController.setCameraConnected(cameraCombo.currentValue, checked)
             }
 
-            Text { text: "위험 단계 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.fontSizeSm }
+            Text { text: "위험 단계 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
 
             Flow {
                 width: parent.width
@@ -81,7 +81,7 @@ Rectangle {
                 onClicked: demoController.clearCameraRisk(cameraCombo.currentValue)
             }
 
-            Text { text: "예외 상태 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.fontSizeSm }
+            Text { text: "예외 상태 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
 
             Flow {
                 width: parent.width
@@ -96,7 +96,7 @@ Rectangle {
                 }
             }
 
-            Text { text: "bbox 데모"; color: Theme.colorTextSecondary; font.pixelSize: Theme.fontSizeSm }
+            Text { text: "bbox 데모"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
 
             Button {
                 text: "person / forklift bbox 무작위 이동"

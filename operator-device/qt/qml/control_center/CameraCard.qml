@@ -23,7 +23,7 @@ Rectangle {
 
     color: Theme.colorSurface
     radius: Theme.radiusMd
-    border.width: isAlert ? 2 : 1
+    border.width: isAlert ? Theme.borderWidthAlert : Theme.borderWidthHairline
     // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
     border.color: exceptionState !== 0 ? Theme.colorUnknown
                   : (isAlert ? Theme.riskColor(riskLevel) : Theme.colorBorder)
@@ -75,13 +75,13 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: Theme.spacingSm
-        height: 18
+        height: Theme.cameraCardFooterHeight
         spacing: Theme.spacingSm
 
         Text {
             text: root.cameraName + " (" + root.cameraId + ")"
             color: Theme.colorTextPrimary
-            font.pixelSize: Theme.fontSizeSm
+            font.pixelSize: Theme.typeCaption.size
             font.bold: true
             elide: Text.ElideRight
             width: 150
@@ -89,12 +89,12 @@ Rectangle {
         Text {
             text: root.zone
             color: Theme.colorTextSecondary
-            font.pixelSize: Theme.fontSizeSm
+            font.pixelSize: Theme.typeCaption.size
         }
         Text {
             text: Theme.connectionLabel(root.videoConnectionState)
             color: Theme.connectionColor(root.videoConnectionState)
-            font.pixelSize: Theme.fontSizeSm
+            font.pixelSize: Theme.typeCaption.size
         }
     }
 }

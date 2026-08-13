@@ -10,17 +10,17 @@ Rectangle {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         anchors.leftMargin: Theme.spacingLg
-        spacing: 2
+        spacing: Theme.spacingXxs
 
         Text {
             text: activeCamera.zone
             color: Theme.colorTextSecondary
-            font.pixelSize: Theme.fontSizeMd
+            font.pixelSize: Theme.typeCaption.size
         }
         Text {
             text: activeCamera.cameraName + " (" + activeCamera.activeCameraId + ")"
             color: Theme.colorTextPrimary
-            font.pixelSize: Theme.fontSizeXl
+            font.pixelSize: Theme.typeHeading.size
             font.bold: true
         }
     }

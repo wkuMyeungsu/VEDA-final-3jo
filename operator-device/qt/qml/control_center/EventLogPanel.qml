@@ -8,7 +8,7 @@ Rectangle {
     id: root
     color: Theme.colorSurface
     border.color: Theme.colorBorder
-    border.width: 1
+    border.width: Theme.borderWidthHairline
 
     Column {
         anchors.fill: parent
@@ -18,22 +18,22 @@ Rectangle {
         Text {
             text: "이벤트 로그"
             color: Theme.colorTextSecondary
-            font.pixelSize: Theme.fontSizeSm
+            font.pixelSize: Theme.typeLabel.size
             font.bold: true
-            font.letterSpacing: 1
+            font.letterSpacing: Theme.typeLabel.spacing
         }
 
         Row {
             width: parent.width
             spacing: Theme.spacingMd
-            Text { text: "시간"; width: 140; color: Theme.colorTextMuted; font.pixelSize: Theme.fontSizeSm; font.bold: true }
-            Text { text: "카메라"; width: 100; color: Theme.colorTextMuted; font.pixelSize: Theme.fontSizeSm; font.bold: true }
-            Text { text: "위험단계"; width: 100; color: Theme.colorTextMuted; font.pixelSize: Theme.fontSizeSm; font.bold: true }
-            Text { text: "거리"; width: 80; color: Theme.colorTextMuted; font.pixelSize: Theme.fontSizeSm; font.bold: true }
-            Text { text: "예외상태"; color: Theme.colorTextMuted; font.pixelSize: Theme.fontSizeSm; font.bold: true }
+            Text { text: "시간"; width: 140; color: Theme.colorTextMuted; font.pixelSize: Theme.typeLabel.size; font.bold: true }
+            Text { text: "카메라"; width: 100; color: Theme.colorTextMuted; font.pixelSize: Theme.typeLabel.size; font.bold: true }
+            Text { text: "위험단계"; width: 100; color: Theme.colorTextMuted; font.pixelSize: Theme.typeLabel.size; font.bold: true }
+            Text { text: "거리"; width: 80; color: Theme.colorTextMuted; font.pixelSize: Theme.typeLabel.size; font.bold: true }
+            Text { text: "예외상태"; color: Theme.colorTextMuted; font.pixelSize: Theme.typeLabel.size; font.bold: true }
         }
 
-        Rectangle { width: parent.width; height: 1; color: Theme.colorBorder }
+        Rectangle { width: parent.width; height: Theme.borderWidthHairline; color: Theme.colorBorder }
 
         ListView {
             width: parent.width
@@ -44,37 +44,37 @@ Rectangle {
             delegate: Row {
                 width: ListView.view.width
                 spacing: Theme.spacingMd
-                height: 22
+                height: Theme.tableRowHeight
 
                 Text {
                     text: Qt.formatDateTime(model.utcTime, "HH:mm:ss")
                     width: 140
                     color: Theme.colorTextSecondary
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                 }
                 Text {
                     text: model.cameraId
                     width: 100
                     color: Theme.colorTextSecondary
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                 }
                 Text {
                     text: Theme.riskLabel(model.riskLevel)
                     width: 100
                     color: Theme.riskColor(model.riskLevel)
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                     font.bold: true
                 }
                 Text {
                     text: model.distanceValid ? model.distanceM.toFixed(2) + " m" : "측정 불가"
                     width: 80
                     color: Theme.colorTextSecondary
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                 }
                 Text {
                     text: Theme.exceptionLabel(model.exceptionState)
                     color: model.exceptionState !== 0 ? Theme.colorDanger : Theme.colorTextMuted
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                 }
             }
         }

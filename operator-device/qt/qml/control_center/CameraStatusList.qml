@@ -13,17 +13,17 @@ Item {
 
         delegate: Item {
             width: ListView.view.width
-            height: 44
+            height: Theme.statusRowHeight
 
             Column {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
+                spacing: Theme.spacingXxs
 
                 Text {
                     text: model.name + " (" + model.cameraId + ")"
                     color: Theme.colorTextPrimary
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                     font.bold: true
                 }
 

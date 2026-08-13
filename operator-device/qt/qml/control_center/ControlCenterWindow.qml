@@ -28,7 +28,7 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 56
+        height: Theme.appBarHeight
     }
 
     Item {
@@ -66,7 +66,7 @@ ApplicationWindow {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
-            width: 340
+            width: Theme.rightPanelWidth
             onCameraFocusRequested: (cameraId) => window.selectedCameraId = cameraId
         }
     }
@@ -76,7 +76,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 200
+        height: Theme.eventLogHeight
     }
 
     DemoPanel {

@@ -53,7 +53,7 @@ Item {
         // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
         border.color: root.exceptionState !== 0 ? Theme.colorUnknown
                       : (root.riskLevel !== 0 ? Theme.riskColor(root.riskLevel) : Theme.colorBorder)
-        border.width: (root.riskLevel !== 0 || root.exceptionState !== 0) ? 2 : 1
+        border.width: (root.riskLevel !== 0 || root.exceptionState !== 0) ? Theme.borderWidthAlert : Theme.borderWidthHairline
 
         Item {
             id: header
@@ -61,24 +61,24 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: Theme.spacingMd
-            height: 36
+            height: Theme.iconButtonSize
 
             Rectangle {
                 id: backButton
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: 36
-                height: 36
+                width: Theme.iconButtonSize
+                height: Theme.iconButtonSize
                 radius: Theme.radiusSm
                 color: Theme.colorSurfaceElevated
                 border.color: Theme.colorBorder
-                border.width: 1
+                border.width: Theme.borderWidthHairline
 
                 Text {
                     anchors.centerIn: parent
                     text: "←"
                     color: Theme.colorTextPrimary
-                    font.pixelSize: Theme.fontSizeLg
+                    font.pixelSize: Theme.typeHeading.size
                 }
 
                 MouseArea {
@@ -95,7 +95,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.cameraId
                 color: Theme.colorTextPrimary
-                font.pixelSize: Theme.fontSizeLg
+                font.pixelSize: Theme.typeHeading.size
                 font.bold: true
             }
 

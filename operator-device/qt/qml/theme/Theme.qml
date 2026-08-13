@@ -19,6 +19,12 @@ QtObject {
     readonly property color colorTextMuted: "#6b7690"
 
     readonly property color colorAccent: "#4f8cf7"
+    readonly property color colorFocusRing: colorAccent          // - 포커스 링 전용 별칭
+    readonly property color colorSurfaceSunken: "#070a12"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
+    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.6)    // - 모달/오버레이 배경 딤
+    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.06)   // - 융기 표면 상단 하이라이트 선
+    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.05) // - hover 시 덧칠 오버레이
+    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.12) // - press 시 덧칠 오버레이
 
     // --- Risk levels (color + text + icon, never color alone) ---
     readonly property color colorSafe: "#3cb371"
@@ -38,6 +44,7 @@ QtObject {
     readonly property color colorForkliftBox: "#ffb74d"
 
     // --- Spacing scale ---
+    readonly property int spacingXxs: 2
     readonly property int spacingXs: 4
     readonly property int spacingSm: 8
     readonly property int spacingMd: 12
@@ -48,18 +55,68 @@ QtObject {
     readonly property int radiusSm: 8
     readonly property int radiusMd: 12
     readonly property int radiusLg: 14
+    readonly property int radiusPill: 999             // - 높이에 무관하게 완전한 알약형 보장
 
-    // --- Typography ---
-    readonly property int fontSizeSm: 12
-    readonly property int fontSizeMd: 14
-    readonly property int fontSizeLg: 18
-    readonly property int fontSizeXl: 26
-    readonly property int fontSizeHuge: 42
+    // --- Border width ---
+    readonly property int borderWidthHairline: 1
+    readonly property int borderWidthAlert: 2
+
+    // --- Typography (크기 · 굵기 · 자간 · 수치정렬을 함께 이동) ---
+    readonly property QtObject typeDisplay: QtObject {   // - 단말 거리 표시 등 최상위 수치
+        readonly property int size: 42
+        readonly property int weight: Font.Bold
+        readonly property real spacing: -0.5
+        readonly property bool tabular: true             // - 수치 갱신 시 가로 흔들림 방지
+    }
+    readonly property QtObject typeTitle: QtObject {     // - 앱바 시스템명, 확대뷰 카메라ID
+        readonly property int size: 26
+        readonly property int weight: Font.Bold
+        readonly property real spacing: 0
+        readonly property bool tabular: false
+    }
+    readonly property QtObject typeHeading: QtObject {   // - 패널/데모패널 제목
+        readonly property int size: 18
+        readonly property int weight: Font.Bold
+        readonly property real spacing: 0
+        readonly property bool tabular: false
+    }
+    readonly property QtObject typeBody: QtObject {      // - 일반 본문 텍스트
+        readonly property int size: 14
+        readonly property int weight: Font.Normal
+        readonly property real spacing: 0
+        readonly property bool tabular: false
+    }
+    readonly property QtObject typeLabel: QtObject {     // - 섹션 제목 · 컬럼 헤더 (대문자성 + 자간)
+        readonly property int size: 12
+        readonly property int weight: Font.Bold
+        readonly property real spacing: 1
+        readonly property bool tabular: false
+    }
+    readonly property QtObject typeCaption: QtObject {   // - 보조/부가 텍스트
+        readonly property int size: 12
+        readonly property int weight: Font.Normal
+        readonly property real spacing: 0
+        readonly property bool tabular: false
+    }
+
+    // --- Layout (기존 화면 상수를 동일 값으로 흡수) ---
+    readonly property int appBarHeight: 56
+    readonly property int topBarHeight: 40             // - 단말 TopBar, 800x480 기준 축소(기존 64)
+    readonly property int rightPanelWidth: 340
+    readonly property int eventLogHeight: 200
+    readonly property int cameraCardFooterHeight: 18
+    readonly property int cameraCardChromeHeight: 40
+    readonly property int tableRowHeight: 22
+    readonly property int alertRowHeight: 52
+    readonly property int statusRowHeight: 44
+    readonly property int iconButtonSize: 36
+    readonly property int connectionDotSize: 10
 
     // --- Animation ---
     readonly property int animationFast: 120
     readonly property int animationNormal: 220
     readonly property int animationSlow: 420
+    readonly property int easingStandard: Easing.InOutQuad
 
     // RiskTypes.RiskLevel: 0 Safe, 1 Caution, 2 Danger, 3 Emergency
     function riskColor(level) {
