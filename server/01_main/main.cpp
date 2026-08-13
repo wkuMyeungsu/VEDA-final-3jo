@@ -167,14 +167,20 @@ struct AppState {
           markerTracker(config.forklift.marker_id,
                         config.handover.confirm_frames,
                         config.handover.lostGrace()),
-          // 브로커 주소는 기본값(127.0.0.1:1883, 로컬 mosquitto) 그대로 사용.
-          // 단말 식별자는 단일 지게차 데모라 기존 단말 설정값을 그대로 재사용한다.
-          sensorUplinkReceiver(),
+          // 브로커 host/port/TLS는 설정 파일의 "mqtt" 절에서 온다(절이 없으면 기본값
+          // tls_enabled=false, localhost:1883 - 기존 평문 동작 그대로). 단말 식별자는
+          // 단일 지게차 데모라 기존 단말 설정값을 그대로 재사용한다.
+          sensorUplinkReceiver(config.mqtt.broker_host, config.mqtt.broker_port,
+                               risk_transport::MqttTlsOptions{
+                                   config.mqtt.tls_enabled, config.mqtt.ca_cert_path,
+                                   config.mqtt.client_cert_path, config.mqtt.client_key_path}),
           sensorReader(sensorUplinkReceiver, config.forklift.terminal_id),
           judgmentPipeline(kUnknownCameraId, config.forklift.terminal_id, sensorReader),
-          // 브로커 host/port는 생성자 기본값(localhost:1883)을 그대로 쓴다 - 브로커가
-          // 서버와 같은 머신에 있는 현재 배치 기준. 다른 머신으로 옮기면 여기서 넘긴다.
-          resultPublisher(config.forklift.terminal_id),
+          resultPublisher(config.forklift.terminal_id, config.mqtt.broker_host,
+                          config.mqtt.broker_port,
+                          risk_transport::MqttTlsOptions{
+                              config.mqtt.tls_enabled, config.mqtt.ca_cert_path,
+                              config.mqtt.client_cert_path, config.mqtt.client_key_path}),
           resultDispatcher(
               [this](const std::string& json) { resultPublisher.publish(json); },
               std::chrono::milliseconds(200)),

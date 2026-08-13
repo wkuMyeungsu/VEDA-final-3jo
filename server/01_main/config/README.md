@@ -31,3 +31,39 @@
   `tests/test_marker_channel_tracker.cpp`에 케이스별로 고정해 뒀다.
 - 필수 키 누락 / 타입 불일치 / 범위 위반(`marker_id < 0`, `confirm_frames < 1`,
   `lost_grace_ms < 0`)은 전부 로드 단계에서 걸린다.
+
+## mqtt (선택 절, 2026-08-13 추가)
+
+ResultPublisher(판정 결과 송신)와 SensorUplinkReceiver(센서 업링크 수신)가 붙는 mosquitto
+브로커 설정. **절 자체를 생략할 수 있다** - 생략하면 `tls_enabled=false`, 평문
+`localhost:1883`로 기존과 동일하게 동작한다(회귀 없음).
+
+```json
+{
+  "forklift": {"marker_id": 0, "forklift_id": "FL_01", "terminal_id": "TERM_01"},
+  "handover": {"confirm_frames": 3, "lost_grace_ms": 500},
+  "mqtt": {
+    "tls_enabled": false,
+    "broker_host": "127.0.0.1",
+    "broker_port": 1883,
+    "ca_cert_path": "/home/veda3/mqtt-certs/ca.crt",
+    "client_cert_path": "/home/veda3/mqtt-certs/client-server.crt",
+    "client_key_path": "/home/veda3/mqtt-certs/client-server.key"
+  }
+}
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `mqtt.tls_enabled` | true면 연결 전 `mosquitto_tls_set()`을 호출해 TLS/mTLS로 붙는다. 기본값 false(평문) |
+| `mqtt.broker_host` | 브로커 주소. 기본값 `127.0.0.1`(IPv4 리터럴 - `localhost`는 이 환경에서 IPv6(`::1`)로 먼저 해석될 수 있는데, 1883 리스너가 IPv4 전용이라 SensorUplinkReceiver 쪽 연결이 거부될 수 있음. 실측 확인된 문제라 리터럴 IP를 기본값으로 씀) |
+| `mqtt.broker_port` | 생략(또는 0)하면 `tls_enabled`에 따라 1883(평문)/8883(TLS)을 자동으로 채운다 |
+| `mqtt.ca_cert_path` | 브로커 인증서를 검증할 CA 인증서 경로. `tls_enabled=false`면 무시됨 |
+| `mqtt.client_cert_path` | 이 서버 프로세스의 mTLS 클라이언트 인증서 경로 |
+| `mqtt.client_key_path` | 위 인증서의 개인키 경로 |
+
+- 인증서 기본 경로(`/home/veda3/mqtt-certs/`)는 2026-08-11 veda3에 자체 CA로 발급해 둔
+  파일들이다(`ca.crt`/`ca.key`, `server.crt`/`server.key`는 브로커용, `client-server.*`는
+  이 서버 프로세스용, `client-term01.*`는 단말(forklift-device)용). CLI 레벨(mosquitto_pub/sub,
+  `openssl s_client -connect ... -showcerts`)로는 검증 완료된 인증서다.
+- `tls_enabled=true`로 실제 켜서 mTLS 연결 자체를 검증하는 것은 아직 안 했다(다음 단계).

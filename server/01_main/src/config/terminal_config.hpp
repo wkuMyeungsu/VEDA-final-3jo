@@ -24,6 +24,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -58,9 +59,41 @@ struct HandoverConfig {
     }
 };
 
+// MQTT 브로커 연결 설정 ("mqtt" 절, 2026-08-13 추가).
+// 설정 파일에 "mqtt" 절 자체가 없어도 실패하지 않는다(옵션 절) - 기존 terminal_*.json이
+// 전부 이 절 없이 배포돼 있어, 필수로 만들면 그 파일들이 전부 SCHEMA_INVALID로 깨진다.
+// 절이 없으면 이 구조체의 기본값(tls_enabled=false, 평문 1883)이 그대로 쓰인다.
+struct MqttConfig {
+    // TLS/mTLS 사용 여부. false(기본)면 client_/ca_ 경로는 아예 읽히지 않고 무시된다
+    // (ResultPublisher/SensorUplinkReceiver가 mosquitto_tls_set()을 호출하지 않음) -
+    // 팀 확정(2026-08-13)에 따라 기본값은 항상 false, 기존 평문 동작을 그대로 보존한다.
+    bool tls_enabled = false;
+
+    // "localhost"가 아니라 IPv4 리터럴을 기본값으로 쓴다: 이 환경의 mosquitto 1883
+    // 리스너가 "0.0.0.0"(IPv4 전용)으로만 바인딩돼 있는데, "localhost"는 getaddrinfo가
+    // ::1(IPv6)을 먼저 돌려주는 경우가 있다. ResultPublisher(동기 mosquitto_connect())는
+    // 실패한 주소 계열을 자동으로 건너뛰고 다음 후보로 넘어가 결과적으로 성공하지만,
+    // SensorUplinkReceiver(mosquitto_connect_async())는 첫 주소가 실패하면 재시도 없이
+    // 그대로 ECONNREFUSED를 반환한다 - 실측(2026-08-13)으로 재현 확인. 원래
+    // SensorUplinkReceiver 자체 기본값도 "127.0.0.1"이었으므로, 여기서도 같은 값을 써서
+    // 그 기존 동작을 그대로 보존한다.
+    std::string broker_host = "127.0.0.1";
+
+    // 0 = "미지정" 센티널. loadTerminalConfig()가 tls_enabled에 따라 1883/8883으로
+    // 채운다("mqtt.broker_port"를 JSON에 명시하면 그 값을 그대로 쓴다).
+    uint16_t broker_port = 0;
+
+    // 2026-08-11 자체 CA로 발급한 서버 측(mTLS 클라이언트) 인증서 - veda3 로컬 배치 기준
+    // 기본 경로. tls_enabled=false면 쓰이지 않는다.
+    std::string ca_cert_path = "/home/veda3/mqtt-certs/ca.crt";
+    std::string client_cert_path = "/home/veda3/mqtt-certs/client-server.crt";
+    std::string client_key_path = "/home/veda3/mqtt-certs/client-server.key";
+};
+
 struct TerminalConfig {
     ForkliftConfig forklift;
     HandoverConfig handover;
+    MqttConfig mqtt;
 };
 
 // 설정 로드 실패를 알리는 예외.

@@ -44,6 +44,21 @@
 
 ## 2. 서버 실행
 
+### 2.0 로컬 카메라 설정
+
+카메라 IP와 계정 정보가 들어가는 `config/camera_config.json`은 저장소에
+커밋하지 않는다. 최초 설정 시 예제 파일을 복사한 뒤 실제 환경 값으로 수정한다.
+
+```sh
+cd server/02_homography
+cp config/camera_config.example.json config/camera_config.json
+chmod 600 config/camera_config.json
+```
+
+`camera_config.json`은 `.gitignore`로 보호되므로 `git status`에 나타나지 않으며,
+`camera_config.example.json`만 형식 안내용으로 관리한다. 비밀번호·토큰은 예제 파일이나
+로그에 넣지 않는다.
+
 ### 2.1 systemd로 실행
 
 `homography-app.service`를 통해 서버를 실행한다.
