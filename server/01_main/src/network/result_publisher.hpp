@@ -89,11 +89,13 @@ public:
     explicit ResultPublisher(std::string terminal_id,
                              std::string broker_host = "localhost",
                              uint16_t broker_port = 1883,
-                             MqttTlsOptions tls = {})
+                             MqttTlsOptions tls = {},
+                             bool manage_server_status = true)
         : terminal_id_(std::move(terminal_id)),
           broker_host_(std::move(broker_host)),
           broker_port_(broker_port),
           tls_(std::move(tls)),
+          manage_server_status_(manage_server_status),
           topic_(std::string(kRiskTopicPrefix) + terminal_id_) {}
 
     ~ResultPublisher() { stop(); }
@@ -217,7 +219,7 @@ private:
             // start() 경로가 아니라 이 콜백에 둔다(최초 연결/재연결 모두 여기를 지난다).
             // setState()보다 먼저 보내, 하트비트가 먼저 나가서 단말이 "offline인데
             // risk_event는 오는" 상태를 보는 구간을 없앤다.
-            self->publishStatus(kOnlinePayload);
+            if (self->manage_server_status_) self->publishStatus(kOnlinePayload);
             self->setState(LinkState::CONNECTED);
         } else {
             // 브로커가 CONNACK로 거부한 경우(인증/프로토콜 등). 소켓은 붙었으므로
@@ -262,9 +264,11 @@ private:
         }
 
         // LWT는 반드시 connect 전에 걸어야 CONNECT 패킷에 실려 브로커에 등록된다.
-        mosquitto_will_set(mosq_, kStatusTopic,
-                           static_cast<int>(std::strlen(kOfflinePayload)), kOfflinePayload,
-                           kQos, kRetain);
+        if (manage_server_status_) {
+            mosquitto_will_set(mosq_, kStatusTopic,
+                               static_cast<int>(std::strlen(kOfflinePayload)), kOfflinePayload,
+                               kQos, kRetain);
+        }
         mosquitto_reconnect_delay_set(mosq_, kReconnectDelayMinSec, kReconnectDelayMaxSec,
                                       /*reconnect_exponential_backoff=*/true);
 
@@ -326,7 +330,7 @@ private:
         // DISCONNECT보다 먼저 큐에 넣어야 한다 - out 패킷은 FIFO로 나가므로 이 순서면
         // PUBLISH가 먼저 전송되고, 아래 loop_stop(force=false)이 네트워크 스레드가
         // 다 비우고 끝날 때까지 기다린다.
-        publishStatus(kOfflinePayload);
+        if (manage_server_status_) publishStatus(kOfflinePayload);
         mosquitto_disconnect(mosq_);
         mosquitto_loop_stop(mosq_, /*force=*/false);   // 네트워크 스레드 조인
         mosquitto_destroy(mosq_);
@@ -408,6 +412,7 @@ private:
     std::string broker_host_;
     uint16_t    broker_port_;
     MqttTlsOptions tls_;
+    bool manage_server_status_ = true;
     std::string topic_;                  // "forklift/risk/<terminal_id>" (생성자에서 1회 계산)
 
     struct mosquitto* mosq_ = nullptr;   // libmosquitto 핸들 (start()~stop() 동안만 유효)

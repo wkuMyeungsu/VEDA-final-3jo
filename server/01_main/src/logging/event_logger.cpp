@@ -32,6 +32,8 @@ constexpr const char* kCreateTableSql =
     "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
     "  utc_time TEXT NOT NULL,"
     "  camera_id TEXT,"
+    "  stream_id TEXT,"
+    "  channel INTEGER,"
     "  terminal_id TEXT,"
     "  risk_level INTEGER NOT NULL,"
     "  previous_risk_level INTEGER,"
@@ -41,8 +43,8 @@ constexpr const char* kCreateTableSql =
 
 constexpr const char* kInsertSql =
     "INSERT INTO events"
-    " (utc_time, camera_id, terminal_id, risk_level, previous_risk_level, exception_state, distance_mm)"
-    " VALUES (?, ?, ?, ?, ?, ?, ?)";
+    " (utc_time, camera_id, stream_id, channel, terminal_id, risk_level, previous_risk_level, exception_state, distance_mm)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 } // namespace
 
@@ -61,6 +63,7 @@ bool EventLogger::start() {
     if (!exec(kCreateTableSql))       { closeDatabase(); return false; }
     if (!ensureTerminalIdColumn())    { closeDatabase(); return false; }
     if (!ensureDistanceMmColumn())    { closeDatabase(); return false; }
+    if (!ensureSourceColumns())       { closeDatabase(); return false; }
     if (!prepareStatement())          { closeDatabase(); return false; }
 
     running_.store(true);
@@ -83,7 +86,9 @@ void EventLogger::stop() {
 void EventLogger::log(const JudgmentResult& r, int previous_risk_level) {
     Row row;
     row.utc_time            = nowIso8601Ms();   // 쓰기 시점이 아니라 발생 시점
-    row.camera_id           = r.camera_id;
+    row.camera_id           = r.source_camera_id.empty() ? r.camera_id : r.source_camera_id;
+    row.stream_id           = r.stream_id;
+    row.channel             = r.channel;
     row.terminal_id         = r.terminal_id;
     row.risk_level          = static_cast<int>(r.final_risk);
     row.previous_risk_level = previous_risk_level;
@@ -208,6 +213,27 @@ bool EventLogger::ensureDistanceMmColumn() {
     return exec("ALTER TABLE events ADD COLUMN distance_mm REAL");
 }
 
+bool EventLogger::ensureSourceColumns() {
+    sqlite3_stmt* statement = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &statement, nullptr) != SQLITE_OK) {
+        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
+        return false;
+    }
+    bool has_stream = false;
+    bool has_channel = false;
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char* name = sqlite3_column_text(statement, 1);
+        if (!name) continue;
+        const std::string column(reinterpret_cast<const char*>(name));
+        has_stream = has_stream || column == "stream_id";
+        has_channel = has_channel || column == "channel";
+    }
+    sqlite3_finalize(statement);
+    if (!has_stream && !exec("ALTER TABLE events ADD COLUMN stream_id TEXT")) return false;
+    if (!has_channel && !exec("ALTER TABLE events ADD COLUMN channel INTEGER")) return false;
+    return true;
+}
+
 bool EventLogger::prepareStatement() {
     // 매 INSERT마다 SQL을 파싱하지 않도록 한 번만 준비해서 재사용한다.
     if (sqlite3_prepare_v2(db_, kInsertSql, -1, &stmt_, nullptr) != SQLITE_OK) {
@@ -314,29 +340,34 @@ bool EventLogger::insertRow(const Row& row) {
         sqlite3_bind_text(stmt_, 2, row.camera_id.c_str(), -1, SQLITE_TRANSIENT);
     }
 
+    if (row.stream_id.empty()) sqlite3_bind_null(stmt_, 3);
+    else sqlite3_bind_text(stmt_, 3, row.stream_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (row.channel < 0) sqlite3_bind_null(stmt_, 4);
+    else sqlite3_bind_int(stmt_, 4, row.channel);
+
     // terminal_id도 camera_id와 같은 규칙: 빈 값은 NULL.
     if (row.terminal_id.empty()) {
-        sqlite3_bind_null(stmt_, 3);
+        sqlite3_bind_null(stmt_, 5);
     } else {
-        sqlite3_bind_text(stmt_, 3, row.terminal_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt_, 5, row.terminal_id.c_str(), -1, SQLITE_TRANSIENT);
     }
 
-    sqlite3_bind_int(stmt_, 4, row.risk_level);
+    sqlite3_bind_int(stmt_, 6, row.risk_level);
 
     // 최초 이벤트(직전 상태 없음)는 NULL. 0(SAFE)과 반드시 구분돼야 한다.
     if (row.previous_risk_level < 0) {
-        sqlite3_bind_null(stmt_, 5);
+        sqlite3_bind_null(stmt_, 7);
     } else {
-        sqlite3_bind_int(stmt_, 5, row.previous_risk_level);
+        sqlite3_bind_int(stmt_, 7, row.previous_risk_level);
     }
 
-    sqlite3_bind_text(stmt_, 6, row.exception_state.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_, 8, row.exception_state.c_str(), -1, SQLITE_TRANSIENT);
 
     // distance_mm의 -1은 "거리 판정 불가" sentinel이지 측정값이 아니다 -> NULL.
     if (row.distance_mm < 0) {
-        sqlite3_bind_null(stmt_, 7);
+        sqlite3_bind_null(stmt_, 9);
     } else {
-        sqlite3_bind_double(stmt_, 7, row.distance_mm);
+        sqlite3_bind_double(stmt_, 9, row.distance_mm);
     }
 
     if (sqlite3_step(stmt_) != SQLITE_DONE) {

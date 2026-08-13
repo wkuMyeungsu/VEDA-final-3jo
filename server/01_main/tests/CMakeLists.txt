@@ -29,22 +29,14 @@ add_executable(test_event_logger test_event_logger.cpp)
 target_link_libraries(test_event_logger PRIVATE server_logging server_judgment Threads::Threads)
 add_test(NAME event_logger_test COMMAND test_event_logger)
 
-# [2026-08-11 TCP -> MQTT 전환] 일시 제외.
-# test_result_publisher.cpp는 수신부가 TCP 단말(LineClient가 19001로 connect)이고
-# ResultPublisher(bind_host, port) 생성자 / LinkState::LISTENING을 그대로 쓰고 있어
-# MQTT 전환 후에는 컴파일조차 되지 않는다. 재작성 방안 확정 전까지 빌드에서 뺀다.
-#
-# 참고: 이 파일의 테스트 7/8/10(전송 정책 - 변화 감지, 하트비트 주기, idle 프라이밍)은
-# RecordingSink 람다만 쓰는 ResultDispatcher 단독 테스트라 소켓/브로커와 무관하다.
-# 재작성 시 그 3개는 그대로 살릴 수 있다.
-# add_executable(test_result_publisher test_result_publisher.cpp)
-# target_link_libraries(test_result_publisher PRIVATE server_judgment server_network Threads::Threads)
-# add_test(NAME result_publisher_test COMMAND test_result_publisher)
-
-# 단말→서버 센서 업링크(9002 제안) 수신기. loopback 소켓만 쓰므로 별도 의존성이 없다.
+# 단말→서버 센서 업링크 수신기.
 add_executable(test_sensor_uplink_receiver test_sensor_uplink_receiver.cpp)
 target_link_libraries(test_sensor_uplink_receiver PRIVATE server_network Threads::Threads)
 add_test(NAME sensor_uplink_receiver_test COMMAND test_sensor_uplink_receiver)
+
+add_executable(test_assignment_publisher test_assignment_publisher.cpp)
+target_link_libraries(test_assignment_publisher PRIVATE server_network)
+add_test(NAME assignment_publisher_test COMMAND test_assignment_publisher)
 
 add_executable(test_safety_server_config test_safety_server_config.cpp)
 target_link_libraries(test_safety_server_config PRIVATE server_config)
@@ -54,20 +46,17 @@ add_executable(test_homography_transformer test_homography_transformer.cpp)
 target_link_libraries(test_homography_transformer PRIVATE server_homography)
 add_test(NAME homography_transformer_test COMMAND test_homography_transformer)
 
+# 실제 채널 3 H를 거쳐 ArUco ID·최근접 사람·판정·JSON·SQLite를 한 흐름으로 검증한다.
+add_executable(test_channel3_safety_e2e test_channel3_safety_e2e.cpp)
+target_compile_definitions(test_channel3_safety_e2e PRIVATE
+    CHANNEL3_HOMOGRAPHY_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/homography_channel_3_mm.json"
+)
+target_link_libraries(test_channel3_safety_e2e PRIVATE
+    server_frame_pipeline server_logging server_network SQLite::SQLite3 Threads::Threads
+)
+add_test(NAME channel3_safety_e2e_test COMMAND test_channel3_safety_e2e)
+
 # 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
 add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)
 target_link_libraries(test_marker_channel_tracker PRIVATE server_tracking)
 add_test(NAME marker_channel_tracker_test COMMAND test_marker_channel_tracker)
-
-add_executable(test_camera_assignment_server test_camera_assignment_server.cpp)
-target_include_directories(test_camera_assignment_server PRIVATE ${SERVER_SRC_DIR})
-target_link_libraries(test_camera_assignment_server PRIVATE Threads::Threads)
-add_test(NAME camera_assignment_server_test COMMAND test_camera_assignment_server)
-
-# hello 타임아웃(5초+) 실시간 대기 테스트라 기본 빌드/ctest 루프에서 뺀다.
-# `cmake --build build --target test_camera_assignment_server_timeout`으로 명시 빌드 후 직접 실행.
-add_executable(test_camera_assignment_server_timeout EXCLUDE_FROM_ALL
-    test_camera_assignment_server_timeout.cpp
-)
-target_include_directories(test_camera_assignment_server_timeout PRIVATE ${SERVER_SRC_DIR})
-target_link_libraries(test_camera_assignment_server_timeout PRIVATE Threads::Threads)

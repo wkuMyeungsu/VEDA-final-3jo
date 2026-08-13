@@ -38,6 +38,9 @@ struct MetadataFrame {
     std::string utcTime;               // Frame 단위 타임스탬프 — PTS 동기화에 사용
     std::string serverReceivedUtc;
     double deltaMs = 0.0;
+    std::string stream_id;
+    std::string camera_id;
+    int channel = -1;
     std::vector<DetectedObject> objects;
 };
 

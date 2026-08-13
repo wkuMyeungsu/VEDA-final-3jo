@@ -3,7 +3,7 @@
 // 담당: 검출·추적 & IMU·ToF 센서 (박수빈)
 //
 // 자료구조·enum·클래스 선언은 danger_judgment_engine.h,
-// 운영 임계값은 생성자에서 공통 safety_server_config.json의 값을 전달받는다.
+// 운영 임계값은 기동 시 읽은 danger_judgment 설정에서 전달받는다.
 //
 // 빌드 (라즈베리파이 / Linux, POSIX 전용):
 //   CMake: cmake -S . -B build && cmake --build build
@@ -259,9 +259,11 @@ std::string toJson(const JudgmentResult& r) {
     os << std::fixed << std::setprecision(2);
     os << '{'
        << "\"utc_time\":\"" << nowIso8601Ms() << "\","
-       << "\"camera_id\":" << toJsonOrNull(r.camera_id) << ','
        << "\"zone\":" << toJsonOrNull(r.zone) << ','
        << "\"terminal_id\":" << toJsonOrNull(r.terminal_id) << ','
+       << "\"stream_id\":" << toJsonOrNull(r.stream_id) << ','
+       << "\"camera_id\":" << toJsonOrNull(r.source_camera_id.empty() ? r.camera_id : r.source_camera_id) << ','
+       << "\"channel\":" << r.channel << ','
        << "\"exception_state\":\"" << toString(r.exception) << "\",";
     // distance_mm은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
     os << "\"distance_mm\":";

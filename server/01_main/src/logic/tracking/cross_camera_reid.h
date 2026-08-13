@@ -33,15 +33,17 @@ struct Detection {
 // (카메라 전환 포함) 매칭으로 track_id를 유지한 트랙 목록을 돌려준다.
 class CrossCameraTracker {
 public:
-    // 임계값들 - 실측/실험 통해 조정 예정 [확실하지 않음: 초기값, 실측 필요]
-    double iou_threshold = 0.3;           // 동일 카메라 프레임 간 매칭
-    double world_dist_threshold_m = 1.0;  // 카메라 전환(핸드오버) 매칭
-    int    max_missed_frames = 5;         // 이 프레임 수 넘게 못 찾으면 트랙 소멸
+    CrossCameraTracker(double iou_threshold, double world_distance_threshold_mm,
+                       int max_missed_frames);
 
     // 한 프레임의 검출 목록을 받아 트랙을 갱신하고, 현재 트랙 목록을 반환
     std::vector<Track> update(const std::vector<Detection>& detections, double now_s);
 
 private:
+    // 추적 기준은 공통 JSON에서 생성 시 주입받고 실행 중에는 변경하지 않는다.
+    const double iou_threshold_;
+    const double world_distance_threshold_mm_;
+    const int max_missed_frames_;
     std::vector<Track> tracks_;
     int next_id_ = 1;
 };

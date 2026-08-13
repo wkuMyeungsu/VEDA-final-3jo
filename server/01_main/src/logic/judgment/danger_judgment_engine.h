@@ -113,6 +113,9 @@ struct JudgmentResult {
     // 단말이 여러 대일 때 "이 메시지가 어느 단말 것인지" 구분하기 위해 도입됨 (2026-08-06 팀 합의).
     // 빈 문자열 -> JSON null (camera_id/zone과 동일 규약).
     std::string    terminal_id;
+    std::string    stream_id;
+    std::string    source_camera_id;
+    int            channel = -1;
 
     // 서버 내부 지연 계측 스탬프 (t0_ingest/t1_judge_in은 호출부가 채우고, t2_send는
     // ResultDispatcher::submit()이 찍는다). evaluate()는 이 필드를 건드리지 않는다 -

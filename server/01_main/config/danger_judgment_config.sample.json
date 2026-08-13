@@ -1,0 +1,9 @@
+{
+  "units": {"world": "mm", "distance": "mm"},
+  "danger_judgment": {
+    "caution_threshold_mm": 3000.0, "danger_threshold_mm": 1500.0,
+    "emergency_threshold_mm": 400.0, "emergency_release_margin_mm": 100.0,
+    "tof_caution_mm": 1000.0, "tof_danger_mm": 500.0,
+    "impact_accel_threshold_g": 2.0
+  }
+}

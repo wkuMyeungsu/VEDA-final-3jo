@@ -33,6 +33,8 @@ struct ArucoFrame {
     std::string serverReceivedUtc;
     double deltaMs = 0.0;
     int channel = -1;                 // 앱 기준 1부터 시작하는 Channel
+    std::string stream_id;
+    std::string camera_id;
     std::vector<ArucoMarker> markers;
 
     std::size_t markerCount() const noexcept { return markers.size(); }

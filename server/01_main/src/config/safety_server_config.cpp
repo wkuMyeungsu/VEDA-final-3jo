@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <set>
 
 #include <nlohmann/json.hpp>
 
@@ -88,14 +89,17 @@ SafetyServerConfig loadSafetyServerConfig(const std::string& path) {
     const auto& hand = object(root, "handover", path);
     c.handover.confirm_frames = value<int>(hand, "handover", "confirm_frames", path);
     c.handover.lost_grace_ms = value<int>(hand, "handover", "lost_grace_ms", path);
+    const auto& tracking = object(root, "tracking", path);
+    c.tracking.iou_threshold = value<double>(tracking, "tracking", "iou_threshold", path);
+    c.tracking.world_distance_threshold_mm =
+        value<double>(tracking, "tracking", "world_distance_threshold_mm", path);
+    c.tracking.max_missed_frames = value<int>(tracking, "tracking", "max_missed_frames", path);
     const auto& sensor = object(root, "sensor", path);
     c.sensor.stub_tof_distance_mm = value<double>(sensor, "sensor", "stub_tof_distance_mm", path);
     c.sensor.stale_timeout_ms = value<int>(sensor, "sensor", "stale_timeout_ms", path);
     const auto& network = object(root, "network", path);
     c.network.mqtt_host = value<std::string>(network, "network", "mqtt_host", path);
     const int mqtt_port = value<int>(network, "network", "mqtt_port", path);
-    c.network.camera_assignment_bind_host = value<std::string>(network, "network", "camera_assignment_bind_host", path);
-    const int camera_assignment_port = value<int>(network, "network", "camera_assignment_port", path);
     c.network.result_heartbeat_ms = value<int>(network, "network", "result_heartbeat_ms", path);
     if (network.contains("tls_enabled")) c.network.tls_enabled = network.at("tls_enabled").get<bool>();
     if (network.contains("ca_cert_path")) c.network.ca_cert_path = network.at("ca_cert_path").get<std::string>();
@@ -118,34 +122,268 @@ SafetyServerConfig loadSafetyServerConfig(const std::string& path) {
     positive(c.danger_judgment.impact_accel_threshold_g, "impact_accel_threshold_g", path);
     positive(c.danger_judgment.forklift_collision_radius_mm, "forklift_collision_radius_mm", path, true);
     positive(c.sensor.stub_tof_distance_mm, "stub_tof_distance_mm", path, true);
+    positive(c.tracking.world_distance_threshold_mm, "world_distance_threshold_mm", path);
+    if (!std::isfinite(c.tracking.iou_threshold) || c.tracking.iou_threshold < 0.0 ||
+        c.tracking.iou_threshold > 1.0)
+        schema(path, "tracking.iou_threshold는 0~1 범위여야 함");
     if (!(c.danger_judgment.emergency_threshold_mm < c.danger_judgment.danger_threshold_mm &&
           c.danger_judgment.danger_threshold_mm < c.danger_judgment.caution_threshold_mm)) schema(path, "거리 임계값은 emergency < danger < caution 순서여야 함");
     if (c.danger_judgment.tof_danger_mm > c.danger_judgment.tof_caution_mm)
         schema(path, "ToF 임계값은 danger <= caution 순서여야 함");
-    if (mqtt_port < 1 || mqtt_port > 65535 || camera_assignment_port < 1 || camera_assignment_port > 65535)
+    if (mqtt_port < 1 || mqtt_port > 65535)
         schema(path, "네트워크 포트는 1~65535 범위여야 함");
     c.network.mqtt_port = static_cast<uint16_t>(mqtt_port);
-    c.network.camera_assignment_port = static_cast<uint16_t>(camera_assignment_port);
-    if (c.network.mqtt_host.empty() || c.network.camera_assignment_bind_host.empty())
+    if (c.network.mqtt_host.empty())
         schema(path, "네트워크 호스트는 빈 문자열일 수 없음");
     if (c.forklift_detection.marker_id < 0 || c.handover.confirm_frames < 1 || c.handover.lost_grace_ms < 0 ||
-        c.sensor.stale_timeout_ms < 1 || c.homography.image_width_px < 1 || c.homography.image_height_px < 1 ||
+        c.sensor.stale_timeout_ms < 1 || c.tracking.max_missed_frames < 0 ||
+        c.homography.image_width_px < 1 || c.homography.image_height_px < 1 ||
         c.network.result_heartbeat_ms < 1 ||
         c.stream.rtsp_latency_ms < 0 || c.stream.appsink_max_buffers < 1 || c.stream.eos_force_timeout_s < 1 ||
         c.stream.connect_timeout_s < 1 || c.stream.max_retries < 1 || c.stream.retry_delay_s < 0) schema(path, "정수 설정값이 허용 범위를 벗어남");
     return c;
 }
 
-std::string resolveSafetyServerConfigPath() {
-    const char* candidates[] = {"config/safety_server_config.json", "../config/safety_server_config.json", "01_main/config/safety_server_config.json", "server/01_main/config/safety_server_config.json"};
-    for (const char* candidate : candidates) if (std::filesystem::exists(candidate)) return candidate;
-    return candidates[0];
-}
-
 std::string resolveConfigRelativePath(const SafetyServerConfig& config, const std::string& path) {
     const std::filesystem::path candidate(path);
     if (candidate.is_absolute()) return candidate.lexically_normal().string();
     return (std::filesystem::path(config.source_path).parent_path() / candidate).lexically_normal().string();
+}
+
+std::string resolveConfigDirectory() {
+    const char* candidates[] = {"server/01_main/config", "config", "../config",
+                                "../../config", "01_Workspace/server/01_main/config"};
+    for (const char* candidate : candidates)
+        if (std::filesystem::is_directory(candidate)) return candidate;
+    return candidates[0];
+}
+
+SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir) {
+    // 운영 파일은 서로 다른 책임으로 나뉘어 있지만 서버에서는 하나의 불변 설정으로
+    // 묶어 사용한다. 어느 파일이 빠졌는지도 오류 경로에 파일명을 그대로 남긴다.
+    const std::filesystem::path dir(config_dir);
+    const std::filesystem::path camera_path = dir / "camera_config.json";
+    const std::filesystem::path model_path = dir / "camera_model.json";
+    const std::filesystem::path device_path = dir / "forklift_device_config.json";
+    const std::filesystem::path danger_path = dir / "danger_judgment_config.json";
+    const std::filesystem::path system_path = dir / "system_config.json";
+
+    auto read = [](const std::filesystem::path& path) {
+        std::ifstream input(path);
+        if (!input) throw SafetyServerConfigError(SafetyServerConfigError::Code::FileNotFound,
+                                                    path.string(), "운영 설정 파일을 열 수 없음");
+        json value;
+        try { input >> value; }
+        catch (const json::parse_error& e) {
+            throw SafetyServerConfigError(SafetyServerConfigError::Code::ParseFailed,
+                                          path.string(), e.what());
+        }
+        if (!value.is_object()) schema(path.string(), "최상위 JSON은 객체여야 함");
+        return value;
+    };
+    const auto cameras = read(camera_path);
+    const auto models = read(model_path);
+    const auto devices = read(device_path);
+    const auto danger = read(danger_path);
+    const auto system = read(system_path);
+    SafetyServerConfig c;
+    c.source_path = camera_path.string();
+
+    const auto& unit = object(danger, "units", danger_path.string());
+    if (value<std::string>(unit, "units", "world", danger_path.string()) != "mm" ||
+        value<std::string>(unit, "units", "distance", danger_path.string()) != "mm")
+        schema(danger_path.string(), "world/distance 단위는 mm여야 함");
+    const auto& d = object(danger, "danger_judgment", danger_path.string());
+    c.danger_judgment.caution_threshold_mm = value<double>(d,"danger_judgment","caution_threshold_mm",danger_path.string());
+    c.danger_judgment.danger_threshold_mm = value<double>(d,"danger_judgment","danger_threshold_mm",danger_path.string());
+    c.danger_judgment.emergency_threshold_mm = value<double>(d,"danger_judgment","emergency_threshold_mm",danger_path.string());
+    c.danger_judgment.emergency_release_margin_mm = value<double>(d,"danger_judgment","emergency_release_margin_mm",danger_path.string());
+    c.danger_judgment.tof_caution_mm = value<double>(d,"danger_judgment","tof_caution_mm",danger_path.string());
+    c.danger_judgment.tof_danger_mm = value<double>(d,"danger_judgment","tof_danger_mm",danger_path.string());
+    c.danger_judgment.impact_accel_threshold_g = value<double>(d,"danger_judgment","impact_accel_threshold_g",danger_path.string());
+    positive(c.danger_judgment.caution_threshold_mm, "caution_threshold_mm", danger_path.string());
+    positive(c.danger_judgment.danger_threshold_mm, "danger_threshold_mm", danger_path.string());
+    positive(c.danger_judgment.emergency_threshold_mm, "emergency_threshold_mm", danger_path.string());
+    positive(c.danger_judgment.emergency_release_margin_mm, "emergency_release_margin_mm", danger_path.string(), true);
+    positive(c.danger_judgment.tof_caution_mm, "tof_caution_mm", danger_path.string());
+    positive(c.danger_judgment.tof_danger_mm, "tof_danger_mm", danger_path.string());
+    positive(c.danger_judgment.impact_accel_threshold_g, "impact_accel_threshold_g", danger_path.string());
+    if (!(c.danger_judgment.emergency_threshold_mm < c.danger_judgment.danger_threshold_mm &&
+          c.danger_judgment.danger_threshold_mm < c.danger_judgment.caution_threshold_mm))
+        schema(danger_path.string(), "거리 임계값은 emergency < danger < caution 순서여야 함");
+    if (c.danger_judgment.tof_danger_mm > c.danger_judgment.tof_caution_mm)
+        schema(danger_path.string(), "ToF 임계값은 danger <= caution 순서여야 함");
+
+    // 카메라 모델이 허용하는 채널 수를 먼저 읽는다. 카메라 파일에 임의의 채널을
+    // 적어 두어도 모델 정의와 맞지 않으면 기동하지 않는다.
+    const auto& model_list = models.at("models");
+    if (!model_list.is_array() || model_list.empty()) schema(model_path.string(), "models는 비어 있지 않은 배열이어야 함");
+    std::map<std::string, int> model_channels;
+    for (const auto& model : model_list) {
+        const std::string name = model.at("model").get<std::string>();
+        const int count = model.at("channel_count").get<int>();
+        if (name.empty() || count < 1 || model_channels.count(name)) schema(model_path.string(), "카메라 모델 정의 오류/중복");
+        model_channels[name] = count;
+    }
+    const auto& list = cameras.at("cameras");
+    if (!list.is_array() || list.empty()) schema(camera_path.string(), "cameras는 비어 있지 않은 배열이어야 함");
+    std::map<std::string, bool> camera_ids, stream_ids;
+    std::map<std::pair<std::string,int>, bool> channels;
+    // camera_id는 물리 장비 이름이고, stream_id는 장비+채널로 서버가 자동 생성한다.
+    // 그래서 서로 다른 장비의 channel 1도 서로 충돌하지 않는다.
+    for (const auto& cam : list) {
+        const std::string camera_id = cam.at("camera_id").get<std::string>();
+        const std::string camera_model = cam.at("model").get<std::string>();
+        const auto model_it = model_channels.find(camera_model);
+        if (model_it == model_channels.end())
+            schema(camera_path.string(), "지원하지 않는 카메라 모델: " + camera_model);
+        const int expected_channels = model_it->second;
+        if (camera_id.empty() || camera_ids[camera_id]) schema(camera_path.string(), "camera_id 중복");
+        camera_ids[camera_id] = true;
+        const auto& channel_list = cam.at("channels");
+        if (!channel_list.is_array() || channel_list.empty()) schema(camera_path.string(), "channels 오류");
+        std::set<int> configured_channels;
+        for (const auto& item : channel_list) {
+            CameraStreamConfig s;
+            s.camera_id = camera_id;
+            s.camera_model = camera_model;
+            s.camera_channel_count = expected_channels;
+            s.channel = item.at("channel").get<int>();
+            s.rtsp_url = item.at("rtsp_url").get<std::string>();
+            s.homography_file = item.at("homography_file").get<std::string>();
+            s.image_width_px = item.at("image_width_px").get<int>();
+            s.image_height_px = item.at("image_height_px").get<int>();
+            if (s.channel < 1 || s.channel > expected_channels || s.rtsp_url.rfind("rtsp://", 0) != 0 || s.homography_file.empty() ||
+                s.image_width_px < 1 || s.image_height_px < 1 || channels[{camera_id,s.channel}])
+                schema(camera_path.string(), "채널 설정 범위/중복 오류");
+            configured_channels.insert(s.channel);
+            channels[{camera_id,s.channel}] = true;
+            s.stream_id = camera_id + "_CH_" + (s.channel < 10 ? "0" : "") + std::to_string(s.channel);
+            if (stream_ids[s.stream_id]) schema(camera_path.string(), "stream_id 중복");
+            stream_ids[s.stream_id] = true;
+            if (!std::filesystem::exists(dir / s.homography_file))
+                schema(camera_path.string(), "호모그래피 파일 누락: " + s.homography_file);
+            const auto h_path = (dir / s.homography_file).lexically_normal();
+            // H는 실행 중 매 프레임마다 읽지 않는다. 기동 시 단위·행렬·해상도를
+            // 모두 확인하고 메모리에 올려, 잘못된 좌표가 위험 판정으로 흘러가지 않게 한다.
+            try {
+                std::ifstream h_input(h_path);
+                json h; h_input >> h;
+                if (h.at("world_unit").get<std::string>() != "mm")
+                    schema(h_path.string(), "world_unit은 mm여야 함");
+                if (h.contains("channel") && h.at("channel").get<int>() != s.channel)
+                    schema(h_path.string(), "H 파일 내부 channel이 camera_config와 다름");
+                const auto& size = h.at("image_size");
+                if (size.at("width").get<int>() != s.image_width_px ||
+                    size.at("height").get<int>() != s.image_height_px)
+                    schema(h_path.string(), "H 해상도가 camera_config와 다름");
+                const auto& matrix = h.at("H_pixel_to_world");
+                if (!matrix.is_array() || matrix.size() != 3)
+                    schema(h_path.string(), "H_pixel_to_world는 3x3이어야 함");
+                for (const auto& row : matrix) {
+                    if (!row.is_array() || row.size() != 3) schema(h_path.string(), "H_pixel_to_world는 3x3이어야 함");
+                    for (const auto& cell : row) if (!cell.is_number() || !std::isfinite(cell.get<double>()))
+                        schema(h_path.string(), "H_pixel_to_world에 유효하지 않은 수가 있음");
+                }
+            } catch (const SafetyServerConfigError&) { throw; }
+            catch (const std::exception& e) { schema(h_path.string(), std::string("H 파일 형식 오류: ") + e.what()); }
+            c.homography.stream_files[s.stream_id] = h_path.string();
+            c.homography.stream_image_sizes[s.stream_id] = {s.image_width_px, s.image_height_px};
+            if (c.homography.image_width_px == 0) {
+                c.homography.image_width_px = s.image_width_px;
+                c.homography.image_height_px = s.image_height_px;
+            }
+            c.streams.push_back(std::move(s));
+        }
+        if (configured_channels.size() != static_cast<std::size_t>(expected_channels))
+            schema(camera_path.string(), "모델의 channel_count와 channels 설정 수가 다름");
+        for (int channel = 1; channel <= expected_channels; ++channel)
+            if (!configured_channels.count(channel)) schema(camera_path.string(), "모델 채널 번호가 누락됨");
+    }
+    const auto& fl = devices.at("forklifts");
+    if (!fl.is_array() || fl.empty()) schema(device_path.string(), "forklifts는 비어 있지 않은 배열이어야 함");
+    std::map<std::string,bool> terminals; std::map<int,bool> markers;
+    for (const auto& item : fl) {
+        ForkliftDevice f{item.at("terminal_id").get<std::string>(), item.at("marker_id").get<int>(), item.at("collision_radius_mm").get<double>()};
+        if (f.terminal_id.empty() || terminals[f.terminal_id] || f.marker_id < 0 || markers[f.marker_id] || !std::isfinite(f.collision_radius_mm) || f.collision_radius_mm <= 0)
+            schema(device_path.string(), "terminal/marker/radius 중복 또는 범위 오류");
+        terminals[f.terminal_id] = true; markers[f.marker_id] = true; c.forklifts.push_back(std::move(f));
+    }
+    c.danger_judgment.forklift_collision_radius_mm = c.forklifts.front().collision_radius_mm;
+    c.forklift_detection.marker_id = c.forklifts.front().marker_id;
+
+    // MQTT, 핸드오버, 추적, 센서, 스트림 정책은 모든 TERM이 공유한다.
+    const auto& n = object(system, "network", system_path.string());
+    c.network.mqtt_host = value<std::string>(n,"network","mqtt_host",system_path.string());
+    const int port = value<int>(n,"network","mqtt_port",system_path.string());
+    c.network.mqtt_port = static_cast<uint16_t>(port);
+    c.network.result_heartbeat_ms = value<int>(n,"network","result_heartbeat_ms",system_path.string());
+    c.network.tls_enabled = n.value("tls_enabled", false);
+    c.network.ca_cert_path = n.value("ca_cert_path", std::string{});
+    c.network.client_cert_path = n.value("client_cert_path", std::string{});
+    c.network.client_key_path = n.value("client_key_path", std::string{});
+    if (c.network.tls_enabled) {
+        c.network.ca_cert_path = (dir / c.network.ca_cert_path).lexically_normal().string();
+        c.network.client_cert_path = (dir / c.network.client_cert_path).lexically_normal().string();
+        c.network.client_key_path = (dir / c.network.client_key_path).lexically_normal().string();
+    }
+    if (port < 1 || port > 65535 || c.network.mqtt_host.empty() || c.network.result_heartbeat_ms < 1)
+        schema(system_path.string(), "MQTT 설정 범위 오류");
+    if (c.network.tls_enabled && (c.network.ca_cert_path.empty() || c.network.client_cert_path.empty() || c.network.client_key_path.empty()))
+        schema(system_path.string(), "TLS 사용 시 인증서 3종이 필요함");
+    if (c.network.tls_enabled &&
+        (!std::filesystem::exists(c.network.ca_cert_path) ||
+         !std::filesystem::exists(c.network.client_cert_path) ||
+         !std::filesystem::exists(c.network.client_key_path)))
+        schema(system_path.string(), "TLS 인증서 파일을 찾을 수 없음");
+
+    const auto& hand = object(system, "handover", system_path.string());
+    c.handover.confirm_frames = value<int>(hand, "handover", "confirm_frames", system_path.string());
+    c.handover.lost_grace_ms = value<int>(hand, "handover", "lost_grace_ms", system_path.string());
+    const auto& tracking = object(system, "tracking", system_path.string());
+    c.tracking.iou_threshold = value<double>(tracking, "tracking", "iou_threshold", system_path.string());
+    c.tracking.world_distance_threshold_mm = value<double>(tracking, "tracking", "world_distance_threshold_mm", system_path.string());
+    c.tracking.max_missed_frames = value<int>(tracking, "tracking", "max_missed_frames", system_path.string());
+    const auto& sensor = object(system, "sensor", system_path.string());
+    c.sensor.stub_tof_distance_mm = value<double>(sensor, "sensor", "stub_tof_distance_mm", system_path.string());
+    c.sensor.stale_timeout_ms = value<int>(sensor, "sensor", "stale_timeout_ms", system_path.string());
+    const auto& stream = object(system, "stream", system_path.string());
+    c.stream.rtsp_latency_ms = value<int>(stream, "stream", "rtsp_latency_ms", system_path.string());
+    c.stream.appsink_max_buffers = value<int>(stream, "stream", "appsink_max_buffers", system_path.string());
+    c.stream.eos_force_timeout_s = value<int>(stream, "stream", "eos_force_timeout_s", system_path.string());
+    c.stream.connect_timeout_s = value<int>(stream, "stream", "connect_timeout_s", system_path.string());
+    c.stream.max_retries = value<int>(stream, "stream", "max_retries", system_path.string());
+    c.stream.retry_delay_s = value<int>(stream, "stream", "retry_delay_s", system_path.string());
+    if (c.handover.confirm_frames < 1 || c.handover.lost_grace_ms < 0 ||
+        !std::isfinite(c.tracking.iou_threshold) || c.tracking.iou_threshold < 0 || c.tracking.iou_threshold > 1 ||
+        !std::isfinite(c.tracking.world_distance_threshold_mm) || c.tracking.world_distance_threshold_mm <= 0 ||
+        c.tracking.max_missed_frames < 0 || c.sensor.stale_timeout_ms < 1 || c.stream.rtsp_latency_ms < 0 ||
+        c.stream.appsink_max_buffers < 1 || c.stream.eos_force_timeout_s < 1 || c.stream.connect_timeout_s < 1 ||
+        c.stream.max_retries < 1 || c.stream.retry_delay_s < 0 || !std::isfinite(c.sensor.stub_tof_distance_mm) ||
+        c.sensor.stub_tof_distance_mm < 0)
+        schema(system_path.string(), "handover/tracking/sensor/stream 설정 범위 오류");
+    const auto& out = object(system, "output_storage", system_path.string());
+    c.output_storage.object_csv = (dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
+    c.output_storage.aruco_csv = (dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
+    c.output_storage.event_db = (dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();
+    c.output_storage.latency_csv = (dir / value<std::string>(out,"output_storage","latency_csv",system_path.string())).lexically_normal().string();
+    for (const auto* p : {&c.output_storage.object_csv,&c.output_storage.aruco_csv,&c.output_storage.event_db,&c.output_storage.latency_csv})
+        if (p->empty()) schema(system_path.string(), "출력 경로가 비어 있음");
+    return c;
+}
+
+SafetyServerConfig loadMultiCameraServerConfig(const std::string& config_dir) {
+    try {
+        return loadMultiCameraServerConfigImpl(config_dir);
+    } catch (const SafetyServerConfigError&) {
+        throw;
+    } catch (const json::exception& error) {
+        throw SafetyServerConfigError(SafetyServerConfigError::Code::SchemaInvalid,
+                                      config_dir, std::string("설정 형식 오류: ") + error.what());
+    } catch (const std::exception& error) {
+        throw SafetyServerConfigError(SafetyServerConfigError::Code::SchemaInvalid,
+                                      config_dir, std::string("설정 검증 실패: ") + error.what());
+    }
 }
 
 }  // namespace forklift::config

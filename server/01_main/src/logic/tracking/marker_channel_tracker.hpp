@@ -8,7 +8,7 @@
 //       sendCameraAssignment()를 때리지 않도록 하는 게 이 클래스의 존재 이유다.
 //
 // 범위 밖:
-//   - 실제 전송(9001 camera_assignment)은 CameraAssignmentServer 몫이다.
+//   - 실제 전송은 중앙 MQTT assignment 발행기가 맡는다.
 //   - 사람 추적/거리 판정은 nearest_person_selector / DangerJudgmentEngine 몫이다.
 //     여기서는 마커가 "보이냐 안 보이냐"만 본다(좌표는 안 쓴다).
 //
@@ -27,8 +27,7 @@
 //   놓는 건 신중하게(4번)" 적용한다. 마커가 한두 프레임 가려졌다고 운전석 화면이
 //   왔다갔다하면 운전자가 볼 수 없는 화면이 된다.
 //
-//   marker_id, confirm_frames, lost_grace_ms는 공통 safety_server_config.json의
-//   forklift_detection 및 handover 절에서 읽는다.
+//   marker_id, confirm_frames, lost_grace_ms는 운영 설정 파일에서 읽는다.
 //
 // ── 동시성 ────────────────────────────────────────────────────
 //   ArUco 프레임은 카메라별 비동기 스레드에서 들어올 수 있으므로, 내부 상태를
@@ -84,6 +83,8 @@ public:
     void reset();
 
     int markerId() const { return marker_id_; }
+    int confirmFrames() const { return confirm_frames_; }
+    std::chrono::milliseconds lostGrace() const { return lost_grace_; }
 
 private:
     struct ChannelState {

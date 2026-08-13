@@ -13,7 +13,7 @@ ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath) {
     }
 
     if (!fileExists) {
-        file_ << "camera_utc,server_received_utc,delta_ms,channel,marker_id,"
+        file_ << "camera_utc,server_received_utc,delta_ms,channel,marker_id,stream_id,camera_id,"
                  "x0,y0,x1,y1,x2,y2,x3,y3\n";
     }
 }
@@ -31,7 +31,9 @@ void ArucoCsvLogger::logFrame(const ArucoFrame& frame) {
               << frame.serverReceivedUtc << ","
               << frame.deltaMs << ","
               << frame.channel << ","
-              << m.id;
+              << m.id << ","
+              << frame.stream_id << ","
+              << frame.camera_id;
         for (int c = 0; c < 4; ++c) {
             file_ << "," << m.corners[c].x
                   << "," << m.corners[c].y;

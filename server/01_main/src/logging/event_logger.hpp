@@ -118,6 +118,8 @@ private:
     struct Row {
         std::string utc_time;
         std::string camera_id;            // 빈 문자열 -> NULL
+        std::string stream_id;            // 실제 RTSP 입력 스트림
+        int channel = -1;                 // CCTV 장비 내부 채널
         std::string terminal_id;          // 빈 문자열 -> NULL (camera_id와 동일 규약)
         int         risk_level = 0;
         int         previous_risk_level = kNoPreviousRisk;  // 음수 -> NULL
@@ -137,6 +139,7 @@ private:
     // 기존 DB에 distance_m만 있어도 신규 mm 계약으로 기록할 수 있게
     // distance_mm 컬럼을 추가한다. 기존 컬럼은 사후 분석 호환을 위해 삭제하지 않는다.
     bool ensureDistanceMmColumn();
+    bool ensureSourceColumns();
 
     void run();
     void writeBatch(const std::vector<Row>& rows);
