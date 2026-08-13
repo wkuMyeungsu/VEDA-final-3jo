@@ -8,7 +8,7 @@ Rectangle {
     id: root
     color: Theme.colorSurfaceElevated
     border.color: Theme.colorBorderStrong
-    border.width: 1
+    border.width: Theme.borderWidthHairline
 
     Flickable {
         anchors.fill: parent
@@ -24,7 +24,7 @@ Rectangle {
             Text {
                 text: "데모 패널"
                 color: Theme.colorTextPrimary
-                font.pixelSize: Theme.fontSizeLg
+                font.pixelSize: Theme.typeHeading.size
                 font.bold: true
             }
 
@@ -43,7 +43,7 @@ Rectangle {
             Text {
                 text: "현재 카메라: " + activeCamera.activeCameraId
                 color: Theme.colorTextSecondary
-                font.pixelSize: Theme.fontSizeSm
+                font.pixelSize: Theme.typeCaption.size
             }
 
             ComboBox {
@@ -65,7 +65,7 @@ Rectangle {
                 onToggled: demoController.setCameraConnected(activeCamera.activeCameraId, checked)
             }
 
-            Text { text: "위험 단계 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.fontSizeSm }
+            Text { text: "위험 단계 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
 
             Flow {
                 width: parent.width
@@ -88,7 +88,7 @@ Rectangle {
                 onClicked: demoController.clearCameraRisk(activeCamera.activeCameraId)
             }
 
-            Text { text: "예외 상태 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.fontSizeSm }
+            Text { text: "예외 상태 강제 설정"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
 
             Flow {
                 width: parent.width

@@ -16,29 +16,44 @@ Item {
         spacing: Theme.spacingXs
         model: alertListModel
 
+        // 새 경보 행은 페이드 인, 해제된 행은 페이드+높이 축소 -- 어느 경보가
+        // 해제됐는지 인지 가능하게(즉시 사라져서 아래 행이 튀는 대신)
+        add: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animationNormal }
+        }
+        remove: Transition {
+            ParallelAnimation {
+                NumberAnimation { property: "opacity"; to: 0; duration: Theme.animationNormal }
+                NumberAnimation { property: "height"; to: 0; duration: Theme.animationNormal }
+            }
+        }
+        displaced: Transition {
+            NumberAnimation { property: "y"; duration: Theme.animationNormal }
+        }
+
         // model.xxx는 AlertListModel::roleNames()에 등록된 이름들
         delegate: Rectangle {
             id: delegateRoot
             width: ListView.view.width
-            height: 52
+            height: Theme.alertRowHeight
             radius: Theme.radiusSm
             // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
             readonly property bool dataStale: model.exceptionState !== 0
             color: dataStale ? Theme.colorUnknownBg : Theme.riskBgColor(model.riskLevel)
             border.color: dataStale ? Theme.colorUnknown : Theme.riskColor(model.riskLevel)
-            border.width: 1
+            border.width: Theme.borderWidthHairline
 
             Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.margins: Theme.spacingSm
-                spacing: 2
+                spacing: Theme.spacingXxs
 
                 Text {
                     text: model.name + " (" + model.cameraId + ") · " + model.zone
                     color: Theme.colorTextPrimary
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                     font.bold: true
                     elide: Text.ElideRight
                     width: parent.width
@@ -48,15 +63,15 @@ Item {
                           + (model.distanceValid ? model.distanceM.toFixed(2) + " m" : "측정 불가")
                           + (model.exceptionState !== 0 ? " · " + Theme.exceptionLabel(model.exceptionState) : "")
                     color: delegateRoot.dataStale ? Theme.colorUnknown : Theme.riskColor(model.riskLevel)
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                     elide: Text.ElideRight
                     width: parent.width
                 }
             }
 
-            MouseArea {
+            HoverOverlay {
                 anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
+                overlayRadius: Theme.radiusSm
                 onClicked: root.cameraFocusRequested(model.cameraId)
             }
         }
@@ -67,6 +82,6 @@ Item {
         visible: listView.count === 0
         text: "현재 경보 없음"
         color: Theme.colorTextMuted
-        font.pixelSize: Theme.fontSizeSm
+        font.pixelSize: Theme.typeCaption.size
     }
 }

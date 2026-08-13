@@ -24,7 +24,7 @@ Column {
         visible: root.riskLevel !== 0
         text: root.distanceValid ? (root.distanceM.toFixed(2) + " m") : "측정 불가"
         color: Theme.riskColor(root.riskLevel)
-        font.pixelSize: Theme.fontSizeHuge
+        font.pixelSize: Theme.typeDisplay.size
         font.bold: true
 
         Behavior on color { ColorAnimation { duration: Theme.animationNormal } }

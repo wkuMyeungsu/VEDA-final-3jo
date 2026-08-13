@@ -18,6 +18,7 @@ set(CONTROL_CENTER_QML_FILES
     ${CMAKE_SOURCE_DIR}/qml/control_center/AppBar.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/CameraGrid.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/CameraCard.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/HoverOverlay.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/ExpandedCameraView.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/RightPanel.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/AlertListView.qml

@@ -12,16 +12,16 @@ Rectangle {
     color: Theme.colorSurface
     radius: Theme.radiusMd
     border.color: Theme.colorBorder
-    border.width: 1
+    border.width: Theme.borderWidthHairline
 
     Text {
         id: titleText
         visible: root.title.length > 0
         text: root.title
         color: Theme.colorTextSecondary
-        font.pixelSize: Theme.fontSizeSm
+        font.pixelSize: Theme.typeLabel.size
         font.bold: true
-        font.letterSpacing: 1
+        font.letterSpacing: Theme.typeLabel.spacing
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right

@@ -29,6 +29,7 @@ Item {
 
             CameraStatusList {
                 anchors.fill: parent
+                onCameraFocusRequested: (cameraId) => root.cameraFocusRequested(cameraId)
             }
         }
     }
