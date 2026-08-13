@@ -7,7 +7,7 @@
 namespace {
 Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")                                // - 로깅 카테고리 정의: RTSP 통신 및 영상 수신 로그 분류용 이름 지정
 
-constexpr int kConnectTimeoutMs = 2000;                                        // - 접속 제한 시간 (2초): 이 시간 안에 연결이 안 되면 재연결로 넘김
+constexpr int kConnectTimeoutMs = 5000;                                        // - 접속 제한 시간 (5초): 파이 실측상 오픈에 1.1~2초+가 걸려 2초로는 정상 접속도 끊겨서 늘림
 constexpr int kReconnectBaseDelayMs = 1000;                                    // - 재연결 시작 대기 시간 (1초): 첫 재시도 간격
 constexpr int kReconnectMaxDelayMs = 30000;                                    // - 재연결 최대 대기 시간 (30초): 계속 실패하는 채널의 재시도 폭주 방지
 constexpr int kBusPollMs = 50;                                                 // - 버스 확인 주기 (50ms): 정지 요청에 늦어도 이만큼 안에 반응

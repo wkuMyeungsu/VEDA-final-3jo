@@ -10,11 +10,11 @@
 namespace {
 Q_LOGGING_CATEGORY(lcActiveCamera, "safety.activecamera")                  // - 로깅 카테고리 정의: 활성 카메라 제어 로그 분류용 이름 지정
 
-constexpr int kCameraLingerMs = 5000;                                      // - 이전 카메라 유예 시간: 바로 끄지 않고 이만큼 남겨둠 (라즈베리파이 실측 후 조정 예정)
+constexpr int kCameraLingerMs = 15000;                                     // - 이전 카메라 유예 시간: 바로 끄지 않고 이만큼 남겨둠 (파이 실측 오픈 1.1~1.5초라 되돌아올 때 재접속 비용이 커서 길게 잡음)
 
 // 마감 시간이 없으면 죽은 카메라로 전환할 때 이전 카메라의 멈춘 화면에 영원히 머물고,
 // 운전자는 그걸 지금 영상이라고 믿게 됨. 차라리 신호 없음을 보여주는 편이 안전.
-constexpr int kSwapDeadlineMs = 1500;                                      // - 첫 프레임 대기 한도: 이 시간이 지나면 프레임이 없어도 전환 확정 (실측 후 조정 예정)
+constexpr int kSwapDeadlineMs = 3000;                                      // - 첫 프레임 대기 한도: 이 시간이 지나면 프레임이 없어도 전환 확정 (파이 실측 최대 1514ms의 두 배로 여유를 둠)
 }
 
 ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, MetadataDistributor *metadataDistributor,
