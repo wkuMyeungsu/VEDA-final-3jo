@@ -25,6 +25,18 @@ LAN 웹 UI/API임.
 백엔드는 RTSP 연결을 유지하고 `/api/camera/video`로 최신 프레임을 MJPEG로 전달함.
 캡처 버튼은 수신 중인 최신 프레임만 별도 파일로 저장해 검출에 사용함.
 
+실제 카메라 설정은 저장소에 커밋하지 않는다. 최초 설정 시 예제 파일을 복사하고
+실제 환경 값으로 수정한 뒤 접근 권한을 제한한다.
+
+```sh
+cd /home/veda3/01_Workspace/server/02_homography
+cp config/camera_config.example.json config/camera_config.json
+chmod 600 config/camera_config.json
+```
+
+`camera_config.json`은 `.gitignore`로 보호되며, `camera_config.example.json`만
+형식 안내용으로 관리한다. 비밀번호나 토큰은 예제 파일과 로그에 넣지 않는다.
+
 ## 3. 서버 실행
 
 ### 3.1 systemd 서비스로 실행
