@@ -16,5 +16,5 @@
   "_comment_fpga_baud_rate": "gpio-control/src/top.v 기본값과 일치",
   "fpga_baud_rate": 115200,
   "_comment_warning_device": "noop → serial로 전환 (FPGA 실장치 연결 완료 시)",
-  "warning_device_type": "noop"
+  "warning_device_type": "serial"
 }
