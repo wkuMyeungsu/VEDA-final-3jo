@@ -14,6 +14,8 @@ public:
     explicit NoopWarningDevice(QObject *parent = nullptr);
 
     void setRiskLevel(RiskTypes::RiskLevel level) override;
+    void sendClearError() override;                                             // - 로그만 남기고 실제 전송은 없음
+    void sendSelfTest(int mode) override;                                       // - 로그만 남기고 실제 전송은 없음
 
 private:
     RiskTypes::RiskLevel m_lastLevel = RiskTypes::RiskLevel::Safe;

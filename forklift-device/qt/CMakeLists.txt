@@ -14,7 +14,7 @@ endif()
 
 option(SAFETY_BUILD_TESTS "Build unit tests for common services" ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Multimedia Network)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Multimedia Network SerialPort)
 
 qt_standard_project_setup(REQUIRES 6.5)
 

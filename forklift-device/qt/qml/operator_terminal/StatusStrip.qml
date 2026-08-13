@@ -36,5 +36,10 @@ Rectangle {
             // exception.
             state: activeCamera.exceptionState === 1 ? 0 : metadataDistributor.connectionState
         }
+        ConnectionIndicator {
+            compact: true
+            label: "FPGA"
+            state: activeCamera.fpgaConnectionState
+        }
     }
 }

@@ -77,4 +77,10 @@ ApplicationWindow {
         width: 340
         visible: false
     }
+
+    EstopOverlay {
+        anchors.fill: parent
+        estopActive: activeCamera.estopActive
+        movementCutoffActive: activeCamera.movementCutoffActive
+    }
 }

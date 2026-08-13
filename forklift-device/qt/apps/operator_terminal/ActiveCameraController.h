@@ -32,6 +32,11 @@ class ActiveCameraController : public QObject
     Q_PROPERTY(BBox forkliftBBox READ forkliftBBox NOTIFY metadataChanged)                                       // - 지게차 영역 속성: 감지된 지게차 위치 좌표 전달
     Q_PROPERTY(
         RiskTypes::ConnectionState videoConnectionState READ videoConnectionState NOTIFY videoConnectionStateChanged) // - 영상 연결 상태 속성: 영상 소스 접속 상태 전달
+    Q_PROPERTY(bool estopActive READ estopActive NOTIFY estopActiveChanged)                                          // - 비상정지 속성: FPGA 물리 ESTOP 버튼 눌림 여부
+    Q_PROPERTY(bool movementCutoffActive READ movementCutoffActive NOTIFY movementCutoffActiveChanged)               // - 전진 차단 속성: FPGA 전진 릴레이 차단 작동 여부
+    Q_PROPERTY(
+        RiskTypes::ConnectionState fpgaConnectionState READ fpgaConnectionState NOTIFY fpgaConnectionStateChanged)   // - FPGA 연결 상태 속성: heartbeat 수신 여부 기반
+    Q_PROPERTY(bool fpgaErrorLatched READ fpgaErrorLatched NOTIFY fpgaErrorLatchedChanged)                           // - FPGA 오류 누적 속성: checksum/protocol/timeout 중 하나라도 있으면 true
 
 public:
     ActiveCameraController(QVector<CameraInfo> cameras, MetadataDistributor *metadataDistributor,
@@ -53,14 +58,24 @@ public:
 
     RiskTypes::ConnectionState videoConnectionState() const { return m_videoConnectionState; }                    // - 영상 상태 조회: 현재 영상 소스 연결 상태 반환
 
+    bool estopActive() const { return m_estopActive; }                                                            // - 비상정지 상태 조회: FPGA 물리 ESTOP 버튼 눌림 여부 반환
+    bool movementCutoffActive() const { return m_movementCutoffActive; }                                          // - 전진 차단 상태 조회: FPGA 전진 릴레이 차단 작동 여부 반환
+    RiskTypes::ConnectionState fpgaConnectionState() const { return m_fpgaConnectionState; }                      // - FPGA 연결 상태 조회: heartbeat 수신 여부 기반 상태 반환
+    bool fpgaErrorLatched() const { return m_fpgaErrorLatched; }                                                  // - FPGA 오류 누적 상태 조회: checksum/protocol/timeout 중 하나라도 있으면 true
+
 signals:
     void activeCameraIdChanged();                                                                                 // - 카메라 변경 알림: 활성 카메라 ID 변경 시 발생
     void metadataChanged();                                                                                       // - 메타데이터 변경 알림: 위험 수치 또는 영역 좌표 변경 시 발생
     void videoConnectionStateChanged();                                                                           // - 영상 상태 변경 알림: 영상 소스 연결 상태 변경 시 발생
+    void estopActiveChanged();                                                                                    // - 비상정지 상태 변경 알림
+    void movementCutoffActiveChanged();                                                                           // - 전진 차단 상태 변경 알림
+    void fpgaConnectionStateChanged();                                                                            // - FPGA 연결 상태 변경 알림
+    void fpgaErrorLatchedChanged();                                                                               // - FPGA 오류 누적 상태 변경 알림
 
 private slots:
     void handleMetadataUpdated(const RiskMetadata &metadata);                                                      // - 데이터 갱신 처리: 위험 메타데이터 수신 이벤트 핸들러
     void handlePersonDetected(const BBox &bbox);                                                                 // - 사람 검출 처리: ONVIF 파서의 사람 감지 이벤트 핸들러
+    void handleWarningDeviceStateChanged();                                                                       // - 경고 장치 상태 반영: IWarningDevice의 각종 signal 수신 시 캐시 갱신
 
 private:
     void attachVideoConnection();                                                                                 // - 영상 연결 수립: 새로 선택된 카메라의 영상 및 메타데이터 신호 연결
@@ -77,6 +92,11 @@ private:
 
     RiskTypes::ConnectionState m_videoConnectionState = RiskTypes::ConnectionState::Disconnected;                // - 영상 연결 상태: 현재 영상 소스 접속 상태 보관
     QMetaObject::Connection m_videoConnection;                                                                    // - 영상 신호 연결: 영상 상태 신호 연결 객체
+
+    bool m_estopActive = false;                                                                                   // - 비상정지 상태 캐시: IWarningDevice 신호로 갱신
+    bool m_movementCutoffActive = false;                                                                          // - 전진 차단 상태 캐시: IWarningDevice 신호로 갱신
+    RiskTypes::ConnectionState m_fpgaConnectionState = RiskTypes::ConnectionState::Disconnected;                  // - FPGA 연결 상태 캐시: IWarningDevice 신호로 갱신
+    bool m_fpgaErrorLatched = false;                                                                              // - FPGA 오류 누적 상태 캐시: IWarningDevice 신호로 갱신
 
     OnvifBBoxParser *m_onvifParser = nullptr;                                                                     // - ONVIF 파서: 사람 위치 좌표 파싱 객체
     QMetaObject::Connection m_onvifConnection;                                                                    // - ONVIF 신호 연결: 메타데이터 신호 연결 객체

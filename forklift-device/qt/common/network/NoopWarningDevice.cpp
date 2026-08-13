@@ -19,3 +19,13 @@ void NoopWarningDevice::setRiskLevel(RiskTypes::RiskLevel level)
     qCInfo(lcWarningDevice) << "(no physical device attached) would signal risk level:"
                              << RiskTypes::riskLevelToString(level);
 }
+
+void NoopWarningDevice::sendClearError()
+{
+    qCInfo(lcWarningDevice) << "(no physical device attached) would send CLEAR_ERROR";
+}
+
+void NoopWarningDevice::sendSelfTest(int mode)
+{
+    qCInfo(lcWarningDevice) << "(no physical device attached) would send SELF_TEST mode:" << mode;
+}
