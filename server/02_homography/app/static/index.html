@@ -11,17 +11,18 @@
   <main class="workbench">
     <section class="canvas-column">
       <div class="toolbar">
-        <div id="camera-channels" class="channel-buttons" aria-label="CCTV 채널"><span>채널</span><button class="active" data-channel="1">1</button><button data-channel="2">2</button><button data-channel="3">3</button><button data-channel="4">4</button></div>
-        <button id="play-camera">재생</button><button id="capture-camera" class="primary">캡처</button>
-        <span class="separator"></span><button id="fit-view">화면 맞춤</button><button id="actual-view">100%</button><button id="zoom-out">−</button><button id="zoom-in">＋</button><span class="separator"></span><div id="drawing-tools" class="drawing-tools" hidden><button data-tool="select" class="active">선택/수정</button><button data-tool="axis-x">X 기준선</button><button data-tool="axis-y">Y 기준선</button><button data-tool="measurement">보정 측정선</button></div><button id="grid-toggle" aria-pressed="false">격자 켜기</button>
+        <div id="capture-tools" class="toolbar-group"><div id="camera-channels" class="channel-buttons" aria-label="CCTV 채널"><span>채널</span><button class="active" data-channel="1">1</button><button data-channel="2">2</button><button data-channel="3">3</button><button data-channel="4">4</button></div><button id="play-camera">재생</button><button id="capture-camera" class="primary">캡처</button><span class="separator"></span></div>
+        <div id="view-tools" class="toolbar-group"><button id="fit-view">화면 맞춤</button><button id="actual-view">100%</button><button id="zoom-out">−</button><button id="zoom-in">＋</button></div>
+        <div id="canvas-edit-tools" class="toolbar-group" hidden><span class="separator"></span><div id="drawing-tools" class="drawing-tools"><button data-tool="select" class="active">선택/수정</button><button data-tool="axis-x">X 기준선</button><button data-tool="axis-y">Y 기준선</button><button data-tool="measurement">보정 측정선</button></div><button id="grid-toggle" aria-pressed="false">격자 켜기</button></div>
       </div>
+      <div id="stage-banner" class="stage-banner" data-stage="calibration"><span id="stage-number">1단계</span><div><strong id="stage-title">캡처 및 보정</strong><p id="stage-description">이미지를 캡처하고 X/Y 기준선과 보정 측정선을 설정하세요.</p></div></div>
       <section id="validation-visual" class="validation-visual" hidden>
         <figure><figcaption><strong>카메라 픽셀 이미지</strong><span>여기서 클릭하거나 드래그</span></figcaption><div id="validation-source-frame" class="validation-frame"><canvas id="validation-source-image"></canvas><canvas id="validation-source-overlay" aria-label="원본 이미지 검증점 입력"></canvas></div></figure>
         <figure><figcaption><strong>실거리 월드 탑뷰</strong><span>변환된 위치와 오차 표시</span></figcaption><div id="validation-world-frame" class="validation-frame"><canvas id="validation-world-image"></canvas><canvas id="validation-world-overlay" aria-label="월드 좌표 검증 결과"></canvas></div></figure>
         <div class="validation-legend"><span><i class="mapped"></i>호모그래피 변환점</span><span><i class="actual"></i>입력한 실제점/길이</span><span><i class="error"></i>오차 벡터</span></div>
       </section>
       <div id="canvas-viewport" class="canvas-viewport">
-        <img id="camera-frame" alt="CCTV 프리뷰"><canvas id="work-canvas" tabindex="0"></canvas>
+        <img id="camera-frame" alt="CCTV 프리뷰" hidden><canvas id="work-canvas" tabindex="0"></canvas>
       </div>
       <div class="statusbar"><span id="camera-status">대기 중</span><span id="pointer-status">원본 좌표 —</span></div>
     </section>
@@ -31,7 +32,7 @@
         <section id="tool-panel" class="panel-block"><div class="panel-title"><h2 id="tool-title">선택/수정</h2><span id="solve-state" class="badge">캡처 대기</span></div><p id="tool-help" class="hint">캡처 후 사용할 도구를 선택하세요.</p><div id="tool-context" class="tool-context"></div></section>
         <details id="marker-details" class="panel-block"><summary><strong>ArUco 마커</strong> <span id="marker-count" class="badge">0</span><span id="marker-compact" class="summary-note">캡처 대기</span></summary><p id="reference-help" class="hint">마커는 평면과 정사각형 스케일 계산에 사용됩니다.</p><div id="marker-list" class="marker-list"></div></details>
         <section id="measure-panel" class="panel-block" hidden><div class="panel-title"><h2>보정 측정선</h2><button id="clear-measurements" class="quiet">전체 삭제</button></div><p class="hint">실제 자로 잰 길이를 입력하면 산출에 반영됩니다.</p><div id="measurement-list" class="quality-summary" hidden></div></section>
-        <section class="panel-block solve-block"><div id="solve-input-summary" class="solve-input-summary">X/Y 기준선을 설정하세요.</div><button id="solve-homography" class="primary wide" disabled>호모그래피 산출</button><div id="quality-summary" class="quality-summary" hidden></div><a id="result-download" hidden download>결과 JSON 다운로드</a><button id="continue-topview" class="primary wide" hidden>탑뷰 영역 설정</button></section>
+        <section class="panel-block solve-block"><div id="solve-input-summary" class="solve-input-summary">X/Y 기준선을 설정하세요.</div><button id="solve-homography" class="primary wide" disabled>호모그래피 산출</button><div id="result-card" class="result-card" hidden><div class="result-card-header"><div><span class="eyebrow">산출 완료</span><strong id="result-compact">결과를 확인하세요.</strong></div><a id="result-download" class="result-download" hidden download>JSON 저장</a></div><details id="result-details"><summary>상세 결과 펼쳐 보기</summary><div id="quality-summary" class="quality-summary"></div></details></div><button id="continue-topview" class="primary wide" hidden>다음 · 탑뷰 영역 설정</button></section>
       </div>
       <div id="region-panels" class="stage-panels" hidden><section id="region-panel" class="panel-block"><div class="panel-title"><h2>탑뷰 출력 영역</h2><button id="reset-region" class="quiet">영역 초기화</button></div><p class="hint">기존 영역은 유지됩니다. 꼭짓점이나 변을 드래그해 수정하세요.</p><div id="region-size">가로 — mm · 세로 — mm</div><button id="edit-canvas-from-region" class="wide">보정 화면으로</button><button id="start-live" class="primary wide" disabled>결과 검증</button></section></div>
       <div id="validation-panels" class="stage-panels" hidden><section id="validation-panel" class="panel-block"><div class="panel-title"><h2>마커 리프로젝션 검증</h2><label class="validation-toggle"><input id="reprojection-toggle" type="checkbox" checked> 예측 겹쳐 보기</label></div><p class="hint">검출된 마커를 정답으로 사용합니다. 초록은 실제 검출 코너, 빨강은 H가 예측한 이상적인 정사각형입니다. 두 선이 벌어진 만큼이 오차입니다.</p><div id="validation-summary" class="quality-summary">산출 결과가 없습니다.</div><div id="validation-list" class="quality-summary" hidden></div><button id="open-live-validation" class="wide" disabled>라이브 화면 열기</button><button id="back-to-calibration" class="wide">보정 화면으로</button></section></div>
@@ -39,7 +40,7 @@
     </aside>
   </main>
   <section id="live-view" class="live-view" hidden>
-    <header><div><h2>라이브 결과 검증</h2><div id="live-quality" class="live-quality" aria-live="polite">RMSE —</div></div><div><button id="live-play">재생</button><button id="live-pause">일시 정지</button><button id="show-both">좌우 보기</button><button id="show-original">원본만</button><button id="show-top">탑뷰만</button><button id="fullscreen-live">전체 화면</button><button id="close-live">캔버스로 돌아가기</button></div></header>
+    <header><div><h2>라이브 결과 검증</h2><div id="live-quality" class="live-quality" aria-live="polite">RMSE —</div></div><div><button id="live-play">재생</button><button id="live-pause">일시 정지</button><button id="show-both">좌우 보기</button><button id="show-original">원본만</button><button id="show-top">탑뷰만</button><button id="fullscreen-live">전체 화면</button><button id="live-back-calibration">보정 캔버스로</button><button id="close-live" class="primary">결과 검증으로</button></div></header>
     <div id="live-grid" class="live-grid"><figure id="original-pane"><figcaption>원본 RTSP</figcaption><div class="live-media"><img id="live-original" alt="원본 RTSP 영상"></div></figure><figure id="top-pane"><figcaption>선택 구간 탑뷰</figcaption><div class="live-media"><canvas id="live-top"></canvas><canvas id="live-measure-overlay" aria-label="라이브 거리 측정"></canvas></div></figure></div>
     <p id="live-status"></p>
   </section>
