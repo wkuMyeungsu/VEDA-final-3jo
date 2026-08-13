@@ -29,7 +29,8 @@ namespace {
 using Clock = MarkerChannelTracker::Clock;
 using std::chrono::milliseconds;
 
-constexpr int kForkliftMarkerId = 0;   // 설정 스키마의 forklift.marker_id 기본값
+// 운영 기본값을 암묵적으로 기대하지 않고, 이 테스트에서 검증할 지게차 ID를 명시한다.
+constexpr int kForkliftMarkerId = 0;
 constexpr int kConfirmFrames    = 3;   // handover.confirm_frames
 constexpr auto kLostGrace       = milliseconds(500);  // handover.lost_grace_ms
 

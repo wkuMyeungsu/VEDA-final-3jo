@@ -122,7 +122,7 @@ private:
         int         risk_level = 0;
         int         previous_risk_level = kNoPreviousRisk;  // 음수 -> NULL
         std::string exception_state;
-        double      distance_m = -1.0;    // 음수 -> NULL (toJson의 sentinel 규칙과 동일)
+        double      distance_mm = -1.0;    // 음수 -> NULL (toJson의 sentinel 규칙과 동일)
     };
 
     bool openDatabase();
@@ -134,6 +134,9 @@ private:
     // 붙여주지 않는다. start() 시점에 PRAGMA table_info로 terminal_id 컬럼 유무를 확인하고
     // 없으면 ALTER TABLE ADD COLUMN으로 보강한다(2026-08-06 terminal_id 추가 시 도입).
     bool ensureTerminalIdColumn();
+    // 기존 DB에 distance_m만 있어도 신규 mm 계약으로 기록할 수 있게
+    // distance_mm 컬럼을 추가한다. 기존 컬럼은 사후 분석 호환을 위해 삭제하지 않는다.
+    bool ensureDistanceMmColumn();
 
     void run();
     void writeBatch(const std::vector<Row>& rows);

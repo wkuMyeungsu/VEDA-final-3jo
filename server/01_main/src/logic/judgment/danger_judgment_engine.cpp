@@ -1,9 +1,9 @@
 // danger_judgment_engine.cpp
-// 위험 판정 엔진 구현 - 더미 데이터 기반 프로토타입 (v2: 예외처리 보강)
+// 위험 판정 엔진 구현 - 공통 설정 기반 거리·센서 판정과 예외처리
 // 담당: 검출·추적 & IMU·ToF 센서 (박수빈)
 //
 // 자료구조·enum·클래스 선언은 danger_judgment_engine.h,
-// 실행용 main()과 더미 시나리오는 danger_judgment_engine_main.cpp에 있다.
+// 운영 임계값은 생성자에서 공통 safety_server_config.json의 값을 전달받는다.
 //
 // 빌드 (라즈베리파이 / Linux, POSIX 전용):
 //   CMake: cmake -S . -B build && cmake --build build
@@ -15,6 +15,7 @@
 
 #include "logic/judgment/danger_judgment_engine.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <ctime>
@@ -26,6 +27,19 @@
 // ============================================================
 // 1. 위험 판정 엔진
 // ============================================================
+
+DangerJudgmentEngine::DangerJudgmentEngine(
+    const forklift::config::DangerJudgmentConfig& config,
+    std::chrono::milliseconds dead_reckoning_release_grace)
+    : caution_threshold_mm(config.caution_threshold_mm),
+      danger_threshold_mm(config.danger_threshold_mm),
+      emergency_threshold_mm(config.emergency_threshold_mm),
+      emergency_release_margin_mm(config.emergency_release_margin_mm),
+      tof_caution_mm(config.tof_caution_mm),
+      tof_danger_mm(config.tof_danger_mm),
+      forklift_collision_radius_mm(config.forklift_collision_radius_mm),
+      impact_accel_threshold_g(config.impact_accel_threshold_g),
+      dead_reckoning_release_grace_ms(dead_reckoning_release_grace) {}
 
 JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const SensorInput& sen) const {
     JudgmentResult result;
@@ -39,7 +53,8 @@ JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const Sens
     double dist = -1.0;
     if (cam.forklift_localized && cam.person_detected) {
         dist = euclideanDistance(cam.forklift, cam.person);
-        result.camera_risk = classifyByDistance(dist);
+        const double effective_distance_mm = std::max(0.0, dist - forklift_collision_radius_mm);
+        result.camera_risk = classifyByDistance(effective_distance_mm);
     } else {
         // 판정 보류 -> 예외 단계에서 보정 (SAFE로 두되, 아래 예외 로직이 실제 위험 여부를 반영)
         result.camera_risk = RiskLevel::SAFE;
@@ -51,11 +66,11 @@ JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const Sens
         // -> DANGER도 같은 이유로 유지되지 않으므로 EMERGENCY만 예외를 두지 않는다.
         in_emergency_ = false;
     }
-    result.distance_m = dist;
+    result.distance_mm = dist;
 
     // ── 2) ToF 기반 판정 ────────────────────────────
     if (sen.tof_ok) {
-        result.tof_risk = classifyByTof(sen.tof_distance_m);
+        result.tof_risk = classifyByTof(sen.tof_distance_mm);
     } else {
         result.tof_risk = RiskLevel::SAFE; // 판정 불가 -> 예외 단계에서 보정
     }
@@ -104,10 +119,10 @@ double DangerJudgmentEngine::euclideanDistance(const WorldPoint& a, const WorldP
     return std::sqrt(dx * dx + dy * dy);
 }
 
-RiskLevel DangerJudgmentEngine::classifyByDistance(double dist_m) const {
+RiskLevel DangerJudgmentEngine::classifyByDistance(double dist_mm) const {
     // ── EMERGENCY 구간만 히스테리시스를 적용한다 ──────────────────
-    // 진입: dist <= emergency_threshold_m
-    // 해제: dist >  emergency_threshold_m + emergency_release_margin_m
+    // 진입: dist <= emergency_threshold_mm
+    // 해제: dist >  emergency_threshold_mm + emergency_release_margin_mm
     // 사이 구간(0.4 < dist <= 0.5)은 "직전에 EMERGENCY였는지"에 따라 갈린다.
     //
     // 위험도가 올라가는 방향은 지연 없이 즉시, 내려오는 방향만 신중하게 —
@@ -118,25 +133,25 @@ RiskLevel DangerJudgmentEngine::classifyByDistance(double dist_m) const {
     //        같은 방식을 나머지 경계로 넓히려면 아래 진입/해제 구조를 경계별로 반복하면 되고,
     //        그때는 마지막 단계를 하나만 기억하는 in_emergency_ 대신 직전 RiskLevel 전체를
     //        들고 있어야 한다.
-    const double emergency_enter_m   = emergency_threshold_m;
-    const double emergency_release_m = emergency_threshold_m + emergency_release_margin_m;
+    const double emergency_enter_mm   = emergency_threshold_mm;
+    const double emergency_release_mm = emergency_threshold_mm + emergency_release_margin_mm;
 
     if (in_emergency_) {
-        if (dist_m <= emergency_release_m) return RiskLevel::EMERGENCY;  // 해제 조건 미달
+        if (dist_mm <= emergency_release_mm) return RiskLevel::EMERGENCY;  // 해제 조건 미달
         in_emergency_ = false;                                           // 충분히 멀어짐 -> 해제
-    } else if (dist_m <= emergency_enter_m) {
+    } else if (dist_mm <= emergency_enter_mm) {
         in_emergency_ = true;
         return RiskLevel::EMERGENCY;
     }
 
-    if (dist_m <= danger_threshold_m)  return RiskLevel::DANGER;
-    if (dist_m <= caution_threshold_m) return RiskLevel::CAUTION;
+    if (dist_mm <= danger_threshold_mm)  return RiskLevel::DANGER;
+    if (dist_mm <= caution_threshold_mm) return RiskLevel::CAUTION;
     return RiskLevel::SAFE;
 }
 
-RiskLevel DangerJudgmentEngine::classifyByTof(double dist_m) const {
-    if (dist_m <= tof_danger_m)  return RiskLevel::DANGER;
-    if (dist_m <= tof_caution_m) return RiskLevel::CAUTION;
+RiskLevel DangerJudgmentEngine::classifyByTof(double dist_mm) const {
+    if (dist_mm <= tof_danger_mm)  return RiskLevel::DANGER;
+    if (dist_mm <= tof_caution_mm) return RiskLevel::CAUTION;
     return RiskLevel::SAFE;
 }
 
@@ -210,7 +225,7 @@ std::string toString(ExceptionState e) {
 
 void printResult(const std::string& scenario, const JudgmentResult& r) {
     std::cout << std::left << std::setw(26) << scenario
-              << "| dist=" << std::fixed << std::setprecision(2) << std::setw(6) << r.distance_m
+              << "| dist=" << std::fixed << std::setprecision(2) << std::setw(6) << r.distance_mm
               // 폭 9 = 가장 긴 이름("EMERGENCY") 기준. 좁으면 그 줄만 열이 밀린다.
               << "| cam=" << std::setw(9) << toString(r.camera_risk)
               << "| tof=" << std::setw(9) << toString(r.tof_risk)
@@ -248,9 +263,9 @@ std::string toJson(const JudgmentResult& r) {
        << "\"zone\":" << toJsonOrNull(r.zone) << ','
        << "\"terminal_id\":" << toJsonOrNull(r.terminal_id) << ','
        << "\"exception_state\":\"" << toString(r.exception) << "\",";
-    // distance_m은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
-    os << "\"distance_m\":";
-    if (r.distance_m < 0) os << "null"; else os << r.distance_m;
+    // distance_mm은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
+    os << "\"distance_mm\":";
+    if (r.distance_mm < 0) os << "null"; else os << r.distance_mm;
     // risk_level은 문자열이 아니라 정수(0=SAFE/1=CAUTION/2=DANGER/3=EMERGENCY)로 내보낸다.
     // 단말(Qt RiskMetadata::fromJson)이 toInt()로 읽으므로 문자열을 보내면
     // 항상 0(Safe)으로 떨어져 위험 경보가 통째로 유실된다.

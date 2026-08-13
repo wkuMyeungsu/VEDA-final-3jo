@@ -22,14 +22,14 @@
 
 #include "common/types.hpp"
 #include "common/latency_stamps.hpp"  // LatencyStamps (서버 내부 지연 계측, JudgmentResult에 얹는다)
+#include "config/safety_server_config.hpp"
 
 // ============================================================
 // 1. 데이터 구조 정의
 // ============================================================
 
-// 바닥 평면 위 실제 좌표 (미터 단위)
-// [교체 지점] 현재는 더미 값. 좌표정합 PoC 완료 후
-//              cv::perspectiveTransform(호모그래피 변환) 출력값으로 교체.
+// 바닥 평면 위 실제 좌표(mm 단위).
+// main.cpp에서 ArUco 마커 중심과 사람 발 위치를 같은 호모그래피로 변환한 값이 들어온다.
 using WorldPoint = forklift::common::WorldPoint;
 
 // 위험 단계 4단계 (숫자가 클수록 위험)
@@ -66,8 +66,8 @@ enum class ExceptionState {
 struct CameraInput {
     // 예전 필드명은 "available" 하나였는데, 서로 다른 두 상황(마커 폐색 vs 사람 미검출)이
     // 뭉뚱그려져 있어서 분리함.
-    bool       forklift_localized = true;  // 지게차 world 좌표를 이번 프레임에 얻었는지 (false=마커 폐색)
-    bool       person_detected = true;     // 이번 프레임에 사람이 검출됐는지 (false=화면에 없음/미검출)
+    bool       forklift_localized = false; // 지게차 world 좌표를 이번 프레임에 얻었는지 (false=마커 폐색)
+    bool       person_detected = false;    // 이번 프레임에 사람이 검출됐는지 (false=화면에 없음/미검출)
     // world 좌표는 하류로 내보내지 않고(팀 협의로 JSON에서 제외됨) 내부 거리 계산에만 쓴다.
     WorldPoint forklift;                   // 지게차 world 좌표 (forklift_localized=false면 stale/무의미)
     WorldPoint person;                     // 사람 world 좌표 (person_detected=false면 stale/무의미)
@@ -82,15 +82,16 @@ struct CameraInput {
     std::string zone;
 };
 
-// IMU/ToF 센서 기반 입력 (I2C로 직접 읽음)
-// [교체 지점] 현재는 더미 값. 실제로는 MPU6050(I2C 0x68)/VL53L0X(I2C 0x29)
-//              드라이버 읽기 값으로 교체 (라즈베리파이에서만 가능).
+// IMU/ToF 센서 기반 입력. 현재 운영 경로는 단말이 MQTT로 올린 최신 센서값을 사용하며,
+// 직접 연결 드라이버나 테스트 스텁도 같은 구조를 채우도록 인터페이스를 통일했다.
 struct SensorInput {
-    bool   imu_ok = true;             // IMU 응답 정상 여부
-    bool   tof_ok = true;             // ToF 응답 정상 여부
-    double tof_distance_m = 5.0;      // ToF가 측정한 최근접 거리(m)
-    double imu_accel_g = 0.0;         // IMU 가속도 크기 (g 단위, 급정지/충돌 감지용)
-    bool   is_dead_reckoning = false; // 마커 폐색 등으로 IMU 추정 모드 진입 여부
+    // 센서 값을 안전한 거리로 기본 설정하지 않는다. 실제 리더가 채우지 않은 값은
+    // imu_ok/tof_ok=false로 남아 SENSOR_FAULT fail-safe 경로를 타야 한다.
+    bool   imu_ok = false;
+    bool   tof_ok = false;
+    double tof_distance_mm{};
+    double imu_accel_g{};
+    bool   is_dead_reckoning = false;
 };
 
 // 한 프레임의 판정 결과
@@ -99,7 +100,7 @@ struct JudgmentResult {
     RiskLevel      tof_risk;
     RiskLevel      final_risk;
     ExceptionState exception;
-    double         distance_m;      // 참고용 (카메라 기준 유클리드 거리, 폐색/미검출 시 -1)
+    double         distance_mm;      // 참고용 (카메라 기준 유클리드 거리, 폐색/미검출 시 -1)
 
     // world 좌표/bbox는 단말로 내보내지 않기로 팀 협의됨 -> 결과 구조체에서도 제거.
     // (거리 계산에 필요한 원본 좌표는 CameraInput에만 남아 있다.)
@@ -127,47 +128,9 @@ struct JudgmentResult {
 
 class DangerJudgmentEngine {
 public:
-    // 거리 임계값 (미터) - 확정된 실험 4종 결과로 추후 보정 예정
-    double caution_threshold_m = 3.0;  // 이 거리 이내면 주의
-    double danger_threshold_m  = 1.5;  // 이 거리 이내면 위험
-
-    // [목업 상수 - 실측값으로 교체 필요] 충돌 임박 판정 거리.
-    // 이 거리 이내면 EMERGENCY(3). 0.4m는 근거 있는 측정값이 아니라 자리표시용 값이며,
-    // 좌표정합 PoC + 제동거리 실측(확정된 실험 4종)이 끝나면 그 값으로 교체한다.
-    // 교체 시 danger_threshold_m(1.5) 아래를 유지해야 한다(같거나 크면 EMERGENCY가
-    // DANGER 구간을 통째로 삼킨다).
-    double emergency_threshold_m = 0.4;
-
-    // [목업 상수 - 실측값으로 교체 필요] EMERGENCY 해제 마진 (히스테리시스).
-    // 한 번 EMERGENCY에 들어가면 거리가 (emergency_threshold_m + 이 값)을 넘어야 내려온다.
-    // 임계값 근처에서 좌표가 미세하게 흔들릴 때 3<->2가 프레임마다 진동하는 걸 막는다
-    // (FPGA는 위험도 상승을 즉시 반영하므로 진동이 그대로 LED/부저/전진차단으로 나간다).
-    // 0.1m 역시 자리표시용이며, 좌표정합 오차 실측값이 나오면 그 오차보다 크게 잡아야 한다.
-    double emergency_release_margin_m = 0.1;
-
-    // ToF 근접 임계값
-    // [주의] ToF 경로는 아직 3단계(SAFE/CAUTION/DANGER)로 남겨 뒀다. ToF는 사람/벽/적재물을
-    //        구분하지 못해(UNCONFIRMED_PROXIMITY 참고) 단독으로 EMERGENCY까지 올리는 게
-    //        타당한지 미확정이라, 이번 확장은 카메라 거리 경로에만 적용했다.
-    double tof_caution_m = 1.0;
-    double tof_danger_m  = 0.5;
-
-    // IMU 급정지/충돌 판정 임계값 (g)
-    // [2026-08-12] IMU 실측(시나리오 A~D, 정상 주행 15개 시행)의 최대 동적
-    // 가속도(0.7082g, B_line_1m 시행2)에 안전계수 3.0을 곱한 보수적 추정치.
-    // 실제 충돌 데이터는 없음(장비 손상 위험으로 재현 불가) - 정상 주행 대비
-    // 3배 이상 튀면 충돌로 판정한다는 논리. 안전계수 3.0은 시행 간 진동 편차가
-    // 큰 점(같은 시나리오에서 0.24~0.71g로 약 3배 차이)을 반영해 2.5에서
-    // 상향 조정함. 근거: analyze_imu.py 결과(result_1a_conservative.csv)
-    double impact_accel_threshold_g = 2.1246;
-
-    // DEAD_RECKONING 해제 유예시간 (히스테리시스).
-    // 진입(위치 놓침 -> DEAD_RECKONING)은 안전 방향이라 유예 없이 즉시 반영하지만,
-    // 해제(위치 재확보 -> NONE 복귀)는 이 시간 동안 미확보 프레임이 한 번도 없어야 반영한다.
-    // 마커가 잠깐 다시 잡혔다가 곧바로 놓치는 진동 상황에서 exception_state가 프레임마다
-    // DEAD_RECKONING <-> NONE으로 튀는 걸 막기 위함(in_emergency_의 거리 히스테리시스와
-    // 같은 목적, 축만 거리 대신 시간이다). 다른 임계값들처럼 조정 가능한 멤버로 둔다.
-    std::chrono::milliseconds dead_reckoning_release_grace_ms{500};
+    explicit DangerJudgmentEngine(
+        const forklift::config::DangerJudgmentConfig& config,
+        std::chrono::milliseconds dead_reckoning_release_grace);
 
     // 한 프레임 처리: 카메라 입력 + 센서 입력 -> 최종 판정
     //
@@ -186,10 +149,22 @@ public:
     bool inEmergencyLatch() const { return in_emergency_; }
 
 private:
+    // 아래 판정값은 생성할 때 공통 JSON 설정에서 한 번만 주입받는다.
+    // 코드나 호출부에서 운영값을 다시 덮어쓸 수 없도록 상수 멤버로 보관한다.
+    const double caution_threshold_mm;
+    const double danger_threshold_mm;
+    const double emergency_threshold_mm;
+    const double emergency_release_margin_mm;
+    const double tof_caution_mm;
+    const double tof_danger_mm;
+    const double forklift_collision_radius_mm;
+    const double impact_accel_threshold_g;
+    const std::chrono::milliseconds dead_reckoning_release_grace_ms;
+
     static double euclideanDistance(const WorldPoint& a, const WorldPoint& b);
 
-    RiskLevel classifyByDistance(double dist_m) const;
-    RiskLevel classifyByTof(double dist_m) const;
+    RiskLevel classifyByDistance(double dist_mm) const;
+    RiskLevel classifyByTof(double dist_mm) const;
 
     ExceptionState detectException(const CameraInput& cam, const SensorInput& sen,
                                    RiskLevel tof_risk) const;
@@ -200,8 +175,8 @@ private:
     // r이 minimum보다 낮으면 minimum까지 끌어올림
     static RiskLevel atLeast(RiskLevel r, RiskLevel minimum);
 
-    // EMERGENCY 히스테리시스 래치. 진입은 emergency_threshold_m 이하에서,
-    // 해제는 (emergency_threshold_m + emergency_release_margin_m) 초과에서만 일어난다.
+    // EMERGENCY 히스테리시스 래치. 진입은 emergency_threshold_mm 이하에서,
+    // 해제는 (emergency_threshold_mm + emergency_release_margin_mm) 초과에서만 일어난다.
     // 거리 판정 자체가 불가능한 프레임(마커 폐색/사람 미검출)에서는 해제된다 - 자세한 근거는
     // danger_judgment_engine.cpp의 evaluate() 주석 참고.
     // evaluate()가 const라 mutable로 둔다(위 evaluate() 주석의 스레드 주의사항과 한 쌍).
@@ -245,7 +220,7 @@ std::string toJsonOrNull(const std::string& s);
 //
 // 필드명·구성은 네트워크·단말 파트(Qt RiskMetadata::fromJson)와 확정된 스키마를 따른다.
 // 확정된 출력 필드는 아래 7개가 전부다:
-//   utc_time / camera_id / zone / terminal_id / exception_state / distance_m / risk_level
+//   utc_time / camera_id / zone / terminal_id / exception_state / distance_mm / risk_level
 // - terminal_id는 이 판정을 받을 단말 식별자다(2026-08-06 추가). camera_id/zone과 같은 규약으로
 //   빈 문자열이면 null로 나간다.
 // - risk_level은 정수(0=SAFE/1=CAUTION/2=DANGER/3=EMERGENCY)다. 단말이 toInt()로 읽는

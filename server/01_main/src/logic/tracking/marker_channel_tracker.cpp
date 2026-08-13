@@ -11,7 +11,7 @@
 MarkerChannelTracker::MarkerChannelTracker(int marker_id, int confirm_frames,
                                            std::chrono::milliseconds lost_grace)
     // confirm_frames가 0 이하면 "첫 프레임에 무조건 전환"이 되어 오검출 한 방에 화면이
-    // 튄다. 설정 로더(terminal_config.cpp)가 이미 1 이상을 강제하지만, 이 클래스를
+    // 튄다. 설정 로더(safety_server_config.cpp)가 이미 1 이상을 강제하지만, 이 클래스를
     // 설정 없이 직접 만드는 호출부(테스트 등)도 있어서 여기서도 바닥을 깐다.
     : marker_id_(marker_id),
       confirm_frames_(std::max(1, confirm_frames)),

@@ -56,15 +56,15 @@ DetectionResult calibrate_image(const Config& config, const cv::Mat& image) {
         throw std::runtime_error("fewer than two valid markers detected");
     cv::Mat mask;
     // RANSAC으로 인쇄 오차나 부분 가림에 따른 이상 코너 제외함.
-    // 픽셀 좌표를 실제 보드 cm 좌표로 변환하는 행렬 생성함.
+    // 픽셀 좌표를 실제 보드 mm 좌표로 변환하는 행렬 생성함.
     result.h_pixel_to_world = cv::findHomography(
-        pixels, worlds, cv::RANSAC, config.calibration.ransac_threshold_cm, mask);
+        pixels, worlds, cv::RANSAC, config.calibration.ransac_threshold_mm, mask);
     if (result.h_pixel_to_world.empty())
         throw std::runtime_error("findHomography failed");
     result.h_pixel_to_world /= result.h_pixel_to_world.at<double>(2, 2);
     result.h_world_to_pixel = result.h_pixel_to_world.inv();
     // 채택된 코너의 재투영 유클리드 거리 계산함.
-    // 결과 단위는 world 좌표와 같은 cm.
+    // 결과 단위는 월드 좌표와 같은 mm다.
     double sum = 0.0;
     int count = 0;
     for (int i = 0; i < static_cast<int>(pixels.size()); ++i) {
@@ -78,7 +78,7 @@ DetectionResult calibrate_image(const Config& config, const cv::Mat& image) {
         ++count;
     }
     result.inliers = count;
-    result.rmse_cm = count ? std::sqrt(sum / count)
+    result.rmse_mm = count ? std::sqrt(sum / count)
                            : std::numeric_limits<double>::infinity();
     result.ids = valid_ids;
     result.pixels = pixels;
@@ -90,13 +90,13 @@ void write_calibration(const std::string& path, const Config& config,
                        const DetectionResult& detection, const cv::Size& size,
                        int channel, double gate) {
     const json value = {
-        {"schema_version", 1}, {"channel", channel},
+        {"schema_version", 1}, {"channel", channel}, {"world_unit", "mm"},
         {"H_pixel_to_world", matrix_to_json(detection.h_pixel_to_world)},
         {"H_world_to_pixel", matrix_to_json(detection.h_world_to_pixel)},
         {"image_size", {{"width", size.width}, {"height", size.height}}},
         {"dictionary", config.dictionary}, {"grid", config_to_json(config)},
-        {"inliers", detection.inliers}, {"reproj_rmse_cm", detection.rmse_cm},
-        {"rmse_gate_cm", gate}, {"created_utc", utc_now()}};
+        {"inliers", detection.inliers}, {"reproj_rmse_mm", detection.rmse_mm},
+        {"rmse_gate_mm", gate}, {"created_utc", utc_now()}};
     std::ofstream output(path);
     if (!output) throw std::runtime_error("cannot write output: " + path);
     output << std::setw(2) << value << '\n';

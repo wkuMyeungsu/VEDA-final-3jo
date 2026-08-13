@@ -55,7 +55,11 @@ public:
 //             교체 대상은 이 클래스뿐이고 ISensorReader 시그니처는 그대로 쓴다.
 class StubSensorReader : public ISensorReader {
 public:
+    // Stub 거리도 공통 JSON에서 주입받아야 하므로 기본 생성을 허용하지 않는다.
+    explicit StubSensorReader(double tof_distance_mm) : tof_distance_mm_(tof_distance_mm) {}
     SensorInput read() override;
+private:
+    double tof_distance_mm_;
 };
 
 // ============================================================
@@ -92,7 +96,9 @@ public:
     //              후 결과에 그대로 채워 넣는다(값 검증 없이 통과). 빈 문자열이면 하류 JSON에
     //              terminal_id=null로 나간다(camera_id와 동일 규약).
     // sensors: 호출부가 소유한다(파이프라인보다 오래 살아야 함).
-    JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors);
+    JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors,
+                     const forklift::config::DangerJudgmentConfig& judgment_config,
+                     std::chrono::milliseconds dead_reckoning_release_grace);
 
     // 한 프레임 처리: 상류 입력 -> CameraInput 매핑 -> SensorInput 읽기 -> evaluate().
     //
@@ -129,8 +135,8 @@ public:
     //        않았다. main.cpp에서는 둘 다 appsink 콜백 스레드에서만 호출된다.
     void setActiveCameraId(int camera_id);
 
-    // 임계값 보정(확정된 실험 4종 결과 반영)을 호출부에서 할 수 있도록 엔진을 노출한다.
-    DangerJudgmentEngine&       engine()       { return engine_; }
+    // 테스트와 진단에서 현재 래치 상태를 읽을 수 있게 엔진의 읽기 전용 참조만 제공한다.
+    // 판정 임계값은 공통 JSON에서 생성 시 주입되며 호출부에서 변경할 수 없다.
     const DangerJudgmentEngine& engine() const { return engine_; }
 
 private:

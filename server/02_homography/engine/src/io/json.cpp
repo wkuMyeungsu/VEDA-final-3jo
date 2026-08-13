@@ -48,8 +48,8 @@ json config_to_json(const Config& config) {
     // 결과 해석과 재현에 사용함.
     return {
         {"dictionary", config.dictionary}, {"cols", config.cols},
-        {"rows", config.rows}, {"marker_len_cm", config.marker_len_cm},
-        {"gap_cm", config.gap_cm}, {"id_offset", config.id_offset},
+        {"rows", config.rows}, {"marker_len_mm", config.marker_len_mm},
+        {"gap_mm", config.gap_mm}, {"id_offset", config.id_offset},
         {"origin_corner", config.origin_corner},
         {"marker_output", {
             {"size_mm", config.marker_output.size_mm},
@@ -57,16 +57,16 @@ json config_to_json(const Config& config) {
             {"dpi", config.marker_output.dpi},
             {"label", config.marker_output.label}}},
         {"calibration", {
-            {"max_rmse_cm", config.calibration.max_rmse_cm},
-            {"ransac_threshold_cm", config.calibration.ransac_threshold_cm},
+            {"max_rmse_mm", config.calibration.max_rmse_mm},
+            {"ransac_threshold_mm", config.calibration.ransac_threshold_mm},
             {"channel", config.calibration.channel}}},
         {"manual_solve", {
             {"marker_size_mm", config.manual_solve.marker_size_mm},
             {"ransac_threshold_mm", config.manual_solve.ransac_threshold_mm}}},
         {"preview", {
             {"scale", config.preview.scale},
-            {"good_error_cm", config.preview.good_error_cm},
-            {"warning_error_cm", config.preview.warning_error_cm}}}
+            {"good_error_mm", config.preview.good_error_mm},
+            {"warning_error_mm", config.preview.warning_error_mm}}}
     };
 }
 

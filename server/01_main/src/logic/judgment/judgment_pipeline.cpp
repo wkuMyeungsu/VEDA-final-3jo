@@ -49,7 +49,7 @@ SensorInput StubSensorReader::read() {
     SensorInput sen;
     sen.imu_ok            = true;
     sen.tof_ok            = true;
-    sen.tof_distance_m    = 5.0;   // 원거리 -> ToF 기준 SAFE
+    sen.tof_distance_mm    = tof_distance_mm_;
     sen.imu_accel_g       = 0.0;   // 충돌 의심 없음
     sen.is_dead_reckoning = false; // 마커 폐색 여부는 상류(ArUco)에서 오는 값이라 스텁에서 판단하지 않음
     return sen;
@@ -59,8 +59,12 @@ SensorInput StubSensorReader::read() {
 // 2. 판정 파이프라인
 // ============================================================
 
-JudgmentPipeline::JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors)
-    : active_camera_id_(active_camera_id), terminal_id_(terminal_id), sensors_(&sensors) {}
+JudgmentPipeline::JudgmentPipeline(
+    int active_camera_id, const std::string& terminal_id, ISensorReader& sensors,
+    const forklift::config::DangerJudgmentConfig& judgment_config,
+    std::chrono::milliseconds dead_reckoning_release_grace)
+    : active_camera_id_(active_camera_id), terminal_id_(terminal_id), sensors_(&sensors),
+      engine_(judgment_config, dead_reckoning_release_grace) {}
 
 void JudgmentPipeline::setActiveCameraId(int camera_id) {
     if (camera_id == active_camera_id_) return;
@@ -86,7 +90,7 @@ CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
     cam.person_detected = nearest.found;
     cam.person          = nearest.found ? nearest.position : WorldPoint{};
 
-    // nearest.distance_m은 일부러 넘기지 않는다.
+    // nearest.distance_mm은 일부러 넘기지 않는다.
     // 엔진이 forklift/person으로 같은 유클리드 거리를 다시 계산하므로(공식 동일),
     // 거리의 단일 출처를 엔진 쪽에 두고 값이 두 군데서 갈라지는 걸 막는다.
 

@@ -103,22 +103,25 @@ void expectContains(const std::string& name, const std::string& haystack,
 
 const int         kActiveCamera = 1;
 const std::string kTerminalId   = "TERM_TEST";
-const WorldPoint  kForklift{5.0, 5.0};
+const WorldPoint  kForklift{5000.0, 5000.0};
+const forklift::config::DangerJudgmentConfig kJudgmentConfig{
+    3000.0, 1500.0, 400.0, 100.0, 1000.0, 500.0, 2.0, 0.0};
+const auto kDeadReckoningGrace = std::chrono::milliseconds(500);
 
 // 지게차(5,5) 기준 거리별 사람 위치.
-const WorldPoint kPersonDanger{5.5, 5.5};    // 약 0.71m -> danger_threshold_m(1.5) 이내
-const WorldPoint kPersonCaution{7.0, 7.0};   // 약 2.83m -> caution_threshold_m(3.0) 이내
-const WorldPoint kPersonSafe{10.0, 10.0};    // 약 7.07m -> SAFE
+const WorldPoint kPersonDanger{5500.0, 5500.0};
+const WorldPoint kPersonCaution{7000.0, 7000.0};
+const WorldPoint kPersonSafe{10000.0, 10000.0};
 
 // EMERGENCY 구간 검증용 좌표 (x축으로만 떨어뜨려 거리 = x 오프셋이 되게 한다).
-// 임계값은 emergency_threshold_m=0.4, 해제선은 0.4+0.1=0.5.
+// 임계값은 emergency_threshold_mm=400, 해제선은 400+100=500(mm)이다.
 // 경계에 딱 붙은 값(0.40/0.50)은 sqrt 반올림 1ulp에 따라 갈릴 수 있어 쓰지 않고,
-// 경계에서 0.01m 이상 떨어진 값만 쓴다(<= 비교의 등호 자체는 단위테스트 대상이 아님).
-const WorldPoint kPersonEmergency{5.30, 5.0};    // 0.30m -> 진입선 아래 -> EMERGENCY
-const WorldPoint kPersonJustInside{5.39, 5.0};   // 0.39m -> 진입선 아래 -> EMERGENCY
-const WorldPoint kPersonJustOutside{5.41, 5.0};  // 0.41m -> 진입선 위  -> 진입 안 함(DANGER)
-const WorldPoint kPersonInBand{5.45, 5.0};       // 0.45m -> 진입선~해제선 사이(래치 여부로 갈림)
-const WorldPoint kPersonReleased{5.55, 5.0};     // 0.55m -> 해제선 위  -> DANGER
+// 경계에서 10mm 이상 떨어진 값만 쓴다(<= 비교의 등호 자체는 단위테스트 대상이 아님).
+const WorldPoint kPersonEmergency{5300.0, 5000.0};
+const WorldPoint kPersonJustInside{5390.0, 5000.0};
+const WorldPoint kPersonJustOutside{5410.0, 5000.0};
+const WorldPoint kPersonInBand{5450.0, 5000.0};
+const WorldPoint kPersonReleased{5550.0, 5000.0};
 
 NearestPersonResult makeFound(int track_id, int camera_id, const WorldPoint& pos) {
     NearestPersonResult n;
@@ -126,9 +129,9 @@ NearestPersonResult makeFound(int track_id, int camera_id, const WorldPoint& pos
     n.track_id   = track_id;
     n.camera_id  = camera_id;
     n.position   = pos;
-    // distance_m은 glue가 일부러 안 넘기는 값이라 일부러 엉뚱한 값을 넣어 둔다.
-    // 엔진이 좌표로 다시 계산하므로 결과 distance_m이 이 값에 오염되면 안 된다.
-    n.distance_m = 999.0;
+    // distance_mm은 glue가 일부러 안 넘기는 값이라 일부러 엉뚱한 값을 넣어 둔다.
+    // 엔진이 좌표로 다시 계산하므로 결과 distance_mm이 이 값에 오염되면 안 된다.
+    n.distance_mm = 999.0;
     return n;
 }
 
@@ -155,10 +158,10 @@ void testStubWarningPrintedOnce() {
     std::ostringstream captured;
     std::streambuf* saved = std::cerr.rdbuf(captured.rdbuf());
 
-    StubSensorReader first;
+    StubSensorReader first(5000.0);
     first.read();
     first.read();          // 같은 인스턴스 재호출 -> 추가 출력 없어야 함
-    StubSensorReader second;
+    StubSensorReader second(5000.0);
     second.read();         // 다른 인스턴스 -> static이 인스턴스별이 아니므로 역시 없어야 함
 
     std::cerr.rdbuf(saved);
@@ -173,8 +176,8 @@ void testStubWarningPrintedOnce() {
 void testCameraInputMapping() {
     std::cout << "\n[테스트 1] toCameraInput() 매핑 규칙\n";
 
-    StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+    StubSensorReader sensors(5000.0);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
 
     std::cout << "  -- 사람 검출됨 --\n";
     {
@@ -214,7 +217,7 @@ void testCameraInputMapping() {
 
     std::cout << "  -- 활성 camera_id 미확정(음수) --\n";
     {
-        JudgmentPipeline unset(-1, kTerminalId, sensors);
+        JudgmentPipeline unset(-1, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const CameraInput cam =
             unset.toCameraInput(kForklift, true, makeFound(2, 1, kPersonDanger));
 
@@ -236,8 +239,8 @@ void testCameraInputMapping() {
 void testCameraIdMismatch() {
     std::cout << "\n[테스트 2] camera_id_mismatch 판정 조건\n";
 
-    StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+    StubSensorReader sensors(5000.0);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
 
     expectBool("같은 camera_id -> mismatch 아님",
                pipeline.isCameraIdMismatch(makeFound(2, kActiveCamera, kPersonDanger)), false);
@@ -250,41 +253,41 @@ void testCameraIdMismatch() {
                pipeline.isCameraIdMismatch(makeNotFound()), false);
 
     // 활성 카메라가 미확정이면 비교 기준이 없다.
-    JudgmentPipeline unset(-1, kTerminalId, sensors);
+    JudgmentPipeline unset(-1, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
     expectBool("활성 id 미확정 -> mismatch 판단 안 함",
                unset.isCameraIdMismatch(makeFound(2, 5, kPersonDanger)), false);
 }
 
 // ── 테스트 3: processFrame() end-to-end ─────────────────────
-// 스텁 센서가 "정상 + ToF 5m(SAFE) + 가속도 0"을 주므로, 여기서 관측되는 위험도는
+// 스텁 센서가 "정상 + ToF 5000mm(SAFE) + 가속도 0"을 주므로, 여기서 관측되는 위험도는
 // 전부 카메라(최근접 사람 거리) 경로에서 나온 값이다.
 void testProcessFrame() {
     std::cout << "\n[테스트 3] processFrame() end-to-end (스텁 센서 기준)\n";
 
-    StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+    StubSensorReader sensors(5000.0);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
 
     std::cout << "  -- 거리별 위험도 --\n";
     {
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
-        expectRisk("0.71m -> DANGER",    out.result.final_risk, RiskLevel::DANGER);
+        expectRisk("약 707mm -> DANGER", out.result.final_risk, RiskLevel::DANGER);
         expectExc ("예외 없음",           out.result.exception,  ExceptionState::NONE);
-        // nearest.distance_m(999.0)이 아니라 엔진이 좌표로 재계산한 값이어야 한다.
-        expectNear("거리는 엔진 재계산값", out.result.distance_m, std::sqrt(0.5));
+        // nearest.distance_mm(999.0)이 아니라 엔진이 좌표로 재계산한 값이어야 한다.
+        expectNear("거리는 엔진 재계산값", out.result.distance_mm, std::sqrt(500000.0));
         expectStr ("결과에 camera_id 전달", out.result.camera_id, "1");
         expectBool("mismatch 아님",        out.camera_id_mismatch, false);
     }
     {
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(5, kActiveCamera, kPersonCaution));
-        expectRisk("2.83m -> CAUTION", out.result.final_risk, RiskLevel::CAUTION);
+        expectRisk("약 2828mm -> CAUTION", out.result.final_risk, RiskLevel::CAUTION);
         expectExc ("예외 없음",         out.result.exception,  ExceptionState::NONE);
     }
     {
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(6, kActiveCamera, kPersonSafe));
-        expectRisk("7.07m -> SAFE", out.result.final_risk, RiskLevel::SAFE);
+        expectRisk("약 7071mm -> SAFE", out.result.final_risk, RiskLevel::SAFE);
         expectExc ("예외 없음",      out.result.exception,  ExceptionState::NONE);
     }
 
@@ -294,7 +297,7 @@ void testProcessFrame() {
         // ToF도 SAFE라 UNCONFIRMED_PROXIMITY 조건이 성립하지 않는다 -> 진짜 아무도 없는 정상 상황.
         expectRisk("사람 없음 -> SAFE",        out.result.final_risk, RiskLevel::SAFE);
         expectExc ("사람 없음 -> 예외 없음",    out.result.exception,  ExceptionState::NONE);
-        expectNear("거리 판정 불가 -> -1",      out.result.distance_m, -1.0);
+        expectNear("거리 판정 불가 -> -1",      out.result.distance_mm, -1.0);
         expectStr ("camera_id는 그대로 유지",   out.result.camera_id, "1");
     }
 
@@ -304,7 +307,7 @@ void testProcessFrame() {
             pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));
         expectExc ("폐색 -> DEAD_RECKONING",  out.result.exception,  ExceptionState::DEAD_RECKONING);
         expectRisk("폐색 -> 최소 CAUTION",     out.result.final_risk, RiskLevel::CAUTION);
-        expectNear("거리 판정 불가 -> -1",     out.result.distance_m, -1.0);
+        expectNear("거리 판정 불가 -> -1",     out.result.distance_mm, -1.0);
     }
 
     std::cout << "  -- 다른 카메라에서 온 사람 (핸드오버 미구현 상태의 동작 고정) --\n";
@@ -313,7 +316,7 @@ void testProcessFrame() {
         // 유예 상태(dead_reckoning_release_grace_ms, danger_judgment_engine.h)가 이 블록의
         // exception 판정에 섞이면 안 된다. 위쪽 pipeline을 그대로 재사용하면 아래 두 호출은
         // 아직 유예 시간(500ms) 안이라 exception이 NONE이 아니라 DEAD_RECKONING으로 나온다.
-        JudgmentPipeline fresh_pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline fresh_pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const PipelineOutput same =
             fresh_pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
         const PipelineOutput other =
@@ -325,7 +328,7 @@ void testProcessFrame() {
         expectRisk("같은 카메라 케이스와 동일 위험도",
                    other.result.final_risk, same.result.final_risk);
         expectNear("거리도 동일하게 계산됨",
-                   other.result.distance_m, same.result.distance_m);
+                   other.result.distance_mm, same.result.distance_mm);
         // [TODO] worst-case 핸드오버가 들어오면 이 블록의 기대값을 갱신해야 한다
         //        (카메라별 판정 후 더 위험한 쪽 채택 + camera_id는 채택된 쪽 값).
     }
@@ -337,9 +340,9 @@ void testProcessFrame() {
 void testJsonCarriesCameraId() {
     std::cout << "\n[테스트 4] 하류 JSON에 camera_id 반영\n";
 
-    StubSensorReader sensors;
+    StubSensorReader sensors(5000.0);
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
         const std::string json = toJson(out.result);
@@ -352,7 +355,7 @@ void testJsonCarriesCameraId() {
     }
     {
         // 활성 camera_id 미확정이면 예전처럼 null로 나가야 한다(빈 문자열이 그대로 나가면 안 됨).
-        JudgmentPipeline unset(-1, kTerminalId, sensors);
+        JudgmentPipeline unset(-1, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const PipelineOutput out =
             unset.processFrame(kForklift, true, makeFound(2, 1, kPersonDanger));
         expectContains("활성 id 미확정 -> camera_id null",
@@ -366,12 +369,12 @@ void testJsonCarriesCameraId() {
 void testStubSensorContract() {
     std::cout << "\n[테스트 5] StubSensorReader 값 계약 (드라이버 교체 시 갱신 대상)\n";
 
-    StubSensorReader sensors;
+    StubSensorReader sensors(5000.0);
     const SensorInput sen = sensors.read();
 
     expectBool("imu_ok = true",             sen.imu_ok, true);
     expectBool("tof_ok = true",             sen.tof_ok, true);
-    expectNear("tof_distance_m = 5.0 (원거리)", sen.tof_distance_m, 5.0);
+    expectNear("tof_distance_mm = 5000 (원거리)", sen.tof_distance_mm, 5000.0);
     expectNear("imu_accel_g = 0.0",         sen.imu_accel_g, 0.0);
     expectBool("is_dead_reckoning = false", sen.is_dead_reckoning, false);
 }
@@ -386,8 +389,8 @@ void testStubSensorContract() {
 void testSelectorIntegration() {
     std::cout << "\n[테스트 6] selectNearestPerson() -> processFrame() 통합\n";
 
-    StubSensorReader sensors;
-    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+    StubSensorReader sensors(5000.0);
+    JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
 
     std::cout << "  -- 3명 중 최근접 선택 (selector 시나리오 1) --\n";
     {
@@ -395,11 +398,11 @@ void testSelectorIntegration() {
         // C++17 고정(CMAKE_CXX_EXTENSIONS OFF)이라 지정 초기화(.field = value)는 표준
         // 범위 밖(C++20)이다. last_bbox/last_seen_s는 지정하지 않아 기본값(0)으로 둔다.
         Track track1; track1.track_id = 1; track1.camera_id = 1;
-        track1.last_world = {8.0, 8.0}; track1.missed_frames = 0;   // 약 4.24m
+        track1.last_world = {8000.0, 8000.0}; track1.missed_frames = 0;
         Track track2; track2.track_id = 2; track2.camera_id = 1;
-        track2.last_world = {5.5, 5.5}; track2.missed_frames = 0;   // 약 0.71m <- 선택돼야 함
+        track2.last_world = {5500.0, 5500.0}; track2.missed_frames = 0;
         Track track3; track3.track_id = 3; track3.camera_id = 2;
-        track3.last_world = {1.0, 1.0}; track3.missed_frames = 0;   // 약 5.66m
+        track3.last_world = {1000.0, 1000.0}; track3.missed_frames = 0;
         const std::vector<Track> tracks = {track1, track2, track3};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
@@ -408,8 +411,8 @@ void testSelectorIntegration() {
         report("선택된 track_id=2", nearest.track_id == 2, "2", std::to_string(nearest.track_id));
 
         const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
-        expectRisk("최근접 0.71m -> DANGER",   out.result.final_risk, RiskLevel::DANGER);
-        expectNear("거리 일치",                out.result.distance_m, nearest.distance_m);
+        expectRisk("최근접 약 707mm -> DANGER", out.result.final_risk, RiskLevel::DANGER);
+        expectNear("거리 일치",                out.result.distance_mm, nearest.distance_mm);
         expectStr ("camera_id 전달",            out.result.camera_id, "1");
         expectBool("같은 카메라 -> mismatch 아님", out.camera_id_mismatch, false);
     }
@@ -417,24 +420,24 @@ void testSelectorIntegration() {
     std::cout << "  -- 미검출 트랙 제외 후 차순위 선택 (selector 시나리오 2) --\n";
     {
         Track track4; track4.track_id = 4; track4.camera_id = 1;
-        track4.last_world = {5.1, 5.1}; track4.missed_frames = 2;   // 매우 가깝지만 미검출 -> 제외
+        track4.last_world = {5100.0, 5100.0}; track4.missed_frames = 2;
         Track track5; track5.track_id = 5; track5.camera_id = 1;
-        track5.last_world = {7.0, 7.0}; track5.missed_frames = 0;   // 약 2.83m <- 선택돼야 함
+        track5.last_world = {7000.0, 7000.0}; track5.missed_frames = 0;
         const std::vector<Track> tracks = {track4, track5};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
         report("선택된 track_id=5", nearest.track_id == 5, "5", std::to_string(nearest.track_id));
-        // 제외된 트랙(0.14m)이 뽑혔다면 DANGER가 나온다 -> CAUTION이어야 정상
+        // 제외된 트랙(약 141mm)이 뽑혔다면 EMERGENCY가 나온다 -> CAUTION이어야 정상
         const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
-        expectRisk("차순위 2.83m -> CAUTION", out.result.final_risk, RiskLevel::CAUTION);
+        expectRisk("차순위 약 2828mm -> CAUTION", out.result.final_risk, RiskLevel::CAUTION);
     }
 
     std::cout << "  -- 전부 미검출 (selector 시나리오 4) --\n";
     {
         Track track6; track6.track_id = 6; track6.camera_id = 1;
-        track6.last_world = {5.2, 5.2}; track6.missed_frames = 1;
+        track6.last_world = {5200.0, 5200.0}; track6.missed_frames = 1;
         Track track7; track7.track_id = 7; track7.camera_id = 1;
-        track7.last_world = {6.0, 6.0}; track7.missed_frames = 3;
+        track7.last_world = {6000.0, 6000.0}; track7.missed_frames = 3;
         const std::vector<Track> tracks = {track6, track7};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
@@ -443,16 +446,16 @@ void testSelectorIntegration() {
         expectBool("person_detected=false로 전달",
                    pipeline.toCameraInput(kForklift, true, nearest).person_detected, false);
         expectRisk("사람 없음 -> SAFE",        out.result.final_risk, RiskLevel::SAFE);
-        expectNear("거리 판정 불가 -> -1",     out.result.distance_m, -1.0);
+        expectNear("거리 판정 불가 -> -1",     out.result.distance_mm, -1.0);
     }
 
     std::cout << "  -- 다른 카메라 트랙만 남은 경우 --\n";
     {
         // camera_id=2 트랙만 유효 -> selector는 그걸 고르고, glue는 mismatch로 표시한다.
         Track track8; track8.track_id = 8; track8.camera_id = 1;
-        track8.last_world = {5.2, 5.2}; track8.missed_frames = 1;   // 활성 카메라 트랙이지만 미검출 -> 제외
+        track8.last_world = {5200.0, 5200.0}; track8.missed_frames = 1;
         Track track9; track9.track_id = 9; track9.camera_id = 2;
-        track9.last_world = {5.5, 5.5}; track9.missed_frames = 0;   // 다른 카메라 트랙 -> 이게 선택됨
+        track9.last_world = {5500.0, 5500.0}; track9.missed_frames = 0;
         const std::vector<Track> tracks = {track8, track9};
         const NearestPersonResult nearest = selectNearestPerson(kForklift, tracks);
 
@@ -464,73 +467,73 @@ void testSelectorIntegration() {
 }
 
 // ── 테스트 7: EMERGENCY 단계 + 히스테리시스 ─────────────────
-// 스텁 센서가 ToF 5m(SAFE)를 주므로 여기서 보이는 위험도는 전부 카메라 거리 경로 값이다.
+// 스텁 센서가 ToF 5000mm(SAFE)를 주므로 여기서 보이는 위험도는 전부 카메라 거리 경로 값이다.
 // 히스테리시스는 프레임 간 상태를 남기므로 블록마다 파이프라인을 새로 만들거나
 // resetHysteresis()로 이전 프레임 영향을 지운 뒤 시작한다.
 void testEmergencyTier() {
     std::cout << "\n[테스트 7] EMERGENCY 단계 + DANGER<->EMERGENCY 히스테리시스\n";
 
-    StubSensorReader sensors;
+    StubSensorReader sensors(5000.0);
 
     std::cout << "  -- 진입 거리 --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
 
-        expectRisk("0.30m -> EMERGENCY",     out.result.final_risk, RiskLevel::EMERGENCY);
+        expectRisk("300mm -> EMERGENCY", out.result.final_risk, RiskLevel::EMERGENCY);
         expectExc ("거리 기반이라 예외는 NONE", out.result.exception,  ExceptionState::NONE);
-        expectNear("거리 계산값 0.30m",       out.result.distance_m, 0.30);
+        expectNear("거리 계산값 300mm",       out.result.distance_mm, 300.0);
         // EMERGENCY_IMPACT(IMU 축)와 섞이지 않는다는 걸 고정해 둔다 - 완전히 별개 필드다.
         expectContains("JSON risk_level=3",   toJson(out.result), "\"risk_level\":3");
         expectContains("JSON exception_state는 NONE 유지",
                        toJson(out.result), "\"exception_state\":\"NONE\"");
     }
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonJustOutside));
-        expectRisk("0.41m -> DANGER (진입선 위)", out.result.final_risk, RiskLevel::DANGER);
+        expectRisk("410mm -> DANGER (진입선 위)", out.result.final_risk, RiskLevel::DANGER);
     }
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         const PipelineOutput out =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonJustInside));
-        expectRisk("0.39m -> EMERGENCY (진입선 아래)", out.result.final_risk, RiskLevel::EMERGENCY);
+        expectRisk("390mm -> EMERGENCY (진입선 아래)", out.result.final_risk, RiskLevel::EMERGENCY);
     }
 
-    std::cout << "  -- 히스테리시스 (진입 0.4m / 해제 0.5m) --\n";
+    std::cout << "  -- 히스테리시스 (진입 400mm / 해제 500mm) --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
 
-        // 래치 없이 0.45m부터 시작하면 진입선(0.4) 위라 EMERGENCY가 아니어야 한다.
+        // 래치 없이 450mm부터 시작하면 진입선(400mm) 위라 EMERGENCY가 아니어야 한다.
         const PipelineOutput before =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
-        expectRisk("래치 전 0.45m -> DANGER", before.result.final_risk, RiskLevel::DANGER);
+        expectRisk("래치 전 450mm -> DANGER", before.result.final_risk, RiskLevel::DANGER);
 
-        // 0.30m로 들어갔다가 다시 0.45m로 나오면, 해제선(0.5)을 못 넘었으므로 EMERGENCY 유지.
+        // 300mm로 들어갔다가 다시 450mm로 나오면 해제선(500mm)을 못 넘었으므로 유지된다.
         pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
         const PipelineOutput held =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
-        expectRisk("진입 후 0.45m -> EMERGENCY 유지", held.result.final_risk, RiskLevel::EMERGENCY);
+        expectRisk("진입 후 450mm -> EMERGENCY 유지", held.result.final_risk, RiskLevel::EMERGENCY);
         expectBool("래치 걸린 상태",           pipeline.engine().inEmergencyLatch(), true);
 
         // 해제선을 넘으면 내려온다.
         const PipelineOutput released =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonReleased));
-        expectRisk("0.55m -> DANGER로 해제",   released.result.final_risk, RiskLevel::DANGER);
+        expectRisk("550mm -> DANGER로 해제", released.result.final_risk, RiskLevel::DANGER);
         expectBool("래치 풀린 상태",           pipeline.engine().inEmergencyLatch(), false);
 
-        // 해제된 뒤 0.45m는 다시 진입선 위이므로 EMERGENCY로 되돌아가지 않는다.
+        // 해제된 뒤 450mm는 다시 진입선 위이므로 EMERGENCY로 되돌아가지 않는다.
         const PipelineOutput after =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
-        expectRisk("해제 후 0.45m -> DANGER (재진입 없음)",
+        expectRisk("해제 후 450mm -> DANGER (재진입 없음)",
                    after.result.final_risk, RiskLevel::DANGER);
     }
 
     std::cout << "  -- 거리 판정 불가 프레임에서 래치 해제 --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
         pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonEmergency));
         expectBool("EMERGENCY 진입 확인", pipeline.engine().inEmergencyLatch(), true);
 
@@ -542,21 +545,21 @@ void testEmergencyTier() {
 
         const PipelineOutput reacquired =
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonInBand));
-        expectRisk("재검출 0.45m -> DANGER", reacquired.result.final_risk, RiskLevel::DANGER);
+        expectRisk("재검출 450mm -> DANGER", reacquired.result.final_risk, RiskLevel::DANGER);
     }
 
     std::cout << "  -- 기존 구간이 EMERGENCY에 먹히지 않는지 (회귀 확인) --\n";
     {
-        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors);
-        expectRisk("0.71m -> DANGER 그대로",
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
+        expectRisk("약 707mm -> DANGER 그대로",
                    pipeline.processFrame(kForklift, true,
                                          makeFound(2, kActiveCamera, kPersonDanger)).result.final_risk,
                    RiskLevel::DANGER);
-        expectRisk("2.83m -> CAUTION 그대로",
+        expectRisk("약 2828mm -> CAUTION 그대로",
                    pipeline.processFrame(kForklift, true,
                                          makeFound(5, kActiveCamera, kPersonCaution)).result.final_risk,
                    RiskLevel::CAUTION);
-        expectRisk("7.07m -> SAFE 그대로",
+        expectRisk("약 7071mm -> SAFE 그대로",
                    pipeline.processFrame(kForklift, true,
                                          makeFound(6, kActiveCamera, kPersonSafe)).result.final_risk,
                    RiskLevel::SAFE);
@@ -582,7 +585,7 @@ void testRiskLevelSerialization() {
         r.tof_risk    = row.level;
         r.final_risk  = row.level;
         r.exception   = ExceptionState::NONE;
-        r.distance_m  = 1.0;
+        r.distance_mm  = 1.0;
 
         const std::string json = toJson(r);
         expectContains(row.name, json, row.expected);

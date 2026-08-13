@@ -101,13 +101,13 @@ int calibrate_command(int argc, char** argv) {
         throw std::runtime_error("calibrate requires --input and --output");
     const cv::Mat image = cv::imread(input);
     if (image.empty()) throw std::runtime_error("cannot read image: " + input);
-    const double gate = argument(argc, argv, "--max-rmse-cm").empty()
-        ? config.calibration.max_rmse_cm
-        : parse_double(argument(argc, argv, "--max-rmse-cm"), "max-rmse-cm");
+    const double gate = argument(argc, argv, "--max-rmse-mm").empty()
+        ? config.calibration.max_rmse_mm
+        : parse_double(argument(argc, argv, "--max-rmse-mm"), "max-rmse-mm");
     const DetectionResult detection = calibrate_image(config, image);
-    if (detection.rmse_cm > gate) {
-        std::cerr << "RMSE gate failed: " << detection.rmse_cm << " cm > "
-                  << gate << " cm\n";
+    if (detection.rmse_mm > gate) {
+        std::cerr << "RMSE gate failed: " << detection.rmse_mm << " mm > "
+                  << gate << " mm\n";
         return 2;
     }
     const int channel = argument(argc, argv, "--channel").empty()
@@ -115,7 +115,7 @@ int calibrate_command(int argc, char** argv) {
         : parse_int(argument(argc, argv, "--channel"), "channel");
     write_calibration(output, config, detection, image.size(), channel, gate);
     std::cout << "calibrated " << detection.ids.size()
-              << " markers, RMSE=" << detection.rmse_cm << " cm\n";
+              << " markers, RMSE=" << detection.rmse_mm << " mm\n";
     return 0;
 }
 
@@ -142,7 +142,7 @@ int solve_manual_command(int argc, char** argv) {
             {"y_mm", marker.y_mm}, {"rotation_deg", marker.rotation_deg},
             {"square_error_mm", marker.square_error_mm}});
     const json output_value = {
-        {"schema_version", 2}, {"ok", true},
+        {"schema_version", 2}, {"ok", true}, {"world_unit", "mm"},
         {"marker_size_mm", layout.value("marker_size_mm", config.manual_solve.marker_size_mm)},
         {"H_pixel_to_world", matrix_to_json(result.h_pixel_to_world)},
         {"H_capture_pixel_to_world", matrix_to_json(result.h_pixel_to_world)},
@@ -207,11 +207,11 @@ int view_command(int argc, char** argv) {
     const cv::Mat homography = json_to_matrix(value.at("H_pixel_to_world"));
     const int scale = config.preview.scale;
     const int width = static_cast<int>(config.cols *
-        (config.marker_len_cm + config.gap_cm) * scale);
+        (config.marker_len_mm + config.gap_mm) * scale);
     const int height = static_cast<int>(config.rows *
-        (config.marker_len_cm + config.gap_cm) * scale);
+        (config.marker_len_mm + config.gap_mm) * scale);
     const cv::Mat world_scale = (cv::Mat_<double>(3, 3) <<
-        20, 0, 0, 0, 20, 0, 0, 0, 1);
+        scale, 0, 0, 0, scale, 0, 0, 0, 1);
     cv::Mat top;
     cv::warpPerspective(image, top, world_scale * homography,
                         cv::Size(width, height));
@@ -226,11 +226,11 @@ int view_command(int argc, char** argv) {
         cv::perspectiveTransform(source, projected, homography);
         const double dx = projected[0].x - detection.worlds[i].x;
         const double dy = projected[0].y - detection.worlds[i].y;
-        const double error_cm = std::sqrt(dx * dx + dy * dy);
-        sum += error_cm * error_cm;
-        const cv::Scalar color = error_cm < config.preview.good_error_cm
+        const double error_mm = std::sqrt(dx * dx + dy * dy);
+        sum += error_mm * error_mm;
+        const cv::Scalar color = error_mm < config.preview.good_error_mm
             ? cv::Scalar(0, 200, 0)
-            : (error_cm < config.preview.warning_error_cm
+            : (error_mm < config.preview.warning_error_mm
                 ? cv::Scalar(0, 220, 220) : cv::Scalar(0, 0, 255));
         std::vector<cv::Point2f> screen;
         const std::vector<cv::Point2f> world_point{detection.worlds[i]};
@@ -238,7 +238,7 @@ int view_command(int argc, char** argv) {
         cv::circle(errors, screen[0], 5, color, -1);
     }
     const int pitch_px = static_cast<int>(
-        (config.marker_len_cm + config.gap_cm) * config.preview.scale);
+        (config.marker_len_mm + config.gap_mm) * config.preview.scale);
     for (int col = 0; col <= config.cols; ++col)
         cv::line(errors, {col * pitch_px, 0}, {col * pitch_px, height - 1},
                  cv::Scalar(0, 180, 0), 1);
@@ -253,9 +253,9 @@ int view_command(int argc, char** argv) {
     }
     const double rmse = detection.pixels.empty() ? 0.0
         : std::sqrt(sum / detection.pixels.size());
-    cv::putText(errors, "RMSE=" + std::to_string(rmse) + " cm", {10, 25},
+    cv::putText(errors, "RMSE=" + std::to_string(rmse) + " mm", {10, 25},
                 cv::FONT_HERSHEY_SIMPLEX, 0.65, cv::Scalar(20, 20, 20), 2);
-    std::cout << "RMSE=" << rmse << " cm\n";
+    std::cout << "RMSE=" << rmse << " mm\n";
     if (has_argument(argc, argv, "--live")) {
         cv::imshow("point error", errors);
         cv::imshow("top-down warp", top);

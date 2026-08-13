@@ -45,23 +45,23 @@ std::string marker_data_uri(const Config& config, int id) {
 }  // namespace
 
 cv::Mat render_board(const Config& config, int scale) {
-    // 합성 테스트용 이미지는 cm당 scale 픽셀로 생성함.
+    // 합성 테스트용 이미지는 mm당 scale 픽셀로 생성함.
     // 실제 인쇄 크기와 무관하게 검출·변환 파이프라인 재현함.
     const int width = static_cast<int>((config.cols *
-        (config.marker_len_cm + config.gap_cm) - config.gap_cm) * scale) + 2 * scale;
+        (config.marker_len_mm + config.gap_mm) - config.gap_mm) * scale) + 2 * scale;
     const int height = static_cast<int>((config.rows *
-        (config.marker_len_cm + config.gap_cm) - config.gap_cm) * scale) + 2 * scale;
+        (config.marker_len_mm + config.gap_mm) - config.gap_mm) * scale) + 2 * scale;
     cv::Mat board(height, width, CV_8UC1, cv::Scalar(255));
     for (int row = 0; row < config.rows; ++row) {
         for (int col = 0; col < config.cols; ++col) {
             cv::Mat marker;
             cv::aruco::drawMarker(dictionary(config),
                 config.id_offset + row * config.cols + col,
-                static_cast<int>(config.marker_len_cm * scale), marker, 1);
+                static_cast<int>(config.marker_len_mm * scale), marker, 1);
             const int x = scale + static_cast<int>(
-                col * (config.marker_len_cm + config.gap_cm) * scale);
+                col * (config.marker_len_mm + config.gap_mm) * scale);
             const int y = scale + static_cast<int>(
-                row * (config.marker_len_cm + config.gap_cm) * scale);
+                row * (config.marker_len_mm + config.gap_mm) * scale);
             marker.copyTo(board(cv::Rect(x, y, marker.cols, marker.rows)));
         }
     }

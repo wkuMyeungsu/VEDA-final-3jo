@@ -25,10 +25,10 @@ set(SERVER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # 패키지가 아닌지는 third_party/README.md 참고.
 set(SERVER_THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
-# 설정 계층: 단말별 JSON 설정 로드
+# 설정 계층: 모든 지게차가 공유하는 안전 서버 JSON 설정 로드
 # json.hpp는 무겁고(약 900KB) 이 타깃 안에서만 필요하므로 include를 PRIVATE로 막는다.
 add_library(server_config STATIC
-    src/config/terminal_config.cpp
+    src/config/safety_server_config.cpp
 )
 target_include_directories(server_config
     PUBLIC  ${SERVER_SRC_DIR}
@@ -64,13 +64,22 @@ add_library(server_tracking STATIC
 target_include_directories(server_tracking PUBLIC ${SERVER_SRC_DIR})
 target_link_libraries(server_tracking PUBLIC Threads::Threads)
 
+add_library(server_homography STATIC
+    src/logic/homography/homography_transformer.cpp
+)
+target_include_directories(server_homography
+    PUBLIC ${SERVER_SRC_DIR}
+    PRIVATE ${SERVER_THIRD_PARTY_DIR}
+)
+target_link_libraries(server_homography PUBLIC server_config)
+
 # 판정 계층
 add_library(server_judgment STATIC
     src/logic/judgment/danger_judgment_engine.cpp
     src/logic/judgment/judgment_pipeline.cpp
 )
 target_include_directories(server_judgment PUBLIC ${SERVER_SRC_DIR})
-target_link_libraries(server_judgment PUBLIC server_tracking Threads::Threads)
+target_link_libraries(server_judgment PUBLIC server_tracking server_config Threads::Threads)
 
 add_library(server_network STATIC
     src/network/result_publisher.cpp
@@ -90,6 +99,7 @@ target_link_libraries(forklift_safety_server PRIVATE
     server_input
     server_logging
     server_config
+    server_homography
     server_judgment
     server_network
     PkgConfig::GST

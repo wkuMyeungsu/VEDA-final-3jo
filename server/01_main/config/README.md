@@ -1,69 +1,44 @@
-# config
+# 공통 안전 서버 설정
 
-카메라·채널 정보, 채널별 호모그래피 행렬, 동기화 값과 위험 임계값 설정을 둔다.
-현장 확정 전 보정값은 샘플임을 명시한다.
+운영 서버는 단말별 설정을 만들지 않고 `safety_server_config.json` 하나를 공유한다.
+`TERMINAL_ID`는 공통 안전 규칙이 아니므로 JSON에 넣지 않고 실행 인자로 받는다.
 
-## terminal_<TERMINAL_ID>.json
-
-단말(운전석) 1대당 파일 1개. 로더는 `src/config/terminal_config.*`이고, 서버는 시작할 때
-두 번째 인자로 받은 경로(없으면 `terminal_TERM_01.json`)를 읽는다. 읽기에 실패하면
-기본값으로 때우지 않고 그 자리에서 종료한다(종료코드 2).
-
-```json
-{
-  "forklift": {"marker_id": 0, "forklift_id": "FL_01", "terminal_id": "TERM_01"},
-  "handover": {"confirm_frames": 3, "lost_grace_ms": 500}
-}
+```text
+forklift_safety_server <RTSP_URL> <TERMINAL_ID> [CONFIG_PATH]
 ```
 
-| 필드 | 뜻 |
-| --- | --- |
-| `forklift.marker_id` | 이 지게차에 붙은 ArUco 마커 ID. 이 마커가 보이는 카메라 = 지게차가 있는 카메라 |
-| `forklift.forklift_id` | 지게차 식별자. 현재는 로그/디버깅용이고 하류 JSON 계약에는 없다 |
-| `forklift.terminal_id` | 운전석 단말 식별자. 9000 판정 결과와 9001 camera_assignment가 이 값으로 단말을 지목한다 |
-| `handover.confirm_frames` | 카메라 전환 후보로 인정하기까지 필요한 연속 검출 프레임 수 (1 이상) |
-| `handover.lost_grace_ms` | 액티브 카메라에서 마커가 안 보여도 유지해주는 시간(ms) |
+`CONFIG_PATH`를 생략하면 실행 위치를 기준으로
+`config/safety_server_config.json` 또는 `server/01_main/config/safety_server_config.json`을 찾는다.
+필수 항목이 빠지거나 단위가 `mm`가 아니면 기본값으로 대체하지 않고 기동을 중단한다.
 
-- 단말을 추가할 때는 `terminal_TERM_02.json` 식으로 파일을 늘리고 서버를 그 경로로 띄운다.
-  파일명 규칙은 `terminalConfigFileName()` 한 곳에 있다.
-- `confirm_frames` / `lost_grace_ms`는 현장 실측 전 잠정값이다. 낮추면 전환이 빨라지는
-  대신 오검출 한두 프레임에 운전석 화면이 튄다. 판정 동작은
-  `tests/test_marker_channel_tracker.cpp`에 케이스별로 고정해 뒀다.
-- 필수 키 누락 / 타입 불일치 / 범위 위반(`marker_id < 0`, `confirm_frames < 1`,
-  `lost_grace_ms < 0`)은 전부 로드 단계에서 걸린다.
+## 설정 구조
 
-## mqtt (선택 절, 2026-08-13 추가)
+- `danger_judgment`: 주의·위험·비상 거리, ToF, IMU, 지게차 충돌 반경
+- `forklift_detection`: 지게차를 식별할 ArUco 마커 ID
+- `homography`: 채널별 H 파일과 보정 해상도
+- `handover`: 카메라 전환 확정 프레임과 마커 유실 유예 시간
+- `sensor`: Stub ToF 거리와 MQTT 센서 신선도 제한
+- `network`: MQTT, 카메라 할당 서버, 판정 하트비트
+- `stream`: RTSP 지연, appsink 버퍼, EOS·연결 타임아웃, 재시도 정책
 
-ResultPublisher(판정 결과 송신)와 SensorUplinkReceiver(센서 업링크 수신)가 붙는 mosquitto
-브로커 설정. **절 자체를 생략할 수 있다** - 생략하면 `tls_enabled=false`, 평문
-`localhost:1883`로 기존과 동일하게 동작한다(회귀 없음).
+모든 월드 좌표와 거리는 mm다. 코드에서 `*10` 또는 `/1000` 변환을 추가하지 않는다.
 
-```json
-{
-  "forklift": {"marker_id": 0, "forklift_id": "FL_01", "terminal_id": "TERM_01"},
-  "handover": {"confirm_frames": 3, "lost_grace_ms": 500},
-  "mqtt": {
-    "tls_enabled": false,
-    "broker_host": "127.0.0.1",
-    "broker_port": 1883,
-    "ca_cert_path": "/home/veda3/mqtt-certs/ca.crt",
-    "client_cert_path": "/home/veda3/mqtt-certs/client-server.crt",
-    "client_key_path": "/home/veda3/mqtt-certs/client-server.key"
-  }
-}
-```
+## 호모그래피 파일
 
-| 필드 | 뜻 |
-| --- | --- |
-| `mqtt.tls_enabled` | true면 연결 전 `mosquitto_tls_set()`을 호출해 TLS/mTLS로 붙는다. 기본값 false(평문) |
-| `mqtt.broker_host` | 브로커 주소. 기본값 `127.0.0.1`(IPv4 리터럴 - `localhost`는 이 환경에서 IPv6(`::1`)로 먼저 해석될 수 있는데, 1883 리스너가 IPv4 전용이라 SensorUplinkReceiver 쪽 연결이 거부될 수 있음. 실측 확인된 문제라 리터럴 IP를 기본값으로 씀) |
-| `mqtt.broker_port` | 생략(또는 0)하면 `tls_enabled`에 따라 1883(평문)/8883(TLS)을 자동으로 채운다 |
-| `mqtt.ca_cert_path` | 브로커 인증서를 검증할 CA 인증서 경로. `tls_enabled=false`면 무시됨 |
-| `mqtt.client_cert_path` | 이 서버 프로세스의 mTLS 클라이언트 인증서 경로 |
-| `mqtt.client_key_path` | 위 인증서의 개인키 경로 |
+`homography.files` 값은 이 설정 파일이 있는 디렉터리를 기준으로 해석한다.
+예를 들어 `homography/homography_channel_1_mm.json`은
+`server/01_main/config/homography/homography_channel_1_mm.json`을 가리킨다.
 
-- 인증서 기본 경로(`/home/veda3/mqtt-certs/`)는 2026-08-11 veda3에 자체 CA로 발급해 둔
-  파일들이다(`ca.crt`/`ca.key`, `server.crt`/`server.key`는 브로커용, `client-server.*`는
-  이 서버 프로세스용, `client-term01.*`는 단말(forklift-device)용). CLI 레벨(mosquitto_pub/sub,
-  `openssl s_client -connect ... -showcerts`)로는 검증 완료된 인증서다.
-- `tls_enabled=true`로 실제 켜서 mTLS 연결 자체를 검증하는 것은 아직 안 했다(다음 단계).
+런타임 로더는 다음을 검증한다.
+
+- `world_unit == "mm"`
+- `H_pixel_to_world`가 유한한 숫자로 이루어진 3×3 행렬인지
+- `image_size`가 공통 설정의 보정 해상도와 같은지
+
+검증에 실패한 채널은 항등행렬이나 더미 좌표로 대체하지 않고 위치 미확정으로 처리한다.
+
+## TLS/mTLS
+
+기존 TLS 연결을 사용할 때는 `network`에 `tls_enabled`, `ca_cert_path`,
+`client_cert_path`, `client_key_path`를 추가한다. `tls_enabled`가 없거나 `false`면
+기존 평문 MQTT 연결을 유지한다.

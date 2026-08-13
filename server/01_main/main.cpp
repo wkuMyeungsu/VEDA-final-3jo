@@ -39,10 +39,11 @@
 #include "common/metadata_timing.hpp"
 #include "input/aruco_metadata_parser.hpp"
 #include "logging/aruco_csv_logger.hpp"
-#include "config/terminal_config.hpp"
+#include "config/safety_server_config.hpp"
 #include "logic/judgment/judgment_pipeline.h"
 #include "logic/tracking/cross_camera_reid.h"
 #include "logic/tracking/marker_channel_tracker.hpp"
+#include "logic/homography/homography_transformer.hpp"
 #include "network/result_publisher.hpp"
 #include "network/result_dispatcher.hpp"
 #include "network/camera_assignment_server.hpp"
@@ -52,12 +53,10 @@
 #include "logging/latency_logger.hpp"
 
 namespace {
-// 활성 카메라와 단말 ID는 더 이상 상수가 아니다:
-//   - terminal_id / marker_id / 핸드오버 파라미터 -> 설정 파일(server/01_main/config/terminal_*.json)
-//   - active_camera_id -> MarkerChannelTracker가 실시간으로 결정 (지게차 마커가 보이는 채널)
-// 설정 파일 경로를 인자로 안 주면 이 단말 ID로 기본 파일을 찾는다.
-constexpr const char* kDefaultTerminalId = "TERM_01";
-
+// 활성 카메라와 단말 ID는 더 이상 상수가 아니다.
+//   - 단말 ID는 실행 인자로 받아 MQTT 센서·결과·카메라 할당 경로에만 사용한다.
+//   - 마커 ID와 핸드오버 규칙은 공통 safety_server_config.json에서 읽는다.
+//   - 활성 카메라는 MarkerChannelTracker가 지게차 마커를 실제로 확인해 결정한다.
 // 마커가 아직 어느 카메라에서도 확정되지 않은 상태의 활성 카메라 값.
 // JudgmentPipeline 규약상 음수는 "미확정"이라 하류 JSON에 camera_id=null로 나간다.
 // 예전처럼 1로 시작하면, 실제로는 지게차 위치를 모르는 구간에 cam 1이 확정된 것처럼
@@ -65,8 +64,7 @@ constexpr const char* kDefaultTerminalId = "TERM_01";
 constexpr int kUnknownCameraId = -1;
 
 // 판정 결과(risk_event) 채널은 TCP 9000에서 MQTT로 옮겨갔다(2026-08-11) - 서버가 직접
-// 포트를 열지 않으므로 포트 상수도 없다. 브로커 주소는 ResultPublisher 생성자 기본값 참고.
-constexpr uint16_t kCameraAssignmentServerPort = 9001;
+// 포트를 열지 않으므로 포트 상수도 없다. 브로커 주소와 포트는 공통 설정에서 읽는다.
 }  // namespace
 
 #ifdef _WIN32
@@ -133,7 +131,9 @@ struct AppState {
     // 판정 인프라. 선언 순서가 곧 생성 순서이므로, 서로를 참조하는 멤버(judgmentPipeline
     // -> sensorReader, resultDispatcher -> resultPublisher, markerTracker/judgmentPipeline
     // -> config)는 참조 대상을 먼저 선언한다.
-    forklift::config::TerminalConfig config;
+    forklift::config::SafetyServerConfig config;
+    std::string terminalId;
+    forklift::logic::HomographyTransformer homography;
 
     // 지게차 마커가 어느 카메라 채널에 보이는지 추적. 액티브 채널이 바뀌는 순간에만
     // 신호를 주므로, 그 신호를 받아 9001 camera_assignment를 보낸다.
@@ -162,29 +162,36 @@ struct AppState {
     // "확정된 단말에게 실제로 보내는" 역할만 한다.
     risk_transport::CameraAssignmentServer cameraAssignmentServer;
 
-    explicit AppState(forklift::config::TerminalConfig cfg)
+    explicit AppState(forklift::config::SafetyServerConfig cfg, std::string terminal_id)
         : config(std::move(cfg)),
-          markerTracker(config.forklift.marker_id,
+          terminalId(std::move(terminal_id)),
+          homography(config),
+          markerTracker(config.forklift_detection.marker_id,
                         config.handover.confirm_frames,
                         config.handover.lostGrace()),
-          // 브로커 host/port/TLS는 설정 파일의 "mqtt" 절에서 온다(절이 없으면 기본값
-          // tls_enabled=false, localhost:1883 - 기존 평문 동작 그대로). 단말 식별자는
-          // 단일 지게차 데모라 기존 단말 설정값을 그대로 재사용한다.
-          sensorUplinkReceiver(config.mqtt.broker_host, config.mqtt.broker_port,
+          stubSensorReader(config.sensor.stub_tof_distance_mm),
+          // MQTT 주소·포트와 선택적인 TLS 인증서 경로는 공통 설정의 network 절에서 읽는다.
+          // 단말 ID는 설정에 넣지 않고 실행 인자로 받은 값을 센서 라우팅에 사용한다.
+          sensorUplinkReceiver(config.network.mqtt_host, config.network.mqtt_port,
                                risk_transport::MqttTlsOptions{
-                                   config.mqtt.tls_enabled, config.mqtt.ca_cert_path,
-                                   config.mqtt.client_cert_path, config.mqtt.client_key_path}),
-          sensorReader(sensorUplinkReceiver, config.forklift.terminal_id),
-          judgmentPipeline(kUnknownCameraId, config.forklift.terminal_id, sensorReader),
-          resultPublisher(config.forklift.terminal_id, config.mqtt.broker_host,
-                          config.mqtt.broker_port,
+                                   config.network.tls_enabled, config.network.ca_cert_path,
+                                   config.network.client_cert_path, config.network.client_key_path}),
+          sensorReader(sensorUplinkReceiver, terminalId, config.sensor.stale_timeout_ms),
+          judgmentPipeline(kUnknownCameraId, terminalId, sensorReader,
+                           config.danger_judgment, config.handover.lostGrace()),
+          resultPublisher(terminalId, config.network.mqtt_host,
+                          config.network.mqtt_port,
                           risk_transport::MqttTlsOptions{
-                              config.mqtt.tls_enabled, config.mqtt.ca_cert_path,
-                              config.mqtt.client_cert_path, config.mqtt.client_key_path}),
+                              config.network.tls_enabled, config.network.ca_cert_path,
+                              config.network.client_cert_path, config.network.client_key_path}),
           resultDispatcher(
               [this](const std::string& json) { resultPublisher.publish(json); },
-              std::chrono::milliseconds(200)),
-          cameraAssignmentServer("0.0.0.0", kCameraAssignmentServerPort) {}
+              std::chrono::milliseconds(config.network.result_heartbeat_ms)),
+          cameraAssignmentServer(config.network.camera_assignment_bind_host,
+                                 config.network.camera_assignment_port) {
+        for (const auto& [channel, error] : homography.loadErrors())
+            std::cerr << "[호모그래피] channel=" << channel << " 로드 실패: " << error << "\n";
+    }
 };
 
 // 액티브 카메라가 실제로 바뀌었을 때만 불린다(MarkerChannelTracker가 그때만 신호를 준다).
@@ -205,11 +212,11 @@ static void applyActiveCameraChange(AppState& state, int camera_id) {
     // [TODO] zone 매핑 미확정(김진석) — 확정 전까지 빈 문자열.
     //        판정 JSON 쪽 규약(빈 값 -> null)과 맞춘다.
     const bool sent = state.cameraAssignmentServer.sendCameraAssignment(
-        state.config.forklift.terminal_id, camera_id_str, /*zone=*/"", nowIso8601Ms());
+        state.terminalId, camera_id_str, /*zone=*/"", nowIso8601Ms());
 
     std::cout << "[핸드오버] 액티브 카메라 전환 -> channel=" << camera_id_str
-              << " (marker_id=" << state.config.forklift.marker_id
-              << ", terminal_id=" << state.config.forklift.terminal_id
+              << " (marker_id=" << state.config.forklift_detection.marker_id
+              << ", terminal_id=" << state.terminalId
               << ", 단말 전송=" << (sent ? "성공" : "실패(단말 미접속)") << ")\n";
 }
 
@@ -294,17 +301,29 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                     if (state->objectLogger) state->objectLogger->logFrame(frame);
 
                     // ── 위험 판정 트리거 ─────────────────────────────────
-                    // 호모그래피(3단계)가 아직 없으므로 Detection.world/forkliftPoint는
-                    // 상수 더미로 고정한다. 픽셀 좌표를 미터인 것처럼 넣으면 거짓 정밀도로
-                    // 위험 판정을 그르치므로 절대 쓰지 않는다 - 좌표정합 PoC 완료 후
-                    // cv::perspectiveTransform 결과로 교체 예정. bbox(픽셀)는 실제 ONVIF
-                    // 값을 그대로 CrossCameraTracker에 넘긴다.
+                    // 설정된 지게차 ArUco ID의 네 꼭짓점 중심과 사람 bbox 하단 중앙을
+                    // 같은 채널의 호모그래피로 변환해 mm 거리 판정에 사용한다.
+                    // 마커나 H가 없거나 변환이 실패하면 임의 좌표를 만들지 않고
+                    // 위치 미확정으로 넘겨 엔진의 안전 예외 처리 경로를 타게 한다.
                     {
-                        const bool forklift_localized =
-                            state->lastAruco.has_value() && !state->lastAruco->markers.empty();
-
-                        // [더미] 호모그래피 도입 전까지 안전거리(5m)로 고정.
-                        const WorldPoint forkliftPoint{0.0, 0.0};
+                        const int channel = state->judgmentPipeline.activeCameraId();
+                        std::optional<WorldPoint> forkliftWorld;
+                        if (state->lastAruco && state->lastAruco->channel == channel) {
+                            for (const auto& marker : state->lastAruco->markers) {
+                                if (marker.id != state->config.forklift_detection.marker_id) continue;
+                                forklift::common::PixelPoint center;
+                                for (const auto& corner : marker.corners) {
+                                    center.x += corner.x;
+                                    center.y += corner.y;
+                                }
+                                center.x /= 4.0;
+                                center.y /= 4.0;
+                                forkliftWorld = state->homography.pixelToWorld(channel, center);
+                                break;
+                            }
+                        }
+                        const bool forklift_localized = forkliftWorld.has_value();
+                        const WorldPoint forkliftPoint = forkliftWorld.value_or(WorldPoint{});
 
                         const double now_s = std::chrono::duration<double>(
                             std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -321,17 +340,21 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                             // 항상 false라 핸드오버 의심 플래그가 오탐하지 않는다.
                             det.camera_id = state->judgmentPipeline.activeCameraId();
                             det.bbox = obj.bbox;
-                            // [더미] world 좌표는 좌표정합(호모그래피) PoC 완료 전까지
-                            //        안전거리(5m)로 고정. bbox는 실좌표, world만 더미다.
-                            det.world = WorldPoint{5.0, 0.0};
+                            // 사람 대표점은 ONVIF bbox의 하단 중앙이며, 지게차와 같은 H를 쓴다.
+                            const auto world = state->homography.pixelToWorld(
+                                channel, {obj.bbox.groundX(), obj.bbox.groundY()});
+                            if (!world) continue;
+                            det.world = *world;
                             det.timestamp_s = now_s;
                             detections.push_back(det);
                         }
 
-                        const std::vector<Track> tracks =
-                            state->crossCameraTracker.update(detections, now_s);
-                        const NearestPersonResult nearest =
-                            selectNearestPerson(forkliftPoint, tracks);
+                        NearestPersonResult nearest;
+                        if (forklift_localized) {
+                            const std::vector<Track> tracks =
+                                state->crossCameraTracker.update(detections, now_s);
+                            nearest = selectNearestPerson(forkliftPoint, tracks);
+                        }
 
                         const PipelineOutput judgmentOut = state->judgmentPipeline.processFrame(
                             forkliftPoint, forklift_localized, nearest);
@@ -395,9 +418,10 @@ static RunResult runPipelineOnce(const std::string& rtspUrl, AppState& state) {
     // 조각이 바로바로 드롭되지 않도록 여유를 줌
     std::string pipelineDesc =
         "rtspsrc location=\"" + rtspUrl + "\" "
-        "latency=100 protocols=tcp name=src "
+        "latency=" + std::to_string(state.config.stream.rtsp_latency_ms) + " protocols=tcp name=src "
         "src. ! application/x-rtp,media=application ! queue ! "
-        "appsink name=metasink emit-signals=true sync=false max-buffers=5 drop=true";
+        "appsink name=metasink emit-signals=true sync=false max-buffers=" +
+        std::to_string(state.config.stream.appsink_max_buffers) + " drop=true";
 
     GError* error = nullptr;
     GstElement* pipeline = gst_parse_launch(pipelineDesc.c_str(), &error);
@@ -429,12 +453,12 @@ static RunResult runPipelineOnce(const std::string& rtspUrl, AppState& state) {
     // 실제 gst_element_send_event() 호출은 여기, 메인 스레드에서만 함 (시그널 핸들러 X).
     GstBus* bus = gst_element_get_bus(pipeline);
     const GstClockTime pollTimeout = 200 * GST_MSECOND;
-    const auto forceKillAfter = std::chrono::seconds(30);
+    const auto forceKillAfter = std::chrono::seconds(state.config.stream.eos_force_timeout_s);
     // [연결 타임아웃] Ctrl+C 여부와 무관하게, PLAYING에 아예 못 들어간 채로
     // 너무 오래(예: giolibproxy 문제로 RTSP 요청이 계속 안 끝나는 경우) 있으면
     // 재시도 대상으로 처리함. 예전엔 Ctrl+C를 눌러야만 타임아웃이 작동해서,
     // 아무 입력 없이 진짜 무한정 멈추는 케이스를 못 잡는 구멍이 있었음.
-    const auto connectTimeout = std::chrono::seconds(45);
+    const auto connectTimeout = std::chrono::seconds(state.config.stream.connect_timeout_s);
     auto pipelineStartedAt = std::chrono::steady_clock::now();
     bool reachedPlaying = false;
     RunResult result = RunResult::NeedsRetry;
@@ -536,43 +560,46 @@ int main(int argc, char* argv[]) {
     std::cerr.rdbuf(&cerrBuf);
 #endif
 
-    if (argc < 2) {
-        std::cerr << "사용법: " << argv[0] << " <RTSP URL> [단말 설정 JSON 경로]\n";
+    if (argc < 3) {
+        std::cerr << "사용법: " << argv[0] << " <RTSP URL> <TERMINAL_ID> [CONFIG_PATH]\n";
         std::cerr << "예: " << argv[0]
-                  << " \"rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp\"\n";
-        std::cerr << "설정 경로를 생략하면 " << kDefaultTerminalId
-                  << " 기본 파일(config/terminal_" << kDefaultTerminalId << ".json)을 찾습니다.\n";
+                  << " \"rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp\""
+                     " TERM_01 server/01_main/config/safety_server_config.json\n";
+        std::cerr << "CONFIG_PATH를 생략하면 config/safety_server_config.json을 찾습니다.\n";
         return 1;
     }
 
     gst_init(&argc, &argv);
 
-    // ── 단말 설정 로드 ──────────────────────────────────────────
-    // 실패하면 그냥 죽는다. 마커 ID/단말 ID 없이 기본값으로 계속 돌면 "지게차가 아무
+    // ── 공통 안전 설정 로드 ──────────────────────────────────────
+    // 실패하면 그냥 죽는다. 마커 ID나 판정 기준 없이 기본값으로 계속 돌면 "지게차가 아무
     // 카메라에도 안 잡히는" 것처럼 조용히 동작해서 원인을 찾기 어렵다 - 설정 문제는
     // 시작할 때 크게 실패하는 편이 낫다.
+    const std::string terminalId = argv[2];
+    if (terminalId.empty()) {
+        std::cerr << "[오류] TERMINAL_ID는 비어 있을 수 없습니다.\n";
+        return 1;
+    }
     const std::string configPath =
-        (argc >= 3) ? argv[2]
-                    : forklift::config::resolveTerminalConfigPath(kDefaultTerminalId);
-    forklift::config::TerminalConfig terminalConfig;
+        (argc >= 4) ? argv[3] : forklift::config::resolveSafetyServerConfigPath();
+    forklift::config::SafetyServerConfig terminalConfig;
     try {
-        terminalConfig = forklift::config::loadTerminalConfig(configPath);
-    } catch (const forklift::config::TerminalConfigError& e) {
-        std::cerr << "[오류] 단말 설정 로드 실패: " << e.what() << "\n"
-                     "       설정 파일 예시는 server/01_main/config/terminal_TERM_01.json 참고.\n"
+        terminalConfig = forklift::config::loadSafetyServerConfig(configPath);
+    } catch (const forklift::config::SafetyServerConfigError& e) {
+        std::cerr << "[오류] 공통 안전 설정 로드 실패: " << e.what() << "\n"
+                     "       설정 파일 예시는 server/01_main/config/safety_server_config.json 참고.\n"
                      "       (실행 위치에 따라 config/ 상대경로가 달라지므로, 필요하면 "
-                     "두 번째 인자로 경로를 직접 지정하세요.)\n";
+                     "세 번째 인자로 경로를 직접 지정하세요.)\n";
         return 2;
     }
 
-    std::cout << "단말 설정 로드 완료: " << configPath
-              << " (terminal_id=" << terminalConfig.forklift.terminal_id
-              << ", forklift_id=" << terminalConfig.forklift.forklift_id
-              << ", marker_id=" << terminalConfig.forklift.marker_id
+    std::cout << "공통 안전 설정 로드 완료: " << configPath
+              << " (terminal_id=" << terminalId
+              << ", marker_id=" << terminalConfig.forklift_detection.marker_id
               << ", confirm_frames=" << terminalConfig.handover.confirm_frames
               << ", lost_grace_ms=" << terminalConfig.handover.lost_grace_ms << ")\n";
 
-    AppState state(std::move(terminalConfig));
+    AppState state(std::move(terminalConfig), terminalId);
 
     // CSV 파일은 딱 한 번만 생성. 재연결이 몇 번 일어나든 같은 파일에 계속 이어붙여짐
     // (CsvLogger는 파일이 이미 있으면 헤더 없이 append하는 구조라 문제없음).
@@ -620,15 +647,15 @@ int main(int argc, char* argv[]) {
     // (camera_id/zone/거리는 아직 근거가 없으므로 미확정 규약대로 null로 나간다).
     {
         JudgmentResult idle = risk_transport::ResultDispatcher::idleResult();
-        idle.terminal_id = state.config.forklift.terminal_id;
+        idle.terminal_id = state.terminalId;
         state.resultDispatcher.primeIdle(idle);
     }
     state.resultDispatcher.start();
 
     std::signal(SIGINT, handleSigint);
 
-    const int maxRetries = 5;
-    const auto retryDelay = std::chrono::seconds(10);
+    const int maxRetries = state.config.stream.max_retries;
+    const auto retryDelay = std::chrono::seconds(state.config.stream.retry_delay_s);
 
     for (int attempt = 1; attempt <= maxRetries; ++attempt) {
         if (attempt > 1) {

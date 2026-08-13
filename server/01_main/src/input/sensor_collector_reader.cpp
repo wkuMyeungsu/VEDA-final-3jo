@@ -19,7 +19,7 @@ SensorInput SensorCollectorReader::read() {
     sen.imu_ok = reading.imu.valid;
     sen.tof_ok = reading.tof.valid;
 
-    sen.tof_distance_m = reading.tof.distance_mm / 1000.0;
+    sen.tof_distance_mm = reading.tof.distance_mm;
 
     sen.imu_accel_g = std::sqrt(reading.imu.accel_x_g * reading.imu.accel_x_g +
                                  reading.imu.accel_y_g * reading.imu.accel_y_g +

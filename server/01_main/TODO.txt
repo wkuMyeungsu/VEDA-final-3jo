@@ -1,39 +1,24 @@
-[Task 27] world 좌표 전달 방식 확정 + 배선 (조립 지점)
-담당: 박명수 / Jira KAN-8·9 / Confluence I-3 (미확정 블로커)
-팀 대기: 박수빈(위험판정 파트), 김진석(단말 뷰어 파트)
+[Task 27] 월드 좌표 전달과 판정 파이프라인 배선
+담당: 박명수 / Jira KAN-8·9 / Confluence I-3
 
-── 문제 ──
-현재 main.cpp 은 RTSP 수신 -> RTP 재조립 -> XML 파싱 -> 콘솔 출력/CSV 로깅까지만
-하고 JudgmentPipeline 을 호출하지 않는다. 즉 "파서 -> WorldPoint -> 판정 파이프라인"
-배선이 통째로 비어 있다. 이 조립 지점(main.cpp)에서 잇는다.
+── 완료된 배선 ──
+[완료] ONVIF Human bbox의 하단 중앙을 사람 대표 픽셀로 사용한다.
+[완료] 설정된 ArUco marker_id의 네 꼭짓점 평균을 지게차 대표 픽셀로 사용한다.
+[완료] 두 대표 픽셀을 같은 카메라 채널의 H로 변환해 WorldPoint(mm)를 만든다.
+[완료] 변환된 사람 목록에서 최근접 사람을 선택하고 JudgmentPipeline을 호출한다.
+[완료] 판정 결과를 MQTT ResultDispatcher로 발행하고 SQLite에는 distance_mm로 기록한다.
+[완료] H 파일·마커·변환 중 하나라도 유효하지 않으면 임의 좌표나 항등행렬을 쓰지 않고
+       위치 미확정으로 처리한다.
 
-── 확정해야 할 것 (Confluence I-3, 미확정) ──
-[ ] world 좌표 전달 방식: 같은 프로세스 내 함수 직접 호출로 갈지, 별도 프로세스 간 IPC로
-    갈지 결정. Task 35(실물 카메라 수신)에서 delta_ms 실측이 확정된 뒤 그 지연 폭을 보고 정한다.
-[ ] 전달 형식(구조체 필드 구성) 팀 합의 후 닫기.
-    이미 협의된 것: 판정 결과 JSON(단말로 나가는 것)에는 world 좌표를 넣지 않는다.
-    world 좌표는 서버 내부 거리 계산에만 쓰고, JSON 출력 필드는 아래 6개로 확정됨 —
-    utc_time / camera_id / zone / exception_state / distance_m / risk_level.
+── 현재 계약 ──
+- 실행 형식: forklift_safety_server <RTSP_URL> <TERMINAL_ID> [CONFIG_PATH]
+- 공통 설정: config/safety_server_config.json
+- 단위: H, WorldPoint, ToF, 판정 거리, JSON, SQLite 모두 mm
+- 결과 JSON: utc_time / camera_id / zone / terminal_id / exception_state /
+             distance_mm / risk_level
 
-── 배선 순서 ──
-[ ] onvif 파서 결과의 BoundingBox::groundX()/groundY() 를 PixelPoint 로 구성한다.
-    (groundX = (left+right)/2, groundY = bottom. 원본 해상도 2592x1520 픽셀 기준.)
-[ ] 픽셀 -> WorldPoint 변환. forklift::logic::Homography::apply(PixelPoint) 를 쓴다.
-    단, 이 호모그래피 모듈은 아직 미구현이다(Task 16). Task 16이 server_homography
-    라이브러리를 만든 뒤:
-      - server_homography 를 forklift_safety_server 실행 파일에 링크 추가한다
-        (CMakeLists.txt: target_link_libraries(forklift_safety_server ... server_homography)).
-      - 실측 행렬 확정 전에는 Homography 기본값(항등 행렬)으로도 파이프라인이 돌아간다(Plan B).
-    지게차 좌표는 ArUco 파서 결과에서, 사람 좌표는 onvif BoundingBox에서 각각 변환한다.
-[ ] nearest_person_selector 로 최근접 사람 1명 선택 -> NearestPersonResult.
-[ ] JudgmentPipeline(active_camera_id, sensors).processFrame(forklift, forklift_localized, nearest)
-    호출.
-      - active_camera_id: config/camera_config.json 의 camera_id 값("cam_01") 매핑.
-      - sensors: ISensorReader 구현체. 라즈베리파이(MPU6050 I2C 0x68 / VL53L0X I2C 0x29)가
-        아닌 환경에서는 StubSensorReader 를 쓴다.
-      - forklift_localized: 이번 프레임에 지게차 world 좌표를 실제로 얻었는지(마커 폐색이면 false).
-[ ] 판정 결과(JudgmentResult)를 ResultPublisher(server_network)로 단말에 송신.
-
-── 미확정 의존 ──
-zone 매핑(김진석 파트) 미확정. 확정 전까지 zone 은 빈 문자열로 두고,
-JSON 직렬화 시 빈 값은 null 로 나간다.
+── 후속 과제 ──
+[ ] zone 매핑을 확정한다. 확정 전에는 빈 문자열을 사용하고 JSON에는 null로 보낸다.
+[ ] 카메라 내부 파라미터와 렌즈 왜곡 보정을 실측한 뒤 ArUco와 사람 대표 픽셀에
+    동일한 왜곡 보정 경로를 적용한다.
+[ ] 여러 카메라가 동시에 같은 대상을 보는 핸드오버 구간의 판정 정책을 확정한다.
