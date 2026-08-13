@@ -27,6 +27,7 @@ std::string validJson() {
       "forklift_detection":{"marker_id":0},
       "homography":{"files":{"1":"homography/h.json"},"image_width_px":2592,"image_height_px":1520},
       "handover":{"confirm_frames":3,"lost_grace_ms":500},
+      "tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"max_missed_frames":5},
       "sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},
       "network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"camera_assignment_bind_host":"0.0.0.0","camera_assignment_port":9001,"result_heartbeat_ms":200},
       "stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":5,"retry_delay_s":10}

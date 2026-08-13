@@ -36,6 +36,12 @@ struct HandoverConfig {
     std::chrono::milliseconds lostGrace() const { return std::chrono::milliseconds(lost_grace_ms); }
 };
 
+struct TrackingConfig {
+    double iou_threshold{};
+    double world_distance_threshold_mm{};
+    int max_missed_frames{};
+};
+
 struct SensorConfig {
     double stub_tof_distance_mm{};
     int stale_timeout_ms{};
@@ -67,6 +73,7 @@ struct SafetyServerConfig {
     ForkliftDetectionConfig forklift_detection;
     HomographyConfig homography;
     HandoverConfig handover;
+    TrackingConfig tracking;
     SensorConfig sensor;
     NetworkConfig network;
     StreamConfig stream;

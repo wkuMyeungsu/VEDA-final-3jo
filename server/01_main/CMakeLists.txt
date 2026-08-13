@@ -81,6 +81,15 @@ add_library(server_judgment STATIC
 target_include_directories(server_judgment PUBLIC ${SERVER_SRC_DIR})
 target_link_libraries(server_judgment PUBLIC server_tracking server_config Threads::Threads)
 
+# 프레임 파이프라인: ArUco ID 식별부터 H 변환·최근접 선택·위험 판정까지 한 경로로 묶는다.
+add_library(server_frame_pipeline STATIC
+    src/logic/pipeline/safety_frame_pipeline.cpp
+)
+target_include_directories(server_frame_pipeline PUBLIC ${SERVER_SRC_DIR})
+target_link_libraries(server_frame_pipeline PUBLIC
+    server_input server_homography server_judgment server_tracking
+)
+
 add_library(server_network STATIC
     src/network/result_publisher.cpp
     src/network/sensor_uplink_receiver.cpp
@@ -101,6 +110,7 @@ target_link_libraries(forklift_safety_server PRIVATE
     server_config
     server_homography
     server_judgment
+    server_frame_pipeline
     server_network
     PkgConfig::GST
 )

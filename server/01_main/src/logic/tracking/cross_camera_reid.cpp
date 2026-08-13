@@ -50,6 +50,13 @@ double iou(const BoundingBox& a, const BoundingBox& b) {
 // 2. 크로스카메라 트래커
 // ============================================================
 
+CrossCameraTracker::CrossCameraTracker(double iou_threshold,
+                                       double world_distance_threshold_mm,
+                                       int max_missed_frames)
+    : iou_threshold_(iou_threshold),
+      world_distance_threshold_mm_(world_distance_threshold_mm),
+      max_missed_frames_(max_missed_frames) {}
+
 std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& detections, double now_s) {
     std::vector<bool> det_matched(detections.size(), false);
     std::vector<bool> track_matched(tracks_.size(), false);
@@ -69,7 +76,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             if (t.camera_id == d.camera_id) {
                 // 동일 카메라: IoU 우선 (프레임 간 연속성, bbox 비교 가능)
                 double v = iou(t.last_bbox, d.bbox);
-                if (v >= iou_threshold) iou_score = v;
+                if (v >= iou_threshold_) iou_score = v;
             }
 
             // world 거리는 카메라 동일 여부와 무관하게 항상 계산 가능
@@ -77,8 +84,8 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             // -> 동일 카메라인데 검출 주기가 느리거나 이동이 빨라 IoU가 깨진 경우의 fallback,
             //    그리고 카메라 전환(핸드오버) 시의 유일한 매칭 수단
             double dist = euclideanDistance(t.last_world, d.world);
-            if (dist <= world_dist_threshold_m) {
-                world_score = 1.0 - (dist / world_dist_threshold_m);
+            if (dist <= world_distance_threshold_mm_) {
+                world_score = 1.0 - (dist / world_distance_threshold_mm_);
             }
 
             if (iou_score < 0.0 && world_score < 0.0) continue; // 둘 다 임계값 밖 -> 매칭 후보 아님
@@ -106,7 +113,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             std::cout << "  [핸드오버] track_id=" << t.track_id
                       << " : camera " << t.camera_id << " -> camera " << d.camera_id
                       << " (world 거리=" << std::fixed << std::setprecision(2)
-                      << euclideanDistance(t.last_world, d.world) << "m) ID 승계\n";
+                              << euclideanDistance(t.last_world, d.world) << "mm) ID 승계\n";
         }
 
         t.camera_id   = d.camera_id;
@@ -125,7 +132,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
     tracks_.erase(
         std::remove_if(tracks_.begin(), tracks_.end(),
             [&](const Track& t) {
-                bool expired = t.missed_frames > max_missed_frames;
+                bool expired = t.missed_frames > max_missed_frames_;
                 if (expired) {
                     std::cout << "  [트랙 소멸] track_id=" << t.track_id
                               << " (" << t.missed_frames << "프레임 연속 미검출)\n";

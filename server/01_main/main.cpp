@@ -41,9 +41,7 @@
 #include "logging/aruco_csv_logger.hpp"
 #include "config/safety_server_config.hpp"
 #include "logic/judgment/judgment_pipeline.h"
-#include "logic/tracking/cross_camera_reid.h"
-#include "logic/tracking/marker_channel_tracker.hpp"
-#include "logic/homography/homography_transformer.hpp"
+#include "logic/pipeline/safety_frame_pipeline.hpp"
 #include "network/result_publisher.hpp"
 #include "network/result_dispatcher.hpp"
 #include "network/camera_assignment_server.hpp"
@@ -57,12 +55,6 @@ namespace {
 //   - 단말 ID는 실행 인자로 받아 MQTT 센서·결과·카메라 할당 경로에만 사용한다.
 //   - 마커 ID와 핸드오버 규칙은 공통 safety_server_config.json에서 읽는다.
 //   - 활성 카메라는 MarkerChannelTracker가 지게차 마커를 실제로 확인해 결정한다.
-// 마커가 아직 어느 카메라에서도 확정되지 않은 상태의 활성 카메라 값.
-// JudgmentPipeline 규약상 음수는 "미확정"이라 하류 JSON에 camera_id=null로 나간다.
-// 예전처럼 1로 시작하면, 실제로는 지게차 위치를 모르는 구간에 cam 1이 확정된 것처럼
-// 보고하게 된다.
-constexpr int kUnknownCameraId = -1;
-
 // 판정 결과(risk_event) 채널은 TCP 9000에서 MQTT로 옮겨갔다(2026-08-11) - 서버가 직접
 // 포트를 열지 않으므로 포트 상수도 없다. 브로커 주소와 포트는 공통 설정에서 읽는다.
 }  // namespace
@@ -124,25 +116,10 @@ struct AppState {
     CsvLogger* objectLogger = nullptr;
     ArucoCsvLogger* arucoLogger = nullptr;
 
-    // ArUco/Object 두 토픽이 비동기로 도착하므로, ObjectDetection 판정 시점에
-    // 참조할 수 있게 가장 최근 ArUco 프레임을 캐시해 둔다.
-    std::optional<ArucoFrame> lastAruco;
-
-    // 판정 인프라. 선언 순서가 곧 생성 순서이므로, 서로를 참조하는 멤버(judgmentPipeline
-    // -> sensorReader, resultDispatcher -> resultPublisher, markerTracker/judgmentPipeline
-    // -> config)는 참조 대상을 먼저 선언한다.
+    // 판정 인프라는 참조 대상을 먼저 선언해야 한다. 공통 설정과 센서 리더를 준비한 뒤
+    // SafetyFramePipeline이 ArUco부터 위험 판정까지 기존 모듈을 한 흐름으로 조립한다.
     forklift::config::SafetyServerConfig config;
     std::string terminalId;
-    forklift::logic::HomographyTransformer homography;
-
-    // 지게차 마커가 어느 카메라 채널에 보이는지 추적. 액티브 채널이 바뀌는 순간에만
-    // 신호를 주므로, 그 신호를 받아 9001 camera_assignment를 보낸다.
-    MarkerChannelTracker markerTracker;
-
-    // 크로스카메라 Re-ID 트래커. ObjectDetection 프레임마다 update()를 호출해
-    // track_id를 유지시킨다 - appsink 콜백(단일 스레드)에서만 쓰이므로 상태를
-    // 그대로 멤버로 둔다(재사용, 매 프레임 새로 만들지 않음).
-    CrossCameraTracker crossCameraTracker;
 
     // 드라이버 연동 전 목업/테스트용으로 남겨둔다(실사용 자리는 아래 sensorReader).
     StubSensorReader stubSensorReader;
@@ -151,24 +128,20 @@ struct AppState {
     // (박명수 확인 완료). NetworkSensorReader가 이 캐시를 ISensorReader로 감싼다.
     risk_transport::SensorUplinkReceiver sensorUplinkReceiver;
     NetworkSensorReader sensorReader;
-    JudgmentPipeline judgmentPipeline;
+    forklift::logic::SafetyFramePipeline safetyPipeline;
 
     risk_transport::ResultPublisher resultPublisher;
     risk_log::EventLogger eventLogger;
     risk_log::LatencyLogger latencyLogger;
     risk_transport::ResultDispatcher resultDispatcher;
 
-    // 9001 카메라 할당 채널. 전환 시점 판단은 markerTracker가 하고, 이 클래스는
+    // 9001 카메라 할당 채널. 전환 시점 판단은 SafetyFramePipeline이 하고, 이 클래스는
     // "확정된 단말에게 실제로 보내는" 역할만 한다.
     risk_transport::CameraAssignmentServer cameraAssignmentServer;
 
     explicit AppState(forklift::config::SafetyServerConfig cfg, std::string terminal_id)
         : config(std::move(cfg)),
           terminalId(std::move(terminal_id)),
-          homography(config),
-          markerTracker(config.forklift_detection.marker_id,
-                        config.handover.confirm_frames,
-                        config.handover.lostGrace()),
           stubSensorReader(config.sensor.stub_tof_distance_mm),
           // MQTT 주소·포트와 선택적인 TLS 인증서 경로는 공통 설정의 network 절에서 읽는다.
           // 단말 ID는 설정에 넣지 않고 실행 인자로 받은 값을 센서 라우팅에 사용한다.
@@ -177,8 +150,7 @@ struct AppState {
                                    config.network.tls_enabled, config.network.ca_cert_path,
                                    config.network.client_cert_path, config.network.client_key_path}),
           sensorReader(sensorUplinkReceiver, terminalId, config.sensor.stale_timeout_ms),
-          judgmentPipeline(kUnknownCameraId, terminalId, sensorReader,
-                           config.danger_judgment, config.handover.lostGrace()),
+          safetyPipeline(config, terminalId, sensorReader),
           resultPublisher(terminalId, config.network.mqtt_host,
                           config.network.mqtt_port,
                           risk_transport::MqttTlsOptions{
@@ -189,7 +161,7 @@ struct AppState {
               std::chrono::milliseconds(config.network.result_heartbeat_ms)),
           cameraAssignmentServer(config.network.camera_assignment_bind_host,
                                  config.network.camera_assignment_port) {
-        for (const auto& [channel, error] : homography.loadErrors())
+        for (const auto& [channel, error] : safetyPipeline.homographyLoadErrors())
             std::cerr << "[호모그래피] channel=" << channel << " 로드 실패: " << error << "\n";
     }
 };
@@ -203,8 +175,6 @@ struct AppState {
 // 상태(서버가 먼저 뜬 경우)라 경고만 남기고 계속 간다. 단말은 접속 직후 hello를 보내고,
 // 그 다음 전환 때 정상적으로 받게 된다.
 static void applyActiveCameraChange(AppState& state, int camera_id) {
-    state.judgmentPipeline.setActiveCameraId(camera_id);
-
     // camera_id 문자열 표기는 판정 JSON과 같은 규칙(cameraIdToString)을 쓴다.
     // 두 채널이 같은 카메라를 다르게 부르면 단말에서 대조가 안 된다.
     const std::string camera_id_str = cameraIdToString(camera_id);
@@ -306,62 +276,13 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                     // 마커나 H가 없거나 변환이 실패하면 임의 좌표를 만들지 않고
                     // 위치 미확정으로 넘겨 엔진의 안전 예외 처리 경로를 타게 한다.
                     {
-                        const int channel = state->judgmentPipeline.activeCameraId();
-                        std::optional<WorldPoint> forkliftWorld;
-                        if (state->lastAruco && state->lastAruco->channel == channel) {
-                            for (const auto& marker : state->lastAruco->markers) {
-                                if (marker.id != state->config.forklift_detection.marker_id) continue;
-                                forklift::common::PixelPoint center;
-                                for (const auto& corner : marker.corners) {
-                                    center.x += corner.x;
-                                    center.y += corner.y;
-                                }
-                                center.x /= 4.0;
-                                center.y /= 4.0;
-                                forkliftWorld = state->homography.pixelToWorld(channel, center);
-                                break;
-                            }
-                        }
-                        const bool forklift_localized = forkliftWorld.has_value();
-                        const WorldPoint forkliftPoint = forkliftWorld.value_or(WorldPoint{});
-
                         const double now_s = std::chrono::duration<double>(
                             std::chrono::steady_clock::now().time_since_epoch()).count();
+                        const auto output = state->safetyPipeline.processObjectFrame(frame, now_s);
+                        state->resultDispatcher.submit(output.judgment.result);
 
-                        // 사람 검출을 Detection으로 변환 -> CrossCameraTracker로 track_id
-                        // 유지 -> 지게차와 가장 가까운 사람 1명 선택.
-                        std::vector<Detection> detections;
-                        for (const auto& obj : frame.objects) {
-                            if (obj.classInfo.type != "Human") continue;
-                            Detection det;
-                            // 사람이 어느 카메라에서 보였는지는 아직 상류에서 안 올라온다
-                            // (호모그래피/카메라 간 Re-ID 좌표 연동 미완료). 지금 담당
-                            // 중인 카메라를 그대로 쓴다 - 이렇게 두면 isCameraIdMismatch()가
-                            // 항상 false라 핸드오버 의심 플래그가 오탐하지 않는다.
-                            det.camera_id = state->judgmentPipeline.activeCameraId();
-                            det.bbox = obj.bbox;
-                            // 사람 대표점은 ONVIF bbox의 하단 중앙이며, 지게차와 같은 H를 쓴다.
-                            const auto world = state->homography.pixelToWorld(
-                                channel, {obj.bbox.groundX(), obj.bbox.groundY()});
-                            if (!world) continue;
-                            det.world = *world;
-                            det.timestamp_s = now_s;
-                            detections.push_back(det);
-                        }
-
-                        NearestPersonResult nearest;
-                        if (forklift_localized) {
-                            const std::vector<Track> tracks =
-                                state->crossCameraTracker.update(detections, now_s);
-                            nearest = selectNearestPerson(forkliftPoint, tracks);
-                        }
-
-                        const PipelineOutput judgmentOut = state->judgmentPipeline.processFrame(
-                            forkliftPoint, forklift_localized, nearest);
-                        state->resultDispatcher.submit(judgmentOut.result);
-
-                        std::cout << "[판정] final_risk=" << toString(judgmentOut.result.final_risk)
-                                  << " exception_state=" << toString(judgmentOut.result.exception)
+                        std::cout << "[판정] final_risk=" << toString(output.judgment.result.final_risk)
+                                  << " exception_state=" << toString(output.judgment.result.exception)
                                   << "\n";
                     }
                     break;
@@ -381,12 +302,10 @@ static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData) {
                               << " delta_ms=" << timedFrame.deltaMs << "\n";
                     printArucoFrame(timedFrame);
                     if (state->arucoLogger) state->arucoLogger->logFrame(timedFrame);
-                    state->lastAruco = timedFrame;
-
                     // 이 프레임으로 "지게차가 지금 어느 카메라에 보이는지"를 갱신한다.
                     // 반환값이 있을 때 = 액티브 채널이 실제로 바뀐 순간뿐이다
                     // (안 바뀌면 nullopt라 여기서 아무 일도 일어나지 않는다).
-                    if (auto newChannel = state->markerTracker.onArucoFrame(timedFrame)) {
+                    if (auto newChannel = state->safetyPipeline.processArucoFrame(timedFrame)) {
                         applyActiveCameraChange(*state, *newChannel);
                     }
                     break;

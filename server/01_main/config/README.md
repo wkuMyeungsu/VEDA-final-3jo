@@ -17,6 +17,7 @@ forklift_safety_server <RTSP_URL> <TERMINAL_ID> [CONFIG_PATH]
 - `forklift_detection`: 지게차를 식별할 ArUco 마커 ID
 - `homography`: 채널별 H 파일과 보정 해상도
 - `handover`: 카메라 전환 확정 프레임과 마커 유실 유예 시간
+- `tracking`: 동일 인물 추적을 위한 bbox 겹침률, 월드 거리(mm), 유실 허용 프레임
 - `sensor`: Stub ToF 거리와 MQTT 센서 신선도 제한
 - `network`: MQTT, 카메라 할당 서버, 판정 하트비트
 - `stream`: RTSP 지연, appsink 버퍼, EOS·연결 타임아웃, 재시도 정책

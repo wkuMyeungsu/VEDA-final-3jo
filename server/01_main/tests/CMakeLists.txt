@@ -54,6 +54,16 @@ add_executable(test_homography_transformer test_homography_transformer.cpp)
 target_link_libraries(test_homography_transformer PRIVATE server_homography)
 add_test(NAME homography_transformer_test COMMAND test_homography_transformer)
 
+# 실제 채널 3 H를 거쳐 ArUco ID·최근접 사람·판정·JSON·SQLite를 한 흐름으로 검증한다.
+add_executable(test_channel3_safety_e2e test_channel3_safety_e2e.cpp)
+target_compile_definitions(test_channel3_safety_e2e PRIVATE
+    CHANNEL3_HOMOGRAPHY_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/homography_channel_3_mm.json"
+)
+target_link_libraries(test_channel3_safety_e2e PRIVATE
+    server_frame_pipeline server_logging server_network SQLite::SQLite3 Threads::Threads
+)
+add_test(NAME channel3_safety_e2e_test COMMAND test_channel3_safety_e2e)
+
 # 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
 add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)
 target_link_libraries(test_marker_channel_tracker PRIVATE server_tracking)

@@ -88,6 +88,11 @@ SafetyServerConfig loadSafetyServerConfig(const std::string& path) {
     const auto& hand = object(root, "handover", path);
     c.handover.confirm_frames = value<int>(hand, "handover", "confirm_frames", path);
     c.handover.lost_grace_ms = value<int>(hand, "handover", "lost_grace_ms", path);
+    const auto& tracking = object(root, "tracking", path);
+    c.tracking.iou_threshold = value<double>(tracking, "tracking", "iou_threshold", path);
+    c.tracking.world_distance_threshold_mm =
+        value<double>(tracking, "tracking", "world_distance_threshold_mm", path);
+    c.tracking.max_missed_frames = value<int>(tracking, "tracking", "max_missed_frames", path);
     const auto& sensor = object(root, "sensor", path);
     c.sensor.stub_tof_distance_mm = value<double>(sensor, "sensor", "stub_tof_distance_mm", path);
     c.sensor.stale_timeout_ms = value<int>(sensor, "sensor", "stale_timeout_ms", path);
@@ -118,6 +123,10 @@ SafetyServerConfig loadSafetyServerConfig(const std::string& path) {
     positive(c.danger_judgment.impact_accel_threshold_g, "impact_accel_threshold_g", path);
     positive(c.danger_judgment.forklift_collision_radius_mm, "forklift_collision_radius_mm", path, true);
     positive(c.sensor.stub_tof_distance_mm, "stub_tof_distance_mm", path, true);
+    positive(c.tracking.world_distance_threshold_mm, "world_distance_threshold_mm", path);
+    if (!std::isfinite(c.tracking.iou_threshold) || c.tracking.iou_threshold < 0.0 ||
+        c.tracking.iou_threshold > 1.0)
+        schema(path, "tracking.iou_threshold는 0~1 범위여야 함");
     if (!(c.danger_judgment.emergency_threshold_mm < c.danger_judgment.danger_threshold_mm &&
           c.danger_judgment.danger_threshold_mm < c.danger_judgment.caution_threshold_mm)) schema(path, "거리 임계값은 emergency < danger < caution 순서여야 함");
     if (c.danger_judgment.tof_danger_mm > c.danger_judgment.tof_caution_mm)
@@ -129,7 +138,8 @@ SafetyServerConfig loadSafetyServerConfig(const std::string& path) {
     if (c.network.mqtt_host.empty() || c.network.camera_assignment_bind_host.empty())
         schema(path, "네트워크 호스트는 빈 문자열일 수 없음");
     if (c.forklift_detection.marker_id < 0 || c.handover.confirm_frames < 1 || c.handover.lost_grace_ms < 0 ||
-        c.sensor.stale_timeout_ms < 1 || c.homography.image_width_px < 1 || c.homography.image_height_px < 1 ||
+        c.sensor.stale_timeout_ms < 1 || c.tracking.max_missed_frames < 0 ||
+        c.homography.image_width_px < 1 || c.homography.image_height_px < 1 ||
         c.network.result_heartbeat_ms < 1 ||
         c.stream.rtsp_latency_ms < 0 || c.stream.appsink_max_buffers < 1 || c.stream.eos_force_timeout_s < 1 ||
         c.stream.connect_timeout_s < 1 || c.stream.max_retries < 1 || c.stream.retry_delay_s < 0) schema(path, "정수 설정값이 허용 범위를 벗어남");
