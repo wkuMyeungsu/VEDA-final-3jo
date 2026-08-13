@@ -11,6 +11,68 @@ pkg_check_modules(GST REQUIRED IMPORTED_TARGET
     gstreamer-app-1.0
 )
 
+# RiskEventSource가 MQTT(libmosquitto)로 위험 판정 데이터를 구독하므로 링크 필요.
+# 리눅스는 pkg-config로 바로 잡히지만 mosquitto 공식 Windows 설치본에는 .pc 파일이
+# 없으므로, pkg-config가 실패하면 헤더/라이브러리를 직접 찾는 경로를 함께 둔다.
+pkg_check_modules(MOSQUITTO IMPORTED_TARGET libmosquitto)
+
+add_library(mosquitto_dep INTERFACE)                                       # - MQTT 의존성 창구: 찾는 방법이 달라도 사용하는 쪽은 이 이름만 씀
+
+if(MOSQUITTO_FOUND)
+    target_link_libraries(mosquitto_dep INTERFACE PkgConfig::MOSQUITTO)    # - pkg-config로 찾은 경우: 헤더/라이브러리 경로가 이미 다 들어있음
+else()
+    set(MOSQUITTO_ROOT "$ENV{MOSQUITTO_ROOT}" CACHE PATH "libmosquitto 설치 경로 (mosquitto.h가 있는 폴더의 상위)")
+
+    find_path(MOSQUITTO_INCLUDE_DIR mosquitto.h                            # - 헤더 탐색: mosquitto.h 위치 찾기
+        HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+        PATH_SUFFIXES devel include
+    )
+    find_library(MOSQUITTO_LIBRARY                                         # - 라이브러리 탐색: import 라이브러리 우선
+        NAMES mosquitto libmosquitto mosquitto.lib
+        HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+        PATH_SUFFIXES devel lib
+    )
+    if(WIN32 AND NOT MOSQUITTO_LIBRARY)
+        # MinGW는 DLL에 직접 링크할 수 있으므로, MSVC용 .lib이 안 잡히면 DLL을 그대로 쓴다.
+        find_file(MOSQUITTO_LIBRARY NAMES mosquitto.dll
+            HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+            PATH_SUFFIXES "" bin
+        )
+    endif()
+
+    if(NOT MOSQUITTO_INCLUDE_DIR OR NOT MOSQUITTO_LIBRARY)
+        message(FATAL_ERROR
+            "libmosquitto를 찾지 못했습니다 (RiskEventSource의 MQTT 수신에 필요).\n"
+            "  리눅스 : sudo apt install libmosquitto-dev\n"
+            "  Windows: mosquitto 공식 설치본 설치 후 필요하면 경로를 직접 지정\n"
+            "           cmake -DMOSQUITTO_ROOT=\"C:/Program Files/mosquitto\" ...\n"
+            "  탐색 결과: include=${MOSQUITTO_INCLUDE_DIR} lib=${MOSQUITTO_LIBRARY}")
+    endif()
+
+    target_include_directories(mosquitto_dep INTERFACE ${MOSQUITTO_INCLUDE_DIR}) # - 헤더 경로 전달: #include <mosquitto.h> 해결용
+    target_link_libraries(mosquitto_dep INTERFACE ${MOSQUITTO_LIBRARY})          # - 라이브러리 연결: mosquitto_* 함수 실체 연결
+endif()
+
+if(WIN32)
+    # - 실행 파일 옆에 복사할 mosquitto 런타임 의존 DLL 목록 (mosquitto.dll, cjson.dll 등)
+    find_file(MOSQUITTO_RUNTIME_DLL NAMES mosquitto.dll
+        HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+        PATH_SUFFIXES "" bin
+    )
+    set(MOSQUITTO_RUNTIME_EXTRA_DLLS "")
+    foreach(dep_dll mosquitto_common.dll libssl-3-x64.dll libcrypto-3-x64.dll pthreadVC3.dll cjson.dll)
+        find_file(MOSQUITTO_DEP_${dep_dll} NAMES ${dep_dll}
+            HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+            PATH_SUFFIXES "" bin
+        )
+        if(MOSQUITTO_DEP_${dep_dll})
+            list(APPEND MOSQUITTO_RUNTIME_EXTRA_DLLS ${MOSQUITTO_DEP_${dep_dll}})
+        endif()
+    endforeach()
+    # apps/control_center는 common의 형제 디렉터리라 일반 변수는 안 넘어간다 (add_subdirectory는
+    # 스코프가 자식 쪽으로만 흐름) - INTERNAL 캐시로 만들어 프로젝트 전역에서 보이게 한다.
+    set(MOSQUITTO_RUNTIME_EXTRA_DLLS "${MOSQUITTO_RUNTIME_EXTRA_DLLS}" CACHE INTERNAL "")
+endif()
 
 qt_add_library(safety_common STATIC)
 
@@ -127,4 +189,4 @@ qt_add_qml_module(safety_common
         services/DemoController.cpp
 )
 
-target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST)
+target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST mosquitto_dep)

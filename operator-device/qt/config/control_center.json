@@ -1,7 +1,12 @@
 {
   "system_name": "지게차 사각지대 충돌 방지 - 관제 센터",
-  "server_host": "127.0.0.1",
-  "server_port": 9000,
-  "metadata_source_type": "mock",
+  "_comment_mqtt_broker_host": "RiskEventSource가 구독할 MQTT 브로커 주소. forklift-device의 terminal.json과 동일해야 함",
+  "mqtt_broker_host": "192.168.0.13",
+  "_comment_mqtt_broker_port": "RiskEventSource가 구독할 MQTT 브로커 포트 (기본 1883)",
+  "mqtt_broker_port": 1883,
+  "_comment_terminal_id": "구독 토픽(forklift/risk/<terminal_id>) 구성용. 관제할 단말 ID를 서버 설정과 맞출 것",
+  "terminal_id": "TERM_01",
+  "_comment_metadata": "mock → mqtt로 전환 (RiskEventSource MQTT 구현 완료 시)",
+  "metadata_source_type": "mqtt",
   "event_log_max_entries": 200
 }
