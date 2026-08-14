@@ -91,7 +91,7 @@ int main() {
     write(multi_dir / "homography/cam01.json", h);
     write(multi_dir / "homography/cam02_1.json", h);
     write(multi_dir / "camera_model.json", R"({"models":[{"model":"PNO-A9081RG","channel_count":1},{"model":"PNM-C16083RVQ","channel_count":4}]})");
-    write(multi_dir / "camera_config.json", R"({"cameras":[
+    write(multi_dir / "camera_list.json", R"({"cameras":[
       {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"homography/cam01.json","image_width_px":640,"image_height_px":480}]},
       {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480}]}
     ]})");
@@ -108,6 +108,33 @@ int main() {
     } catch (const std::exception& error) {
         check(false, error.what());
     }
+
+    // main 전용 정책 설정과 server/config 공통 카메라 설정을 서로 다른
+    // 디렉터리에서 읽어도 같은 스트림 목록을 만드는지 확인한다.
+    const auto split_root = std::filesystem::temp_directory_path() / "forklift_split_config_test";
+    const auto split_app = split_root / "01_main";
+    const auto split_common = split_root / "common";
+    std::filesystem::create_directories(split_app);
+    std::filesystem::create_directories(split_common / "homography");
+    for (const char* name : {"camera_model.json", "camera_list.json"})
+        std::filesystem::copy_file(multi_dir / name, split_common / name,
+                                   std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(multi_dir / "homography/cam01.json",
+                               split_common / "homography/cam01.json",
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(multi_dir / "homography/cam02_1.json",
+                               split_common / "homography/cam02_1.json",
+                               std::filesystem::copy_options::overwrite_existing);
+    for (const char* name : {"forklift_device_config.json", "danger_judgment_config.json", "system_config.json"})
+        std::filesystem::copy_file(multi_dir / name, split_app / name,
+                                   std::filesystem::copy_options::overwrite_existing);
+    try {
+        const auto split = loadMultiCameraServerConfig(split_app.string(), split_common.string());
+        check(split.streams.size() == 5, "공통 camera_list와 main 전용 설정을 분리해 읽음");
+    } catch (const std::exception& error) {
+        check(false, error.what());
+    }
+    std::filesystem::remove_all(split_root);
 
     // 일부 채널의 H가 아직 없거나 손상돼도 중앙 서버 전체를 막지 않고,
     // 보정이 준비된 스트림만 남겨서 기동할 수 있어야 한다.

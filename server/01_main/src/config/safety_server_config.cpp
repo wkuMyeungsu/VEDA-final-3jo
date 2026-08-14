@@ -159,12 +159,27 @@ std::string resolveConfigDirectory() {
     return candidates[0];
 }
 
-SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir) {
-    // 운영 파일은 서로 다른 책임으로 나뉘어 있지만 서버에서는 하나의 불변 설정으로
-    // 묶어 사용한다. 어느 파일이 빠졌는지도 오류 경로에 파일명을 그대로 남긴다.
+std::string resolveCommonConfigDirectory(const std::string& config_dir) {
+    // 기본 배치는 server/01_main/config와 server/config를 나란히 둔다.
+    // 다른 위치에서 실행할 때는 --common-config-dir로 명시할 수 있다.
+    const std::filesystem::path app_dir(config_dir);
+    const auto sibling_common = app_dir.parent_path().parent_path() / "config";
+    if (std::filesystem::is_directory(sibling_common)) return sibling_common.string();
+    const char* candidates[] = {"server/config", "config", "../config",
+                                "../../config", "01_Workspace/server/config"};
+    for (const char* candidate : candidates)
+        if (std::filesystem::is_directory(candidate)) return candidate;
+    return candidates[0];
+}
+
+SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir,
+                                                   const std::string& common_config_dir) {
+    // 위험·센서·MQTT 정책은 main 전용 폴더에 두고, 카메라 목록·모델과 H는
+    // 두 앱이 함께 쓰는 server/config에서 읽는다.
     const std::filesystem::path dir(config_dir);
-    const std::filesystem::path camera_path = dir / "camera_config.json";
-    const std::filesystem::path model_path = dir / "camera_model.json";
+    const std::filesystem::path common_dir(common_config_dir.empty() ? config_dir : common_config_dir);
+    const std::filesystem::path camera_path = common_dir / "camera_list.json";
+    const std::filesystem::path model_path = common_dir / "camera_model.json";
     const std::filesystem::path device_path = dir / "forklift_device_config.json";
     const std::filesystem::path danger_path = dir / "danger_judgment_config.json";
     const std::filesystem::path system_path = dir / "system_config.json";
@@ -275,12 +290,12 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                 continue;
             }
             stream_ids[s.stream_id] = true;
-            if (!std::filesystem::exists(dir / s.homography_file)) {
+            if (!std::filesystem::exists(common_dir / s.homography_file)) {
                 std::cerr << "[경고] " << s.stream_id << " 호모그래피 파일이 없어"
                           << " 해당 스트림을 제외합니다: " << s.homography_file << "\n";
                 continue;
             }
-            const auto h_path = (dir / s.homography_file).lexically_normal();
+            const auto h_path = (common_dir / s.homography_file).lexically_normal();
             // H는 실행 중 매 프레임마다 읽지 않는다. 기동 시 단위·행렬·해상도를
             // 모두 확인하고 메모리에 올려, 잘못된 좌표가 위험 판정으로 흘러가지 않게 한다.
             try {
@@ -289,11 +304,11 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                 if (h.at("world_unit").get<std::string>() != "mm")
                     schema(h_path.string(), "world_unit은 mm여야 함");
                 if (h.contains("channel") && h.at("channel").get<int>() != s.channel)
-                    schema(h_path.string(), "H 파일 내부 channel이 camera_config와 다름");
+                    schema(h_path.string(), "H 파일 내부 channel이 camera_list와 다름");
                 const auto& size = h.at("image_size");
                 if (size.at("width").get<int>() != s.image_width_px ||
                     size.at("height").get<int>() != s.image_height_px)
-                    schema(h_path.string(), "H 해상도가 camera_config와 다름");
+                    schema(h_path.string(), "H 해상도가 camera_list와 다름");
                 const auto& matrix = h.at("H_pixel_to_world");
                 if (!matrix.is_array() || matrix.size() != 3)
                     schema(h_path.string(), "H_pixel_to_world는 3x3이어야 함");
@@ -400,9 +415,10 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     return c;
 }
 
-SafetyServerConfig loadMultiCameraServerConfig(const std::string& config_dir) {
+SafetyServerConfig loadMultiCameraServerConfig(const std::string& config_dir,
+                                               const std::string& common_config_dir) {
     try {
-        return loadMultiCameraServerConfigImpl(config_dir);
+        return loadMultiCameraServerConfigImpl(config_dir, common_config_dir);
     } catch (const SafetyServerConfigError&) {
         throw;
     } catch (const json::exception& error) {
