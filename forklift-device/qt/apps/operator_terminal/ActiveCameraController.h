@@ -38,6 +38,11 @@ class ActiveCameraController : public QObject
     Q_PROPERTY(
         RiskTypes::ConnectionState fpgaConnectionState READ fpgaConnectionState NOTIFY fpgaConnectionStateChanged)   // - FPGA 연결 상태 속성: heartbeat 수신 여부 기반
     Q_PROPERTY(bool fpgaErrorLatched READ fpgaErrorLatched NOTIFY fpgaErrorLatchedChanged)                           // - FPGA 오류 누적 속성: checksum/protocol/timeout 중 하나라도 있으면 true
+    // - 아래 3개는 fpgaErrorLatched를 구성하는 개별 항목. IWarningDevice가 셋을 항상 한 번에
+    //   갱신하므로(setErrorLatches) NOTIFY도 fpgaErrorLatchedChanged를 그대로 공유해 씀.
+    Q_PROPERTY(bool checksumErrorLatched READ checksumErrorLatched NOTIFY fpgaErrorLatchedChanged)                   // - 체크섬 오류 누적 속성: CLEAR_ERROR 전까지 유지
+    Q_PROPERTY(bool protocolErrorLatched READ protocolErrorLatched NOTIFY fpgaErrorLatchedChanged)                   // - 프로토콜 오류 누적 속성: CLEAR_ERROR 전까지 유지
+    Q_PROPERTY(bool timeoutErrorLatched READ timeoutErrorLatched NOTIFY fpgaErrorLatchedChanged)                     // - 타임아웃 오류 누적 속성: CLEAR_ERROR 전까지 유지
 
 public:
     ActiveCameraController(QVector<CameraInfo> cameras, MetadataDistributor *metadataDistributor,
@@ -63,6 +68,9 @@ public:
     bool movementCutoffActive() const { return m_movementCutoffActive; }                                          // - 전진 차단 상태 조회: FPGA 전진 릴레이 차단 작동 여부 반환
     RiskTypes::ConnectionState fpgaConnectionState() const { return m_fpgaConnectionState; }                      // - FPGA 연결 상태 조회: heartbeat 수신 여부 기반 상태 반환
     bool fpgaErrorLatched() const { return m_fpgaErrorLatched; }                                                  // - FPGA 오류 누적 상태 조회: checksum/protocol/timeout 중 하나라도 있으면 true
+    bool checksumErrorLatched() const { return m_checksumErrorLatched; }                                          // - 체크섬 오류 누적 상태 조회
+    bool protocolErrorLatched() const { return m_protocolErrorLatched; }                                          // - 프로토콜 오류 누적 상태 조회
+    bool timeoutErrorLatched() const { return m_timeoutErrorLatched; }                                            // - 타임아웃 오류 누적 상태 조회
 
 signals:
     void activeCameraIdChanged();                                                                                 // - 카메라 변경 알림: 활성 카메라 ID 변경 시 발생
@@ -103,6 +111,9 @@ private:
     bool m_movementCutoffActive = false;                                                                          // - 전진 차단 상태 캐시: IWarningDevice 신호로 갱신
     RiskTypes::ConnectionState m_fpgaConnectionState = RiskTypes::ConnectionState::Disconnected;                  // - FPGA 연결 상태 캐시: IWarningDevice 신호로 갱신
     bool m_fpgaErrorLatched = false;                                                                              // - FPGA 오류 누적 상태 캐시: IWarningDevice 신호로 갱신
+    bool m_checksumErrorLatched = false;                                                                          // - 체크섬 오류 누적 상태 캐시: IWarningDevice 신호로 갱신
+    bool m_protocolErrorLatched = false;                                                                          // - 프로토콜 오류 누적 상태 캐시: IWarningDevice 신호로 갱신
+    bool m_timeoutErrorLatched = false;                                                                           // - 타임아웃 오류 누적 상태 캐시: IWarningDevice 신호로 갱신
 
     OnvifBBoxParser *m_onvifParser = nullptr;                                                                     // - ONVIF 파서: 사람 위치 좌표 파싱 객체
     QMetaObject::Connection m_onvifConnection;                                                                    // - ONVIF 신호 연결: 메타데이터 신호 연결 객체
