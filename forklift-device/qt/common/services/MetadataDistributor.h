@@ -23,6 +23,7 @@ public:
     MetadataDistributor(QVector<CameraInfo> cameras, int eventLogMaxEntries, QObject *parent = nullptr); // - 생성자: 카메라 목록 및 로그 보관 제한 수 설정
 
     void setSource(IMetadataSource *source);                                   // - 데이터 소스 설정: 메타데이터 수신 인터페이스 객체 연결
+    void setDemoSource(IMetadataSource *source);                               // - 데모 보조 입력 설정: 주 소스는 그대로 두고 metadataReceived만 추가로 받음 (mqtt 모드에서도 데모 버튼 동작하게 하려는 용도)
     void start();                                                             // - 수신 시작: 데이터 소스 수신 개시
     void stop();                                                              // - 수신 정지: 데이터 소스 수신 중단
 
@@ -48,5 +49,6 @@ private:
     EventLogModel m_eventLogModel;                                             // - 이벤트 로그 모델: 위험 및 예외 이력 저장소
     AlertListModel m_alertListModel;                                           // - 경보 목록 모델: 활성 위험 카메라 목록 보관
     IMetadataSource *m_source = nullptr;                                       // - 데이터 소스 포인터: 연결된 메타데이터 수신 객체 참조
+    IMetadataSource *m_demoSource = nullptr;                                   // - 데모 보조 입력 포인터: 데모 패널 값 전용 (mqtt 모드에서만 사용, 없으면 nullptr)
     RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected; // - 연결 상태: 데이터 소스 접속 상태 보관
 };

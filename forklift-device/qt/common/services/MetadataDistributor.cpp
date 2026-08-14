@@ -29,6 +29,22 @@ void MetadataDistributor::setSource(IMetadataSource *source)
     }
 }
 
+void MetadataDistributor::setDemoSource(IMetadataSource *source)
+{
+    if (m_demoSource == source)                                                // - 중복 설정 방지: 동일 소스인 경우 실행 생략
+        return;
+    if (source && source == m_source)                                          // - 주 소스와 동일하면 생략: 아래 disconnect가 주 경로까지 끊어버림
+        return;
+
+    if (m_demoSource)                                                          // - 기존 데모 소스 해제: 이전에 연결된 데모 소스의 신호 연결 해제
+        disconnect(m_demoSource, nullptr, this, nullptr);
+
+    m_demoSource = source;                                                     // - 데모 소스 교체: 새 데모 보조 소스 객체 저장
+
+    if (m_demoSource)
+        connect(m_demoSource, &IMetadataSource::metadataReceived, this, &MetadataDistributor::handleMetadata); // - 데이터 수신 신호만 연결: 연결 상태는 일부러 연결 안 함 (서버 연결 배지는 실제 링크 상태가 진실이어야 함)
+}
+
 void MetadataDistributor::start()
 {
     if (m_source)                                                              // - 수신 시작: 데이터 소스가 존재하는 경우 시작 함수 호출
