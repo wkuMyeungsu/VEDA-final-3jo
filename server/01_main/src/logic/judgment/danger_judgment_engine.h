@@ -72,8 +72,8 @@ struct CameraInput {
     WorldPoint forklift;                   // 지게차 world 좌표 (forklift_localized=false면 stale/무의미)
     WorldPoint person;                     // 사람 world 좌표 (person_detected=false면 stale/무의미)
 
-    // camera_id 표기 방식: nearest_person_selector.cpp의 int를 std::to_string()으로 단순 변환.
-    // 라벨링(cam_01 등) 필요 시 여기서 변경.
+    // camera_id 표기 방식: nearest_person_selector.cpp의 int를 cameraIdToString()으로
+    // "CAM_01" 포맷 변환 (judgment_pipeline.cpp/h 참고).
     // [TODO] 현재 이 값을 채워주는 통합 지점이 아직 없다(각 파일이 독립 main으로 동작 중).
     //        값을 임의로 만들지 않고 빈 문자열로 둔다.
     std::string camera_id;

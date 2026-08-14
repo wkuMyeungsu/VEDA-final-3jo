@@ -10,5 +10,11 @@
   "mqtt_broker_port": 1883,
   "terminal_id": "TERM_01",
   "_comment_metadata": "mock → mqtt로 전환 (RiskEventSource MQTT 구현 완료 시)",
-  "metadata_source_type": "mqtt"
+  "metadata_source_type": "mqtt",
+  "_comment_fpga_serial_port": "FPGA 경고 보드 UART 포트. Pi GPIO 8/10번 핀(TXD/RXD) 직결 기준 기본값 (raspi-config에서 serial hardware 활성화 필요, PROTOCOL.md 참고)",
+  "fpga_serial_port": "/dev/serial0",
+  "_comment_fpga_baud_rate": "gpio-control/src/top.v 기본값과 일치",
+  "fpga_baud_rate": 115200,
+  "_comment_warning_device": "noop → serial로 전환 (FPGA 실장치 연결 완료 시)",
+  "warning_device_type": "serial"
 }

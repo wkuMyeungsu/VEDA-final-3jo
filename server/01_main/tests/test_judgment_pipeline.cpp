@@ -16,6 +16,9 @@
 //   [테스트 6] 진짜 selectNearestPerson() 출력을 processFrame()에 흘려보내는 통합 확인
 //   [테스트 7] EMERGENCY(4단계 확장) - 진입 거리 / DANGER<->EMERGENCY 히스테리시스 / 래치 해제
 //   [테스트 8] risk_level 직렬화 - 4단계가 전부 0~3 정수로 나가는지
+//   [테스트 9] DEAD_RECKONING 해제 디바운스 (dead_reckoning_release_grace_ms=500) -
+//              진입 즉시성 / 유예 중 유지 / 재이탈 시 타이머 리셋 / 유예 경과 후 해제 /
+//              카메라 전환 시 리셋
 //
 //   핸드오버(여러 camera_id 동시 중첩) 처리는 구현 범위 밖이므로 검증 대상도 아니다.
 //   대신 [테스트 3]에서 "다른 카메라에서 온 사람도 드랍되지 않는다"를 고정해 둔다 -
@@ -24,16 +27,26 @@
 // 거리 비교는 부동소수점이라 expectNear(허용오차 1e-6)로 본다.
 // 판정 불가 상태의 sentinel(-1.0)은 엔진이 상수를 그대로 대입하므로 정확히 비교된다.
 //
+// [테스트 9 시간 처리 방식] 이 파일은 실제 시각(std::chrono::steady_clock)에 걸린
+// 히스테리시스를 검증해야 하므로 std::this_thread::sleep_for로 실제 대기한다.
+// 시간을 주입할 수 있는 훅(가짜 시계)으로 바꾸는 방법도 있지만, 케이스가 5개뿐이고
+// 이 프로젝트의 ctest는 수동으로만 돌리는 규모라 몇 초 늘어나는 비용보다 지금 구조
+// (danger_judgment_engine.h가 std::chrono::steady_clock::now()를 직접 호출)를 안
+// 건드리는 이득이 더 크다고 팀에서 판단했다. 시간 주입 리팩터링은 데모데이 이후
+// 개선 항목으로 남겨둔다.
+//
 // 빌드: g++ -std=c++17 -I../tracking test_judgment_pipeline.cpp judgment_pipeline.cpp \
 //           danger_judgment_engine.cpp ../tracking/nearest_person_selector.cpp \
 //           -o test_judgment_pipeline -pthread
 // 실행: ./test_judgment_pipeline   (종료코드 0=성공, 1=실패)
 
+#include <chrono>
 #include <cstddef>
 #include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "logic/judgment/judgment_pipeline.h"
@@ -190,7 +203,7 @@ void testCameraInputMapping() {
         expectBool("found=true -> person_detected",  cam.person_detected, true);
         expectNear("person.x <- nearest.position.x", cam.person.x, kPersonDanger.x);
         expectNear("person.y <- nearest.position.y", cam.person.y, kPersonDanger.y);
-        expectStr ("camera_id <- 활성 camera_id",    cam.camera_id, "1");
+        expectStr ("camera_id <- 활성 camera_id",    cam.camera_id, "CAM_01");
         expectStr ("zone은 매핑 미확정이라 공백",     cam.zone, "");
     }
 
@@ -202,7 +215,7 @@ void testCameraInputMapping() {
         expectNear("person 좌표는 기본값(0,0)",       cam.person.x, 0.0);
         expectNear("person 좌표는 기본값(0,0)",       cam.person.y, 0.0);
         // 사람이 안 보여도 "어느 카메라에서 안 보였는지"는 하류에 남아야 한다.
-        expectStr ("사람 미검출에도 camera_id 유지",  cam.camera_id, "1");
+        expectStr ("사람 미검출에도 camera_id 유지",  cam.camera_id, "CAM_01");
     }
 
     std::cout << "  -- 마커 폐색 (지게차 좌표 없음) --\n";
@@ -231,7 +244,7 @@ void testCameraInputMapping() {
             pipeline.toCameraInput(kForklift, true, makeFound(3, 2, kPersonDanger));
 
         // 판정 대상 카메라는 이 파이프라인의 활성 카메라이므로 nearest.camera_id를 쓰지 않는다.
-        expectStr("nearest.camera_id=2여도 활성 id 사용", cam.camera_id, "1");
+        expectStr("nearest.camera_id=2여도 활성 id 사용", cam.camera_id, "CAM_01");
     }
 }
 
@@ -275,7 +288,7 @@ void testProcessFrame() {
         expectExc ("예외 없음",           out.result.exception,  ExceptionState::NONE);
         // nearest.distance_mm(999.0)이 아니라 엔진이 좌표로 재계산한 값이어야 한다.
         expectNear("거리는 엔진 재계산값", out.result.distance_mm, std::sqrt(500000.0));
-        expectStr ("결과에 camera_id 전달", out.result.camera_id, "1");
+        expectStr ("결과에 camera_id 전달", out.result.camera_id, "CAM_01");
         expectBool("mismatch 아님",        out.camera_id_mismatch, false);
     }
     {
@@ -298,7 +311,7 @@ void testProcessFrame() {
         expectRisk("사람 없음 -> SAFE",        out.result.final_risk, RiskLevel::SAFE);
         expectExc ("사람 없음 -> 예외 없음",    out.result.exception,  ExceptionState::NONE);
         expectNear("거리 판정 불가 -> -1",      out.result.distance_mm, -1.0);
-        expectStr ("camera_id는 그대로 유지",   out.result.camera_id, "1");
+        expectStr ("camera_id는 그대로 유지",   out.result.camera_id, "CAM_01");
     }
 
     std::cout << "  -- 마커 폐색 --\n";
@@ -347,7 +360,7 @@ void testJsonCarriesCameraId() {
             pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
         const std::string json = toJson(out.result);
 
-        expectContains("camera_id가 문자열로 실림", json, "\"camera_id\":\"1\"");
+        expectContains("camera_id가 문자열로 실림", json, "\"camera_id\":\"CAM_01\"");
         expectContains("zone은 미확정이라 null",     json, "\"zone\":null");
         expectContains("terminal_id가 문자열로 실림", json, "\"terminal_id\":\"" + kTerminalId + "\"");
         // 단말이 toInt()로 읽으므로 정수여야 한다. 따옴표가 붙으면 항상 0(Safe)이 된다.
@@ -413,7 +426,7 @@ void testSelectorIntegration() {
         const PipelineOutput out = pipeline.processFrame(kForklift, true, nearest);
         expectRisk("최근접 약 707mm -> DANGER", out.result.final_risk, RiskLevel::DANGER);
         expectNear("거리 일치",                out.result.distance_mm, nearest.distance_mm);
-        expectStr ("camera_id 전달",            out.result.camera_id, "1");
+        expectStr ("camera_id 전달",            out.result.camera_id, "CAM_01");
         expectBool("같은 카메라 -> mismatch 아님", out.camera_id_mismatch, false);
     }
 
@@ -599,6 +612,109 @@ void testRiskLevelSerialization() {
     expectStr("toString(EMERGENCY)", toString(RiskLevel::EMERGENCY), "EMERGENCY");
 }
 
+// ── 테스트 9: DEAD_RECKONING 해제 디바운스 ───────────────────
+// dead_reckoning_release_grace_ms(기본 500ms, danger_judgment_engine.h)가 실제로
+// 걸리는지를 시간 축에서 확인한다. sleep_for를 쓰는 이유는 파일 상단 주석 참고.
+void testDeadReckoningDebounce() {
+    std::cout << "\n[테스트 9] DEAD_RECKONING 해제 디바운스 (grace=500ms)\n";
+
+    StubSensorReader sensors(5000.0);
+
+    std::cout << "  -- 즉시 진입 유지 (회귀 확인용) --\n";
+    {
+        // 진입은 유예 없이 즉시 반영돼야 한다 - 이미 [테스트 3] 마커 폐색 케이스가
+        // 커버하지만, 이 블록이 해제 쪽 케이스들과 나란히 놓여야 "진입은 즉시,
+        // 해제만 유예"라는 비대칭성이 한눈에 드러나므로 여기서도 짧게 재확인한다.
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));
+        expectExc("위치 미확보 1프레임 -> 즉시 DEAD_RECKONING",
+                  out.result.exception, ExceptionState::DEAD_RECKONING);
+    }
+
+    std::cout << "  -- 해제 유예 중 유지 --\n";
+    {
+        // 위치를 다시 확보해도 grace(500ms)가 지나기 전까지는 DEAD_RECKONING을
+        // 유지해야 한다 - 마커가 잠깐 다시 잡혔다가 곧바로 놓치는 진동 상황에서
+        // exception_state가 프레임마다 튀는 걸 막기 위한 히스테리시스이므로,
+        // 짧게만 대기한 시점에서는 아직 해제되면 안 된다.
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
+        pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));  // grace(500ms)의 일부만 경과
+
+        // kPersonSafe(거리 기준 원래 SAFE)를 써야 "최소 CAUTION" 보정이 실제로 위험도를
+        // 끌어올리는지가 드러난다 - kPersonDanger를 쓰면 카메라 거리만으로도 이미 DANGER라
+        // 보정 여부와 무관하게 같은 값이 나와 검증력이 없다.
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonSafe));
+        expectExc("100ms 경과(<500ms) -> DEAD_RECKONING 유지",
+                  out.result.exception, ExceptionState::DEAD_RECKONING);
+        expectRisk("유예 중이라 최소 CAUTION으로 보정됨(원래는 SAFE)",
+                   out.result.final_risk, RiskLevel::CAUTION);
+    }
+
+    std::cout << "  -- 유예 중 재이탈로 타이머 리셋 --\n";
+    {
+        // 유예 중에 다시 위치를 놓치면 grace 타이머가 그 시점부터 다시 도는지 확인한다.
+        // 시나리오: 최초 이탈(t0) -> 300ms 대기(유예 중, 아직 해제 전) -> 재이탈(t1로 리셋)
+        // -> 350ms 대기 -> 확보.
+        // t0 기준으로는 650ms(=300+350)가 지나 해제 임계(500ms)를 넘지만, t1 기준으로는
+        // 350ms만 지나 아직 해제 전이다. 타이머가 재이탈 시점(t1)으로 리셋되지 않고 t0에
+        // 고정돼 있다면 여기서 잘못 NONE으로 풀려야 정상인데, 그렇게 되지 않아야
+        // "재이탈이 타이머를 리셋한다"는 게 증명된다.
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
+        pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));  // t0: 최초 이탈
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        const PipelineOutput still_grace =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));  // 유예 중 확보
+        expectExc("t0+300ms -> 아직 유예 중 (DEAD_RECKONING 유지)",
+                  still_grace.result.exception, ExceptionState::DEAD_RECKONING);
+
+        pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));  // t1: 재이탈 (타이머 리셋)
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(350));  // t0 기준 650ms(>500) / t1 기준 350ms(<500)
+        const PipelineOutput after_reset =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
+        expectExc("t1+350ms -> t0 기준 500ms 초과해도 t1 기준 유예 중이라 유지",
+                  after_reset.result.exception, ExceptionState::DEAD_RECKONING);
+    }
+
+    std::cout << "  -- 유예 경과 후 해제 --\n";
+    {
+        // grace(500ms)를 확실히 넘겨 대기하면 위치 재확보 시 NONE으로 복귀해야 한다.
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
+        pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(650));  // grace(500ms) + 여유
+
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera, kPersonDanger));
+        expectExc("650ms 경과(>500ms) -> NONE으로 복귀",
+                  out.result.exception, ExceptionState::NONE);
+    }
+
+    std::cout << "  -- 카메라 전환 시 리셋 --\n";
+    {
+        // setActiveCameraId()로 활성 카메라가 바뀌면 resetHysteresis()가 호출돼
+        // dead_reckoning_active_도 함께 풀린다(judgment_pipeline.cpp 참고). 새 카메라의
+        // 첫 프레임에 위치가 확보돼 있으면, 유예를 기다릴 필요 없이 즉시 NONE이어야 한다.
+        JudgmentPipeline pipeline(kActiveCamera, kTerminalId, sensors, kJudgmentConfig, kDeadReckoningGrace);
+        const PipelineOutput before =
+            pipeline.processFrame(kForklift, false, makeFound(2, kActiveCamera, kPersonDanger));
+        expectExc("전환 전 DEAD_RECKONING 진입 확인",
+                  before.result.exception, ExceptionState::DEAD_RECKONING);
+
+        pipeline.setActiveCameraId(kActiveCamera + 1);  // 다른 카메라로 전환 -> 히스테리시스 리셋
+
+        const PipelineOutput out =
+            pipeline.processFrame(kForklift, true, makeFound(2, kActiveCamera + 1, kPersonDanger));
+        expectExc("전환 직후 위치 확보 -> 유예 없이 즉시 NONE",
+                  out.result.exception, ExceptionState::NONE);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -613,6 +729,7 @@ int main() {
     testSelectorIntegration();
     testEmergencyTier();
     testRiskLevelSerialization();
+    testDeadReckoningDebounce();
 
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";

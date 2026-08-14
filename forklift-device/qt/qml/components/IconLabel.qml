@@ -8,7 +8,7 @@ Row {
     property string icon: ""
     property string text: ""
     property color textColor: Theme.colorTextSecondary
-    property int pixelSize: Theme.fontSizeMd
+    property int pixelSize: Theme.typeBody.size
 
     spacing: Theme.spacingXs
 

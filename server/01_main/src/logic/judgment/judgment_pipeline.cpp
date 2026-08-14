@@ -12,6 +12,7 @@
 
 #include "logic/judgment/judgment_pipeline.h"
 
+#include <cstdio>
 #include <iostream>
 #include <string>
 
@@ -145,5 +146,12 @@ PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
 
 std::string cameraIdToString(int camera_id) {
     if (camera_id < 0) return "";   // 미확정/무효 -> 하류 JSON에서 null (toJsonOrNull 규칙)
-    return std::to_string(camera_id);
+    // 단말(Qt) 인터페이스 규약 및 cameras.json의 키 포맷("CAM_01" 등)에 맞춘다.
+    // 채널은 aruco_metadata_parser.cpp에서 1 미만을 거부하므로(1-based) 오프셋 보정은 필요 없다.
+    // [주의] 이 변경 전까지 SQLite events 테이블의 camera_id 컬럼에는 "1", "2" 같은 이전 포맷이
+    //        쌓여 있다. 기존 행은 마이그레이션하지 않았으므로, 이 시점 이후로 적재되는 행만
+    //        "CAM_01" 포맷이고 과거 행과 포맷이 다르다(조회 시 유의).
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "CAM_%02d", camera_id);
+    return std::string(buf);
 }

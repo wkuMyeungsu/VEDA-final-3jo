@@ -38,6 +38,7 @@ target_link_libraries(safety_common
         Qt6::Quick
         Qt6::Multimedia
         Qt6::Network
+        Qt6::SerialPort
 )
 
 # Shared QML files (qml/theme, qml/components) live one level up from this
@@ -111,6 +112,8 @@ qt_add_qml_module(safety_common
         network/IWarningDevice.h
         network/NoopWarningDevice.h
         network/NoopWarningDevice.cpp
+        network/SerialWarningDevice.h
+        network/SerialWarningDevice.cpp
         network/HandoverClient.h
         network/HandoverClient.cpp
         network/OnvifBBoxParser.h

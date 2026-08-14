@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Effects
 import Safety.Common
 
 // 그리드 카드 클릭 시 뜨는 단일 카메라 확대 화면.
@@ -11,7 +13,6 @@ import Safety.Common
 Item {
     id: root
     property string cameraId: ""
-    signal backRequested()
 
     property real distanceM: 0
     property bool distanceValid: true
@@ -46,14 +47,30 @@ Item {
         root.exceptionState = latest.exceptionState
     }
 
+    // 그리드에서 확대되며 뜨는 패널이라 부유감을 주는 그림자 적용 (허용된 2곳 중 하나)
+    MultiEffect {
+        source: card
+        anchors.fill: card
+        shadowEnabled: true
+        shadowColor: "#000000"
+        shadowOpacity: 0.35
+        shadowBlur: 0.5
+        shadowVerticalOffset: 6
+    }
+
     Rectangle {
+        id: card
         anchors.fill: parent
         color: Theme.colorSurface
         radius: Theme.radiusMd
-        // exceptionState가 있으면 riskLevel은 로컬 기본값(Safe)일 수 있어 신뢰 불가 -> 초록 대신 unknown색
-        border.color: root.exceptionState !== 0 ? Theme.colorUnknown
-                      : (root.riskLevel !== 0 ? Theme.riskColor(root.riskLevel) : Theme.colorBorder)
-        border.width: (root.riskLevel !== 0 || root.exceptionState !== 0) ? 2 : 1
+        // CameraCard와 동일 규칙(Theme.alertBorderColor/Width) -- 한쪽만 고치는
+        // 드리프트 방지, Behavior도 CameraCard와 동일하게 맞춤(굵기 변화가 색만큼
+        // 부드럽게 안 가던 결함 수정)
+        border.color: Theme.alertBorderColor(root.riskLevel, root.exceptionState)
+        border.width: Theme.alertBorderWidth(root.riskLevel, root.exceptionState)
+
+        Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
+        Behavior on border.width { NumberAnimation { duration: Theme.animationNormal } }
 
         Item {
             id: header
@@ -61,30 +78,32 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: Theme.spacingMd
-            height: 36
+            height: Theme.iconButtonSize
 
             Rectangle {
                 id: backButton
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: 36
-                height: 36
+                width: Theme.iconButtonSize
+                height: Theme.iconButtonSize
                 radius: Theme.radiusSm
                 color: Theme.colorSurfaceElevated
                 border.color: Theme.colorBorder
-                border.width: 1
+                border.width: Theme.borderWidthHairline
 
                 Text {
                     anchors.centerIn: parent
                     text: "←"
                     color: Theme.colorTextPrimary
-                    font.pixelSize: Theme.fontSizeLg
+                    font.pixelSize: Theme.typeHeading.size
                 }
 
-                MouseArea {
+                HoverOverlay {
                     anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.backRequested()
+                    overlayRadius: Theme.radiusSm
+                    // StackView가 push한 아이템에 자동으로 붙여주는 첨부 프로퍼티로
+                    // 직접 pop -- window까지 신호를 두 단계 거치지 않음
+                    onClicked: root.StackView.view.pop()
                 }
             }
 
@@ -95,7 +114,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.cameraId
                 color: Theme.colorTextPrimary
-                font.pixelSize: Theme.fontSizeLg
+                font.pixelSize: Theme.typeHeading.size
                 font.bold: true
             }
 
@@ -118,8 +137,23 @@ Item {
             anchors.margins: Theme.spacingMd
             clip: true
 
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusSm
+                color: Theme.colorSurfaceSunken
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: Theme.borderWidthHairline
+                    color: Theme.colorHairlineTop
+                }
+            }
+
             CameraVideoView {
                 anchors.fill: parent
+                anchors.margins: 2
                 cameraId: root.cameraId
                 personBBox: root.personBBox
                 forkliftBBox: root.forkliftBBox

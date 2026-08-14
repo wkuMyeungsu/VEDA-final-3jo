@@ -14,7 +14,7 @@ Rectangle {
     radius: height / 2
     color: Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.16)
     border.color: accentColor
-    border.width: 1
+    border.width: Theme.borderWidthHairline
     implicitHeight: row.implicitHeight + Theme.spacingSm
     implicitWidth: row.implicitWidth + Theme.spacingMd * 2
 
@@ -27,12 +27,12 @@ Rectangle {
             visible: root.icon.length > 0
             text: root.icon
             color: root.accentColor
-            font.pixelSize: Theme.fontSizeSm
+            font.pixelSize: Theme.typeCaption.size
         }
         Text {
             text: root.text
             color: root.accentColor
-            font.pixelSize: Theme.fontSizeSm
+            font.pixelSize: Theme.typeCaption.size
             font.bold: true
         }
     }

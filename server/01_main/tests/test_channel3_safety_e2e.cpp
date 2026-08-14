@@ -269,14 +269,14 @@ int main() {
         check(result.final_risk == step.expected && near(result.distance_mm, step.distance_mm),
               std::string(step.name) + ": 거리 " + std::to_string(step.distance_mm) +
                   "mm → " + toString(step.expected));
-        check(result.camera_id == "3" && result.terminal_id == kTerminalId &&
+        check(result.camera_id == "CAM_03" && result.terminal_id == kTerminalId &&
                   result.exception == ExceptionState::NONE,
               std::string(step.name) + ": 채널·단말·센서 융합 결과 유지");
         check(published.size() == step.expected_publish_count,
               std::string(step.name) + ": 상태 변화 시에만 JSON 발행");
     }
 
-    check(!published.empty() && published.back().find("\"camera_id\":\"3\"") != std::string::npos &&
+    check(!published.empty() && published.back().find("\"camera_id\":\"CAM_03\"") != std::string::npos &&
               published.back().find("\"distance_mm\":60") != std::string::npos &&
               published.back().find("\"risk_level\":2") != std::string::npos,
           "최종 DANGER 결과가 distance_mm JSON 계약으로 발행됨");

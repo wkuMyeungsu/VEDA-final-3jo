@@ -90,5 +90,9 @@ TerminalConfig ConfigLoader::loadTerminalConfig() const
     config.metadataSourceType =
         obj.value(QStringLiteral("metadata_source_type")).toString(config.metadataSourceType); // - 소스 유형 읽기: 설정값 적용
     config.terminalId = obj.value(QStringLiteral("terminal_id")).toString();  // - 단말 ID 읽기: 설정값 적용
+    config.fpgaSerialPort = obj.value(QStringLiteral("fpga_serial_port")).toString(config.fpgaSerialPort); // - FPGA UART 포트 읽기: 설정값 적용
+    config.fpgaBaudRate = obj.value(QStringLiteral("fpga_baud_rate")).toInt(config.fpgaBaudRate); // - FPGA UART 보레이트 읽기: 설정값 적용
+    config.warningDeviceType =
+        obj.value(QStringLiteral("warning_device_type")).toString(config.warningDeviceType); // - 경고 장치 유형 읽기: 설정값 적용
     return config;                                                            // - 결과 반환: 완성된 단말 설정 반환
 }

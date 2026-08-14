@@ -2,8 +2,10 @@ import QtQuick
 import Safety.Common
 
 // Per-camera video connection status, for the right panel.
+// 행 클릭 시 AlertListView와 동일하게 그 카메라를 메인 화면에 띄움.
 Item {
     id: root
+    signal cameraFocusRequested(string cameraId)
 
     ListView {
         anchors.fill: parent
@@ -13,17 +15,17 @@ Item {
 
         delegate: Item {
             width: ListView.view.width
-            height: 44
+            height: Theme.statusRowHeight
 
             Column {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
+                spacing: Theme.spacingXxs
 
                 Text {
                     text: model.name + " (" + model.cameraId + ")"
                     color: Theme.colorTextPrimary
-                    font.pixelSize: Theme.fontSizeSm
+                    font.pixelSize: Theme.typeCaption.size
                     font.bold: true
                 }
 
@@ -31,6 +33,12 @@ Item {
                     label: "영상"
                     state: model.videoConnectionState
                 }
+            }
+
+            HoverOverlay {
+                anchors.fill: parent
+                overlayRadius: Theme.radiusSm
+                onClicked: root.cameraFocusRequested(model.cameraId)
             }
         }
     }

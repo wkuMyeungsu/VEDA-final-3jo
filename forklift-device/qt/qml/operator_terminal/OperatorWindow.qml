@@ -12,7 +12,7 @@ ApplicationWindow {
     visible: true
     visibility: Window.FullScreen
     width: 800
-    height: 600
+    height: 480
     color: Theme.colorBackground
     title: qsTr("Forklift Safety - Operator Terminal")
 
@@ -50,13 +50,13 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 64
+        height: Theme.topBarHeight
     }
 
     RiskHud {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: topBar.bottom
-        anchors.topMargin: Theme.spacingLg
+        anchors.topMargin: Theme.spacingMd
         riskLevel: activeCamera.riskLevel
         exceptionState: activeCamera.exceptionState
         distanceM: activeCamera.distanceM
@@ -76,5 +76,11 @@ ApplicationWindow {
         anchors.right: parent.right
         width: 340
         visible: false
+    }
+
+    EstopOverlay {
+        anchors.fill: parent
+        estopActive: activeCamera.estopActive
+        movementCutoffActive: activeCamera.movementCutoffActive
     }
 }
