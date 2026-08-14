@@ -1,48 +1,12 @@
-# 호모그래피 도구
+# 호모그래피 엔진
 
-OpenCV 기반 호모그래피 CLI 도구임. ArUco 마커 생성, 촬영 이미지의
-마커 검출·호모그래피 계산·결과 검증 기능 제공함.
+OpenCV 기반 C++ 호모그래피 엔진이다. 현재는 자유롭게 배치한 ArUco
+마커를 검출하고, 채널별 로컬 H를 산출한 뒤, 공통 마커로 채널을 정합하는
+흐름만 제공한다.
 
-## 1. 엔진 구조
+## 명령
 
-```text
-engine/
-├── include/homography/   # 재사용 가능한 공개 헤더
-├── src/core/             # ArUco 검출·호모그래피·오차 계산
-├── src/io/               # 설정·JSON 입출력
-├── src/render/           # 마커 이미지 생성
-├── main.cpp              # homography_tool 명령행 진입점
-└── third_party/          # 외부 헤더 의존성
-```
-
-`homography_core`는 CLI와 분리된 C++ 정적 라이브러리.
-웹 앱이나 추후 Python 바인딩이 추가되더라도 동일한 알고리즘을 재사용할 수 있도록,
-알고리즘 코드는 CLI 인자나 웹 요청을 직접 처리하지 않음.
-
-## 2. 설정
-
-운영에 사용하는 마커 규격, 출력 기본값, 오차 기준, 미리보기 배율은 `../config/homography_config.json`에서 관리함.
-CLI 옵션 지정 시 해당 실행에 한해 설정 파일의 기본값을 덮어씀.
-
-주요 설정 그룹은 다음과 같음.
-
-- 기본 격자: `dictionary`, `cols`, `rows`, `marker_len_mm`, `gap_mm`
-- 마커 출력: `marker_output`
-- 결과 파일: `outputs`
-- 고정 격자 산출: `calibration`
-- 수동 배치 산출: `manual_solve`
-- 결과 미리보기: `preview`
-
-각 항목을 처음 설정할 때는 [설정 파일 안내](../config/README.md)를
-먼저 확인함. 실제 설정 JSON에는 주석을 넣을 수 없으므로, 항목별
-설명과 복사 가능한 예시를 별도 문서로 제공함.
-
-길이 단위 확인 필요. 고정 격자의 `marker_len_mm`, `gap_mm`와
-자동 산출 오차를 포함한 모든 거리 값은 mm임.
-
-## 3. 제공 기능
-
-### 3.1 개별 ArUco 마커 생성
+### 개별 마커 생성
 
 ```sh
 homography_tool gen-marker \
@@ -51,29 +15,25 @@ homography_tool gen-marker \
   --output marker_000.png \
   --size-mm 100 \
   --margin-mm 20 \
-  --label 00 \
   --dpi 300
 ```
 
-- ID별 개별 마커 생성
-- 마커 크기와 흰색 여백 지정
-- PNG 또는 SVG 출력
-- 기준점 `+`와 숫자 라벨 포함 가능
+마커 ID의 모양은 설정의 `dictionary`를 따른다. 출력 크기와 여백은
+`marker_output`에서 기본값을 가져오며 명령행 인자로 덮어쓸 수 있다.
 
-### 3.2 고정 격자 호모그래피 산출
+### 마커 검출
 
 ```sh
-homography_tool calibrate \
+homography_tool detect-markers \
   --config ../config/homography_config.json \
   --input capture.png \
-  --output homography.json \
-  --max-rmse-mm 20
+  --output markers.json \
+  --overlay markers_overlay.png
 ```
 
-설정 파일에 정의된 격자의 ID와 실제 위치를 기준으로 마커를 검출하고,
-픽셀 좌표와 월드 좌표 사이의 변환 행렬을 산출함.
+이미지에서 ArUco ID와 네 꼭짓점의 픽셀 좌표만 추출한다.
 
-### 3.3 수동 배치 호모그래피 산출
+### 채널별 로컬 H 산출
 
 ```sh
 homography_tool solve-manual \
@@ -84,61 +44,52 @@ homography_tool solve-manual \
   --overlay homography_overlay.png
 ```
 
-`layout.json`에는 마커 크기와 각 ID의 실제 좌표를 입력함. 좌표는 각
-마커의 왼쪽 위 모서리 기준. X는 오른쪽, Y는 아래쪽 방향.
+`layout.json`은 기준 마커 ID, 실제 마커 크기, 선택적인 꼭짓점 보정값을
+담는다. 마커 위치를 격자 좌표로 입력하지 않는다.
 
-```json
-{
-  "marker_size_mm": 100,
-  "markers": [
-    {"id": 0, "x_mm": 0, "y_mm": 0},
-    {"id": 1, "x_mm": 250, "y_mm": 40},
-    {"id": 2, "x_mm": 80, "y_mm": 300}
-  ]
-}
-```
-
-마커 간격이 일정하지 않아도 각 ID의 실제 좌표를 개별 입력 가능함.
-결과 JSON에는 변환 행렬, 검출 ID, 누락 ID, 사용 마커 수, 재투영 오차가 포함됨.
-
-### 3.4 결과 이미지 생성
+### 두 이미지의 공통 마커 정합
 
 ```sh
-homography_tool view \
+homography_tool align-markers \
   --config ../config/homography_config.json \
-  --homography homography.json \
-  --input capture.png \
-  --output-dir view_result
+  --source channel_a.png \
+  --destination channel_b.png \
+  --output alignment.json
 ```
 
-호모그래피를 적용한 평면 이미지와 오차 표시 이미지 생성함.
+두 이미지에서 같은 ID의 마커를 찾아 source 픽셀 좌표를 destination 픽셀
+좌표로 변환하는 H를 계산한다. 실제 운영 정합은 웹 앱이 각 채널의 로컬 H와
+이 대응 관계를 함께 사용해 최종 전체 맵 H를 저장한다.
 
-## 4. 빌드
+## 설정
 
-저장소 루트에서 실행함.
+설정 설명과 예시는 [`../config/README.md`](../config/README.md)에 있다.
+핵심은 다음 네 가지다.
 
-```sh
-cmake -S server/02_homography/engine -B server/02_homography/engine/build
-cmake --build server/02_homography/engine/build -j2
-```
+- `dictionary`: 검출할 ArUco 사전
+- `marker_output`: 개별 마커 출력 기본값
+- `manual_solve.marker_size_mm`: 수동 산출 기본 마커 크기
+- `map.min_common_markers`: 웹 앱이 관리하는 채널 정합 정책
 
-실행 파일:
+고정 격자 기반의 `cols`, `rows`, `gap_mm` 같은 값과 `calibrate`, `view`
+명령은 제거했다. 현재의 폼보드 자유 배치 방식에서는 마커 ID와 실제
+검출 꼭짓점이 기준이다.
 
-```text
-server/02_homography/engine/build/homography_tool
-```
-
-## 5. 테스트
-
-### 5.1 단위 테스트
+## 빌드
 
 ```sh
 cmake -S server/02_homography/engine \
   -B server/02_homography/engine/build \
   -DBUILD_TESTING=ON
 cmake --build server/02_homography/engine/build -j2
+```
+
+## 테스트
+
+```sh
 cd server/02_homography/engine/build
 ctest --output-on-failure
 ```
 
-단위 테스트는 격자 좌표 계산, 행렬 JSON 변환, 보드 렌더링, 합성 이미지 기반 호모그래피 산출을 검증함.
+단위 테스트는 자유 배치 마커의 정사각형 제약, 꼭짓점 보정, 공통 ID 기반
+채널 정합, 좌표계 방향 반전 처리를 검증한다.

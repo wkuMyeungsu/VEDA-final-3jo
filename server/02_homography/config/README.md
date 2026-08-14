@@ -1,160 +1,89 @@
-# 설정 파일 안내
+# 호모그래피 설정 안내
 
-이 폴더의 JSON은 사용할 마커 보드와 통과 오차 기준을 정하는 파일임.
-보통 `homography_config.json`을 복사한 뒤 보드의 실제 크기에 맞춰
-기본 격자 부분만 수정함.
+이 폴더의 `homography_config.json`은 자유 배치 ArUco 마커를 이용한
+스트림별 호모그래피 산출과 전체 CCTV×채널 정합에 필요한 공통 설정이다.
 
-## 먼저 확인할 것
+현재 보정 방식은 마커를 격자에 맞춰 배치하지 않는다. 각 채널에서 검출한
+마커의 실제 정사각형 크기와 꼭짓점을 이용해 로컬 H를 만들고, 겹치는 공통
+마커의 ID와 방향으로 모든 CCTV×채널 스트림을 하나의 전체 맵 좌표계에 연결한다.
 
-- `marker_len_mm`, `gap_mm`: 실제 인쇄·배치 마커의 크기와 간격.
-- `cols`, `rows`: 가로·세로 마커 개수.
-- `id_offset`: 왼쪽 위 마커의 ID. ID가 10부터 시작하면 `10` 입력.
-- `inputs.image`: 고정 격자 산출과 검증에 사용할 서버 내 촬영 이미지 파일명.
-- 길이 단위: 기본 격자, 자동·수동 산출, 출력 크기를 모두 `mm`로 통일함.
-- `origin_corner`: 현재 `TL`(왼쪽 위)만 지원. 좌표의 X는 오른쪽,
-  Y는 아래쪽 방향.
-
-`marker_len_mm`는 실제 보드에서 검출할 검은 마커 한 변이고,
-`marker_output.size_mm`는 개별 마커 파일을 만들 때 출력할 영역의 한 변.
-두 값은 같은 마커를 가리킬 수 있지만 단위와 용도가 달라 별도 설정함.
-
-ID는 `id_offset`부터 왼쪽에서 오른쪽, 위에서 아래 순서로 배치함.
-예를 들어 `cols=4`, `rows=3`, `id_offset=0`이면 다음과 같음.
-
-```text
-원점 (0,0) → X
-┌────┬────┬────┬────┐
-│  0 │  1 │  2 │  3 │
-├────┼────┼────┼────┤
-│  4 │  5 │  6 │  7 │
-├────┼────┼────┼────┤
-│  8 │  9 │ 10 │ 11 │
-└────┴────┴────┴────┘
-Y는 아래 방향
-```
-
-## 설정 예시
-
-아래는 4열 × 8행 보드 예시임. 마커 한 변은 80 mm, 마커 사이 간격은
-43 mm, 첫 번째 마커의 ID는 0.
+## 설정 파일
 
 ```json
 {
-  "dictionary": "DICT_4X4_100",
-  "cols": 4,
-  "rows": 8,
-  "marker_len_mm": 80.0,
-  "gap_mm": 43.0,
-  "id_offset": 0,
-  "origin_corner": "TL",
-  "inputs": {
-    "image": "capture.png"
-  },
+  "dictionary": "DICT_4X4_50",
   "marker_output": {
     "size_mm": 100.0,
     "margin_mm": 20.0,
     "dpi": 300.0,
     "label": ""
   },
-  "calibration": {
-    "max_rmse_mm": 20.0,
-    "ransac_threshold_mm": 30.0,
-    "channel": 1
-  },
   "manual_solve": {
-    "marker_size_mm": 100.0,
-    "ransac_threshold_mm": 30.0
+    "marker_size_mm": 100.0
+  },
+  "map": {
+    "min_common_markers": 3
   },
   "outputs": {
-    "calibration": "homography_ch1.json",
-    "manual": "homography_manual.json",
-    "view_dir": "view_result"
-  },
-  "preview": {
-    "scale": 2,
-    "good_error_mm": 5.0,
-    "warning_error_mm": 10.0
+    "manual": "homography_manual.json"
   }
 }
 ```
 
-## 항목별 의미
+| 항목 | 의미 |
+| --- | --- |
+| `dictionary` | 실제로 인쇄한 ArUco 사전. 검출 대상과 반드시 같아야 함. |
+| `marker_output` | 개별 마커 PNG·SVG를 만들 때 사용할 기본 출력 크기와 여백. |
+| `manual_solve.marker_size_mm` | 사용자가 별도 입력하지 않았을 때 적용할 마커 한 변의 실제 길이. |
+| `map.min_common_markers` | 두 스트림 연결을 허용할 최소 공통 마커 수. 현재 최소 3개. |
+| `outputs.manual` | 스트림별 임시 산출물의 파일명. 최종 H의 저장 위치는 앱이 결정함. |
 
-### 보드 기본값
+## 의도적으로 제거한 항목
 
-| 항목 | 의미 | 예시 |
-| --- | --- | --- |
-| `dictionary` | ArUco ID를 읽는 규칙. 인쇄에 사용한 사전과 같아야 함. | `DICT_4X4_100` |
-| `cols`, `rows` | 보드의 열·행 개수. | `4`, `8` |
-| `marker_len_mm` | 마커 검은 사각형 한 변의 실제 길이. | `80.0` |
-| `gap_mm` | 이웃한 마커의 검은 사각형 사이 실제 간격. | `43.0` |
-| `id_offset` | 왼쪽 위 마커의 시작 ID. 이후 왼쪽에서 오른쪽, 위에서 아래 순서로 1씩 증가함. | `0` |
+다음 값은 고정 격자 보드에서만 의미가 있어 현재 설정에서 사용하지 않는다.
 
-예를 들어 위 설정에서 ID `5`는 두 번째 행의 두 번째 마커임. 보드
-좌표의 시작점은 왼쪽 위 마커의 왼쪽 위 모서리.
+- `cols`, `rows`: 격자의 열·행 수
+- `marker_len_mm`, `gap_mm`: 격자 마커 크기와 간격
+- `id_offset`, `origin_corner`: 격자 ID 순서와 좌표 원점
+- `inputs.image`: 예전 정적 이미지 기본 입력 경로
+- `calibration`: 격자 자동 산출 기준
+- `preview`: 격자 기반 결과 이미지 표시 기준
 
-### 마커 출력값
+현재 엔진에는 고정 격자용 `calibrate`·`view` 명령이 없다. 따라서 위 값을
+다시 추가해도 사용되지 않으며, 실제 위치는 마커 검출 결과와 사용자가
+화면에서 보정한 꼭짓점으로 결정한다.
 
-- `marker_output`: 마커 하나를 만들 때의 기본 크기, 여백, PNG 해상도.
+## 수동 산출 입력
 
-### 결과 파일
-
-- `outputs.calibration`: 고정 격자 호모그래피 결과 파일명.
-- `outputs.manual`: 수동 배치 호모그래피 결과 파일명.
-- `outputs.view_dir`: 검증 이미지 출력 디렉터리명.
-- 결과 파일명은 웹 UI에서 입력하지 않고 이 설정을 서버가 사용함.
-
-출력 단위는 다음과 같음.
-
-| 값 | 단위 | 기준 |
-| --- | --- | --- |
-| `marker_len_mm`, `gap_mm` | mm | 실제 고정 격자의 검출 좌표 |
-| `max_rmse_mm`, `ransac_threshold_mm` | mm | 자동 산출 오차 |
-| `marker_output.size_mm` | mm | 개별 마커 출력물의 실제 크기 |
-| `marker_size_mm`, `x_mm`, `y_mm` | mm | 수동 배치의 실제 좌표 |
-| `dpi` | DPI | PNG 출력 해상도 |
-| `preview.scale` | px/mm | 검증용 합성 이미지 배율 |
-
-### 정확도 판정
-
-- `max_rmse_mm`: `calibrate` 명령이 성공으로 인정할 최대 평균 오차.
-- `ransac_threshold_mm`: 일부 코너를 이상값으로 제외할 거리 기준.
-- `channel`: 결과 JSON에 기록할 채널 번호. 채널 1은 `1` 입력.
-- `manual_solve`의 두 값: 수동 배치 방식에서 사용하며 길이 단위는 `mm`.
-- `preview.scale`: 검증 이미지에서 1 mm를 그리는 픽셀 수.
-- `good_error_mm`, `warning_error_mm`: 검증 이미지의 초록·노랑·빨강 기준.
-
-정확도 기준을 바꾸기 전에 실제 촬영 이미지의 RMSE 확인 권장.
-기준을 너무 크게 잡으면 잘못된 보드도 통과할 수 있고, 너무 작게 잡으면
-정상적인 촬영도 실패할 수 있음.
-
-## 수동 배치 파일 예시
-
-격자가 일정하지 않거나 마커를 임의의 위치에 붙인 경우 별도의
-`layout.json` 사용함. `x_mm`, `y_mm`는 각 마커의 **왼쪽 위 모서리**
-위치이며, 원점에서 오른쪽·아래쪽으로 측정함.
+웹 앱이 엔진에 전달하는 `layout.json`은 다음과 같은 형태다.
 
 ```json
 {
   "marker_size_mm": 100,
-  "markers": [
-    {"id": 0, "x_mm": 0,   "y_mm": 0},
-    {"id": 1, "x_mm": 250, "y_mm": 40},
-    {"id": 2, "x_mm": 80,  "y_mm": 300}
-  ]
+  "reference_marker_id": 0,
+  "excluded_ids": [],
+  "corner_overrides": {
+    "0": [
+      {"x": 100, "y": 80},
+      {"x": 180, "y": 82},
+      {"x": 178, "y": 162},
+      {"x": 98, "y": 160}
+    ]
+  }
 }
 ```
 
-명령은 다음처럼 실행함.
+`corner_overrides`의 네 점은 원본 캡처의 픽셀 좌표다. 검출된 꼭짓점이
+조금 어긋난 경우에만 사용자가 화면에서 직접 보정한다. X/Y 기준선이나
+전체 보드의 고정 격자 좌표는 입력하지 않는다.
 
-```sh
-homography_tool solve-manual \
-  --config ../config/homography_config.json \
-  --input capture.png \
-  --layout layout.json \
-  --output homography_manual.json \
-  --overlay homography_overlay.png
+## 결과 저장
+
+전체 스트림 정합이 끝난 최종 H는 공용 서버 설정 경로에 저장된다.
+
+```text
+server/config/homography/CAM_01/homography_channel_<channel>_mm.json
 ```
 
-`markers`에 적은 ID가 촬영 이미지에서 보이지 않으면 결과의 `missing_ids`에
-기록됨. 최소 한 개의 유효한 마커가 보여야 수동 계산 진행 가능함.
+main 서버는 이 파일의 `H_pixel_to_world`, `image_size`, `stream_id`, `channel`을 읽어
+실시간 객체 좌표를 전체 맵 mm 좌표로 변환한다.

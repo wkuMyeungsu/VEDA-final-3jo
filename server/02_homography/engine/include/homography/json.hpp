@@ -6,7 +6,7 @@
 
 #include <string>
 
-// 결과와 설정을 JSON으로 변환함.
+// 결과를 JSON으로 변환함.
 namespace homography {
 
 using json = nlohmann::json;
@@ -19,11 +19,5 @@ cv::Mat json_to_matrix(const json& value);
 
 // 현재 시각을 UTC ISO-8601 문자열로 반환함.
 std::string utc_now();
-
-// 설정을 결과 JSON에 넣을 객체로 변환함.
-json config_to_json(const Config& config);
-
-// 호모그래피 결과 JSON 읽음.
-json read_homography(const std::string& path);
 
 }  // namespace homography

@@ -16,9 +16,6 @@ void print_usage();
 std::string argument(int argc, char** argv, const std::string& name,
                      const std::string& fallback = "");
 
-// 플래그 존재 여부 확인함.
-bool has_argument(int argc, char** argv, const std::string& name);
-
 // 문자열을 정수로 변환함. 실패하면 오류 발생함.
 int parse_int(const std::string& value, const char* label);
 
