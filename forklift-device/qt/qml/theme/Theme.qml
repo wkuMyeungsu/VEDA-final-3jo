@@ -185,6 +185,17 @@ QtObject {
         }
     }
 
+    // FPGA 누적 오류 배지용 문구 조립 (StatusStrip). "누적"은 IWarningDevice의 실제 동작을
+    // 그대로 옮긴 표현 -- 지금 순간의 상태가 아니라 마지막 CLEAR_ERROR 이후 한 번이라도
+    // 있었던 오류를 계속 들고 있는다는 뜻이라, 실시간 플래그와 헷갈리지 않게 이 단어를 그대로 씀.
+    function fpgaLatchLabel(checksumLatched, protocolLatched, timeoutLatched) {
+        const names = []
+        if (checksumLatched) names.push("체크섬")
+        if (protocolLatched) names.push("프로토콜")
+        if (timeoutLatched) names.push("타임아웃")
+        return names.join(" · ")
+    }
+
     // 카드/확대뷰가 공유하는 "경보 중" 테두리 규칙 -- 한쪽만 고치고 잊어버리는
     // 드리프트 방지용 (CameraCard·ExpandedCameraView가 각자 복제해서 쓰던 로직)
     function alertBorderColor(riskLevel, exceptionState) {

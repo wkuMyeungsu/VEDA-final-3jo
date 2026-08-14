@@ -193,9 +193,15 @@ void ActiveCameraController::handleWarningDeviceStateChanged()
         emit fpgaConnectionStateChanged();
     }
 
-    const bool errorLatched = m_warningDevice->checksumErrorLatched() || m_warningDevice->protocolErrorLatched()
-        || m_warningDevice->timeoutErrorLatched();                        // - 3개 누적 플래그를 하나로 합산 (CLEAR_ERROR 전까지 유지)
-    if (m_fpgaErrorLatched != errorLatched) {
+    const bool checksumLatched = m_warningDevice->checksumErrorLatched(); // - 개별 항목: 어떤 오류가 누적됐는지 화면에 구분해서 보여주기 위함 (StatusStrip)
+    const bool protocolLatched = m_warningDevice->protocolErrorLatched();
+    const bool timeoutLatched = m_warningDevice->timeoutErrorLatched();
+    const bool errorLatched = checksumLatched || protocolLatched || timeoutLatched; // - 3개 누적 플래그를 하나로 합산 (CLEAR_ERROR 전까지 유지)
+    if (m_checksumErrorLatched != checksumLatched || m_protocolErrorLatched != protocolLatched
+        || m_timeoutErrorLatched != timeoutLatched || m_fpgaErrorLatched != errorLatched) { // - 넷 중 하나라도 바뀐 경우에만 신호 발생 (IWarningDevice가 3개를 항상 같이 갱신하므로 신호도 공유)
+        m_checksumErrorLatched = checksumLatched;
+        m_protocolErrorLatched = protocolLatched;
+        m_timeoutErrorLatched = timeoutLatched;
         m_fpgaErrorLatched = errorLatched;
         emit fpgaErrorLatchedChanged();
     }
