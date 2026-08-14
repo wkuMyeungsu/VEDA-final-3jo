@@ -103,23 +103,13 @@ void DetectionOverlay::paint(QPainter *painter)
     if (m_forkliftBBox.isValid())                                              // - 지게차 검출 영역 확인: 유효한 지게차 BBox 영역 그리기
         drawBox(painter, videoRect, m_forkliftBBox, m_forkliftColor, QStringLiteral("FORKLIFT"));
 
-    if (m_personBBox.isValid() && m_forkliftBBox.isValid()) {                 // - 양쪽 객체 존재 확인: 사람과 지게차 BBox가 모두 유효할 때 거리 표시
+    // 거리 라벨은 personBBox만 있으면 표시 -- forkliftBBox는 ArUco 연동을 안 하기로
+    // 결정되어 앞으로도 계속 invalid라 조건에서 뺌. distanceM/distanceValid는 서버에서
+    // personBBox와 무관하게 독립적으로 내려오는 값이라 그대로 씀
+    if (m_personBBox.isValid()) {                                              // - 사람 검출 확인: 사람 BBox가 유효할 때만 거리 표시
         const QRectF personRect = AspectFit::mapNormalizedRect(               // - 사람 픽셀 좌표 변환: 비율 좌표를 화면 픽셀 좌표로 변환
             QRectF(m_personBBox.x(), m_personBBox.y(), m_personBBox.width(), m_personBBox.height()), videoRect);
-        const QRectF forkliftRect = AspectFit::mapNormalizedRect(             // - 지게차 픽셀 좌표 변환: 비율 좌표를 화면 픽셀 좌표로 변환
-            QRectF(m_forkliftBBox.x(), m_forkliftBBox.y(), m_forkliftBBox.width(), m_forkliftBBox.height()),
-            videoRect);
 
-        const QPointF personCenter = personRect.center();                       // - 사람 중심점 산출: 사각형 중심 위치 계산
-        const QPointF forkliftCenter = forkliftRect.center();                   // - 지게차 중심점 산출: 사각형 중심 위치 계산
-
-        QPen linePen(m_lineColor);                                             // - 연결선 펜 생성: 거리 표시 점선 펜 설정
-        linePen.setWidthF(1.5);                                                // - 선 두께 설정: 점선 두께 지정
-        linePen.setStyle(Qt::DashLine);                                        // - 선 스타일 설정: 점선 스타일 지정
-        painter->setPen(linePen);                                              // - 펜 적용: 그려질 펜 등록
-        painter->drawLine(personCenter, forkliftCenter);                       // - 연결선 그리기: 두 중심점을 연결하는 점선 그리기
-
-        const QPointF mid = (personCenter + forkliftCenter) / 2.0;             // - 중간점 산출: 라벨 표출 위치 계산
         const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 m").arg(m_distanceM, 0, 'f', 2)
                                                        : QStringLiteral("측정 불가"); // - 거리 텍스트 구성: 유효성에 따른 텍스트 생성
 
@@ -129,7 +119,15 @@ void DetectionOverlay::paint(QPainter *painter)
         painter->setFont(font);                                                // - 폰트 적용: 그려질 폰트 등록
 
         const QFontMetrics metrics(font);                                      // - 폰트 측정기 생성: 텍스트 영역 계산용
-        const QRectF textRect = QRectF(metrics.boundingRect(distanceLabel)).adjusted(-8, -4, 8, 4).translated(mid); // - 라벨 영역 산출: 여백 포함 영역 지정
+        const QPointF anchor = personRect.topRight() + QPointF(6, -6);         // - 배지 기준점 산출: 사람 상자 우상단 바깥쪽 위치
+        QRectF textRect = QRectF(metrics.boundingRect(distanceLabel)).adjusted(-8, -4, 8, 4).translated(anchor); // - 라벨 영역 산출: 여백 포함 영역 지정
+
+        // personBBox가 화면 가장자리에 가까우면 배지가 오버레이 밖으로 나가서 안 보일 수
+        // 있음 -- 그리는 영역(bounds) 안으로 되돌림
+        if (textRect.top() < bounds.top())                                     // - 위쪽 이탈 확인: 배지가 위로 벗어나면 되돌림
+            textRect.moveTop(bounds.top());                                    // - 위치 보정: 위쪽 경계에 맞춤
+        if (textRect.right() > bounds.right())                                 // - 오른쪽 이탈 확인: 배지가 우측으로 벗어나면 되돌림
+            textRect.moveRight(bounds.right());                                // - 위치 보정: 오른쪽 경계에 맞춤
 
         QPainterPath badgePath;                                                // - 배지 경로 생성: 둥근 사각형 배경 경로 생성
         badgePath.addRoundedRect(textRect, 6, 6);                              // - 둥근 모서리 추가: 모서리 반경 지정
