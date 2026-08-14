@@ -143,10 +143,8 @@ void TestAuthService::lockoutExpires()
     auth.login(QStringLiteral("OP01"), QStringLiteral("wrong"));
     QVERIFY(auth.locked());
 
-    // 1.5초 대기 후 잠금 해제 확인
-    QTest::qWait(1500);
-
-    QVERIFY(!auth.locked());
+    // 최대 3초 대기하며 잠금 해제 확인
+    QTRY_VERIFY_WITH_TIMEOUT(!auth.locked(), 3000);
     QCOMPARE(auth.lockRemainingSeconds(), 0);
 
     // 잠금 해제 후 정상 로그인

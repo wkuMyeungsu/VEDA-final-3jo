@@ -32,6 +32,7 @@ void AlertListModel::upsert(const QString &cameraId, const QString &name, const 
             beginRemoveRows(QModelIndex(), row, row);
             m_entries.removeAt(row);
             endRemoveRows();
+            emit countChanged();
         }
         return;
     }
@@ -62,6 +63,7 @@ void AlertListModel::upsert(const QString &cameraId, const QString &name, const 
     beginInsertRows(QModelIndex(), 0, 0);
     m_entries.prepend(entry);
     endInsertRows();
+    emit countChanged();
 }
 
 int AlertListModel::rowCount(const QModelIndex &parent) const

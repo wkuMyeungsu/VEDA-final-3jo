@@ -18,12 +18,14 @@ void CameraListModel::setCameras(const QVector<CameraInfo> &cameras)
         m_rows.append(row);
     }
     endResetModel();
+    emit countChanged();
 }
 
 int CameraListModel::rowForCameraId(const QString &cameraId) const
 {
     for (int i = 0; i < m_rows.size(); ++i) {
-        if (m_rows.at(i).info.cameraId == cameraId)
+        const auto &info = m_rows.at(i).info;
+        if (info.effectiveId() == cameraId || info.streamId == cameraId || info.cameraId == cameraId)
             return i;
     }
     return -1;
@@ -32,6 +34,62 @@ int CameraListModel::rowForCameraId(const QString &cameraId) const
 int CameraListModel::indexForCameraId(const QString &cameraId) const
 {
     return rowForCameraId(cameraId);
+}
+
+int CameraListModel::videoConnectionStateFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return static_cast<int>(m_rows.at(row).videoConnectionState);
+    return 0;
+}
+
+int CameraListModel::riskLevelFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return static_cast<int>(m_rows.at(row).riskLevel);
+    return 0;
+}
+
+int CameraListModel::exceptionStateFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return static_cast<int>(m_rows.at(row).exceptionState);
+    return 0;
+}
+
+double CameraListModel::distanceMFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).distanceM;
+    return 0.0;
+}
+
+bool CameraListModel::distanceValidFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).distanceValid;
+    return false;
+}
+
+QString CameraListModel::nameFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).info.name;
+    return cameraId;
+}
+
+QString CameraListModel::zoneFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).info.zone;
+    return QString();
 }
 
 void CameraListModel::updateRisk(const QString &cameraId, RiskTypes::RiskLevel level,
@@ -51,6 +109,7 @@ void CameraListModel::updateRisk(const QString &cameraId, RiskTypes::RiskLevel l
     // -> QML이 해당 셀만 다시 그림 (카드 전체를 다시 그리는 것보다 가벼움)
     const QModelIndex idx = index(row);
     emit dataChanged(idx, idx, {RiskLevelRole, ExceptionStateRole, DistanceRole, DistanceValidRole});
+    emit riskUpdated(cameraId, static_cast<int>(level), static_cast<int>(exception), distanceM);
 }
 
 void CameraListModel::updateVideoConnectionState(const QString &cameraId, RiskTypes::ConnectionState state)
@@ -62,6 +121,7 @@ void CameraListModel::updateVideoConnectionState(const QString &cameraId, RiskTy
     m_rows[row].videoConnectionState = state;
     const QModelIndex idx = index(row);
     emit dataChanged(idx, idx, {VideoConnectionStateRole});
+    emit videoConnectionChanged(cameraId, static_cast<int>(state));
 }
 
 int CameraListModel::rowCount(const QModelIndex &parent) const
@@ -79,7 +139,7 @@ QVariant CameraListModel::data(const QModelIndex &index, int role) const
 
     const Row &row = m_rows.at(index.row());
     switch (role) {
-    case CameraIdRole: return row.info.cameraId;
+    case CameraIdRole: return row.info.effectiveId();
     case NameRole: return row.info.name;
     case ZoneRole: return row.info.zone;
     case RiskLevelRole: return QVariant::fromValue(row.riskLevel);
@@ -87,6 +147,8 @@ QVariant CameraListModel::data(const QModelIndex &index, int role) const
     case DistanceRole: return row.distanceM;
     case DistanceValidRole: return row.distanceValid;
     case VideoConnectionStateRole: return QVariant::fromValue(row.videoConnectionState);
+    case StreamIdRole: return row.info.streamId;
+    case ChannelRole: return row.info.channel;
     default: return {};
     }
 }
@@ -104,5 +166,7 @@ QHash<int, QByteArray> CameraListModel::roleNames() const
         {DistanceRole, "distanceM"},
         {DistanceValidRole, "distanceValid"},
         {VideoConnectionStateRole, "videoConnectionState"},
+        {StreamIdRole, "streamId"},
+        {ChannelRole, "channel"},
     };
 }

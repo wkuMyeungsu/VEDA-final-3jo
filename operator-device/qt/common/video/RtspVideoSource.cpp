@@ -185,6 +185,10 @@ void RtspVideoSource::deliverPending()
         m_pendingFrame = QImage();
     }
 
+    if (connectionState() != RiskTypes::ConnectionState::Connected) {
+        setConnectionState(RiskTypes::ConnectionState::Connected);
+    }
+
     emit frameReady(frame);
 }
 

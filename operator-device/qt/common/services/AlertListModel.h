@@ -13,6 +13,7 @@
 class AlertListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
 
 public:
     enum Roles {
@@ -28,6 +29,10 @@ public:
 
     explicit AlertListModel(QObject *parent = nullptr);
 
+signals:
+    void countChanged();
+
+public:
     // cameraId가 이미 목록에 있으면 값만 갱신(update), 없으면 새로 추가(insert)
     // 단, level이 Safe고 exception도 None이면(=더 이상 위험하지 않으면) 목록에서 제거
     // distanceValid: distanceM이 실제 측정값인지(true), 서버가 측정불가로 보낸건지(false)

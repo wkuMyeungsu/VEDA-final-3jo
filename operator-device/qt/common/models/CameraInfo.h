@@ -14,12 +14,15 @@ enum class VideoSourceType {
 QString videoSourceTypeToString(VideoSourceType type);
 VideoSourceType videoSourceTypeFromString(const QString &value);
 
-// Static description of a camera as read from config/cameras.json.
 struct CameraInfo {
+    QString streamId;
     QString cameraId;
+    int channel = 0;
     QString name;
     QString zone;
     VideoSourceType sourceType = VideoSourceType::Mock;
     QString rtspUrl;
     QString localFilePath;
+
+    QString effectiveId() const { return streamId.isEmpty() ? cameraId : streamId; }
 };
