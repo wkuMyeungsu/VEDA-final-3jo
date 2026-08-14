@@ -130,8 +130,11 @@ SafetyServerConfig loadSafetyServerConfig(const std::string& path);
 // 상대 H 경로는 실행 디렉터리가 아니라 공통 설정 파일의 디렉터리를 기준으로 한다.
 std::string resolveConfigRelativePath(const SafetyServerConfig& config, const std::string& path);
 
-// 한 디렉터리의 운영 설정 파일들을 읽고, 서로 연결되는 값까지 한 번에 검증한다.
-SafetyServerConfig loadMultiCameraServerConfig(const std::string& config_dir);
+// main 전용 정책 설정과 server/config 공통 카메라 설정을 읽고,
+// 서로 연결되는 값까지 한 번에 검증한다.
+SafetyServerConfig loadMultiCameraServerConfig(
+    const std::string& config_dir, const std::string& common_config_dir = {});
 std::string resolveConfigDirectory();
+std::string resolveCommonConfigDirectory(const std::string& config_dir);
 
 }  // namespace forklift::config

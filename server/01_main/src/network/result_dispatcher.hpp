@@ -282,9 +282,16 @@ private:
         // 여러 스레드(판정 루프 / 하트비트 워커)가 같이 찍으므로 한 줄을 통째로
         // 만들어 한 번에 내보낸다 - 스트림에 조각으로 흘리면 줄이 서로 섞인다.
         std::ostringstream line;
-        line << "[송신] risk_event seq=" << seq
+        line << "[판정] risk_event seq=" << seq
              << " reason=" << reason
-             << " risk_level=" << toString(r.final_risk)
+             << " terminal=" << (r.terminal_id.empty() ? "-" : r.terminal_id)
+             << " stream=" << (r.stream_id.empty() ? "-" : r.stream_id)
+             << " camera=" << (r.source_camera_id.empty() ? r.camera_id : r.source_camera_id)
+             << " channel=" << r.channel
+             << " distance_mm=";
+        if (r.distance_mm < 0.0) line << "-";
+        else line << std::fixed << std::setprecision(1) << r.distance_mm;
+        line << " risk_level=" << toString(r.final_risk)
              << " exception_state=" << toString(r.exception)
              << " t=" << std::put_time(&tm_buf, "%H:%M:%S")
              << '.' << std::setfill('0') << std::setw(3) << wall_ms

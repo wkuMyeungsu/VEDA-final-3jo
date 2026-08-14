@@ -1,3 +1,2 @@
 *.json
 !*.sample.json
-!camera_model.json

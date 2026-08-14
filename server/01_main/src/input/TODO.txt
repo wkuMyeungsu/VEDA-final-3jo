@@ -17,7 +17,7 @@
 [ ] 실물 카메라 RTSP 스트림 연결 -> XML 이 실제로 도달하는지 확인.
     실행:
       forklift_safety_server "rtsp://<user>:<password>@192.168.0.3:554/0/onvif/profile2/media.smp"
-    (RTSP URL·camera_id 등은 config/camera_config.json 에 있음: rtsp_url 위와 동일,
+    (RTSP URL·camera_id 등은 server/config/camera_list.json 에 있음: rtsp_url 위와 동일,
      camera_id "cam_01", metadata_topic tns1:OpenApp/ArUCo_Detection/MarkerDetected,
      ntp_server 192.168.0.1.)
     리눅스/윈도우 모두 giolibproxy 로딩 지연으로 RTSP 연결이 느려질 수 있으므로,

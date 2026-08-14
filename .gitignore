@@ -7,6 +7,8 @@
 rtsp_credentials*
 server/02_homography/config/camera_config.json
 server/01_main/config/homography/*.json
+/server/config/camera_list.json
+/server/config/homography/**/*.json
 .env
 forklift-device/qt/config/cameras.json
 operator-device/qt/config/cameras.json

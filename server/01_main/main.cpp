@@ -319,15 +319,34 @@ struct CentralServer::StreamWorker {
                     if (detail) g_error_free(detail);
                     if (debug) g_free(debug);
                     retry_needed = true;
+                } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
+                    // EOS는 해당 RTSP 스트림이 끝났다는 뜻이다.
+                    // 중앙 서버 전체를 멈추지 않고 이 스트림만 재연결한다.
+                    std::cerr << "[RTSP 종료] " << stream.stream_id
+                              << " 스트림이 종료되어 재연결합니다.\n";
+                    retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_STATE_CHANGED &&
                            GST_MESSAGE_SRC(message) == GST_OBJECT(graph)) {
                     GstState old_state, new_state, pending;
                     gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
-                    reached_playing = new_state == GST_STATE_PLAYING;
-                    if (reached_playing) failures = 0;
+                    if (new_state == GST_STATE_PLAYING) {
+                        // NULL -> READY -> PAUSED 같은 중간 상태 메시지를
+                        // 받은 즉시 파이프라인을 닫으면 SDP 수신 전에 연결이 끊긴다.
+                        // PLAYING까지 기다린 뒤에도 메타데이터를 계속 받는다.
+                        if (!reached_playing) {
+                            std::cerr << "[RTSP 연결] " << stream.stream_id
+                                      << " 메타데이터 수신 시작\n";
+                        }
+                        reached_playing = true;
+                        failures = 0;
+                    }
                 }
                 gst_message_unref(message);
-                break;
+
+                // 상태 변경 메시지는 정상적인 연결 과정의 일부다.
+                // 오류나 EOS가 올 때까지 계속 bus를 감시해야 메타데이터를
+                // 지속적으로 수신할 수 있다.
+                if (retry_needed) break;
             }
             gst_object_unref(bus);
             gst_element_set_state(graph, GST_STATE_NULL);
@@ -398,15 +417,28 @@ void CentralServer::stop() {
 int main(int argc, char* argv[]) {
     gst_init(&argc, &argv);
     std::string config_dir = forklift::config::resolveConfigDirectory();
-    if (argc == 3 && std::string(argv[1]) == "--config-dir") config_dir = argv[2];
-    else if (argc != 1) {
-        std::cerr << "사용법: " << argv[0] << " [--config-dir PATH]\n";
-        return 1;
+    std::string common_config_dir;
+    for (int index = 1; index < argc; index += 2) {
+        if (index + 1 >= argc) {
+            std::cerr << "사용법: " << argv[0]
+                      << " [--config-dir PATH] [--common-config-dir PATH]\n";
+            return 1;
+        }
+        const std::string option = argv[index];
+        if (option == "--config-dir") config_dir = argv[index + 1];
+        else if (option == "--common-config-dir") common_config_dir = argv[index + 1];
+        else {
+            std::cerr << "사용법: " << argv[0]
+                      << " [--config-dir PATH] [--common-config-dir PATH]\n";
+            return 1;
+        }
     }
+    if (common_config_dir.empty())
+        common_config_dir = forklift::config::resolveCommonConfigDirectory(config_dir);
 
     forklift::config::SafetyServerConfig config;
     try {
-        config = forklift::config::loadMultiCameraServerConfig(config_dir);
+        config = forklift::config::loadMultiCameraServerConfig(config_dir, common_config_dir);
     } catch (const forklift::config::SafetyServerConfigError& error) {
         std::cerr << "[기동 실패] " << error.what() << "\n";
         return 2;
