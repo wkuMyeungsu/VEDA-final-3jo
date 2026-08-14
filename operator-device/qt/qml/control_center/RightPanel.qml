@@ -1,19 +1,20 @@
 import QtQuick
+import QtQuick.Layouts
 import Safety.Common
 
 Item {
     id: root
     signal cameraFocusRequested(string cameraId)
 
-    property int activeTab: 0 // 0: 레이더 맵, 1: 경보 & 카메라 목록
+    property int activeTab: 0 // 0: 구역 계층도, 1: 경보 & 통신 상태
 
-    Column {
+    ColumnLayout {
         anchors.fill: parent
         spacing: Theme.spacingSm
 
         // 상단 KPI 실시간 요약 카드
         Rectangle {
-            width: parent.width
+            Layout.fillWidth: true
             height: 64
             radius: Theme.radiusMd
             color: Theme.colorSurface
@@ -25,7 +26,7 @@ Item {
                 anchors.margins: Theme.spacingSm
                 spacing: Theme.spacingXs
 
-                // KPI 1: 활성 카메라
+                // KPI 1: 활성 카메라 채널
                 Rectangle {
                     width: (parent.width - Theme.spacingXs * 2) / 3
                     height: parent.height
@@ -36,7 +37,7 @@ Item {
                         anchors.centerIn: parent
                         spacing: 2
                         Text {
-                            text: "카메라"
+                            text: "카메라 채널"
                             color: Theme.colorTextMuted
                             font.pixelSize: Theme.typeLabel.size
                             anchors.horizontalCenter: parent.horizontalCenter
@@ -79,7 +80,7 @@ Item {
                     }
                 }
 
-                // KPI 3: 안전 가동률
+                // KPI 3: 시스템 상태
                 Rectangle {
                     width: (parent.width - Theme.spacingXs * 2) / 3
                     height: parent.height
@@ -109,7 +110,7 @@ Item {
 
         // 탭 선택 바
         Rectangle {
-            width: parent.width
+            Layout.fillWidth: true
             height: 34
             radius: Theme.radiusSm
             color: Theme.colorSurfaceSunken
@@ -131,7 +132,7 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "🗺️ 2D 레이더 맵"
+                        text: "🗂️ 구역 · 카메라 계층도"
                         color: root.activeTab === 0 ? Theme.colorTextPrimary : Theme.colorTextMuted
                         font.pixelSize: Theme.typeCaption.size
                         font.weight: root.activeTab === 0 ? Font.Medium : Font.Normal
@@ -171,11 +172,11 @@ Item {
 
         // 탭 콘텐츠 영역
         Item {
-            width: parent.width
-            height: parent.height - 110
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
-            // 탭 0: 2D 레이더 평면도
-            RadarMapView {
+            // 탭 0: 구역 ➔ 카메라 ➔ 채널 3단계 계층 트리
+            ZoneHierarchyView {
                 anchors.fill: parent
                 visible: root.activeTab === 0
                 onCameraSelected: (cameraId) => root.cameraFocusRequested(cameraId)
