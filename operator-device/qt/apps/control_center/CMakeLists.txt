@@ -26,7 +26,9 @@ set(CONTROL_CENTER_QML_FILES
     ${CMAKE_SOURCE_DIR}/qml/control_center/EventLogPanel.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/DemoPanel.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/LoginOverlay.qml
-    ${CMAKE_SOURCE_DIR}/qml/control_center/RadarMapView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/ZoneHierarchyView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/ZoneListView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/CameraOverviewView.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/FocusLayoutView.qml
 )
 foreach(qml_file ${CONTROL_CENTER_QML_FILES})
@@ -73,6 +75,6 @@ endif()
 # - 탐색기 더블클릭용 래퍼: Qt/GStreamer 경로를 PATH에 얹어서 실행
 if(WIN32)
     file(GENERATE OUTPUT $<TARGET_FILE_DIR:control_center>/run_control_center.bat
-        CONTENT "@echo off\r\nset \"PATH=${QT6_INSTALL_PREFIX}/bin;C:\\Program Files\\gstreamer\\1.0\\mingw_x86_64\\bin;%PATH%\"\r\nstart \"\" \"%~dp0control_center.exe\" %*\r\n"
+        CONTENT "@echo off\r\nset \"PATH=C:\\Qt\\Tools\\mingw1310_64\\bin;${QT6_INSTALL_PREFIX}/bin;C:\\Program Files\\gstreamer\\1.0\\mingw_x86_64\\bin;C:\\Program Files\\mosquitto;%PATH%\"\r\nset \"QML_IMPORT_PATH=%~dp0qml;%~dp0..;%QML_IMPORT_PATH%\"\r\ncd /d \"%~dp0\"\r\nstart \"\" \"%~dp0control_center.exe\" %*\r\n"
     )
 endif()

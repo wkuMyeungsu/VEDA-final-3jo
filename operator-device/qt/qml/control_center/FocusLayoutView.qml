@@ -4,9 +4,17 @@ import Safety.Common
 // 1 + (N-1) 포커스 레이아웃: 메인 대형 뷰 1대 + 사이드 서브 카메라 (N-1)대 스트립
 Item {
     id: root
-    property string activeCameraId: cameraListModel.count > 0 ? cameraListModel.data(cameraListModel.index(0, 0), CameraListModel.CameraIdRole) : ""
+    property string activeCameraId: "CAM_01_CH_01"
 
     signal cameraSelected(string cameraId)
+
+    Component.onCompleted: {
+        if (cameraListModel.count > 0) {
+            var firstId = cameraListModel.data(cameraListModel.index(0, 0), CameraListModel.CameraIdRole);
+            if (firstId && firstId.length > 0)
+                root.activeCameraId = firstId;
+        }
+    }
 
     Row {
         anchors.fill: parent
@@ -20,54 +28,13 @@ Item {
             CameraCard {
                 anchors.fill: parent
                 cameraId: root.activeCameraId
-                cameraName: {
-                    for (var i = 0; i < cameraListModel.count; ++i) {
-                        var idx = cameraListModel.index(i, 0)
-                        if (cameraListModel.data(idx, CameraListModel.CameraIdRole) === root.activeCameraId)
-                            return cameraListModel.data(idx, CameraListModel.NameRole)
-                    }
-                    return root.activeCameraId
-                }
-                zone: {
-                    for (var i = 0; i < cameraListModel.count; ++i) {
-                        var idx = cameraListModel.index(i, 0)
-                        if (cameraListModel.data(idx, CameraListModel.CameraIdRole) === root.activeCameraId)
-                            return cameraListModel.data(idx, CameraListModel.ZoneRole)
-                    }
-                    return ""
-                }
-                riskLevel: {
-                    for (var i = 0; i < cameraListModel.count; ++i) {
-                        var idx = cameraListModel.index(i, 0)
-                        if (cameraListModel.data(idx, CameraListModel.CameraIdRole) === root.activeCameraId)
-                            return cameraListModel.data(idx, CameraListModel.RiskLevelRole)
-                    }
-                    return 0
-                }
-                distanceM: {
-                    for (var i = 0; i < cameraListModel.count; ++i) {
-                        var idx = cameraListModel.index(i, 0)
-                        if (cameraListModel.data(idx, CameraListModel.CameraIdRole) === root.activeCameraId)
-                            return cameraListModel.data(idx, CameraListModel.DistanceRole)
-                    }
-                    return 0
-                }
-                distanceValid: {
-                    for (var i = 0; i < cameraListModel.count; ++i) {
-                        var idx = cameraListModel.index(i, 0)
-                        if (cameraListModel.data(idx, CameraListModel.CameraIdRole) === root.activeCameraId)
-                            return cameraListModel.data(idx, CameraListModel.DistanceValidRole)
-                    }
-                    return true
-                }
-                videoConnectionState: {
-                    for (var i = 0; i < cameraListModel.count; ++i) {
-                        var idx = cameraListModel.index(i, 0)
-                        if (cameraListModel.data(idx, CameraListModel.CameraIdRole) === root.activeCameraId)
-                            return cameraListModel.data(idx, CameraListModel.VideoConnectionStateRole)
-                    }
-                    return 0
-                }
+                cameraName: cameraListModel.nameFor(root.activeCameraId)
+                zone: cameraListModel.zoneFor(root.activeCameraId)
+                riskLevel: cameraListModel.riskLevelFor(root.activeCameraId)
+                exceptionState: cameraListModel.exceptionStateFor(root.activeCameraId)
+                distanceM: cameraListModel.distanceMFor(root.activeCameraId)
+                distanceValid: cameraListModel.distanceValidFor(root.activeCameraId)
+                videoConnectionState: cameraListModel.videoConnectionStateFor(root.activeCameraId)
                 onClicked: root.cameraSelected(root.activeCameraId)
             }
         }

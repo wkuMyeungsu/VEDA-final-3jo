@@ -62,6 +62,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spacingXs
 
+                // 연결 상태 표시 점
                 Rectangle {
                     width: 6
                     height: 6
@@ -70,17 +71,39 @@ Rectangle {
                     color: Theme.connectionColor(root.videoConnectionState)
                 }
 
+                // 1단계: 구역 뱃지 (Zone)
+                Rectangle {
+                    implicitWidth: zoneText.implicitWidth + 8
+                    height: 18
+                    radius: 3
+                    color: Qt.rgba(1, 1, 1, 0.08)
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Text {
+                        id: zoneText
+                        anchors.centerIn: parent
+                        text: root.zone.length > 0 ? root.zone : "ZONE"
+                        color: Theme.colorTextSecondary
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                // 구분자
+                Text {
+                    text: "›"
+                    color: Theme.colorTextMuted
+                    font.pixelSize: Theme.typeCaption.size
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                // 2단계 & 3단계: 카메라 & 채널 명칭
                 Text {
                     text: root.cameraName.length > 0 ? root.cameraName : root.cameraId
                     color: Theme.colorTextPrimary
                     font.pixelSize: Theme.typeCaption.size
                     font.weight: Font.Medium
-                }
-
-                Text {
-                    text: "· " + root.zone
-                    color: Theme.colorTextMuted
-                    font.pixelSize: Theme.typeCaption.size
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
 

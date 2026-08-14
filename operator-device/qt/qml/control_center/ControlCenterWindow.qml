@@ -15,15 +15,7 @@ ApplicationWindow {
     title: systemName
     color: Theme.colorBackground
 
-    // 그리드 카드/경보/카메라 상태 목록 어디서 클릭하든 여기로 모여서 처리.
-    // 이미 확대뷰인 상태에서 다른 카메라를 고르면(경보 클릭 등) push 대신
-    // replace -- 스택이 계속 쌓이는 것 방지
-    function showCamera(cameraId) {
-        if (cameraStack.depth > 1)
-            cameraStack.replace(expandedComponent, { cameraId: cameraId }, StackView.Immediate)
-        else
-            cameraStack.push(expandedComponent, { cameraId: cameraId })
-    }
+
 
     Shortcut {
         sequence: "Ctrl+Shift+D"
@@ -97,8 +89,7 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: rightPanel.left
             anchors.rightMargin: Theme.spacingMd
-            initialItem: gridComponent
-            // pop/push 후 새 화면이 키 입력을 받도록 포커스 재부여
+            initialItem: zoneListComponent
             onCurrentItemChanged: if (currentItem) currentItem.forceActiveFocus()
         }
 
@@ -108,35 +99,60 @@ ApplicationWindow {
             anchors.bottom: parent.bottom
             anchors.right: parent.right
             width: Theme.rightPanelWidth
-            onCameraFocusRequested: (cameraId) => window.showCamera(cameraId)
+            onCameraFocusRequested: (targetId) => window.showCamera(targetId)
         }
     }
 
-    property int layoutMode: 0 // 0: Grid (2x2/NxN), 1: 1+(N-1) Focus
+    Component {
+        id: zoneListComponent
+        ZoneListView {
+            onZoneSelected: (zoneId) => {
+                cameraStack.push(cameraOverviewComponent, { zoneId: zoneId })
+            }
+        }
+    }
 
-    onLayoutModeChanged: {
-        if (cameraStack.depth === 1) {
-            cameraStack.replace(layoutMode === 0 ? gridComponent : focusComponent, StackView.Immediate)
+    Component {
+        id: cameraOverviewComponent
+        CameraOverviewView {
+            onCameraSelected: (cameraId) => {
+                cameraStack.push(gridComponent, { cameraId: cameraId })
+            }
+            onBackRequested: cameraStack.pop()
         }
     }
 
     Component {
         id: gridComponent
         CameraGrid {
-            onCameraSelected: (cameraId) => window.showCamera(cameraId)
-        }
-    }
-
-    Component {
-        id: focusComponent
-        FocusLayoutView {
-            onCameraSelected: (cameraId) => window.showCamera(cameraId)
+            onCameraSelected: (cameraId) => window.showExpanded(cameraId)
+            onBackRequested: cameraStack.pop()
         }
     }
 
     Component {
         id: expandedComponent
         ExpandedCameraView {}
+    }
+
+    function showExpanded(cameraId) {
+        cameraStack.push(expandedComponent, { cameraId: cameraId })
+    }
+
+    function showCamera(targetId) {
+        if (targetId.startsWith("ZONE_")) {
+            cameraStack.pop(null)
+            cameraStack.push(cameraOverviewComponent, { zoneId: targetId })
+        } else if (targetId === "CAM_01") {
+            cameraStack.pop(null)
+            cameraStack.push(cameraOverviewComponent, { zoneId: "ZONE_A" })
+            cameraStack.push(gridComponent, { cameraId: targetId })
+        } else {
+            cameraStack.pop(null)
+            cameraStack.push(cameraOverviewComponent, { zoneId: "ZONE_A" })
+            cameraStack.push(gridComponent, { cameraId: "CAM_01" })
+            cameraStack.push(expandedComponent, { cameraId: targetId })
+        }
     }
 
     EventLogPanel {
