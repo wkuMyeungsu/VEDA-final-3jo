@@ -17,7 +17,9 @@ class RiskMetadata
 {
     Q_GADGET
     QML_VALUE_TYPE(riskMetadata)
+    Q_PROPERTY(QString streamId READ streamId WRITE setStreamId)
     Q_PROPERTY(QString cameraId READ cameraId WRITE setCameraId)
+    Q_PROPERTY(int channel READ channel WRITE setChannel)
     Q_PROPERTY(QString zone READ zone WRITE setZone)
     Q_PROPERTY(RiskTypes::RiskLevel riskLevel READ riskLevel WRITE setRiskLevel)
     Q_PROPERTY(double distanceM READ distanceM WRITE setDistanceM)
@@ -31,8 +33,16 @@ class RiskMetadata
 public:
     RiskMetadata() = default;
 
+    QString streamId() const { return m_streamId; }
+    void setStreamId(const QString &id) { m_streamId = id; }
+
     QString cameraId() const { return m_cameraId; }
     void setCameraId(const QString &id) { m_cameraId = id; }
+
+    int channel() const { return m_channel; }
+    void setChannel(int ch) { m_channel = ch; }
+
+    QString effectiveId() const { return m_streamId.isEmpty() ? m_cameraId : m_streamId; }
 
     QString zone() const { return m_zone; }
     void setZone(const QString &zone) { m_zone = zone; }
@@ -62,7 +72,9 @@ public:
     QJsonObject toJson() const;
 
 private:
+    QString m_streamId;
     QString m_cameraId;
+    int m_channel = 0;
     QString m_zone;
     RiskTypes::RiskLevel m_riskLevel = RiskTypes::RiskLevel::Safe;
     double m_distanceM = 0.0;

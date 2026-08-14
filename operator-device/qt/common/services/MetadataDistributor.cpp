@@ -83,15 +83,17 @@ RiskMetadata MetadataDistributor::latestFor(const QString &cameraId) const
 void MetadataDistributor::handleMetadata(const RiskMetadata &metadata)
 {
     // 1) 카메라별 마지막 상태 캐시 갱신 (latestFor()가 읽는 곳)
+    const QString targetId = !metadata.streamId().isEmpty() ? metadata.streamId() : metadata.cameraId();
+    m_latest.insert(targetId, metadata);
     m_latest.insert(metadata.cameraId(), metadata);
 
     // 2) 카메라 그리드/카드 모델 갱신 -> CameraGrid.qml, CameraCard.qml
-    m_cameraListModel.updateRisk(metadata.cameraId(), metadata.riskLevel(), metadata.exceptionState(),
+    m_cameraListModel.updateRisk(targetId, metadata.riskLevel(), metadata.exceptionState(),
                                   metadata.distanceM(), metadata.distanceValid());
 
     // 3) 경보 목록 모델 갱신 -> AlertListView.qml
     //    SAFE + 예외없음이면 upsert 내부에서 목록에서 빠짐
-    m_alertListModel.upsert(metadata.cameraId(), m_cameraNames.value(metadata.cameraId()), metadata.zone(),
+    m_alertListModel.upsert(targetId, m_cameraNames.value(targetId, m_cameraNames.value(metadata.cameraId())), metadata.zone(),
                              metadata.riskLevel(), metadata.distanceM(), metadata.distanceValid(),
                              metadata.exceptionState());
 

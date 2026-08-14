@@ -37,15 +37,17 @@ QVector<CameraInfo> ConfigLoader::parseCamerasJson(const QByteArray &jsonData)
         const QJsonObject obj = value.toObject();
 
         CameraInfo info;
+        info.streamId = obj.value(QStringLiteral("stream_id")).toString();
         info.cameraId = obj.value(QStringLiteral("camera_id")).toString();
+        info.channel = obj.value(QStringLiteral("channel")).toInt(0);
         info.name = obj.value(QStringLiteral("name")).toString();
         info.zone = obj.value(QStringLiteral("zone")).toString();
         info.sourceType = videoSourceTypeFromString(obj.value(QStringLiteral("source_type")).toString());
         info.rtspUrl = obj.value(QStringLiteral("rtsp_url")).toString();
         info.localFilePath = obj.value(QStringLiteral("local_file_path")).toString();
 
-        if (info.cameraId.isEmpty()) {
-            qCWarning(lcConfig) << "skipping camera entry with an empty camera_id";
+        if (info.cameraId.isEmpty() && info.streamId.isEmpty()) {
+            qCWarning(lcConfig) << "skipping camera entry with empty camera_id and stream_id";
             continue;
         }
         result.append(info);
@@ -89,4 +91,33 @@ TerminalConfig ConfigLoader::loadTerminalConfig() const
     config.metadataSourceType =
         obj.value(QStringLiteral("metadata_source_type")).toString(config.metadataSourceType);
     return config;
+}
+
+QVector<OperatorAccount> ConfigLoader::parseOperatorsJson(const QByteArray &jsonData)
+{
+    QVector<OperatorAccount> result;
+    const QJsonDocument doc = QJsonDocument::fromJson(jsonData);
+    const QJsonArray operators = doc.object().value(QStringLiteral("operators")).toArray();
+
+    for (const QJsonValue &value : operators) {
+        const QJsonObject obj = value.toObject();
+
+        OperatorAccount account;
+        account.operatorId = obj.value(QStringLiteral("operator_id")).toString();
+        account.displayName = obj.value(QStringLiteral("display_name")).toString();
+        account.role = operatorRoleFromString(obj.value(QStringLiteral("role")).toString());
+        account.pinHash = obj.value(QStringLiteral("pin_hash")).toString();
+
+        if (account.operatorId.isEmpty()) {
+            qCWarning(lcConfig) << "skipping operator entry with an empty operator_id";
+            continue;
+        }
+        result.append(account);
+    }
+    return result;
+}
+
+QVector<OperatorAccount> ConfigLoader::loadOperators() const
+{
+    return parseOperatorsJson(readFile(QStringLiteral("operators.json")));
 }

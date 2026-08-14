@@ -5,12 +5,10 @@
 #include <QVector>
 
 #include "../models/CameraInfo.h"
+#include "../models/OperatorAccount.h"
 #include "ConfigTypes.h"
 
-// Loads cameras.json / control_center.json / terminal.json from a
-// directory (by default, next to the executable; overridable with
-// --config <dir>). Pure C++ with no QML dependency, so it can be unit
-// tested directly (see tests/test_config_loader.cpp).
+// Loads cameras.json / control_center.json / terminal.json / operators.json
 class ConfigLoader
 {
 public:
@@ -19,10 +17,12 @@ public:
     QVector<CameraInfo> loadCameras() const;
     ControlCenterConfig loadControlCenterConfig() const;
     TerminalConfig loadTerminalConfig() const;
+    QVector<OperatorAccount> loadOperators() const;
 
     // Exposed separately so tests can feed in JSON bytes directly without
     // touching the filesystem.
     static QVector<CameraInfo> parseCamerasJson(const QByteArray &jsonData);
+    static QVector<OperatorAccount> parseOperatorsJson(const QByteArray &jsonData);
 
     QString configDir() const { return m_configDir; }
 

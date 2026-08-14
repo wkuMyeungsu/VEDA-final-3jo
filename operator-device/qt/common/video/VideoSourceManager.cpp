@@ -37,8 +37,14 @@ void VideoSourceManager::setCameras(const QVector<CameraInfo> &cameras)
     m_sources.clear();
 
     for (const CameraInfo &info : cameras) {
-        if (IVideoSource *source = createSource(info))
-            m_sources.insert(info.cameraId, source);
+        if (IVideoSource *source = createSource(info)) {
+            const QString effId = info.effectiveId();
+            m_sources.insert(effId, source);
+            if (!info.streamId.isEmpty() && info.streamId != effId)
+                m_sources.insert(info.streamId, source);
+            if (!info.cameraId.isEmpty() && !m_sources.contains(info.cameraId))
+                m_sources.insert(info.cameraId, source);
+        }
     }
 }
 

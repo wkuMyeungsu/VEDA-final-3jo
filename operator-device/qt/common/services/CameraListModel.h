@@ -18,11 +18,9 @@
 class CameraListModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
 
 public:
-    // QML에서 model.cameraId, model.riskLevel 처럼 쓰는 "필드 이름"들
-    // Qt::UserRole + 1부터 시작하는 게 관례 (0~UserRole-1은 Qt 내부 예약)
-    // 실제 이름 매핑은 roleNames()에서 함
     enum Roles {
         CameraIdRole = Qt::UserRole + 1,
         NameRole,
@@ -32,11 +30,19 @@ public:
         DistanceRole,
         DistanceValidRole,
         VideoConnectionStateRole,
+        StreamIdRole,
+        ChannelRole,
     };
     Q_ENUM(Roles)
 
     explicit CameraListModel(QObject *parent = nullptr);
 
+signals:
+    void countChanged();
+    void videoConnectionChanged(const QString &cameraId, int state);
+    void riskUpdated(const QString &cameraId, int riskLevel, int exceptionState, double distanceM);
+
+public:
     // 최초 1회 호출 (ConfigLoader가 읽은 카메라 목록으로 행을 만듦)
     void setCameras(const QVector<CameraInfo> &cameras);
 
@@ -48,6 +54,13 @@ public:
     void updateVideoConnectionState(const QString &cameraId, RiskTypes::ConnectionState state);
 
     Q_INVOKABLE int indexForCameraId(const QString &cameraId) const;
+    Q_INVOKABLE int videoConnectionStateFor(const QString &cameraId) const;
+    Q_INVOKABLE int riskLevelFor(const QString &cameraId) const;
+    Q_INVOKABLE int exceptionStateFor(const QString &cameraId) const;
+    Q_INVOKABLE double distanceMFor(const QString &cameraId) const;
+    Q_INVOKABLE bool distanceValidFor(const QString &cameraId) const;
+    Q_INVOKABLE QString nameFor(const QString &cameraId) const;
+    Q_INVOKABLE QString zoneFor(const QString &cameraId) const;
 
     // QAbstractListModel이 요구하는 필수 구현 3종 (QML이 내부적으로 호출)
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;

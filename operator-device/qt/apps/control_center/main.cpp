@@ -126,10 +126,11 @@ int main(int argc, char *argv[])
     // status list reflect the real per-camera video link.
     CameraListModel *cameraListModel = metadataDistributor.cameraListModel();
     for (const CameraInfo &info : cameras) {
-        if (IVideoSource *source = videoManager.sourceFor(info.cameraId)) {
+        const QString targetId = info.effectiveId();
+        if (IVideoSource *source = videoManager.sourceFor(targetId)) {
             QObject::connect(source, &IVideoSource::connectionStateChanged, cameraListModel,
-                              [cameraId = info.cameraId, cameraListModel](RiskTypes::ConnectionState state) {
-                                  cameraListModel->updateVideoConnectionState(cameraId, state);
+                              [targetId, cameraListModel](RiskTypes::ConnectionState state) {
+                                  cameraListModel->updateVideoConnectionState(targetId, state);
                               });
         }
     }
