@@ -19,16 +19,8 @@ using homography::Config;
 Config test_config() {
     Config config{};
     config.dictionary = "DICT_4X4_50";
-    config.cols = 4;
-    config.rows = 3;
-    config.marker_len_mm = 40.0;
-    config.gap_mm = 20.0;
-    config.id_offset = 10;
-    config.origin_corner = "TL";
     config.marker_output = {100.0, 20.0, 300.0, ""};
-    config.calibration = {20.0, 30.0, -1};
-    config.manual_solve = {100.0, 30.0};
-    config.preview = {2, 5.0, 10.0};
+    config.manual_solve = {100.0};
     return config;
 }
 
@@ -42,22 +34,6 @@ void expect_near(double actual, double expected, double tolerance,
            message + " (actual=" + std::to_string(actual) + ")");
 }
 
-void test_grid_coordinates() {
-    const Config config = test_config();
-    const auto corners = homography::world_corners(config, 11);
-    expect(corners.size() == 4, "valid marker must have four world corners");
-    expect_near(corners[0].x, 60.0, 1e-6, "second marker x coordinate in mm");
-    expect_near(corners[0].y, 0.0, 1e-6, "second marker y coordinate");
-    expect_near(corners[2].x, 100.0, 1e-6, "marker right edge in mm");
-    expect_near(corners[2].y, 40.0, 1e-6, "marker bottom edge in mm");
-    expect(homography::world_corners(config, 9).empty(),
-           "marker before id offset must be rejected");
-    expect_near(homography::grid_width_mm(config), 220.0, 1e-6,
-                "grid width");
-    expect_near(homography::grid_height_mm(config), 160.0, 1e-6,
-                "grid height");
-}
-
 void test_matrix_json_roundtrip() {
     const cv::Mat original = (cv::Mat_<double>(3, 3) <<
         1.0, 2.0, 3.0,
@@ -67,34 +43,6 @@ void test_matrix_json_roundtrip() {
         homography::matrix_to_json(original));
     expect(cv::norm(original - restored, cv::NORM_INF) < 1e-12,
            "matrix JSON roundtrip");
-}
-
-void test_board_rendering() {
-    const Config config = test_config();
-    const cv::Mat board = homography::render_board(config, 2);
-    expect(board.type() == CV_8UC1, "rendered board must be grayscale");
-    expect(board.cols == 444 && board.rows == 324,
-           "rendered board dimensions");
-}
-
-void test_calibration() {
-    const Config config = test_config();
-    const cv::Mat board = homography::render_board(config, 2);
-    const std::vector<cv::Point2f> source = {
-        {0, 0}, {static_cast<float>(board.cols), 0},
-        {static_cast<float>(board.cols), static_cast<float>(board.rows)},
-        {0, static_cast<float>(board.rows)}};
-    const std::vector<cv::Point2f> destination = {
-        {80, 60}, {700, 35}, {735, 540}, {55, 565}};
-    const cv::Mat transform = cv::getPerspectiveTransform(destination, source);
-    const cv::Mat camera(620, 800, CV_8UC1, cv::Scalar(255));
-    cv::Mat warped;
-    cv::warpPerspective(board, warped, transform, camera.size());
-
-    const auto result = homography::calibrate_image(config, warped);
-    expect(result.ids.size() == 6, "calibration marker count");
-    expect(result.inliers == 24, "calibration inlier corner count");
-    expect(result.rmse_mm < 2.5, "calibration reprojection error");
 }
 
 std::vector<cv::Point2f> project(const std::vector<cv::Point2f>& points,
@@ -200,7 +148,17 @@ void test_free_markers_with_axis_and_distance_constraints() {
 
 void test_rtsp_capture_alignment() {
     const Config config = test_config();
-    const cv::Mat board = homography::render_board(config, 2);
+    // 격자 규칙 없이 서로 떨어진 마커를 배치한 합성 화면으로
+    // 공통 ID 기반 채널 정합을 검증함.
+    cv::Mat board(500, 700, CV_8UC1, cv::Scalar(255));
+    const std::vector<cv::Point> positions = {
+        {60, 50}, {300, 75}, {540, 45}, {100, 300}, {350, 270}, {560, 320}};
+    for (int id = 0; id < static_cast<int>(positions.size()); ++id) {
+        cv::Mat marker;
+        cv::aruco::drawMarker(homography::dictionary(config), id, 80, marker, 1);
+        marker.copyTo(board(cv::Rect(positions[id].x, positions[id].y,
+                                     marker.cols, marker.rows)));
+    }
     const std::vector<cv::Point2f> board_extent = {{0, 0},
         {static_cast<float>(board.cols), 0},
         {static_cast<float>(board.cols), static_cast<float>(board.rows)},
@@ -275,15 +233,12 @@ void test_mirrored_axis_frame_is_reflection_invariant() {
 
 int main() {
     try {
-        test_grid_coordinates();
         test_matrix_json_roundtrip();
-        test_board_rendering();
-        test_calibration();
         test_irregular_square_calibration();
         test_free_markers_with_axis_and_distance_constraints();
         test_rtsp_capture_alignment();
         test_mirrored_axis_frame_is_reflection_invariant();
-        std::cout << "homography_unit_tests: 8 tests passed\n";
+        std::cout << "homography_unit_tests: 5 tests passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "homography_unit_tests: FAILED: " << error.what() << '\n';
