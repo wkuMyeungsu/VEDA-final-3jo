@@ -1,0 +1,11 @@
+{
+  "description": "CAM_03 사람이 카메라 앞을 옆으로 가로질러 지나감 -- bbox의 x만 0.05에서 0.90까지 이동하고 높이(h)는 0.20으로 시종일관 고정. TtcEstimator의 TTC 공식(TTC=s/(ds/dt))은 정면 접근만 가정하므로 ds/dt가 정확히 0인 이 궤적에서는 Receding 상태(무효)가 나와야 정상 -- TtcEstimator.h에 문서화된 '옆으로 스쳐 지나가는 움직임에는 안 맞음' 한계를 그대로 보여주는 음성(negative) 시나리오.",
+  "loop": false,
+  "keyframes": [
+    { "t_ms": 0,    "camera_id": "CAM_03", "risk_level": "SAFE", "exception_state": "NONE", "distance_m": 4.0, "distance_valid": true, "person_bbox": { "x": 0.05, "y": 0.50, "w": 0.10, "h": 0.20 } },
+    { "t_ms": 1500, "camera_id": "CAM_03", "risk_level": "SAFE", "exception_state": "NONE", "distance_m": 4.0, "distance_valid": true, "person_bbox": { "x": 0.30, "y": 0.50, "w": 0.10, "h": 0.20 } },
+    { "t_ms": 3000, "camera_id": "CAM_03", "risk_level": "SAFE", "exception_state": "NONE", "distance_m": 4.0, "distance_valid": true, "person_bbox": { "x": 0.55, "y": 0.50, "w": 0.10, "h": 0.20 } },
+    { "t_ms": 4500, "camera_id": "CAM_03", "risk_level": "SAFE", "exception_state": "NONE", "distance_m": 4.0, "distance_valid": true, "person_bbox": { "x": 0.75, "y": 0.50, "w": 0.10, "h": 0.20 } },
+    { "t_ms": 6000, "camera_id": "CAM_03", "risk_level": "SAFE", "exception_state": "NONE", "distance_m": 4.0, "distance_valid": true, "person_bbox": { "x": 0.90, "y": 0.50, "w": 0.10, "h": 0.20 } }
+  ]
+}

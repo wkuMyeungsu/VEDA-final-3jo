@@ -1,0 +1,16 @@
+{
+  "description": "CAM_02 평상시 정상 운영(SAFE, 예외 없음) 중 t=4s에 네트워크 연결이 끊김 -- exception_state가 NETWORK_DISCONNECTED로 바뀌고 동시에 connection_events로 IMetadataSource.connectionState 전체가 DISCONNECTED가 됨(RiskEventSource.cpp의 워치독이 실제로 하는 동작과 같은 조합). t=7.2s에 복구되어 둘 다 정상으로 돌아옴. 상단 서버 연결 배지 + 카메라별 예외 배지 두 경로가 함께 반영되는지 확인하는 시나리오.",
+  "loop": false,
+  "keyframes": [
+    { "t_ms": 0,    "camera_id": "CAM_02", "risk_level": "SAFE", "exception_state": "NONE",                 "distance_m": 5.0, "distance_valid": true },
+    { "t_ms": 2000, "camera_id": "CAM_02", "risk_level": "SAFE", "exception_state": "NONE",                 "distance_m": 5.0, "distance_valid": true },
+    { "t_ms": 4000, "camera_id": "CAM_02", "risk_level": "SAFE", "exception_state": "NETWORK_DISCONNECTED", "distance_m": 5.0, "distance_valid": false },
+    { "t_ms": 7000, "camera_id": "CAM_02", "risk_level": "SAFE", "exception_state": "NETWORK_DISCONNECTED", "distance_m": 5.0, "distance_valid": false },
+    { "t_ms": 7200, "camera_id": "CAM_02", "risk_level": "SAFE", "exception_state": "NONE",                 "distance_m": 5.0, "distance_valid": true },
+    { "t_ms": 9000, "camera_id": "CAM_02", "risk_level": "SAFE", "exception_state": "NONE",                 "distance_m": 5.0, "distance_valid": true }
+  ],
+  "connection_events": [
+    { "t_ms": 4000, "state": "DISCONNECTED" },
+    { "t_ms": 7200, "state": "CONNECTED" }
+  ]
+}

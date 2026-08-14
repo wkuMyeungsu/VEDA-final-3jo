@@ -1,0 +1,13 @@
+{
+  "description": "CAM_01 정면으로 사람이 걸어옴 -- 거리 12m에서 0.6m까지 꾸준히 가까워지며 bbox 높이가 0.10에서 0.75까지 계속 커짐. 위험도는 SAFE(0~3s)-> CAUTION(6~8s) -> DANGER(10s~) 순으로 상승. MockMetadataSource는 personH가 상수(0.30)라 ds/dt가 항상 0이라서 TTC를 절대 못 내는데, 이 시나리오는 높이가 실제로 커지므로 TtcEstimator가 유효한 TTC를 낼 수 있는 유일한 데모/테스트 경로임.",
+  "loop": false,
+  "keyframes": [
+    { "t_ms": 0,     "camera_id": "CAM_01", "risk_level": "SAFE",    "exception_state": "NONE", "distance_m": 12.0, "distance_valid": true, "person_bbox": { "x": 0.475, "y": 0.500, "w": 0.05, "h": 0.10 } },
+    { "t_ms": 3000,  "camera_id": "CAM_01", "risk_level": "SAFE",    "exception_state": "NONE", "distance_m": 8.0,  "distance_valid": true, "person_bbox": { "x": 0.460, "y": 0.470, "w": 0.08, "h": 0.16 } },
+    { "t_ms": 6000,  "camera_id": "CAM_01", "risk_level": "CAUTION", "exception_state": "NONE", "distance_m": 5.0,  "distance_valid": true, "person_bbox": { "x": 0.440, "y": 0.430, "w": 0.12, "h": 0.24 } },
+    { "t_ms": 8000,  "camera_id": "CAM_01", "risk_level": "CAUTION", "exception_state": "NONE", "distance_m": 3.0,  "distance_valid": true, "person_bbox": { "x": 0.415, "y": 0.380, "w": 0.17, "h": 0.34 } },
+    { "t_ms": 10000, "camera_id": "CAM_01", "risk_level": "DANGER",  "exception_state": "NONE", "distance_m": 1.8,  "distance_valid": true, "person_bbox": { "x": 0.380, "y": 0.310, "w": 0.24, "h": 0.48 } },
+    { "t_ms": 12000, "camera_id": "CAM_01", "risk_level": "DANGER",  "exception_state": "NONE", "distance_m": 1.0,  "distance_valid": true, "person_bbox": { "x": 0.345, "y": 0.240, "w": 0.31, "h": 0.62 } },
+    { "t_ms": 13000, "camera_id": "CAM_01", "risk_level": "DANGER",  "exception_state": "NONE", "distance_m": 0.6,  "distance_valid": true, "person_bbox": { "x": 0.310, "y": 0.175, "w": 0.38, "h": 0.75 } }
+  ]
+}
