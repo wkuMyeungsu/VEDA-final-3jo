@@ -1,10 +1,13 @@
 #include <QCommandLineParser>
 #include <QNetworkProxyFactory>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QGuiApplication>
+#include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 #include <gst/gst.h>
 
 #include "config/ConfigLoader.h"
@@ -29,6 +32,28 @@ int main(int argc, char *argv[])
 
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyOperatorTerminal")); // - 앱 이름 설정: 시스템 식별용 이름 지정
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));       // - 조직 이름 설정: 시스템 조직명 지정
+
+    // QtQuick Controls는 기본 플랫폼 스타일을 쓰기 때문에 다크 테마 화면 위에서
+    // Switch/ComboBox/Button만 밝게 붕 떠 보임 -- 팔레트를 실제로 반영하는 "Basic"
+    // 스타일로 고정하고, qml/theme/Theme.qml과 같은 색으로 QPalette를 채워서 QML에서
+    // 개별 재정의를 안 한 컨트롤도 기본값부터 다크 톤을 따르게 함
+    QQuickStyle::setStyle(QStringLiteral("Basic"));                              // - 스타일 고정: 팔레트 미반영 플랫폼 스타일 방지
+    QPalette darkPalette;
+    darkPalette.setColor(QPalette::Window, QColor("#0b0f1a"));                   // - Theme.colorBackground
+    darkPalette.setColor(QPalette::WindowText, QColor("#eef1f7"));               // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Base, QColor("#141a29"));                     // - Theme.colorSurface
+    darkPalette.setColor(QPalette::AlternateBase, QColor("#1b2233"));            // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::Text, QColor("#eef1f7"));                     // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Button, QColor("#1b2233"));                   // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::ButtonText, QColor("#eef1f7"));               // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Light, QColor("#3a445c"));                    // - Theme.colorBorderStrong
+    darkPalette.setColor(QPalette::Midlight, QColor("#1b2233"));                 // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::Dark, QColor("#3a445c"));                     // - Theme.colorBorderStrong
+    darkPalette.setColor(QPalette::Mid, QColor("#2a3245"));                      // - Theme.colorBorder
+    darkPalette.setColor(QPalette::Highlight, QColor("#4f8cf7"));                // - Theme.colorAccent
+    darkPalette.setColor(QPalette::HighlightedText, QColor("#eef1f7"));          // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::PlaceholderText, QColor("#6b7690"));          // - Theme.colorTextMuted
+    QGuiApplication::setPalette(darkPalette);                                    // - 적용: 앱 전역 기본 팔레트로 설정
 
     QCommandLineParser parser;                                                   // - 명령어 파서 생성: 실행 옵션 해석 객체 생성
     parser.setApplicationDescription(QStringLiteral("Forklift blind-spot safety - operator terminal")); // - 앱 설명 설정: 터미널 프로그램 설명 등록
@@ -83,6 +108,11 @@ int main(int argc, char *argv[])
 
     OperatorDemoController demoController(&mockMetadataSource, &videoManager, &serverConnection, &activeCamera); // - 데모 제어기 생성: 데모 패널 동작 객체 초기화
     demoController.setDemoModeEnabled(parser.isSet(demoOption));                // - 데모 모드 설정: 실행 옵션에 따른 데모 모드 활성화
+    if (parser.isSet(demoOption) && activeMetadataSource != &mockMetadataSource) { // - mqtt 모드에서도 데모 버튼이 먹히게 하려는 용도
+        metadataDistributor.setDemoSource(&mockMetadataSource);                 // - 보조 입력 연결: 데모 값도 모델에 반영
+        demoController.setAutoPlay(false);                                      // - 자동 재생 끄기: start() 전에 꺼야 첫 tick도 막힘
+        mockMetadataSource.start();                                             // - 타이머 가동: 버튼으로 지정한 데모 상태가 계속 유지되도록
+    }
 
     handoverClient.setTerminalId(appConfig.terminalId);                          // - 단말 ID 설정: 핸도버 클라이언트에 식별자 지정
     handoverClient.connectToServer(appConfig.serverHost, appConfig.handoverPort);// - 제어 채널 접속: 서버 핸도버 포트로 연결 시도
