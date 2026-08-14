@@ -1,47 +1,116 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ArUco 평면 캘리브레이션</title><link rel="stylesheet" href="/static/homography.css?v=20260813-4">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ArUco 다중 채널 맵 보정</title>
+  <link rel="stylesheet" href="/static/homography.css?v=20260814-9">
 </head>
 <body>
-  <header class="app-header"><div><h1>ArUco 평면 캘리브레이션</h1><p id="workflow-subtitle">캡처하고 실제 좌표 기준을 설정하세요.</p></div>
-    <ol class="steps"><li class="active" data-step="calibration"><button type="button">1 캡처 및 보정</button></li><li data-step="region"><button type="button">2 탑뷰 영역</button></li><li data-step="validation"><button type="button">3 결과 검증 및 추가 보정</button></li></ol>
+  <header class="app-header">
+    <div>
+      <h1>ArUco 다중 채널 맵 보정</h1>
+      <p>기준선과 자 측정 없이, 마커 꼭짓점과 겹침 마커로 전체 맵을 연결합니다.</p>
+      <p id="camera-identity" class="camera-identity">카메라 정보를 불러오는 중…</p>
+    </div>
+    <span id="support-badge" class="support-badge">카메라 정보 확인 중…</span>
   </header>
+
   <main class="workbench">
-    <section class="canvas-column">
+    <section class="viewer-panel">
       <div class="toolbar">
-        <div id="capture-tools" class="toolbar-group"><div id="camera-channels" class="channel-buttons" aria-label="CCTV 채널"><span>채널</span><button class="active" data-channel="1">1</button><button data-channel="2">2</button><button data-channel="3">3</button><button data-channel="4">4</button></div><button id="play-camera">재생</button><button id="capture-camera" class="primary">캡처</button><span class="separator"></span></div>
-        <div id="view-tools" class="toolbar-group"><button id="fit-view">화면 맞춤</button><button id="actual-view">100%</button><button id="zoom-out">−</button><button id="zoom-in">＋</button></div>
-        <div id="canvas-edit-tools" class="toolbar-group" hidden><span class="separator"></span><div id="drawing-tools" class="drawing-tools"><button data-tool="select" class="active">선택/수정</button><button data-tool="axis-x">X 기준선</button><button data-tool="axis-y">Y 기준선</button></div><button id="grid-toggle" aria-pressed="false">격자 켜기</button></div>
+        <label class="stream-picker">캡처 대상 카메라
+          <select id="capture-camera-select" aria-label="캡처할 CCTV 선택"></select>
+        </label>
+        <label class="stream-picker">채널
+          <select id="capture-channel-select" aria-label="캡처할 CCTV 채널 선택"></select>
+        </label>
+        <button id="capture-camera" class="primary">선택 스트림 캡처</button>
+        <button id="fit-view">화면 맞춤</button>
       </div>
-      <div id="stage-banner" class="stage-banner" data-stage="calibration"><span id="stage-number">1단계</span><div><strong id="stage-title">캡처 및 보정</strong><p id="stage-description">이미지를 캡처하고 X/Y 기준선만 설정하세요.</p></div></div>
-      <section id="validation-visual" class="validation-visual" hidden>
-        <figure><figcaption><strong>카메라 픽셀 이미지</strong><span>초록 관측 · 빨강 H 예측 · 분홍 잔차 · 노랑 보정선 · X/Y 기준선</span></figcaption><div id="validation-source-frame" class="validation-frame"><div id="validation-source-stage" class="validation-stage"><canvas id="validation-source-image"></canvas></div><canvas id="validation-source-overlay" aria-label="카메라 픽셀 이미지 검증 오버레이"></canvas></div><div class="validation-image-help">보정선을 선택한 뒤 누른 채 드래그하세요. 가운데 버튼을 누른 채 이미지를 이동하고, 휠 또는 상단 확대 버튼으로 확대할 수 있습니다.</div></figure>
-        <div class="validation-legend"><span><i class="mapped"></i>실제 검출 마커</span><span><i class="predicted"></i>H 예측 마커</span><span><i class="error"></i>마커 오차 벡터</span><span><i class="measure"></i>보정선</span><span><i class="axis"></i>X/Y 기준선</span></div>
-      </section>
       <div id="canvas-viewport" class="canvas-viewport">
-        <img id="camera-frame" alt="CCTV 프리뷰" hidden><canvas id="work-canvas" tabindex="0"></canvas>
+        <canvas id="work-canvas" tabindex="0" aria-label="마커 꼭짓점 보정 화면"></canvas>
+        <div id="empty-state"><strong>채널을 선택하고 캡처하세요.</strong><span>캡처 후 초록 꼭짓점을 드래그해 미세 보정할 수 있습니다.</span></div>
       </div>
-      <div class="statusbar"><span id="camera-status">대기 중</span><span id="pointer-status">원본 좌표 —</span></div>
+      <div class="statusbar"><span id="camera-status">대기 중</span><span id="pointer-status">원본 좌표 — · 휠 버튼 드래그: 화면 이동</span></div>
+
+      <section id="verification-panel" class="verification-panel" hidden>
+        <div class="verification-header">
+          <div>
+            <span class="eyebrow">3. 정합 결과 확인</span>
+          <h2>전체 맵 좌표 오버레이</h2>
+            <p>캡처한 모든 채널을 같은 보드 mm 좌표계로 투영했습니다. 겹치는 마커와 바닥 영역이 포개지는지 확인하세요.</p>
+          </div>
+          <div id="verification-legend" class="verification-legend"></div>
+        </div>
+        <div class="verification-toolbar">
+          <label>채널 투명도
+            <input id="verification-opacity" type="range" min="0" max="1" step="0.01" value="0.5">
+          </label>
+          <button id="verification-blink" type="button">깜빡임 비교</button>
+          <button id="verification-fit" type="button">검증 화면 맞춤</button>
+          <span id="verification-status">정합 결과를 준비하는 중…</span>
+        </div>
+        <div id="verification-viewport" class="verification-viewport">
+          <canvas id="verification-canvas" aria-label="전체 CCTV 채널 맵 오버레이"></canvas>
+          <canvas id="verification-overlay" aria-hidden="true"></canvas>
+          <div id="verification-empty">정합 결과가 여기에 표시됩니다.</div>
+        </div>
+        <div id="verification-stats" class="verification-stats"></div>
+      </section>
     </section>
-    <aside id="settings-panel">
-      <div id="calibration-panels" class="stage-panels">
-        <section class="panel-block"><span class="eyebrow">캡처 및 보정</span><label class="size-field">마커 한 변 <span>mm</span><input id="marker-size-mm" type="number" min="0.1" step="0.1" value="100"></label><p class="hint">실제 검은 정사각형 한 변 길이입니다.</p></section>
-        <section id="tool-panel" class="panel-block"><div class="panel-title"><h2 id="tool-title">선택/수정</h2><span id="solve-state" class="badge">캡처 대기</span></div><p id="tool-help" class="hint">캡처 후 사용할 도구를 선택하세요.</p><div id="tool-context" class="tool-context"></div></section>
-        <details id="marker-details" class="panel-block"><summary><strong>ArUco 마커</strong> <span id="marker-count" class="badge">0</span><span id="marker-compact" class="summary-note">캡처 대기</span></summary><p id="reference-help" class="hint">마커는 평면과 정사각형 스케일 계산에 사용됩니다.</p><div id="marker-list" class="marker-list"></div></details>
-        <section class="panel-block solve-block"><div id="solve-input-summary" class="solve-input-summary">X/Y 기준선을 설정하세요.</div><button id="solve-homography" class="primary wide" disabled>호모그래피 산출</button><div id="result-card" class="result-card" hidden><div class="result-card-header"><div><span class="eyebrow">산출 완료</span><strong id="result-compact">결과를 확인하세요.</strong></div><a id="result-download" class="result-download" hidden download>JSON 저장</a></div><details id="result-details"><summary>상세 결과 펼쳐 보기</summary><div id="quality-summary" class="quality-summary"></div></details></div><button id="continue-topview" class="primary wide" hidden>다음 · 탑뷰 영역 설정</button><button id="open-validation-from-calibration" class="primary wide" hidden>결과 검증 및 추가 보정</button></section>
-      </div>
-      <div id="region-panels" class="stage-panels" hidden><section id="region-panel" class="panel-block"><div class="panel-title"><h2>탑뷰 출력 영역</h2><button id="reset-region" class="quiet">영역 초기화</button></div><p class="hint">전체 탑뷰에서 사용할 사각형을 네 꼭짓점으로 지정하세요. 영역을 완성한 뒤 결과 검증 및 추가 보정으로 이동할 수 있습니다.</p><div id="region-size">가로 — mm · 세로 — mm</div><button id="edit-canvas-from-region" class="wide">보정 화면으로</button></section></div>
-      <div id="validation-panels" class="stage-panels" hidden><section id="validation-panel" class="panel-block"><div class="panel-title"><h2>결과 검증 및 추가 보정</h2><label class="validation-toggle"><input id="reprojection-toggle" type="checkbox" checked> 마커 잔차 보기</label></div><div id="validation-tools" class="drawing-tools validation-tools"><button type="button" data-validation-tool="select" class="active">선택/수정</button><button type="button" data-validation-tool="distance">보정선</button><button type="button" data-validation-tool="pan">이동</button><button type="button" data-validation-tool="delete" class="quiet">선 삭제</button></div><p id="validation-tool-help" class="hint">보정선을 선택한 뒤 이미지에서 누른 채 드래그하세요. 선택/수정에서는 끝점을 다시 드래그할 수 있습니다.</p><p class="hint">실제 자로 잰 길이를 오른쪽 목록에 입력하세요. 입력한 보정선은 <strong>추가 보정 적용</strong>을 눌렀을 때 호모그래피에 반영됩니다.</p><div id="validation-summary" class="quality-summary">산출 결과가 없습니다.</div><div id="validation-list" class="quality-summary" hidden></div><button id="apply-validation-correction" class="primary wide" disabled>추가 보정 적용</button><button id="clear-validation" class="quiet wide" hidden>보정선 전체 삭제</button><button id="open-live-validation" class="wide" disabled>라이브 화면 열기</button><button id="back-to-calibration" class="wide">보정 화면으로</button></section></div>
-      <pre id="result-log" hidden>캡처를 시작하세요.</pre>
+
+    <aside class="control-panel">
+      <section class="panel-block">
+        <span class="eyebrow">카메라 설정</span>
+        <label class="field-label">등록된 카메라
+          <select id="camera-list"></select>
+        </label>
+        <label class="field-label">카메라 이름 / ID
+          <input id="camera-id" type="text" maxlength="64" placeholder="CAM_01">
+        </label>
+        <label class="field-label">카메라 모델
+          <select id="camera-model"></select>
+        </label>
+        <p class="hint">카메라 이름과 모델을 저장하면 호모그래피 앱 설정에 기록되고, 모델별 채널 수에 맞춰 화면이 자동으로 바뀝니다.</p>
+        <button id="save-camera-settings" class="primary wide">카메라 설정 저장</button>
+        <div id="camera-settings-result" class="result-box">현재 설정을 불러오는 중입니다.</div>
+      </section>
+
+      <section class="panel-block">
+        <span class="eyebrow">1. 채널별 로컬 보정</span>
+        <label class="field-label">ArUco 검은 정사각형 한 변 <span>mm</span>
+          <input id="marker-size-mm" type="number" min="0.1" step="0.1" value="100">
+        </label>
+        <p class="hint">X/Y 기준선은 사용하지 않습니다. 마커 크기로 mm 스케일을 정하고, 검출된 네 꼭짓점을 사용합니다.</p>
+        <button id="solve-homography" class="primary wide" disabled>이 채널 로컬 H 산출</button>
+        <div id="local-result" class="result-box">아직 산출하지 않았습니다.</div>
+      </section>
+
+      <section class="panel-block">
+        <div class="panel-title"><h2>검출된 마커</h2><span id="marker-count" class="badge">0</span></div>
+        <p id="marker-help" class="hint">기준 마커를 하나 선택하세요. 꼭짓점은 화면에서 직접 드래그할 수 있습니다.</p>
+        <div id="marker-list" class="marker-list"></div>
+      </section>
+
+      <section class="panel-block">
+        <span class="eyebrow">2. 전체 CCTV×채널 전역 정합</span>
+        <p class="hint">등록된 모든 CCTV의 채널을 한 번에 정합합니다. 공통 마커가 최소 N개 이상인 스트림 연결을 모두 사용하며, 기준 스트림을 제외한 변환은 전체 오차가 최소가 되도록 동시에 계산합니다.</p>
+        <label class="field-label">전체 맵 기준 스트림
+          <select id="global-anchor-stream"></select>
+        </label>
+        <div id="common-marker-summary" class="result-box">정합 가능한 채널을 준비하세요.</div>
+        <button id="global-align-channels" class="primary wide" disabled>전체 스트림 정합</button>
+        <div id="stitch-result" class="result-box">아직 전체 맵 정합을 하지 않았습니다.</div>
+      </section>
+
+      <section class="panel-block log-block">
+        <div class="panel-title"><h2>작업 로그</h2><button id="clear-log" class="quiet">지우기</button></div>
+        <pre id="result-log">채널 캡처를 시작하세요.</pre>
+      </section>
     </aside>
   </main>
-  <section id="live-view" class="live-view" hidden>
-    <header><div><h2>라이브 결과 검증</h2><div id="live-quality" class="live-quality" aria-live="polite">RMSE —</div></div><div><button id="live-play">재생</button><button id="live-pause">일시 정지</button><button id="show-both">좌우 보기</button><button id="show-original">원본만</button><button id="show-top">탑뷰만</button><button id="fullscreen-live">전체 화면</button><button id="live-back-calibration">보정 캔버스로</button><button id="close-live" class="primary">결과 검증 및 추가 보정으로</button></div></header>
-    <div id="live-grid" class="live-grid"><figure id="original-pane"><figcaption>원본 RTSP</figcaption><div class="live-media"><img id="live-original" alt="원본 RTSP 영상"></div></figure><figure id="top-pane"><figcaption>선택 구간 탑뷰</figcaption><div class="live-media"><canvas id="live-top"></canvas><canvas id="live-measure-overlay" aria-label="라이브 거리 측정"></canvas></div></figure></div>
-    <p id="live-status"></p>
-  </section>
-  <div id="canvas-context-menu" class="canvas-context-menu" hidden><button data-context-action="edit">수정</button><button data-context-action="delete">삭제</button></div>
-  <script src="/static/homography.js?v=20260813-4"></script>
-</body></html>
+
+  <script src="/static/homography.js?v=20260814-13"></script>
+</body>
+</html>
