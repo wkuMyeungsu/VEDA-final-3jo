@@ -15,16 +15,34 @@
 #include "network/MockMetadataSource.h"
 #include "network/RiskEventSource.h"
 #include "scenario/ScenarioPlayer.h"
+#include "services/AuthService.h"
 #include "services/DemoController.h"
 #include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
 
+#include <QDateTime>
+#include <QFile>
+#include <QTextStream>
 
+void customLogHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+{
+    static QFile logFile("app_debug.log");
+    if (!logFile.isOpen()) {
+        logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    }
+    QTextStream ts(&logFile);
+    ts << "[" << QDateTime::currentDateTime().toString("HH:mm:ss.zzz") << "] "
+       << (type == QtCriticalMsg ? "CRITICAL: " : (type == QtWarningMsg ? "WARNING: " : "INFO: "))
+       << msg << " (" << context.file << ":" << context.line << ")\n";
+    ts.flush();
+}
 
 int main(int argc, char *argv[])
 {
+    qInstallMessageHandler(customLogHandler);
+    
     // RtspVideoSource가 GStreamer API를 쓰기 전에 반드시 한 번 필요
     gst_init(&argc, &argv); 
 
@@ -80,6 +98,9 @@ int main(int argc, char *argv[])
     const ConfigLoader configLoader(configDir);
     const QVector<CameraInfo> cameras = configLoader.loadCameras();
     const ControlCenterConfig appConfig = configLoader.loadControlCenterConfig();
+    const QVector<OperatorAccount> operators = configLoader.loadOperators();
+
+    AuthService authService(operators);
 
     VideoSourceManager videoManager;
     videoManager.setCameras(cameras);
@@ -94,11 +115,9 @@ int main(int argc, char *argv[])
 
     // - --scenario는 mock/mqtt 선택과 별개로 항상 최우선 -- 파일 로드에 성공했을 때만 전환하고,
     //   실패하면 위에서 이미 정한 mock/mqtt 소스를 그대로 씀 (조용히 반쪽짜리로 재생하지 않음)
-    bool scenarioActive = false;
     if (parser.isSet(scenarioOption)) {
         if (scenarioPlayer.loadScenario(parser.value(scenarioOption))) {
             activeMetadataSource = &scenarioPlayer;
-            scenarioActive = true;
         } else {
             qWarning() << "failed to load scenario" << parser.value(scenarioOption) << "-"
                        << scenarioPlayer.lastErrorMessage() << "- falling back to" << appConfig.metadataSourceType;
@@ -143,11 +162,7 @@ int main(int argc, char *argv[])
     videoManager.startAll();
     metadataDistributor.start();
 
-    // - 합성 데이터(시나리오 재생)로 돌고 있다는 걸 화면에서 숨기지 않음: QML은 안 건드리고
-    //   시스템 이름 문자열에만 표시(AppBar.qml이 그대로 렌더링) -- 실데이터로 오인 방지
-    QString systemNameForDisplay = appConfig.systemName;
-    if (scenarioActive)
-        systemNameForDisplay += QStringLiteral(" - 시나리오 재생(합성 데이터)");
+    const QString systemNameForDisplay = appConfig.systemName;
 
     QQmlApplicationEngine engine;
     QQmlContext *ctx = engine.rootContext();
@@ -159,15 +174,22 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("alertListModel"), metadataDistributor.alertListModel());
     ctx->setContextProperty(QStringLiteral("demoController"), &demoController);
     ctx->setContextProperty(QStringLiteral("ttcExperiment"), &ttcExperiment);
+    ctx->setContextProperty(QStringLiteral("authService"), &authService);
 
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
-        [] { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
+        [](const QUrl &url) {
+            qCritical() << "QML Object creation failed for:" << url;
+            QCoreApplication::exit(-1);
+        }, Qt::QueuedConnection);
 
     engine.loadFromModule("Safety.ControlCenter", "ControlCenterWindow");
 
-    if (engine.rootObjects().isEmpty())
+    if (engine.rootObjects().isEmpty()) {
+        qCritical() << "Engine rootObjects is EMPTY!";
         return -1;
+    }
 
+    qDebug() << "QML application successfully loaded and running.";
     return app.exec();
 }

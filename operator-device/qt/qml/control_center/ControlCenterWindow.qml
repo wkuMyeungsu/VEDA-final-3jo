@@ -27,7 +27,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+Shift+D"
-        enabled: demoController.demoModeEnabled
+        enabled: demoController.demoModeEnabled && authService.loggedIn && authService.currentRole === "supervisor"
         onActivated: demoPanel.visible = !demoPanel.visible
     }
 
@@ -41,7 +41,7 @@ ApplicationWindow {
     // GridView에 Keys 핸들러를 다는 정석 방식이 StackView 안에서 포커스가
     // 안 내려와 동작하지 않아, 창 레벨 Shortcut으로 처리.
     // gridShowing일 때만 활성화 -- 확대뷰/데모패널에서 방향키를 뺏지 않도록
-    readonly property bool gridShowing: cameraStack.depth === 1 && !demoPanel.visible
+    readonly property bool gridShowing: cameraStack.depth === 1 && !demoPanel.visible && authService.loggedIn
 
     Shortcut {
         sequence: "Left"
@@ -112,9 +112,24 @@ ApplicationWindow {
         }
     }
 
+    property int layoutMode: 0 // 0: Grid (2x2/NxN), 1: 1+(N-1) Focus
+
+    onLayoutModeChanged: {
+        if (cameraStack.depth === 1) {
+            cameraStack.replace(layoutMode === 0 ? gridComponent : focusComponent, StackView.Immediate)
+        }
+    }
+
     Component {
         id: gridComponent
         CameraGrid {
+            onCameraSelected: (cameraId) => window.showCamera(cameraId)
+        }
+    }
+
+    Component {
+        id: focusComponent
+        FocusLayoutView {
             onCameraSelected: (cameraId) => window.showCamera(cameraId)
         }
     }
@@ -139,5 +154,20 @@ ApplicationWindow {
         anchors.right: parent.right
         width: 320
         visible: false
+    }
+
+    LoginOverlay {
+        anchors.fill: parent
+    }
+
+    Connections {
+        target: authService
+        function onLoggedInChanged() {
+            if (!authService.loggedIn) {
+                demoPanel.visible = false
+                if (cameraStack.depth > 1)
+                    cameraStack.pop()
+            }
+        }
     }
 }

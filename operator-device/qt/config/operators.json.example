@@ -1,0 +1,12 @@
+{
+  "_comment_pin_hash": "pin_hash = sha256(\"<operator_id>:<PIN>\") 소문자 hex (AuthService::hashPin과 동일 공식). 평문 PIN은 어디에도 저장하지 않음. 예: printf '%s' \"hanwha:5hanwha!\" | openssl dgst -sha256",
+  "_comment_role": "role은 \"operator\" 또는 \"supervisor\". supervisor만 Ctrl+Shift+D 데모 패널을 열 수 있음",
+  "operators": [
+    {
+      "operator_id": "hanwha",
+      "display_name": "한화비전 관리자",
+      "role": "supervisor",
+      "pin_hash": "f961e3c00b785e43d3630f9f33720e74a85fb659ba3105d4ba1e6dc4ea12f59a"
+    }
+  ]
+}

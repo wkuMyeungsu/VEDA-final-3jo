@@ -1,5 +1,11 @@
 #include "EventLogModel.h"
 
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QStandardPaths>
+#include <QTextStream>
+
 EventLogModel::EventLogModel(int maxEntries, QObject *parent)
     : QAbstractListModel(parent)
     , m_maxEntries(maxEntries)
@@ -26,6 +32,49 @@ void EventLogModel::clear()
     beginResetModel();
     m_entries.clear();
     endResetModel();
+}
+
+QString EventLogModel::generateDefaultCsvPath() const
+{
+    const QString desktopOrAppPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    const QString targetDir = desktopOrAppPath.isEmpty() ? QDir::currentPath() : desktopOrAppPath;
+    return QDir(targetDir).filePath(QStringLiteral("safety_audit_log_%1.csv")
+                                       .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"))));
+}
+
+bool EventLogModel::exportToCsv(const QString &filePath) const
+{
+    const QString path = filePath.isEmpty() ? generateDefaultCsvPath() : filePath;
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    out.setCodec("UTF-8");
+#endif
+    // BOM for Excel compatibility
+    out << "\xEF\xBB\xBF";
+    out << "Timestamp,Camera ID,Zone,Risk Level,Distance (m),Exception State\n";
+
+    for (const RiskMetadata &entry : m_entries) {
+        const QString timeStr = entry.utcTime().isValid()
+                                    ? entry.utcTime().toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                                    : QStringLiteral("N/A");
+        const QString distStr = entry.distanceValid()
+                                    ? QString::number(entry.distanceM(), 'f', 2)
+                                    : QStringLiteral("N/A");
+
+        out << "\"" << timeStr << "\","
+            << "\"" << entry.cameraId() << "\","
+            << "\"" << entry.zone() << "\","
+            << "\"" << RiskTypes::riskLevelToString(entry.riskLevel()) << "\","
+            << "\"" << distStr << "\","
+            << "\"" << RiskTypes::exceptionStateToString(entry.exceptionState()) << "\"\n";
+    }
+
+    file.close();
+    return true;
 }
 
 int EventLogModel::rowCount(const QModelIndex &parent) const

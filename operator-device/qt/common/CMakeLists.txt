@@ -156,6 +156,8 @@ qt_add_qml_module(safety_common
         models/RiskMetadata.cpp
         models/CameraInfo.h
         models/CameraInfo.cpp
+        models/OperatorAccount.h
+        models/OperatorAccount.cpp
 
         video/AspectFit.h
         video/IVideoSource.h
@@ -197,6 +199,8 @@ qt_add_qml_module(safety_common
         services/AlertListModel.cpp
         services/DemoController.h
         services/DemoController.cpp
+        services/AuthService.h
+        services/AuthService.cpp
 )
 
 target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST mosquitto_dep)
