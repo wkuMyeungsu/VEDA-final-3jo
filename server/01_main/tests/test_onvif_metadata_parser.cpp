@@ -52,7 +52,7 @@ int main() {
                   << "  center=(" << obj.bbox.centerX() << "," << obj.bbox.centerY() << ")\n";
         for (const auto& po : obj.proximateObjects) {
             std::cout << "  ProximateObject Id=" << po.id
-                      << " Distance=" << po.distance << " (단위 미확인)\n";
+                      << " Distance=" << po.distance << " mm\n";
         }
     }
     return 0;

@@ -85,6 +85,51 @@ void DetectionOverlay::setLineColor(const QColor &color)
     update();
 }
 
+void DetectionOverlay::setTtcValid(bool valid)
+{
+    if (m_ttcValid == valid)
+        return;
+    m_ttcValid = valid;
+    emit ttcValidChanged();
+    update();
+}
+
+void DetectionOverlay::setTtcSeconds(double seconds)
+{
+    if (qFuzzyCompare(m_ttcSeconds + 1.0, seconds + 1.0))
+        return;
+    m_ttcSeconds = seconds;
+    emit ttcSecondsChanged();
+    update();
+}
+
+void DetectionOverlay::setTtcConfidence(double confidence)
+{
+    if (qFuzzyCompare(m_ttcConfidence + 1.0, confidence + 1.0))
+        return;
+    m_ttcConfidence = confidence;
+    emit ttcConfidenceChanged();
+    update();
+}
+
+void DetectionOverlay::setTtcReason(const QString &reason)
+{
+    if (m_ttcReason == reason)
+        return;
+    m_ttcReason = reason;
+    emit ttcReasonChanged();
+    update();
+}
+
+void DetectionOverlay::setTtcColor(const QColor &color)
+{
+    if (m_ttcColor == color)
+        return;
+    m_ttcColor = color;
+    emit ttcColorChanged();
+    update();
+}
+
 void DetectionOverlay::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
 {
     QQuickPaintedItem::geometryChange(newGeometry, oldGeometry);
@@ -139,7 +184,52 @@ void DetectionOverlay::paint(QPainter *painter)
         painter->fillPath(badgePath, QColor(0, 0, 0, 170));
         painter->setPen(Qt::white);
         painter->drawText(textRect, Qt::AlignCenter, distanceLabel);
+
+        // TTC 예측 실험 배지 -- 같은 personRect 기준이지만 좌하단에 그려서 우상단
+        // 거리 배지와 안 겹침
+        drawTtcBadge(painter, bounds, personRect);
     }
+}
+
+// TTC 예측 실험 배지: personRect 좌하단 바깥쪽에 배지 형태로 그림 (거리 배지와
+// 대칭되는 위치라 서로 안 겹침). 항상 "예측 실험" 표를 같이 그려서 안전 판정과
+// 절대 혼동되지 않게 함 -- 색상도 위험 팔레트가 아닌 중립색(m_ttcColor, QML이
+// Theme.colorTextMuted를 바인딩)만 씀. 무효할 땐 숫자 대신 짧은 사유만 표시하고,
+// 절대 0/과거 값을 진짜처럼 보여주지 않음
+void DetectionOverlay::drawTtcBadge(QPainter *painter, const QRectF &bounds, const QRectF &personRect) const
+{
+    const QString experimentTag = QStringLiteral("예측 실험");
+    const QString body = m_ttcValid
+        ? QStringLiteral("TTC %1s · 신뢰 %2").arg(m_ttcSeconds, 0, 'f', 1).arg(
+              m_ttcConfidence >= 0.7 ? QStringLiteral("상") : (m_ttcConfidence >= 0.4 ? QStringLiteral("중") : QStringLiteral("하")))
+        : m_ttcReason; // - 무효 사유(예: "표본 부족")를 대신 보여줌 -- 절대 숫자를 안 그림
+
+    if (body.isEmpty()) // - 사유조차 없으면(초기 상태) 그릴 게 없음
+        return;
+
+    const QString label = experimentTag + QStringLiteral(" · ") + body;
+
+    QFont font = painter->font();
+    font.setPointSize(9);   // - 거리 배지(11pt, bold)보다 작고 안 굵게 -- 시각적으로 보조 지표임을 드러냄
+    font.setBold(false);
+    painter->setFont(font);
+
+    const QFontMetrics metrics(font);
+    // personRect 좌하단 바깥쪽에 배치 (거리 배지는 우상단 -- 대칭 위치라 안 겹침)
+    const QPointF anchor = personRect.bottomLeft() + QPointF(0, 6);
+    QRectF textRect = QRectF(metrics.boundingRect(label)).adjusted(-8, -4, 8, 4).translated(anchor);
+
+    // 거리 배지와 동일한 로직: 화면 가장자리를 벗어나면 그리는 영역(bounds) 안으로 되돌림
+    if (textRect.bottom() > bounds.bottom())
+        textRect.moveBottom(bounds.bottom());
+    if (textRect.left() < bounds.left())
+        textRect.moveLeft(bounds.left());
+
+    QPainterPath badgePath;
+    badgePath.addRoundedRect(textRect, 6, 6);
+    painter->fillPath(badgePath, QColor(0, 0, 0, 170));
+    painter->setPen(m_ttcColor); // - 위험 팔레트가 아닌 중립색 -- 색만으로 상태를 말하지 않음(텍스트가 항상 같이 붙음)
+    painter->drawText(textRect, Qt::AlignCenter, label);
 }
 
 // 박스 하나 + 좌상단에 붙는 색깔 있는 라벨(예: "PERSON")을 그림

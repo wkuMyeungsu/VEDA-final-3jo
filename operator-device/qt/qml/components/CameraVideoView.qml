@@ -15,6 +15,13 @@ Item {
     property bool showOverlay: true
     property int riskLevel: 0
 
+    // TTC 예측 실험 표시용 (기본값=무효 -- 이 값을 안 채우는 화면(예: 그리드 카드)은
+    // 아무것도 안 그려짐, TtcExperiment와 무관하게 항상 안전한 기본 상태)
+    property bool ttcValid: false
+    property real ttcSeconds: 0
+    property real ttcConfidence: 0
+    property string ttcReason: ""
+
     readonly property int connectionState: videoItem.connectionState
     readonly property real fps: videoItem.fps
     readonly property size videoNativeSize: videoItem.videoSize
@@ -36,5 +43,10 @@ Item {
         personColor: root.riskLevel !== 0 ? Theme.riskColor(root.riskLevel) : Theme.colorPersonBox
         forkliftColor: Theme.colorForkliftBox
         lineColor: Theme.colorTextPrimary
+        ttcValid: root.ttcValid
+        ttcSeconds: root.ttcSeconds
+        ttcConfidence: root.ttcConfidence
+        ttcReason: root.ttcReason
+        ttcColor: Theme.colorTextMuted
     }
 }

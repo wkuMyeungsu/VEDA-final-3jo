@@ -61,7 +61,7 @@ static DetectedObject parseObject(const pugi::xml_node& objNode) {
     }
 }
 
-    // --- ProximateObjects (거리 추정치 — 단위 확인 전이라 참고용) ---
+    // --- ProximateObjects (거리 추정치, mm 단위 — 카메라 측 확인 완료) ---
     pugi::xml_node proxRoot = findChild(appearance, "ProximateObjects");
     if (proxRoot) {
         for (auto p : proxRoot.children()) {

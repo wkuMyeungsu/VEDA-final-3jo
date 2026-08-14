@@ -21,6 +21,14 @@ Item {
     property int riskLevel: 0
     property int exceptionState: 0
 
+    // TTC 예측 실험 값 -- metadataDistributor와 별도 신호(ttcExperiment.resultUpdated)로
+    // 갱신됨. TtcExperiment는 순수 구경꾼이라 riskLevel 등 위 값들과는 갱신 시점이
+    // 정확히 안 맞을 수 있음(무해함, 표시 전용이라 판정에 안 쓰임)
+    property real ttcSeconds: 0
+    property bool ttcValid: false
+    property real ttcConfidence: 0
+    property string ttcReason: ""
+
     Connections {
         target: metadataDistributor
         function onMetadataUpdated(metadata) {
@@ -37,6 +45,20 @@ Item {
         }
     }
 
+    Connections {
+        target: ttcExperiment
+        function onResultUpdated(cameraId) {
+            // 마찬가지로 이 화면이 보고 있는 카메라가 아니면 무시
+            if (cameraId !== root.cameraId)
+                return
+            const result = ttcExperiment.resultFor(root.cameraId)
+            root.ttcSeconds = result.ttcSeconds
+            root.ttcValid = result.valid
+            root.ttcConfidence = result.confidence
+            root.ttcReason = result.reason
+        }
+    }
+
     Component.onCompleted: {
         const latest = metadataDistributor.latestFor(root.cameraId)
         root.distanceM = latest.distanceM
@@ -45,6 +67,12 @@ Item {
         root.forkliftBBox = latest.forkliftBBox
         root.riskLevel = latest.riskLevel
         root.exceptionState = latest.exceptionState
+
+        const ttcResult = ttcExperiment.resultFor(root.cameraId)
+        root.ttcSeconds = ttcResult.ttcSeconds
+        root.ttcValid = ttcResult.valid
+        root.ttcConfidence = ttcResult.confidence
+        root.ttcReason = ttcResult.reason
     }
 
     // 그리드에서 확대되며 뜨는 패널이라 부유감을 주는 그림자 적용 (허용된 2곳 중 하나)
@@ -160,6 +188,10 @@ Item {
                 distanceM: root.distanceM
                 distanceValid: root.distanceValid
                 riskLevel: root.riskLevel
+                ttcValid: root.ttcValid
+                ttcSeconds: root.ttcSeconds
+                ttcConfidence: root.ttcConfidence
+                ttcReason: root.ttcReason
             }
         }
     }

@@ -22,7 +22,7 @@ struct ClassInfo {
 
 struct ProximateObject {
     int id = -1;
-    float distance = 0.f;  // 단위 미확인 — 실측 필요
+    float distance = 0.f;  // mm 단위 (카메라 측 확인 완료)
 };
 
 struct DetectedObject {
