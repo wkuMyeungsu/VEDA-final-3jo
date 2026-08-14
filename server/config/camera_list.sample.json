@@ -1,0 +1,26 @@
+{
+  "cameras": [
+    {
+      "camera_id": "CAM_01",
+      "model": "PNO-A9081RG",
+      "connection": {
+        "ip": "CAMERA_IP",
+        "rtsp_port": 554,
+        "http_port": 80,
+        "username": "CAMERA_USERNAME",
+        "password": "CHANGE_ME",
+        "profile": "PROFILE_NAME",
+        "capture_profile": "CAPTURE_PROFILE_NAME",
+        "timeout_sec": 10
+      },
+      "channels": [
+        {
+          "channel": 1,
+          "rtsp_url": "rtsp://CAMERA_USERNAME:CHANGE_ME@CAMERA_IP:554/stream1",
+          "image_width_px": 2592,
+          "image_height_px": 1520
+        }
+      ]
+    }
+  ]
+}
