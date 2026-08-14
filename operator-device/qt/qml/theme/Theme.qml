@@ -6,111 +6,115 @@ import QtQuick
 // tokens plus a handful of small mapping helpers (risk level -> color,
 // connection state -> label) so QML never repeats those switch statements.
 QtObject {
-    // --- Surfaces ---
-    readonly property color colorBackground: "#0b0f1a"
-    readonly property color colorSurface: "#141a29"
-    readonly property color colorSurfaceElevated: "#1b2233"
-    readonly property color colorBorder: "#2a3245"
-    readonly property color colorBorderStrong: "#3a445c"
+    // --- Surfaces (Deep Slate & Glass) ---
+    readonly property color colorBackground: "#080c14"
+    readonly property color colorSurface: "#101622"
+    readonly property color colorSurfaceElevated: "#161e2e"
+    readonly property color colorSurfaceGlass: Qt.rgba(0.06, 0.09, 0.14, 0.85)
+    readonly property color colorBorder: Qt.rgba(1, 1, 1, 0.07)
+    readonly property color colorBorderStrong: Qt.rgba(1, 1, 1, 0.14)
+    readonly property color colorBorderAccent: Qt.rgba(0.31, 0.55, 0.97, 0.35)
 
     // --- Text ---
-    readonly property color colorTextPrimary: "#eef1f7"
-    readonly property color colorTextSecondary: "#9aa4bb"
-    readonly property color colorTextMuted: "#6b7690"
+    readonly property color colorTextPrimary: "#f1f5f9"
+    readonly property color colorTextSecondary: "#94a3b8"
+    readonly property color colorTextMuted: "#64748b"
 
     readonly property color colorAccent: "#4f8cf7"
+    readonly property color colorAccentAlpha20: Qt.rgba(0.31, 0.55, 0.97, 0.18)
     readonly property color colorFocusRing: colorAccent          // - 포커스 링 전용 별칭
-    readonly property color colorSurfaceSunken: "#070a12"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
-    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.6)    // - 모달/오버레이 배경 딤
-    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.06)   // - 융기 표면 상단 하이라이트 선
-    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.05) // - hover 시 덧칠 오버레이
-    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.12) // - press 시 덧칠 오버레이
+    readonly property color colorSurfaceSunken: "#060910"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
+    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.65)   // - 모달/오버레이 배경 딤
+    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.05)   // - 융기 표면 상단 하이라이트 선
+    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.04) // - hover 시 덧칠 오버레이
+    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.15) // - press 시 덧칠 오버레이
 
-    // --- Risk levels (color + text + icon, never color alone) ---
-    readonly property color colorSafe: "#3cb371"
-    readonly property color colorSafeBg: "#15271d"
-    readonly property color colorCaution: "#f5a623"
-    readonly property color colorCautionBg: "#332810"
-    readonly property color colorDanger: "#e0473f"
-    readonly property color colorDangerBg: "#331414"
-    readonly property color colorEmergency: "#ff3b3b"
-    readonly property color colorEmergencyBg: "#3d0a0a"
+    // --- Risk levels (Modern vibrant tone + glass tint backgrounds) ---
+    readonly property color colorSafe: "#22c55e"
+    readonly property color colorSafeBg: Qt.rgba(0.13, 0.77, 0.37, 0.12)
+    readonly property color colorCaution: "#f59e0b"
+    readonly property color colorCautionBg: Qt.rgba(0.96, 0.62, 0.04, 0.12)
+    readonly property color colorDanger: "#ef4444"
+    readonly property color colorDangerBg: Qt.rgba(0.94, 0.27, 0.27, 0.15)
+    readonly property color colorEmergency: "#f43f5e"
+    readonly property color colorEmergencyBg: Qt.rgba(0.96, 0.25, 0.37, 0.20)
 
     // 통신/카메라 끊김 등으로 riskLevel을 신뢰할 수 없을 때 쓰는 중립색 (안전으로 오인 방지)
-    readonly property color colorUnknown: "#9aa4bb"
-    readonly property color colorUnknownBg: "#20263a"
+    readonly property color colorUnknown: "#94a3b8"
+    readonly property color colorUnknownBg: Qt.rgba(0.58, 0.64, 0.72, 0.10)
 
-    readonly property color colorPersonBox: "#4fc3f7"
-    readonly property color colorForkliftBox: "#ffb74d"
+    readonly property color colorPersonBox: "#38bdf8"
+    readonly property color colorForkliftBox: "#fb923c"
 
     // --- Spacing scale ---
     readonly property int spacingXxs: 2
     readonly property int spacingXs: 4
     readonly property int spacingSm: 8
     readonly property int spacingMd: 12
-    readonly property int spacingLg: 20
-    readonly property int spacingXl: 32
+    readonly property int spacingLg: 18
+    readonly property int spacingXl: 28
 
     // --- Corner radius ---
-    readonly property int radiusSm: 8
-    readonly property int radiusMd: 12
+    readonly property int radiusXs: 4
+    readonly property int radiusSm: 6
+    readonly property int radiusMd: 10
     readonly property int radiusLg: 14
     readonly property int radiusPill: 999             // - 높이에 무관하게 완전한 알약형 보장
 
     // --- Border width ---
     readonly property int borderWidthHairline: 1
-    readonly property int borderWidthAlert: 2
+    readonly property int borderWidthAlert: 1
 
-    // --- Typography (크기 · 굵기 · 자간 · 수치정렬을 함께 이동) ---
+    // --- Typography (과도한 Bold 탈피, 섬세한 Regular/Medium/DemiBold 스케일) ---
     readonly property QtObject typeDisplay: QtObject {   // - 단말 거리 표시 등 최상위 수치
-        readonly property int size: 42
-        readonly property int weight: Font.Bold
+        readonly property int size: 36
+        readonly property int weight: Font.DemiBold
         readonly property real spacing: -0.5
         readonly property bool tabular: true             // - 수치 갱신 시 가로 흔들림 방지
     }
     readonly property QtObject typeTitle: QtObject {     // - 앱바 시스템명, 확대뷰 카메라ID
-        readonly property int size: 26
-        readonly property int weight: Font.Bold
-        readonly property real spacing: 0
+        readonly property int size: 20
+        readonly property int weight: Font.DemiBold
+        readonly property real spacing: -0.2
         readonly property bool tabular: false
     }
     readonly property QtObject typeHeading: QtObject {   // - 패널/데모패널 제목
-        readonly property int size: 18
-        readonly property int weight: Font.Bold
+        readonly property int size: 15
+        readonly property int weight: Font.Medium
         readonly property real spacing: 0
         readonly property bool tabular: false
     }
     readonly property QtObject typeBody: QtObject {      // - 일반 본문 텍스트
-        readonly property int size: 14
+        readonly property int size: 13
         readonly property int weight: Font.Normal
         readonly property real spacing: 0
         readonly property bool tabular: false
     }
     readonly property QtObject typeLabel: QtObject {     // - 섹션 제목 · 컬럼 헤더 (대문자성 + 자간)
-        readonly property int size: 12
-        readonly property int weight: Font.Bold
-        readonly property real spacing: 1
+        readonly property int size: 11
+        readonly property int weight: Font.Medium
+        readonly property real spacing: 0.8
         readonly property bool tabular: false
     }
     readonly property QtObject typeCaption: QtObject {   // - 보조/부가 텍스트
-        readonly property int size: 12
+        readonly property int size: 11
         readonly property int weight: Font.Normal
-        readonly property real spacing: 0
+        readonly property real spacing: 0.2
         readonly property bool tabular: false
     }
 
     // --- Layout (기존 화면 상수를 동일 값으로 흡수) ---
-    readonly property int appBarHeight: 56
+    readonly property int appBarHeight: 52
     readonly property int topBarHeight: 40             // - 단말 TopBar, 800x480 기준 축소(기존 64)
-    readonly property int rightPanelWidth: 340
-    readonly property int eventLogHeight: 200
-    readonly property int cameraCardFooterHeight: 18
-    readonly property int cameraCardChromeHeight: 40
-    readonly property int tableRowHeight: 22
-    readonly property int alertRowHeight: 52
-    readonly property int statusRowHeight: 44
-    readonly property int iconButtonSize: 36
-    readonly property int connectionDotSize: 10
+    readonly property int rightPanelWidth: 350
+    readonly property int eventLogHeight: 210
+    readonly property int cameraCardFooterHeight: 24
+    readonly property int cameraCardChromeHeight: 36
+    readonly property int tableRowHeight: 24
+    readonly property int alertRowHeight: 48
+    readonly property int statusRowHeight: 40
+    readonly property int iconButtonSize: 32
+    readonly property int connectionDotSize: 8
 
     // --- Animation ---
     readonly property int animationFast: 120

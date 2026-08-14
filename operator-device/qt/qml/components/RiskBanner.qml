@@ -17,31 +17,32 @@ Rectangle {
     color: dataStale ? Theme.colorUnknownBg : Theme.riskBgColor(riskLevel)
     border.color: accent
     border.width: Theme.borderWidthHairline
-    radius: large ? Theme.radiusLg : Theme.radiusSm
-    implicitHeight: contentColumn.implicitHeight + (large ? Theme.spacingMd : Theme.spacingXs) * 2
+    radius: large ? Theme.radiusMd : Theme.radiusPill
+    implicitHeight: contentColumn.implicitHeight + (large ? Theme.spacingSm : Theme.spacingXs) * 2
     implicitWidth: contentColumn.implicitWidth + (large ? Theme.spacingLg : Theme.spacingMd) * 2
 
     Column {
         id: contentColumn
         anchors.centerIn: parent
-        spacing: root.large ? Theme.spacingXs : Theme.spacingXxs
+        spacing: root.large ? Theme.spacingXs : 2
 
         Row {
             id: contentRow
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: root.large ? Theme.spacingMd : Theme.spacingSm
+            spacing: root.large ? Theme.spacingSm : Theme.spacingXs
 
             Text {
                 text: root.dataStale ? "?" : Theme.riskIcon(root.riskLevel)
                 color: root.accent
-                font.pixelSize: root.large ? Theme.typeTitle.size : Theme.typeBody.size
-                font.bold: true
+                font.pixelSize: root.large ? Theme.typeTitle.size : Theme.typeCaption.size
+                font.weight: Font.DemiBold
             }
             Text {
                 text: root.dataStale ? "UNKNOWN" : Theme.riskLabel(root.riskLevel)
                 color: root.accent
-                font.bold: true
-                font.pixelSize: root.large ? Theme.typeTitle.size : Theme.typeBody.size
+                font.weight: Font.DemiBold
+                font.pixelSize: root.large ? Theme.typeTitle.size : Theme.typeCaption.size
+                font.letterSpacing: 0.5
             }
         }
         Text {
@@ -49,7 +50,7 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Theme.exceptionLabel(root.exceptionState)
             color: Theme.colorTextSecondary
-            font.pixelSize: root.large ? Theme.typeBody.size : Theme.typeCaption.size
+            font.pixelSize: root.large ? Theme.typeBody.size : (Theme.typeCaption.size - 1)
         }
     }
 }

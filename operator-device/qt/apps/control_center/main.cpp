@@ -13,16 +13,34 @@
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
 #include "network/RiskEventSource.h"
+#include "services/AuthService.h"
 #include "services/DemoController.h"
 #include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
 
+#include <QDateTime>
+#include <QFile>
+#include <QTextStream>
 
+void customLogHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+{
+    static QFile logFile("app_debug.log");
+    if (!logFile.isOpen()) {
+        logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    }
+    QTextStream ts(&logFile);
+    ts << "[" << QDateTime::currentDateTime().toString("HH:mm:ss.zzz") << "] "
+       << (type == QtCriticalMsg ? "CRITICAL: " : (type == QtWarningMsg ? "WARNING: " : "INFO: "))
+       << msg << " (" << context.file << ":" << context.line << ")\n";
+    ts.flush();
+}
 
 int main(int argc, char *argv[])
 {
+    qInstallMessageHandler(customLogHandler);
+    
     // RtspVideoSource가 GStreamer API를 쓰기 전에 반드시 한 번 필요
     gst_init(&argc, &argv); 
 
@@ -73,6 +91,9 @@ int main(int argc, char *argv[])
     const ConfigLoader configLoader(configDir);
     const QVector<CameraInfo> cameras = configLoader.loadCameras();
     const ControlCenterConfig appConfig = configLoader.loadControlCenterConfig();
+    const QVector<OperatorAccount> operators = configLoader.loadOperators();
+
+    AuthService authService(operators);
 
     VideoSourceManager videoManager;
     videoManager.setCameras(cameras);
@@ -125,15 +146,22 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("eventLogModel"), metadataDistributor.eventLogModel());
     ctx->setContextProperty(QStringLiteral("alertListModel"), metadataDistributor.alertListModel());
     ctx->setContextProperty(QStringLiteral("demoController"), &demoController);
+    ctx->setContextProperty(QStringLiteral("authService"), &authService);
 
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
-        [] { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
+        [](const QUrl &url) {
+            qCritical() << "QML Object creation failed for:" << url;
+            QCoreApplication::exit(-1);
+        }, Qt::QueuedConnection);
 
     engine.loadFromModule("Safety.ControlCenter", "ControlCenterWindow");
 
-    if (engine.rootObjects().isEmpty())
+    if (engine.rootObjects().isEmpty()) {
+        qCritical() << "Engine rootObjects is EMPTY!";
         return -1;
+    }
 
+    qDebug() << "QML application successfully loaded and running.";
     return app.exec();
 }

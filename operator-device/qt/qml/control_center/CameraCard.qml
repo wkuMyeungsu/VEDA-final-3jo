@@ -17,102 +17,117 @@ Rectangle {
 
     signal clicked()
 
-    // riskLevel !== 0(=Safe 아님) 이거나 예외 상태가 있으면 "경보 중"으로 취급
-    // -> 배너 표시 여부/테두리 굵기·색상이 전부 이 값 하나로 결정됨
     readonly property bool isAlert: riskLevel !== 0 || exceptionState !== 0
 
     color: Theme.colorSurface
     radius: Theme.radiusMd
-    // ExpandedCameraView와 동일 규칙(Theme.alertBorderColor/Width) -- 한쪽만
-    // 고치는 드리프트 방지
-    border.width: Theme.alertBorderWidth(riskLevel, exceptionState)
-    border.color: Theme.alertBorderColor(riskLevel, exceptionState)
+    border.width: Theme.borderWidthHairline
+    border.color: root.isAlert ? Theme.alertBorderColor(riskLevel, exceptionState) : Theme.colorBorder
 
-    // 색·굵기 둘 다 뚝 끊기지 않고 부드럽게 전환 (예: SAFE -> DANGER)
     Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
-    Behavior on border.width { NumberAnimation { duration: Theme.animationNormal } }
-
-    RiskBanner {
-        id: banner
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.margins: Theme.spacingSm
-        visible: root.isAlert
-        riskLevel: root.riskLevel
-        exceptionState: root.exceptionState
-    }
 
     Item {
         id: videoArea
-        anchors.top: root.isAlert ? banner.bottom : parent.top
-        anchors.topMargin: Theme.spacingSm
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: headerRow.top
-        anchors.bottomMargin: Theme.spacingXs
-        anchors.leftMargin: Theme.spacingSm
-        anchors.rightMargin: Theme.spacingSm
+        anchors.fill: parent
+        anchors.margins: 1
         clip: true
 
-        // 카드 표면보다 어두운 웰 -- 영상이 오목한 자리에서 튀어나오는 인상을 줌
         Rectangle {
             id: videoWell
             anchors.fill: parent
-            radius: Theme.radiusSm
+            radius: Theme.radiusMd - 1
             color: Theme.colorSurfaceSunken
-
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: Theme.borderWidthHairline
-                color: Theme.colorHairlineTop
-            }
         }
 
         CameraVideoView {
             anchors.fill: parent
-            anchors.margins: 2
             cameraId: root.cameraId
             distanceM: root.distanceM
             distanceValid: root.distanceValid
             riskLevel: root.riskLevel
         }
 
+        // 상단 반투명 헤더 바 (카메라 정보 + 알약 뱃지)
+        Rectangle {
+            id: topFloatingBar
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: Theme.cameraCardChromeHeight
+            color: Qt.rgba(0.04, 0.06, 0.10, 0.72)
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.spacingSm
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.spacingXs
+
+                Rectangle {
+                    width: 6
+                    height: 6
+                    radius: 3
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.connectionColor(root.videoConnectionState)
+                }
+
+                Text {
+                    text: root.cameraName.length > 0 ? root.cameraName : root.cameraId
+                    color: Theme.colorTextPrimary
+                    font.pixelSize: Theme.typeCaption.size
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    text: "· " + root.zone
+                    color: Theme.colorTextMuted
+                    font.pixelSize: Theme.typeCaption.size
+                }
+            }
+
+            RiskBanner {
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spacingSm
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.isAlert
+                riskLevel: root.riskLevel
+                exceptionState: root.exceptionState
+            }
+        }
+
+        // 하단 실시간 거리 오버레이 (위험 발생 시 또는 거리 유효 시)
+        Rectangle {
+            id: bottomFloatingBar
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: Theme.cameraCardFooterHeight
+            color: Qt.rgba(0.04, 0.06, 0.10, 0.65)
+            visible: root.isAlert || root.distanceValid
+
+            Row {
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spacingSm
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.spacingXs
+
+                Text {
+                    text: "접근 거리:"
+                    color: Theme.colorTextMuted
+                    font.pixelSize: Theme.typeCaption.size - 1
+                }
+                Text {
+                    text: root.distanceValid ? root.distanceM.toFixed(2) + " m" : "측정 불가"
+                    color: root.isAlert ? Theme.riskColor(root.riskLevel) : Theme.colorTextPrimary
+                    font.pixelSize: Theme.typeCaption.size
+                    font.weight: Font.Medium
+                }
+            }
+        }
+
         HoverOverlay {
             anchors.fill: parent
-            overlayRadius: Theme.radiusSm
+            overlayRadius: Theme.radiusMd
             onClicked: root.clicked()
-        }
-    }
-
-    Row {
-        id: headerRow
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: Theme.spacingSm
-        height: Theme.cameraCardFooterHeight
-        spacing: Theme.spacingSm
-
-        Text {
-            text: root.cameraName + " (" + root.cameraId + ")"
-            color: Theme.colorTextPrimary
-            font.pixelSize: Theme.typeCaption.size
-            font.bold: true
-            elide: Text.ElideRight
-            width: 150
-        }
-        Text {
-            text: root.zone
-            color: Theme.colorTextSecondary
-            font.pixelSize: Theme.typeCaption.size
-        }
-        Text {
-            text: Theme.connectionLabel(root.videoConnectionState)
-            color: Theme.connectionColor(root.videoConnectionState)
-            font.pixelSize: Theme.typeCaption.size
         }
     }
 }

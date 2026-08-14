@@ -25,6 +25,9 @@ set(CONTROL_CENTER_QML_FILES
     ${CMAKE_SOURCE_DIR}/qml/control_center/CameraStatusList.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/EventLogPanel.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/DemoPanel.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/LoginOverlay.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/RadarMapView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/FocusLayoutView.qml
 )
 foreach(qml_file ${CONTROL_CENTER_QML_FILES})
     get_filename_component(qml_alias ${qml_file} NAME)

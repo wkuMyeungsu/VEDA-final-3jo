@@ -7,6 +7,7 @@ function(safety_add_test test_name source_file)
 endfunction()
 
 safety_add_test(test_config_loader test_config_loader.cpp)
+safety_add_test(test_auth_service test_auth_service.cpp)
 safety_add_test(test_mock_metadata_source test_mock_metadata_source.cpp)
 safety_add_test(test_bbox_aspect_fit test_bbox_aspect_fit.cpp)
 safety_add_test(test_demo_source test_demo_source.cpp)

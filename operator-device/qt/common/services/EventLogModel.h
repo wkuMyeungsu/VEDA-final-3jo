@@ -35,6 +35,10 @@ public:
     void addEntry(const RiskMetadata &metadata);
     void clear();
 
+    // CSV 파일로 현재 로그 내보내기 (일일 안전 감사 일지용)
+    Q_INVOKABLE bool exportToCsv(const QString &filePath) const;
+    Q_INVOKABLE QString generateDefaultCsvPath() const;
+
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
