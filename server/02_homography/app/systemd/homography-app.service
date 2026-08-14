@@ -9,6 +9,7 @@ User=veda3
 WorkingDirectory=/home/veda3/01_Workspace/server/02_homography/app
 Environment=HOMOGRAPHY_APP_PORT=8001
 Environment=HOMOGRAPHY_TOOL=/home/veda3/01_Workspace/server/02_homography/engine/build/homography_tool
+Environment=SERVER_COMMON_CONFIG_DIR=/home/veda3/01_Workspace/server/config
 ExecStart=/usr/bin/python3 /home/veda3/01_Workspace/server/02_homography/app/server.py
 Restart=on-failure
 RestartSec=3

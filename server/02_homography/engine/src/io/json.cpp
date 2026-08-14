@@ -1,7 +1,6 @@
 #include "homography/json.hpp"
 
 #include <chrono>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -41,41 +40,6 @@ std::string utc_now() {
     std::ostringstream output;
     output << std::put_time(&time, "%Y-%m-%dT%H:%M:%SZ");
     return output.str();
-}
-
-json config_to_json(const Config& config) {
-    // 캘리브레이션 결과에 당시 설정을 함께 넣어 같은 조건의
-    // 결과 해석과 재현에 사용함.
-    return {
-        {"dictionary", config.dictionary}, {"cols", config.cols},
-        {"rows", config.rows}, {"marker_len_mm", config.marker_len_mm},
-        {"gap_mm", config.gap_mm}, {"id_offset", config.id_offset},
-        {"origin_corner", config.origin_corner},
-        {"marker_output", {
-            {"size_mm", config.marker_output.size_mm},
-            {"margin_mm", config.marker_output.margin_mm},
-            {"dpi", config.marker_output.dpi},
-            {"label", config.marker_output.label}}},
-        {"calibration", {
-            {"max_rmse_mm", config.calibration.max_rmse_mm},
-            {"ransac_threshold_mm", config.calibration.ransac_threshold_mm},
-            {"channel", config.calibration.channel}}},
-        {"manual_solve", {
-            {"marker_size_mm", config.manual_solve.marker_size_mm},
-            {"ransac_threshold_mm", config.manual_solve.ransac_threshold_mm}}},
-        {"preview", {
-            {"scale", config.preview.scale},
-            {"good_error_mm", config.preview.good_error_mm},
-            {"warning_error_mm", config.preview.warning_error_mm}}}
-    };
-}
-
-json read_homography(const std::string& path) {
-    // view 명령이 사용할 결과 JSON을 읽음. 파일 열기와 JSON 파싱만
-    // 담당하며, 행렬 형식 검사는 json_to_matrix에서 처리함.
-    std::ifstream input(path);
-    if (!input) throw std::runtime_error("cannot open homography: " + path);
-    return json::parse(input);
 }
 
 }  // namespace homography

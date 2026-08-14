@@ -9,8 +9,6 @@
 
 #include <cmath>
 #include <algorithm>
-#include <fstream>
-#include <iomanip>
 #include <limits>
 #include <stdexcept>
 #include <set>
@@ -32,74 +30,6 @@ void detect_marker_corners(const Config& config, const cv::Mat& image,
     parameters->cornerRefinementMaxIterations = 50;
     parameters->cornerRefinementMinAccuracy = 0.01;
     cv::aruco::detectMarkers(image, dictionary(config), corners, ids, parameters);
-}
-
-DetectionResult calibrate_image(const Config& config, const cv::Mat& image) {
-    DetectionResult result;
-    std::vector<int> ids;
-    std::vector<std::vector<cv::Point2f>> corners, rejected;
-    // OpenCV가 반환하는 네 코너 순서를 월드 코너 생성 순서와 일치시켜
-    // 픽셀 좌표와 실제 좌표를 올바르게 대응시킴.
-    detect_marker_corners(config, image, corners, ids);
-    std::vector<cv::Point2f> pixels, worlds;
-    std::vector<int> valid_ids;
-    for (size_t i = 0; i < ids.size(); ++i) {
-        const auto world = world_corners(config, ids[i]);
-        if (world.empty() || corners[i].size() != 4) continue;
-        for (int corner = 0; corner < 4; ++corner) {
-            pixels.push_back(corners[i][corner]);
-            worlds.push_back(world[corner]);
-        }
-        valid_ids.push_back(ids[i]);
-    }
-    if (pixels.size() < 8)
-        throw std::runtime_error("fewer than two valid markers detected");
-    cv::Mat mask;
-    // RANSAC으로 인쇄 오차나 부분 가림에 따른 이상 코너 제외함.
-    // 픽셀 좌표를 실제 보드 mm 좌표로 변환하는 행렬 생성함.
-    result.h_pixel_to_world = cv::findHomography(
-        pixels, worlds, cv::RANSAC, config.calibration.ransac_threshold_mm, mask);
-    if (result.h_pixel_to_world.empty())
-        throw std::runtime_error("findHomography failed");
-    result.h_pixel_to_world /= result.h_pixel_to_world.at<double>(2, 2);
-    result.h_world_to_pixel = result.h_pixel_to_world.inv();
-    // 채택된 코너의 재투영 유클리드 거리 계산함.
-    // 결과 단위는 월드 좌표와 같은 mm다.
-    double sum = 0.0;
-    int count = 0;
-    for (int i = 0; i < static_cast<int>(pixels.size()); ++i) {
-        if (!mask.at<uchar>(i)) continue;
-        std::vector<cv::Point2f> projected;
-        const std::vector<cv::Point2f> source{pixels[i]};
-        cv::perspectiveTransform(source, projected, result.h_pixel_to_world);
-        const double dx = projected[0].x - worlds[i].x;
-        const double dy = projected[0].y - worlds[i].y;
-        sum += dx * dx + dy * dy;
-        ++count;
-    }
-    result.inliers = count;
-    result.rmse_mm = count ? std::sqrt(sum / count)
-                           : std::numeric_limits<double>::infinity();
-    result.ids = valid_ids;
-    result.pixels = pixels;
-    result.worlds = worlds;
-    return result;
-}
-
-void write_calibration(const std::string& path, const Config& config,
-                       const DetectionResult& detection, const cv::Size& size,
-                       int channel, double gate) {
-    const json value = {
-        {"schema_version", 1}, {"channel", channel}, {"world_unit", "mm"},
-        {"H_pixel_to_world", matrix_to_json(detection.h_pixel_to_world)},
-        {"H_world_to_pixel", matrix_to_json(detection.h_world_to_pixel)},
-        {"image_size", {{"width", size.width}, {"height", size.height}}},
-        {"dictionary", config.dictionary}, {"grid", config_to_json(config)},
-        {"inliers", detection.inliers}, {"reproj_rmse_mm", detection.rmse_mm},
-        {"rmse_gate_mm", gate}, {"created_utc", utc_now()}};
-    std::ofstream output(path);
-    if (!output) throw std::runtime_error("cannot write output: " + path);
-    output << std::setw(2) << value << '\n';
 }
 
 namespace {
@@ -482,6 +412,25 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners, rejected;
     detect_marker_corners(config, image, corners, ids);
+    // 자동 검출이 조금 어긋난 경우 웹 UI에서 사용자가 조정한 꼭짓점을
+    // 산출에 그대로 사용한다. 보정값이 없는 마커는 자동 검출값을 유지한다.
+    const auto corner_overrides = layout.value("corner_overrides", json::object());
+    if (!corner_overrides.is_object())
+        throw std::runtime_error("corner_overrides must be an object");
+    for (size_t index = 0; index < ids.size(); ++index) {
+        const std::string key = std::to_string(ids[index]);
+        if (!corner_overrides.contains(key)) continue;
+        const auto& override_points = corner_overrides.at(key);
+        if (!override_points.is_array() || override_points.size() != 4)
+            throw std::runtime_error("corner override must contain four points");
+        std::vector<cv::Point2f> corrected;
+        for (const auto& point : override_points) {
+            if (!point.is_object() || !point.contains("x") || !point.contains("y"))
+                throw std::runtime_error("corner override point must contain x and y");
+            corrected.emplace_back(point.at("x").get<float>(), point.at("y").get<float>());
+        }
+        corners[index] = std::move(corrected);
+    }
     std::vector<SquareMarkerObservation> observations;
     for (size_t i = 0; i < ids.size(); ++i) {
         observations.push_back({ids[i], corners[i]});

@@ -5,9 +5,7 @@
 #include "homography/render.hpp"
 
 #include <opencv2/aruco.hpp>
-#include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -92,33 +90,6 @@ int generate_marker(int argc, char** argv) {
     return 0;
 }
 
-// calibrate 명령으로 자동 검출 기반 호모그래피 저장함.
-int calibrate_command(int argc, char** argv) {
-    const Config config = read_config(argument(argc, argv, "--config"));
-    const std::string input = argument(argc, argv, "--input");
-    const std::string output = argument(argc, argv, "--output");
-    if (input.empty() || output.empty())
-        throw std::runtime_error("calibrate requires --input and --output");
-    const cv::Mat image = cv::imread(input);
-    if (image.empty()) throw std::runtime_error("cannot read image: " + input);
-    const double gate = argument(argc, argv, "--max-rmse-mm").empty()
-        ? config.calibration.max_rmse_mm
-        : parse_double(argument(argc, argv, "--max-rmse-mm"), "max-rmse-mm");
-    const DetectionResult detection = calibrate_image(config, image);
-    if (detection.rmse_mm > gate) {
-        std::cerr << "RMSE gate failed: " << detection.rmse_mm << " mm > "
-                  << gate << " mm\n";
-        return 2;
-    }
-    const int channel = argument(argc, argv, "--channel").empty()
-        ? config.calibration.channel
-        : parse_int(argument(argc, argv, "--channel"), "channel");
-    write_calibration(output, config, detection, image.size(), channel, gate);
-    std::cout << "calibrated " << detection.ids.size()
-              << " markers, RMSE=" << detection.rmse_mm << " mm\n";
-    return 0;
-}
-
 // solve-manual 명령으로 사용자 제공 마커 배치의 호모그래피 저장함.
 int solve_manual_command(int argc, char** argv) {
     const Config config = read_config(argument(argc, argv, "--config"));
@@ -194,76 +165,6 @@ int align_markers_command(int argc, char** argv) {
     return 0;
 }
 
-// view 명령으로 원근 보정 결과와 마커별 오차 시각화함.
-int view_command(int argc, char** argv) {
-    const Config config = read_config(argument(argc, argv, "--config"));
-    const std::string homography_path = argument(argc, argv, "--homography");
-    const std::string input = argument(argc, argv, "--input");
-    if (homography_path.empty() || input.empty())
-        throw std::runtime_error("view requires --homography and --input");
-    const cv::Mat image = cv::imread(input);
-    if (image.empty()) throw std::runtime_error("cannot read image");
-    const json value = read_homography(homography_path);
-    const cv::Mat homography = json_to_matrix(value.at("H_pixel_to_world"));
-    const int scale = config.preview.scale;
-    const int width = static_cast<int>(config.cols *
-        (config.marker_len_mm + config.gap_mm) * scale);
-    const int height = static_cast<int>(config.rows *
-        (config.marker_len_mm + config.gap_mm) * scale);
-    const cv::Mat world_scale = (cv::Mat_<double>(3, 3) <<
-        scale, 0, 0, 0, scale, 0, 0, 0, 1);
-    cv::Mat top;
-    cv::warpPerspective(image, top, world_scale * homography,
-                        cv::Size(width, height));
-    cv::Mat errors = top.clone();
-    cv::Mat gray;
-    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
-    const DetectionResult detection = calibrate_image(config, gray);
-    double sum = 0.0;
-    for (size_t i = 0; i < detection.pixels.size(); ++i) {
-        std::vector<cv::Point2f> projected;
-        const std::vector<cv::Point2f> source{detection.pixels[i]};
-        cv::perspectiveTransform(source, projected, homography);
-        const double dx = projected[0].x - detection.worlds[i].x;
-        const double dy = projected[0].y - detection.worlds[i].y;
-        const double error_mm = std::sqrt(dx * dx + dy * dy);
-        sum += error_mm * error_mm;
-        const cv::Scalar color = error_mm < config.preview.good_error_mm
-            ? cv::Scalar(0, 200, 0)
-            : (error_mm < config.preview.warning_error_mm
-                ? cv::Scalar(0, 220, 220) : cv::Scalar(0, 0, 255));
-        std::vector<cv::Point2f> screen;
-        const std::vector<cv::Point2f> world_point{detection.worlds[i]};
-        cv::perspectiveTransform(world_point, screen, world_scale);
-        cv::circle(errors, screen[0], 5, color, -1);
-    }
-    const int pitch_px = static_cast<int>(
-        (config.marker_len_mm + config.gap_mm) * config.preview.scale);
-    for (int col = 0; col <= config.cols; ++col)
-        cv::line(errors, {col * pitch_px, 0}, {col * pitch_px, height - 1},
-                 cv::Scalar(0, 180, 0), 1);
-    for (int row = 0; row <= config.rows; ++row)
-        cv::line(errors, {0, row * pitch_px}, {width - 1, row * pitch_px},
-                 cv::Scalar(0, 180, 0), 1);
-    const std::string directory = argument(argc, argv, "--output-dir");
-    if (!directory.empty()) {
-        fs::create_directories(directory);
-        cv::imwrite((fs::path(directory) / "point-error.png").string(), errors);
-        cv::imwrite((fs::path(directory) / "topdown-warp.png").string(), top);
-    }
-    const double rmse = detection.pixels.empty() ? 0.0
-        : std::sqrt(sum / detection.pixels.size());
-    cv::putText(errors, "RMSE=" + std::to_string(rmse) + " mm", {10, 25},
-                cv::FONT_HERSHEY_SIMPLEX, 0.65, cv::Scalar(20, 20, 20), 2);
-    std::cout << "RMSE=" << rmse << " mm\n";
-    if (has_argument(argc, argv, "--live")) {
-        cv::imshow("point error", errors);
-        cv::imshow("top-down warp", top);
-        cv::waitKey(0);
-    }
-    return 0;
-}
-
 }  // namespace
 
 }  // namespace homography
@@ -278,10 +179,8 @@ int main(int argc, char** argv) {
         const std::string command = argv[1];
         if (command == "detect-markers") return detect_markers_command(argc, argv);
         if (command == "gen-marker") return generate_marker(argc, argv);
-        if (command == "calibrate") return calibrate_command(argc, argv);
         if (command == "solve-manual") return solve_manual_command(argc, argv);
         if (command == "align-markers") return align_markers_command(argc, argv);
-        if (command == "view") return view_command(argc, argv);
         print_usage();
         return 1;
     } catch (const std::exception& error) {
