@@ -88,6 +88,7 @@ target_include_directories(safety_common PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/network
     ${CMAKE_CURRENT_SOURCE_DIR}/config
     ${CMAKE_CURRENT_SOURCE_DIR}/services
+    ${CMAKE_CURRENT_SOURCE_DIR}/analysis
 )
 
 target_link_libraries(safety_common
@@ -141,6 +142,12 @@ qt_add_qml_module(safety_common
     QML_FILES
         ${SAFETY_COMMON_QML_FILES}
     SOURCES
+        analysis/TtcEstimator.h
+        analysis/TtcEstimator.cpp
+        analysis/TtcResult.h
+        analysis/TtcExperiment.h
+        analysis/TtcExperiment.cpp
+
         models/Types.h
         models/Types.cpp
         models/BBox.h
@@ -170,6 +177,9 @@ qt_add_qml_module(safety_common
         network/MockMetadataSource.cpp
         network/RiskEventSource.h
         network/RiskEventSource.cpp
+
+        scenario/ScenarioPlayer.h
+        scenario/ScenarioPlayer.cpp
 
         config/ConfigTypes.h
         config/ConfigLoader.h
