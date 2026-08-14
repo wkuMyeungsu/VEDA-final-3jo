@@ -79,3 +79,9 @@ storage/latency.csv
 # ArUco/검출 CSV 로그 (실행마다 타임스탬프로 자동 생성)
 aruco_markers_*.csv
 detections_*.csv
+
+# TTC 관련 파일 (로컬 유지 및 원격 제외)
+operator-device/qt/common/analysis/Ttc*
+operator-device/qt/tests/test_ttc_*
+operator-device/qt/qml/control_center/Ttc*
+
