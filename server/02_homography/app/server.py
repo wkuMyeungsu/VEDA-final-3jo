@@ -660,6 +660,64 @@ def align_local_channel(source_result, source_corners, destination_result, desti
     return transform, common_ids, rmse
 
 
+def cross_validate_marker_alignment(source_result, source_corners,
+                                    destination_result, destination_corners,
+                                    common_ids):
+    """공통 마커를 하나씩 빼고 남은 마커로 위치를 예측해 일반화 오차를 구한다."""
+    if len(common_ids) < 4:
+        return {
+            "available": False,
+            "reason": "교차검증에는 공통 마커가 최소 4개 필요합니다",
+            "held_out": [],
+        }
+
+    held_out = []
+    total_squared = 0.0
+    total_count = 0
+    maximum_error = 0.0
+    for held_id in common_ids:
+        train_ids = [marker_id for marker_id in common_ids if marker_id != held_id]
+        train_source = {marker_id: source_corners[marker_id] for marker_id in train_ids}
+        train_destination = {marker_id: destination_corners[marker_id] for marker_id in train_ids}
+        try:
+            transform, _, _ = align_local_channel(
+                source_result, train_source, destination_result, train_destination)
+        except ValueError as error:
+            held_out.append({"marker_id": held_id, "available": False,
+                             "reason": str(error)})
+            continue
+
+        squared = 0.0
+        errors = []
+        for source, destination in zip(source_corners[held_id], destination_corners[held_id]):
+            source_local = transform_point(source_result["H_pixel_to_world"], source)
+            destination_local = transform_point(destination_result["H_pixel_to_world"], destination)
+            predicted = transform_point(transform, source_local)
+            error = math.hypot(predicted["x"] - destination_local["x"],
+                               predicted["y"] - destination_local["y"])
+            errors.append(error)
+            squared += error * error
+            total_squared += error * error
+            total_count += 1
+            maximum_error = max(maximum_error, error)
+        held_out.append({
+            "marker_id": held_id,
+            "available": True,
+            "rmse_mm": math.sqrt(squared / 4.0),
+            "max_error_mm": max(errors),
+        })
+
+    if not total_count:
+        return {"available": False, "reason": "교차검증 계산에 성공한 마커가 없습니다",
+                "held_out": held_out}
+    return {
+        "available": True,
+        "held_out": held_out,
+        "rmse_mm": math.sqrt(total_squared / total_count),
+        "max_error_mm": maximum_error,
+    }
+
+
 def solve_linear_system(matrix, vector):
     """작은 정방 행렬을 가우스-조던 소거로 푼다."""
     size = len(vector)
@@ -856,6 +914,13 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
                 "source_points": source_points,
                 "destination_points": destination_points,
                 "pair_rmse_mm": pair_rmse,
+                # 모든 공통 마커를 맞춘 뒤, 마커 하나를 번갈아 제외해
+                # 그 위치를 예측하는 오차다. 정합 지점의 단순 적합 오차와
+                # 분리해 두어 맵 전체 일반화 상태를 따로 볼 수 있게 한다.
+                "cross_validation": cross_validate_marker_alignment(
+                    stream_results[source_stream_id], stream_corners[source_stream_id],
+                    stream_results[destination_stream_id], stream_corners[destination_stream_id],
+                    common_ids),
             }
             edges.append(edge)
             adjacency[source_stream_id].append((destination_stream_id, transform))
@@ -885,9 +950,13 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
             ". 공통 마커가 충분한 연결을 추가하세요.")
 
     transforms = optimize_global_transforms(transforms, anchor_stream_id, edges)
-    total_squared = 0.0
-    total_count = 0
+    global_squared = 0.0
+    global_count = 0
     edge_results = []
+    cross_validation_edges = []
+    cross_validation_squared = 0.0
+    cross_validation_count = 0
+    cross_validation_maximum = 0.0
     for edge in edges:
         squared = 0.0
         for source, destination in zip(edge["source_points"], edge["destination_points"]):
@@ -896,16 +965,56 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
             squared += ((source_world["x"] - destination_world["x"]) ** 2 +
                         (source_world["y"] - destination_world["y"]) ** 2)
         edge_rmse = math.sqrt(squared / len(edge["source_points"]))
-        total_squared += squared
-        total_count += len(edge["source_points"])
+        global_squared += squared
+        global_count += len(edge["source_points"])
         edge_results.append({
             "stream_ids": [edge["source_stream_id"], edge["destination_stream_id"]],
             "common_marker_ids": edge["common_ids"],
             "pair_rmse_mm": edge["pair_rmse_mm"],
             "global_rmse_mm": edge_rmse,
+            "cross_validation": edge["cross_validation"],
         })
+        cross_validation = edge["cross_validation"]
+        cross_validation_edges.append({
+            "stream_ids": [edge["source_stream_id"], edge["destination_stream_id"]],
+            "common_marker_ids": edge["common_ids"],
+            "available": cross_validation.get("available", False),
+            "reason": cross_validation.get("reason"),
+            "held_out": cross_validation.get("held_out", []),
+            "rmse_mm": cross_validation.get("rmse_mm"),
+            "max_error_mm": cross_validation.get("max_error_mm"),
+        })
+        for held_out in cross_validation.get("held_out", []):
+            if not held_out.get("available"):
+                continue
+            # held_out.rmse_mm은 해당 마커 네 꼭짓점의 RMSE이므로,
+            # 전체 값으로 합칠 때 꼭짓점 4개를 다시 반영한다.
+            cross_validation_squared += float(held_out["rmse_mm"]) ** 2 * 4.0
+            cross_validation_count += 4
+            cross_validation_maximum = max(
+                cross_validation_maximum, float(held_out["max_error_mm"]))
 
-    # 모든 스트림에서 같은 ID가 어떻게 포개졌는지 검증 화면에 표시한다.
+    cross_validation_summary = {
+        "available": cross_validation_count > 0,
+        "method": "leave_one_common_marker_out",
+        # 여러 스트림 연결에 같은 ID가 반복되므로, 고유 ID 수가 아니라
+        # '연결 × 제외 마커' 검증 사례 수로 명시한다.
+        "tested_case_count": cross_validation_count // 4,
+        "edge_count": len(cross_validation_edges),
+        "rmse_mm": math.sqrt(cross_validation_squared / cross_validation_count)
+        if cross_validation_count else None,
+        "max_error_mm": cross_validation_maximum if cross_validation_count else None,
+        "edges": cross_validation_edges,
+        "meaning": "공통 마커 하나를 제외하고 나머지 마커로 제외된 위치를 예측한 오차입니다.",
+        "limitation": "마커가 없는 맵 영역의 실제 오차를 직접 보증하지 않습니다. 전체 맵 검증에는 별도 체크 마커가 필요합니다.",
+    }
+    if not cross_validation_count:
+        cross_validation_summary["reason"] = (
+            "교차검증을 계산할 수 있는 연결이 없습니다. "
+            "연결마다 공통 마커가 최소 4개 필요합니다.")
+
+    # 모든 스트림에서 같은 ID의 네 꼭짓점이 전체 맵에서 얼마나 일치하는지
+    # 수치로 검증할 수 있도록 마커별 상세 오차를 만든다.
     marker_world_points = {}
     for stream_id in streams:
         local_h = stream_results[stream_id]["H_pixel_to_world"]
@@ -917,19 +1026,65 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
                 "x": sum(point["x"] for point in world_corners) / 4.0,
                 "y": sum(point["y"] for point in world_corners) / 4.0,
             }
-            marker_world_points.setdefault(marker_id, []).append((stream_id, center))
+            marker_world_points.setdefault(marker_id, []).append({
+                "stream_id": stream_id,
+                "corners": world_corners,
+                "center": center,
+            })
     verification_markers = []
     for marker_id, values in sorted(marker_world_points.items()):
         if len(values) < 2:
             continue
+        consensus_corners = [{
+            "x": sum(value["corners"][corner]["x"] for value in values) / len(values),
+            "y": sum(value["corners"][corner]["y"] for value in values) / len(values),
+        } for corner in range(4)]
+        consensus_center = {
+            "x": sum(point["x"] for point in consensus_corners) / 4.0,
+            "y": sum(point["y"] for point in consensus_corners) / 4.0,
+        }
+        stream_values = []
+        marker_squared = 0.0
+        maximum_error = 0.0
+        for value in values:
+            corner_squared = 0.0
+            corner_errors = []
+            for actual, expected in zip(value["corners"], consensus_corners):
+                error = math.hypot(actual["x"] - expected["x"],
+                                   actual["y"] - expected["y"])
+                corner_errors.append(error)
+                corner_squared += error * error
+                marker_squared += error * error
+                maximum_error = max(maximum_error, error)
+            edge_lengths = [math.hypot(
+                value["corners"][(index + 1) % 4]["x"] - value["corners"][index]["x"],
+                value["corners"][(index + 1) % 4]["y"] - value["corners"][index]["y"]
+            ) for index in range(4)]
+            stream_values.append({
+                "stream_id": value["stream_id"],
+                "center_mm": value["center"],
+                "corners_mm": value["corners"],
+                "corner_errors_mm": corner_errors,
+                "corner_rmse_mm": math.sqrt(corner_squared / 4.0),
+                "edge_lengths_mm": edge_lengths,
+                "orientation_deg": math.degrees(math.atan2(
+                    value["corners"][1]["y"] - value["corners"][0]["y"],
+                    value["corners"][1]["x"] - value["corners"][0]["x"])),
+                "center_error_mm": math.hypot(
+                    value["center"]["x"] - consensus_center["x"],
+                    value["center"]["y"] - consensus_center["y"]),
+            })
         verification_markers.append({
             "id": marker_id,
-            "x": sum(value[1]["x"] for value in values) / len(values),
-            "y": sum(value[1]["y"] for value in values) / len(values),
+            "consensus_center_mm": consensus_center,
+            "consensus_corners_mm": consensus_corners,
             "stream_count": len(values),
+            "corner_rmse_mm": math.sqrt(marker_squared / (len(values) * 4)),
+            "max_corner_error_mm": maximum_error,
+            "streams": stream_values,
         })
     return transforms, edge_results, skipped_pairs, (
-        math.sqrt(total_squared / total_count) if total_count else 0.0), verification_markers
+        math.sqrt(global_squared / global_count) if global_count else 0.0), verification_markers, cross_validation_summary
 
 
 def camera_urls(channel_id=1, profile_override=None, camera_entry=None):
@@ -1583,6 +1738,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not result_file.is_file():
                         raise ValueError(f"{stream_id}의 로컬 호모그래피가 없습니다")
                     result = json.loads(result_file.read_text(encoding="utf-8"))
+                    if result.get("capture_id") != capture_id:
+                        raise ValueError(
+                            f"{stream_id} 캡처와 로컬 호모그래피의 capture_id가 다릅니다")
                     if str(result.get("stream_id", "")) != stream_id:
                         raise ValueError(f"{stream_id} 캡처와 보정 결과의 stream_id가 다릅니다")
                     if result.get("camera_id") != configured[stream_id]["camera_id"] or \
@@ -1591,7 +1749,7 @@ class Handler(BaseHTTPRequestHandler):
                     stream_results[stream_id] = result
                     stream_corners[stream_id] = capture_marker_corners(job_dir, result)
 
-                transforms, edge_results, skipped_pairs, global_rmse, verification_markers = \
+                transforms, edge_results, skipped_pairs, global_rmse, verification_markers, cross_validation = \
                     align_all_streams(stream_results, stream_corners, anchor_stream_id)
                 global_h = {
                     channel: matrix_multiply(
@@ -1629,6 +1787,12 @@ class Handler(BaseHTTPRequestHandler):
                         "image_url": f"/artifacts/{capture_id}/capture.jpg",
                         "image_size": stream_results[stream_id]["image_size"],
                         "H_pixel_to_world": global_h[stream_id],
+                        # 선택한 공통 마커를 원본 영상에서 같은 정사각형으로
+                        # 다시 워핑할 수 있도록 보정된 픽셀 꼭짓점을 함께 전달한다.
+                        "markers": {
+                            str(marker_id): corners
+                            for marker_id, corners in stream_corners[stream_id].items()
+                        },
                     }
                 self.send_json({
                     "ok": True,
@@ -1637,6 +1801,7 @@ class Handler(BaseHTTPRequestHandler):
                     "edge_results": edge_results,
                     "skipped_pairs": skipped_pairs,
                     "global_rmse_mm": global_rmse,
+                    "cross_validation": cross_validation,
                     "storage": storage,
                     "local_to_global": {
                         stream_id: transforms[stream_id] for stream_id in stream_ids
