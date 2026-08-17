@@ -85,7 +85,7 @@ chmod 600 config/camera_list.json
 모든 스트림의 운영 파일을 원자적으로 새로 만들거나 덮어쓴다.
 
 ```text
-server/config/operational/homography/CAM_01/homography_channel_3_mm.json
+server/config/homography/CAM_01/homography_result_cam01_ch03_mm.json
 ```
 
 운영 H에는 서버가 실제로 읽을 값만 저장한다.
@@ -103,7 +103,7 @@ server/config/operational/homography/CAM_01/homography_channel_3_mm.json
 ```
 
 로컬 H와 채널 간 제약은 현재 앱 세션에서만 전역 계산에 사용하고 운영
-경로에는 저장하지 않는다. 최종 H는 공용 `server/config/operational/homography`에
+경로에는 저장하지 않는다. 최종 H는 공용 `server/config/homography/CAM_*`에
 저장되며 main이 같은 파일을 직접 읽는다. RMSE, 사용 마커, 캡처 ID 같은 상세 정보도
 `/tmp/homography-results/<capture_id>` 아래 작업 결과에만 남긴다.
 

@@ -83,20 +83,21 @@ int main() {
     // 전역 stream_id로 분리되는지 확인한다.
     const auto multi_dir = std::filesystem::temp_directory_path() / "forklift_multi_config_test";
     std::filesystem::remove_all(multi_dir);
-    std::filesystem::create_directories(multi_dir / "operational/homography");
+    std::filesystem::create_directories(multi_dir / "homography/CAM_01");
+    std::filesystem::create_directories(multi_dir / "homography/CAM_02");
     const auto write = [](const std::filesystem::path& path, const std::string& text) {
         std::ofstream(path) << text;
     };
     const std::string h = R"({"world_unit":"mm","image_size":{"width":640,"height":480},"H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,1]]})";
-    write(multi_dir / "operational/homography/cam01.json", h);
-    write(multi_dir / "operational/homography/cam02_1.json", h);
-    write(multi_dir / "operational/homography/cam02_2.json", h);
-    write(multi_dir / "operational/homography/cam02_3.json", h);
-    write(multi_dir / "operational/homography/cam02_4.json", h);
+    write(multi_dir / "homography/CAM_01/homography_result_cam01_ch01_mm.json", h);
+    write(multi_dir / "homography/CAM_02/homography_result_cam02_ch01_mm.json", h);
+    write(multi_dir / "homography/CAM_02/homography_result_cam02_ch02_mm.json", h);
+    write(multi_dir / "homography/CAM_02/homography_result_cam02_ch03_mm.json", h);
+    write(multi_dir / "homography/CAM_02/homography_result_cam02_ch04_mm.json", h);
     write(multi_dir / "camera_model.json", R"({"models":[{"model":"PNO-A9081RG","channel_count":1},{"model":"PNM-C16083RVQ","channel_count":4}]})");
     write(multi_dir / "camera_list.json", R"({"cameras":[
-      {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"operational/homography/cam01.json","image_width_px":640,"image_height_px":480}]},
-      {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"operational/homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"operational/homography/cam02_2.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"operational/homography/cam02_3.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"operational/homography/cam02_4.json","image_width_px":640,"image_height_px":480}]}
+      {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"homography/CAM_01/homography_result_cam01_ch01_mm.json","image_width_px":640,"image_height_px":480}]},
+      {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"homography/CAM_02/homography_result_cam02_ch01_mm.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"homography/CAM_02/homography_result_cam02_ch02_mm.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"homography/CAM_02/homography_result_cam02_ch03_mm.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"homography/CAM_02/homography_result_cam02_ch04_mm.json","image_width_px":640,"image_height_px":480}]}
     ]})");
     write(multi_dir / "forklift_device_config.json", R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
     write(multi_dir / "danger_judgment_config.json", R"({"units":{"world":"mm","distance":"mm"},"danger_judgment":{"caution_threshold_mm":3000,"danger_threshold_mm":1500,"emergency_threshold_mm":400,"emergency_release_margin_mm":100,"tof_caution_mm":1000,"tof_danger_mm":500,"impact_accel_threshold_g":2}})");
@@ -113,10 +114,10 @@ int main() {
                   multi.streams[1].stream_id == "CAM_02_CH_01",
               "서로 다른 CCTV의 같은 채널을 다른 stream_id로 분리함");
         check(multi.streams.size() == 5 &&
-                  endsWith(multi.streams[1].homography_file, "cam02_1.json") &&
-                  endsWith(multi.streams[2].homography_file, "cam02_2.json") &&
-                  endsWith(multi.streams[3].homography_file, "cam02_3.json") &&
-                  endsWith(multi.streams[4].homography_file, "cam02_4.json"),
+                  endsWith(multi.streams[1].homography_file, "homography_result_cam02_ch01_mm.json") &&
+                  endsWith(multi.streams[2].homography_file, "homography_result_cam02_ch02_mm.json") &&
+                  endsWith(multi.streams[3].homography_file, "homography_result_cam02_ch03_mm.json") &&
+                  endsWith(multi.streams[4].homography_file, "homography_result_cam02_ch04_mm.json"),
               "CAM_02 각 채널이 서로 다른 호모그래피 파일을 사용함");
         check(multi.forklifts.size() == 2 && multi.forklifts[1].collision_radius_mm == 600,
               "TERM별 marker와 충돌 반경을 읽음");
@@ -133,16 +134,20 @@ int main() {
     const auto split_app = split_root / "safety";
     const auto split_common = split_root / "common";
     std::filesystem::create_directories(split_app);
-    std::filesystem::create_directories(split_common / "operational/homography");
+    std::filesystem::create_directories(split_common / "homography/CAM_01");
+    std::filesystem::create_directories(split_common / "homography/CAM_02");
     for (const char* name : {"camera_model.json", "camera_list.json"})
         std::filesystem::copy_file(multi_dir / name, split_common / name,
                                    std::filesystem::copy_options::overwrite_existing);
-    std::filesystem::copy_file(multi_dir / "operational/homography/cam01.json",
-                               split_common / "operational/homography/cam01.json",
+    std::filesystem::copy_file(multi_dir / "homography/CAM_01/homography_result_cam01_ch01_mm.json",
+                               split_common / "homography/CAM_01/homography_result_cam01_ch01_mm.json",
                                std::filesystem::copy_options::overwrite_existing);
-    for (const char* name : {"cam02_1.json", "cam02_2.json", "cam02_3.json", "cam02_4.json"})
-        std::filesystem::copy_file(multi_dir / "operational/homography" / name,
-                                   split_common / "operational/homography" / name,
+    for (const char* name : {"homography_result_cam02_ch01_mm.json",
+                             "homography_result_cam02_ch02_mm.json",
+                             "homography_result_cam02_ch03_mm.json",
+                             "homography_result_cam02_ch04_mm.json"})
+        std::filesystem::copy_file(multi_dir / "homography/CAM_02" / name,
+                                   split_common / "homography/CAM_02" / name,
                                    std::filesystem::copy_options::overwrite_existing);
     for (const char* name : {"forklift_device_config.json", "danger_judgment_config.json", "system_config.json"})
         std::filesystem::copy_file(multi_dir / name, split_app / name,
@@ -157,7 +162,7 @@ int main() {
 
     // 일부 채널의 H가 아직 없거나 손상돼도 중앙 서버 전체를 막지 않고,
     // 보정이 준비된 스트림만 남겨서 기동할 수 있어야 한다.
-    std::filesystem::remove(multi_dir / "operational/homography/cam02_4.json");
+    std::filesystem::remove(multi_dir / "homography/CAM_02/homography_result_cam02_ch04_mm.json");
     try {
         const auto partial = loadMultiCameraServerConfig(multi_dir.string());
         check(partial.streams.size() == 4,

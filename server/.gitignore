@@ -1,6 +1,6 @@
 /build/
 /var/
-config/operational/
+config/homography/CAM_*/
 **/build/
 *.db
 *.db-shm

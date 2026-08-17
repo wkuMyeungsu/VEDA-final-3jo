@@ -48,14 +48,20 @@ TIMEOUT = int(os.environ.get("HOMOGRAPHY_COMMAND_TIMEOUT_SEC", "120"))
 RESULT_ROOT = Path(os.environ.get("HOMOGRAPHY_RESULT_DIR", "/tmp/homography-results"))
 RESULT_TTL_SEC = int(os.environ.get("ADMIN_GUI_RESULT_TTL_SEC", "3600"))
 RESULT_ROOT.mkdir(parents=True, exist_ok=True)
-OPERATIONAL_HOMOGRAPHY_ROOT = Path(os.environ.get(
+# 최종 pixel→world 결과도 호모그래피 전용 루트 아래에 카메라별로 관리한다.
+HOMOGRAPHY_RESULTS_ROOT = Path(os.environ.get(
     "SAFETY_SERVER_HOMOGRAPHY_DIR",
-    str(COMMON_CONFIG_DIR / "operational" / "homography")))
+    str(COMMON_CONFIG_DIR / "homography")))
 MIN_COMMON_MARKERS = int(CONFIG_VALUE.get("map", {}).get("min_common_markers", 3))
 MAX_VERIFICATION_STREAMS = int(STREAM_CONFIG_VALUE.get("verification", {}).get("max_streams", 0))
 if MAX_VERIFICATION_STREAMS < 2 or MAX_VERIFICATION_STREAMS > 32:
     raise ValueError(f"{STREAM_CONFIG}의 verification.max_streams는 2~32 범위여야 합니다")
 CONFIG_LOCK = threading.RLock()
+
+
+def camera_id_token(camera_id):
+    """결과 파일명에 사용할 카메라 ID 토큰(CAM_01 -> cam01)을 만든다."""
+    return "".join(character.lower() for character in str(camera_id) if character.isalnum())
 
 
 def configured_camera_entries():
@@ -336,7 +342,7 @@ def save_camera_settings(camera_id, camera_model):
         "channel_count": model_channels[camera_model],
         "camera_list_path": str(CAMERA_LIST_CONFIG),
         "camera_model_path": str(CAMERA_MODEL_CONFIG),
-        "homography_root": str(OPERATIONAL_HOMOGRAPHY_ROOT),
+        "homography_root": str(HOMOGRAPHY_RESULTS_ROOT),
     }
 
 
@@ -401,11 +407,13 @@ def save_operational_homography(value):
     operational_value = make_operational_homography(value)
     stream_id = operational_value["stream_id"]
     channel = operational_value["channel"]
-    camera_homography_dir = OPERATIONAL_HOMOGRAPHY_ROOT / operational_value["camera_id"]
+    camera_homography_dir = HOMOGRAPHY_RESULTS_ROOT / operational_value["camera_id"]
     # 카메라 폴더가 없어도 산출 버튼을 누르면 자동으로 만든다.
     camera_homography_dir.mkdir(parents=True, exist_ok=True)
 
-    operational_file = camera_homography_dir / f"homography_channel_{channel}_mm.json"
+    operational_file = camera_homography_dir / (
+        f"homography_result_{camera_id_token(operational_value['camera_id'])}"
+        f"_ch{channel:02d}_mm.json")
     existed = operational_file.is_file()
     temporary_file = camera_homography_dir / (
         f".{operational_file.name}.{uuid.uuid4().hex}.tmp")
@@ -437,8 +445,9 @@ def save_operational_homography(value):
 def load_operational_homography(stream_id):
     """기존 최종 H가 있으면 읽어 세션 중간 계산에만 사용한다."""
     stream = configured_stream(stream_id=stream_id)
-    path = (OPERATIONAL_HOMOGRAPHY_ROOT / stream["camera_id"] /
-            f"homography_channel_{stream['channel']}_mm.json")
+    path = (HOMOGRAPHY_RESULTS_ROOT / stream["camera_id"] /
+            f"homography_result_{camera_id_token(stream['camera_id'])}"
+            f"_ch{stream['channel']:02d}_mm.json")
     if not path.is_file():
         return None
     try:

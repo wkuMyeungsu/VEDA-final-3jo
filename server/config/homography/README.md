@@ -1,7 +1,8 @@
-# 호모그래피 설정 안내
+# 호모그래피 설정·결과 안내
 
-이 폴더의 `homography_config.json`은 자유 배치 ArUco 마커를 이용한
+이 폴더의 `homography_config.json`과 `stream_config.json`은 자유 배치 ArUco 마커를 이용한
 스트림별 호모그래피 산출과 전체 CCTV×채널 정합에 필요한 공통 설정이다.
+정합이 끝난 카메라별 최종 결과도 이 폴더 아래 `CAM_*` 디렉터리에 저장한다.
 
 현재 보정 방식은 마커를 격자에 맞춰 배치하지 않는다. 각 채널에서 검출한
 마커의 실제 정사각형 크기와 꼭짓점을 이용해 로컬 H를 만들고, 겹치는 공통
@@ -82,7 +83,7 @@
 전체 스트림 정합이 끝난 최종 H는 공용 서버 설정 경로에 저장된다.
 
 ```text
-server/config/operational/homography/CAM_01/homography_channel_<channel>_mm.json
+server/config/homography/CAM_01/homography_result_cam01_ch<channel>_mm.json
 ```
 
 main 서버는 이 파일의 `H_pixel_to_world`, `image_size`, `stream_id`, `channel`을 읽어

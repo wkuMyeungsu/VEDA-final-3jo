@@ -51,8 +51,8 @@ H 파일의 상대 경로와 저장 경로는 설정 디렉터리를 기준으�
 호모그래피 산출물은 물리 CCTV별 폴더에 보관한다.
 
 ```text
-operational/homography/CAM_01/homography_channel_3_mm.json
-operational/homography/CAM_02/homography_channel_1_mm.json
+homography/CAM_01/homography_result_cam01_ch03_mm.json
+homography/CAM_02/homography_result_cam02_ch01_mm.json
 ```
 
 `camera_list.json`에서는 위 상대경로를 채널별로 참조하고, 서버가 이를

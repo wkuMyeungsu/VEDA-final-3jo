@@ -13,8 +13,7 @@ server/
 │   └── monitoring_app/              # 8000 모니터링 UI/API
 ├── config/
 │   ├── safety/                      # 안전 서버 정책 설정
-│   ├── homography/                  # 호모그래피 앱 정책 설정
-│   ├── operational/homography/      # 생성된 운영 H
+│   ├── homography/                  # 정책 설정 + 카메라별 최종 H 결과
 │   ├── camera_model.json
 │   └── camera_list.json
 ├── deploy/systemd/
@@ -41,7 +40,7 @@ cmake -S server -B server/build
 cmake --build server/build -j2
 ```
 
-기본 설정은 `server/config/safety`에서 읽고, CCTV 목록·모델·운영 H는
+기본 설정은 `server/config/safety`에서 읽고, CCTV 목록·모델·H 결과는
 `server/config`에서 읽는다. 다른 위치를 사용할 때는 다음처럼 명시한다.
 
 ```sh
