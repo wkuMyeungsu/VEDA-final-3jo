@@ -23,6 +23,17 @@ server/
 └── var/                             # 런타임 DB·CSV·로그
 ```
 
+자동 테스트 소스는 각 독립 CMake 타깃 옆에 둔다.
+
+```text
+apps/main_app/tests/                         # 안전 서버 단위·통합·E2E 테스트
+apps/homography_app/processing/tests/        # 호모그래피 처리 단위 테스트
+apps/main_app/tools/sensor_fusion_smoke_main.cpp  # 실제 센서 수동 진단 도구
+```
+
+`Testing/` 디렉터리는 CTest가 실행 중 만드는 산출물이므로 소스 구조에 포함하지
+않는다.
+
 ## Main server
 
 ```sh
@@ -40,6 +51,28 @@ server/build/apps/main_app/forklift_safety_server \
 ```
 
 실행 중 생성되는 DB·CSV는 `server/var/main_app/storage`에 둔다.
+
+## Main server tests
+
+```sh
+cmake -S server -B server/build
+cmake --build server/build -j2
+cd server/build
+ctest --output-on-failure
+ctest -L unit --output-on-failure
+ctest -L e2e --output-on-failure
+```
+
+MQTT 브로커가 필요한 업링크 통합 테스트는 기본 테스트 묶음에 포함하지 않는다.
+브로커가 준비된 환경에서만 명시적으로 활성화한다. 브로커가 없으면 성공으로
+처리하지 않고 실패한다.
+
+```sh
+cmake -S server -B server/build -DENABLE_NETWORK_INTEGRATION_TESTS=ON
+cmake --build server/build -j2
+cd server/build
+ctest -L requires-mqtt --output-on-failure
+```
 
 ## Homography app
 

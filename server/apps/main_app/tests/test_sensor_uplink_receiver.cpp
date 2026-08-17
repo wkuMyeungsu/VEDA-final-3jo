@@ -402,8 +402,9 @@ int main() {
     std::cout << "※ 로컬 mosquitto 브로커(127.0.0.1:" << kBrokerPort
               << ")가 떠 있어야 통과합니다.\n\n";
 
-    // 네트워크가 막힌 빌드 환경에서는 MQTT 통합 테스트를 오래 기다리지 않고
-    // 건너뛴다. 실제 브로커가 있는 장비에서는 아래 연결 확인을 통과해 전체 검증을 수행한다.
+    // 이 테스트는 외부 mosquitto 브로커가 필요한 통합 테스트다. 브로커가 없으면
+    // 성공으로 위장하지 않고 실패시킨다. 기본 CTest 묶음에는 등록하지 않으며,
+    // -DENABLE_NETWORK_INTEGRATION_TESTS=ON으로 명시적으로 활성화한다.
     mosquitto_lib_init();
     mosquitto* probe = mosquitto_new(nullptr, true, nullptr);
     const int probe_rc = probe ? mosquitto_connect(probe, "127.0.0.1", kBrokerPort, 2)
@@ -414,9 +415,9 @@ int main() {
     }
     mosquitto_lib_cleanup();
     if (probe_rc != MOSQ_ERR_SUCCESS) {
-        std::cout << "[건너뜀] MQTT 브로커에 연결할 수 없습니다: "
+        std::cerr << "[실패] MQTT 브로커에 연결할 수 없습니다: "
                   << mosquitto_strerror(probe_rc) << "\n";
-        return 0;
+        return 1;
     }
 
     testReceivesLatestSample();

@@ -33,4 +33,10 @@ if(BUILD_TESTING)
     )
     target_link_libraries(homography_unit_tests PRIVATE homography_core)
     add_test(NAME homography_unit_tests COMMAND homography_unit_tests)
+    set_tests_properties(
+        homography_unit_tests
+        PROPERTIES
+            LABELS "unit"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
 endif()

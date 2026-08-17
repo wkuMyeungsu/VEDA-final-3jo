@@ -34,9 +34,15 @@ target_link_libraries(test_event_logger PRIVATE server_logging server_judgment T
 add_test(NAME event_logger_test COMMAND test_event_logger)
 
 # 단말→서버 센서 업링크 수신기.
+# 외부 mosquitto 브로커가 필요한 통합 테스트이므로 기본 단위 테스트 묶음에는 넣지 않는다.
+option(ENABLE_NETWORK_INTEGRATION_TESTS
+       "Enable tests that require an external MQTT broker"
+       OFF)
 add_executable(test_sensor_uplink_receiver test_sensor_uplink_receiver.cpp)
 target_link_libraries(test_sensor_uplink_receiver PRIVATE server_network Threads::Threads)
-add_test(NAME sensor_uplink_receiver_test COMMAND test_sensor_uplink_receiver)
+if(ENABLE_NETWORK_INTEGRATION_TESTS)
+    add_test(NAME sensor_uplink_receiver_integration_test COMMAND test_sensor_uplink_receiver)
+endif()
 
 add_executable(test_assignment_publisher test_assignment_publisher.cpp)
 target_link_libraries(test_assignment_publisher PRIVATE server_network)
@@ -64,3 +70,42 @@ add_test(NAME channel3_safety_e2e_test COMMAND test_channel3_safety_e2e)
 add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)
 target_link_libraries(test_marker_channel_tracker PRIVATE server_tracking)
 add_test(NAME marker_channel_tracker_test COMMAND test_marker_channel_tracker)
+
+set_tests_properties(
+    onvif_metadata_parser_test
+    metadata_router_test
+    aruco_metadata_parser_test
+    metadata_timing_test
+    judgment_engine_test
+    judgment_pipeline_test
+    assignment_publisher_test
+    safety_server_config_test
+    homography_transformer_test
+    marker_channel_tracker_test
+    PROPERTIES
+        LABELS "unit"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+set_tests_properties(
+    event_logger_test
+    PROPERTIES
+        LABELS "integration"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+set_tests_properties(
+    channel3_safety_e2e_test
+    PROPERTIES
+        LABELS "e2e"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+if(ENABLE_NETWORK_INTEGRATION_TESTS)
+    set_tests_properties(
+        sensor_uplink_receiver_integration_test
+        PROPERTIES
+            LABELS "integration;requires-mqtt"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+endif()
