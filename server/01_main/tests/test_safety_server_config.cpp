@@ -105,6 +105,9 @@ int main() {
               "서로 다른 CCTV의 같은 채널을 다른 stream_id로 분리함");
         check(multi.forklifts.size() == 2 && multi.forklifts[1].collision_radius_mm == 600,
               "TERM별 marker와 충돌 반경을 읽음");
+        check(multi.output_storage.object_csv ==
+                  (multi_dir.parent_path() / "storage/objects.csv").lexically_normal().string(),
+              "런타임 출력은 config 바깥 storage에 저장함");
     } catch (const std::exception& error) {
         check(false, error.what());
     }

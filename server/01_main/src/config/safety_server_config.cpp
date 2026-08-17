@@ -406,10 +406,12 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
         c.sensor.stub_tof_distance_mm < 0)
         schema(system_path.string(), "handover/tracking/sensor/stream 설정 범위 오류");
     const auto& out = object(system, "output_storage", system_path.string());
-    c.output_storage.object_csv = (dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
-    c.output_storage.aruco_csv = (dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
-    c.output_storage.event_db = (dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();
-    c.output_storage.latency_csv = (dir / value<std::string>(out,"output_storage","latency_csv",system_path.string())).lexically_normal().string();
+    // 설정 파일과 실행 중 생성되는 로그·DB를 섞지 않도록 config의 상위 앱 디렉터리를 저장 기준으로 삼는다.
+    const auto storage_dir = dir.parent_path();
+    c.output_storage.object_csv = (storage_dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
+    c.output_storage.aruco_csv = (storage_dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
+    c.output_storage.event_db = (storage_dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();
+    c.output_storage.latency_csv = (storage_dir / value<std::string>(out,"output_storage","latency_csv",system_path.string())).lexically_normal().string();
     for (const auto* p : {&c.output_storage.object_csv,&c.output_storage.aruco_csv,&c.output_storage.event_db,&c.output_storage.latency_csv})
         if (p->empty()) schema(system_path.string(), "출력 경로가 비어 있음");
     return c;

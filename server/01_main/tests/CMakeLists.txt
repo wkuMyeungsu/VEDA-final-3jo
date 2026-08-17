@@ -17,6 +17,10 @@ add_executable(test_aruco_metadata_parser
 target_link_libraries(test_aruco_metadata_parser PRIVATE server_input)
 add_test(NAME aruco_metadata_parser_test COMMAND test_aruco_metadata_parser)
 
+add_executable(test_metadata_timing test_metadata_timing.cpp)
+target_include_directories(test_metadata_timing PRIVATE ${SERVER_SRC_DIR})
+add_test(NAME metadata_timing_test COMMAND test_metadata_timing)
+
 add_executable(test_judgment_engine test_exception_trigger.cpp)
 target_link_libraries(test_judgment_engine PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_engine_test COMMAND test_judgment_engine)

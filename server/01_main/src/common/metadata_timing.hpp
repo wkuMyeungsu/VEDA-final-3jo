@@ -49,7 +49,15 @@ inline bool parseUtc(const std::string& value,
     if (fractionEnd == std::string::npos) fractionEnd = value.size();
     double fraction = 0.0;
     if (fractionEnd > 19) {
-        try { fraction = std::stod("0." + value.substr(19, fractionEnd - 19)); }
+        const std::string fractionText = value.substr(19, fractionEnd - 19);
+        // 소수점이 포함된 문자열 자체를 파싱해야 한다. 앞에 "0."을 더하면
+        // "0..604"가 되어 stod가 앞의 0만 읽고 소수부를 조용히 버린다.
+        if (fractionText.front() != '.') return false;
+        try {
+            std::size_t consumed = 0;
+            fraction = std::stod(fractionText, &consumed);
+            if (consumed != fractionText.size()) return false;
+        }
         catch (...) { return false; }
     }
 #ifdef _WIN32
