@@ -1,5 +1,6 @@
 /build/
-/runtime/
+/var/
+config/operational/
 **/build/
 *.db
 *.db-shm

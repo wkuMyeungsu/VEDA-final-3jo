@@ -42,7 +42,7 @@ ID와 네 꼭짓점 순서를 대응점으로 사용하므로, 같은 ID의 마�
 공통 `server/config/camera_model.json`에는 카메라 종류별 채널 수를,
 `server/config/camera_list.json`에는 실제 CCTV 목록과 `camera_id ↔ model`
 매핑을 저장한다. 호모그래피 앱과 안전 서버는 이 공통 파일을 같이 읽으며,
-호모그래피 전용 정책은 `02_homography/config/homography_config.json`에 둔다.
+호모그래피 전용 정책은 `server/config/homography/homography_config.json`에 둔다.
 비밀번호가 들어가는 `camera_list.json`은 운영 장비에서만 작성한다.
 
 ```sh
@@ -54,7 +54,7 @@ chmod 600 config/camera_list.json
 `homography_config.json`의 `map`은 겹치는 채널을 연결할 정책만 정한다.
 
 검증 화면이 한 번에 합성할 수 있는 최대 스트림 수는 별도
-`02_homography/config/stream_config.json`에서 관리한다.
+`server/config/homography/stream_config.json`에서 관리한다.
 
 ```json
 {
@@ -85,7 +85,7 @@ chmod 600 config/camera_list.json
 모든 스트림의 운영 파일을 원자적으로 새로 만들거나 덮어쓴다.
 
 ```text
-server/config/homography/CAM_01/homography_channel_3_mm.json
+server/config/operational/homography/CAM_01/homography_channel_3_mm.json
 ```
 
 운영 H에는 서버가 실제로 읽을 값만 저장한다.
@@ -103,7 +103,7 @@ server/config/homography/CAM_01/homography_channel_3_mm.json
 ```
 
 로컬 H와 채널 간 제약은 현재 앱 세션에서만 전역 계산에 사용하고 운영
-경로에는 저장하지 않는다. 최종 H는 공통 `server/config/homography`에
+경로에는 저장하지 않는다. 최종 H는 공용 `server/config/operational/homography`에
 저장되며 main이 같은 파일을 직접 읽는다. RMSE, 사용 마커, 캡처 ID 같은 상세 정보도
 `/tmp/homography-results/<capture_id>` 아래 작업 결과에만 남긴다.
 
@@ -120,8 +120,9 @@ sudo systemctl status homography-app.service --no-pager
 
 ```sh
 cd /home/veda3/01_Workspace/server
-HOMOGRAPHY_TOOL=02_homography/engine/build/homography_tool \
-  python3 02_homography/app/server.py
+HOMOGRAPHY_CONFIG_DIR=server/config/homography \
+HOMOGRAPHY_TOOL=server/apps/homography_app/processing/build/homography_tool \
+  python3 server/apps/homography_app/web/server.py
 ```
 
 브라우저 주소:
@@ -139,5 +140,5 @@ http://192.168.0.13:8001
 엔진을 수정했다면 먼저 빌드한다.
 
 ```sh
-cmake --build server/02_homography/engine/build -j2
+cmake --build server/apps/homography_app/processing/build -j2
 ```

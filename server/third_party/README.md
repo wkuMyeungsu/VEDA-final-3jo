@@ -9,7 +9,7 @@
 - 출처: <https://github.com/nlohmann/json/releases/tag/v3.11.3>
   (`single_include/nlohmann/json.hpp` 파일 하나)
 - 라이선스: MIT (파일 상단 헤더 주석 참고)
-- 용도: `src/config/safety_server_config.*`의 단말 설정 JSON 파싱.
+- 용도: `apps/main_app/src/config/safety_server_config.*`의 단말 설정 JSON 파싱.
 
 ### 왜 시스템 패키지(`nlohmann-json3-dev`)가 아니라 벤더링인가
 

@@ -10,7 +10,7 @@ OpenCV 기반 C++ 호모그래피 엔진이다. 현재는 자유롭게 배치한
 
 ```sh
 homography_tool gen-marker \
-  --config ../config/homography_config.json \
+  --config server/config/homography/homography_config.json \
   --id 0 \
   --output marker_000.png \
   --size-mm 100 \
@@ -25,7 +25,7 @@ homography_tool gen-marker \
 
 ```sh
 homography_tool detect-markers \
-  --config ../config/homography_config.json \
+  --config server/config/homography/homography_config.json \
   --input capture.png \
   --output markers.json \
   --overlay markers_overlay.png
@@ -37,7 +37,7 @@ homography_tool detect-markers \
 
 ```sh
 homography_tool solve-manual \
-  --config ../config/homography_config.json \
+  --config server/config/homography/homography_config.json \
   --input capture.png \
   --layout layout.json \
   --output homography_manual.json \
@@ -51,7 +51,7 @@ homography_tool solve-manual \
 
 ```sh
 homography_tool align-markers \
-  --config ../config/homography_config.json \
+  --config server/config/homography/homography_config.json \
   --source channel_a.png \
   --destination channel_b.png \
   --output alignment.json
@@ -63,7 +63,7 @@ homography_tool align-markers \
 
 ## 설정
 
-설정 설명과 예시는 [`../config/README.md`](../config/README.md)에 있다.
+설정 설명과 예시는 [`server/config/homography/README.md`](../../../config/homography/README.md)에 있다.
 핵심은 다음 네 가지다.
 
 - `dictionary`: 검출할 ArUco 사전
@@ -78,16 +78,16 @@ homography_tool align-markers \
 ## 빌드
 
 ```sh
-cmake -S server/02_homography/engine \
-  -B server/02_homography/engine/build \
+cmake -S server/apps/homography_app/processing \
+  -B server/apps/homography_app/processing/build \
   -DBUILD_TESTING=ON
-cmake --build server/02_homography/engine/build -j2
+cmake --build server/apps/homography_app/processing/build -j2
 ```
 
 ## 테스트
 
 ```sh
-cd server/02_homography/engine/build
+cd server/apps/homography_app/processing/build
 ctest --output-on-failure
 ```
 

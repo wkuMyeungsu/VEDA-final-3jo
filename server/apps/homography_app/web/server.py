@@ -25,27 +25,32 @@ from urllib.parse import parse_qs, quote, urlparse
 # 결과 파일은 임시 작업 디렉터리에 저장하고 TTL이 지난 뒤 정리함.
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
-CONFIG = ROOT.parent / "config" / "homography_config.json"
+APP_ROOT = ROOT.parent
+SERVER_ROOT = ROOT.parents[2]
+HOMOGRAPHY_CONFIG_DIR = Path(os.environ.get(
+    "HOMOGRAPHY_CONFIG_DIR", str(SERVER_ROOT / "config" / "homography")))
+CONFIG = HOMOGRAPHY_CONFIG_DIR / "homography_config.json"
 CONFIG_VALUE = json.loads(CONFIG.read_text(encoding="utf-8"))
-STREAM_CONFIG = ROOT.parent / "config" / "stream_config.json"
+STREAM_CONFIG = HOMOGRAPHY_CONFIG_DIR / "stream_config.json"
 STREAM_CONFIG_VALUE = json.loads(STREAM_CONFIG.read_text(encoding="utf-8"))
 OUTPUTS = CONFIG_VALUE.get("outputs", {})
 COMMON_CONFIG_DIR = Path(os.environ.get(
-    "SERVER_COMMON_CONFIG_DIR", str(ROOT.parents[1] / "config")))
+    "SERVER_COMMON_CONFIG_DIR", str(SERVER_ROOT / "config")))
 CAMERA_LIST_CONFIG = COMMON_CONFIG_DIR / "camera_list.json"
 CAMERA_LIST = json.loads(CAMERA_LIST_CONFIG.read_text(encoding="utf-8")) if CAMERA_LIST_CONFIG.is_file() else {}
 CAMERA_MODEL_CONFIG = COMMON_CONFIG_DIR / "camera_model.json"
 CAMERA_MODELS = json.loads(CAMERA_MODEL_CONFIG.read_text(encoding="utf-8")) if CAMERA_MODEL_CONFIG.is_file() else {}
 HOST = os.environ.get("ADMIN_GUI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOMOGRAPHY_APP_PORT", "8001"))
-TOOL = os.environ.get("HOMOGRAPHY_TOOL", "homography_tool")
+DEFAULT_TOOL = APP_ROOT / "processing" / "build" / "homography_tool"
+TOOL = os.environ.get("HOMOGRAPHY_TOOL", str(DEFAULT_TOOL))
 TIMEOUT = int(os.environ.get("HOMOGRAPHY_COMMAND_TIMEOUT_SEC", "120"))
 RESULT_ROOT = Path(os.environ.get("HOMOGRAPHY_RESULT_DIR", "/tmp/homography-results"))
 RESULT_TTL_SEC = int(os.environ.get("ADMIN_GUI_RESULT_TTL_SEC", "3600"))
 RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 OPERATIONAL_HOMOGRAPHY_ROOT = Path(os.environ.get(
     "SAFETY_SERVER_HOMOGRAPHY_DIR",
-    str(COMMON_CONFIG_DIR / "homography")))
+    str(COMMON_CONFIG_DIR / "operational" / "homography")))
 MIN_COMMON_MARKERS = int(CONFIG_VALUE.get("map", {}).get("min_common_markers", 3))
 MAX_VERIFICATION_STREAMS = int(STREAM_CONFIG_VALUE.get("verification", {}).get("max_streams", 0))
 if MAX_VERIFICATION_STREAMS < 2 or MAX_VERIFICATION_STREAMS > 32:

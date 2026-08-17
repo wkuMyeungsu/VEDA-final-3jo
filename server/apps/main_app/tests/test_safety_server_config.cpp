@@ -83,17 +83,17 @@ int main() {
     // 전역 stream_id로 분리되는지 확인한다.
     const auto multi_dir = std::filesystem::temp_directory_path() / "forklift_multi_config_test";
     std::filesystem::remove_all(multi_dir);
-    std::filesystem::create_directories(multi_dir / "homography");
+    std::filesystem::create_directories(multi_dir / "operational/homography");
     const auto write = [](const std::filesystem::path& path, const std::string& text) {
         std::ofstream(path) << text;
     };
     const std::string h = R"({"world_unit":"mm","image_size":{"width":640,"height":480},"H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,1]]})";
-    write(multi_dir / "homography/cam01.json", h);
-    write(multi_dir / "homography/cam02_1.json", h);
+    write(multi_dir / "operational/homography/cam01.json", h);
+    write(multi_dir / "operational/homography/cam02_1.json", h);
     write(multi_dir / "camera_model.json", R"({"models":[{"model":"PNO-A9081RG","channel_count":1},{"model":"PNM-C16083RVQ","channel_count":4}]})");
     write(multi_dir / "camera_list.json", R"({"cameras":[
-      {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"homography/cam01.json","image_width_px":640,"image_height_px":480}]},
-      {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"homography/cam02_1.json","image_width_px":640,"image_height_px":480}]}
+      {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"operational/homography/cam01.json","image_width_px":640,"image_height_px":480}]},
+      {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"operational/homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"operational/homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"operational/homography/cam02_1.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"operational/homography/cam02_1.json","image_width_px":640,"image_height_px":480}]}
     ]})");
     write(multi_dir / "forklift_device_config.json", R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
     write(multi_dir / "danger_judgment_config.json", R"({"units":{"world":"mm","distance":"mm"},"danger_judgment":{"caution_threshold_mm":3000,"danger_threshold_mm":1500,"emergency_threshold_mm":400,"emergency_release_margin_mm":100,"tof_caution_mm":1000,"tof_danger_mm":500,"impact_accel_threshold_g":2}})");
@@ -106,8 +106,8 @@ int main() {
         check(multi.forklifts.size() == 2 && multi.forklifts[1].collision_radius_mm == 600,
               "TERM별 marker와 충돌 반경을 읽음");
         check(multi.output_storage.object_csv ==
-                  (multi_dir.parent_path() / "storage/objects.csv").lexically_normal().string(),
-              "런타임 출력은 config 바깥 storage에 저장함");
+                  (multi_dir.parent_path() / "var/main_app/storage/objects.csv").lexically_normal().string(),
+              "런타임 출력은 config와 분리된 var/main_app에 저장함");
     } catch (const std::exception& error) {
         check(false, error.what());
     }
@@ -115,18 +115,18 @@ int main() {
     // main 전용 정책 설정과 server/config 공통 카메라 설정을 서로 다른
     // 디렉터리에서 읽어도 같은 스트림 목록을 만드는지 확인한다.
     const auto split_root = std::filesystem::temp_directory_path() / "forklift_split_config_test";
-    const auto split_app = split_root / "01_main";
+    const auto split_app = split_root / "safety";
     const auto split_common = split_root / "common";
     std::filesystem::create_directories(split_app);
-    std::filesystem::create_directories(split_common / "homography");
+    std::filesystem::create_directories(split_common / "operational/homography");
     for (const char* name : {"camera_model.json", "camera_list.json"})
         std::filesystem::copy_file(multi_dir / name, split_common / name,
                                    std::filesystem::copy_options::overwrite_existing);
-    std::filesystem::copy_file(multi_dir / "homography/cam01.json",
-                               split_common / "homography/cam01.json",
+    std::filesystem::copy_file(multi_dir / "operational/homography/cam01.json",
+                               split_common / "operational/homography/cam01.json",
                                std::filesystem::copy_options::overwrite_existing);
-    std::filesystem::copy_file(multi_dir / "homography/cam02_1.json",
-                               split_common / "homography/cam02_1.json",
+    std::filesystem::copy_file(multi_dir / "operational/homography/cam02_1.json",
+                               split_common / "operational/homography/cam02_1.json",
                                std::filesystem::copy_options::overwrite_existing);
     for (const char* name : {"forklift_device_config.json", "danger_judgment_config.json", "system_config.json"})
         std::filesystem::copy_file(multi_dir / name, split_app / name,
@@ -141,7 +141,7 @@ int main() {
 
     // 일부 채널의 H가 아직 없거나 손상돼도 중앙 서버 전체를 막지 않고,
     // 보정이 준비된 스트림만 남겨서 기동할 수 있어야 한다.
-    std::filesystem::remove(multi_dir / "homography/cam02_1.json");
+    std::filesystem::remove(multi_dir / "operational/homography/cam02_1.json");
     try {
         const auto partial = loadMultiCameraServerConfig(multi_dir.string());
         check(partial.streams.size() == 1,

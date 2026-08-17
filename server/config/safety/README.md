@@ -6,7 +6,7 @@
 forklift_safety_server [--config-dir PATH] [--common-config-dir PATH]
 ```
 
-`PATH`를 생략하면 `server/01_main/config`를 찾는다. 공통 카메라 설정은
+`PATH`를 생략하면 `server/config/safety`를 찾는다. 공통 카메라 설정은
 `server/config`에서 읽으며, 다른 위치에 둘 때는 `--common-config-dir PATH`를 함께 지정한다.
 운영 설정은 장비마다 달라지므로 Git에는 샘플만 남기고 실제 값은 별도 파일로 둔다.
 
@@ -51,12 +51,14 @@ H 파일의 상대 경로와 저장 경로는 설정 디렉터리를 기준으�
 호모그래피 산출물은 물리 CCTV별 폴더에 보관한다.
 
 ```text
-homography/CAM_01/homography_channel_3_mm.json
-homography/CAM_02/homography_channel_1_mm.json
+operational/homography/CAM_01/homography_channel_3_mm.json
+operational/homography/CAM_02/homography_channel_1_mm.json
 ```
 
 `camera_list.json`에서는 위 상대경로를 채널별로 참조하고, 서버가 이를
 `CAM_01_CH_03`, `CAM_02_CH_01` 같은 `stream_id`로 자동 연결한다.
+
+실행 중 생성되는 DB·CSV는 설정 폴더와 분리된 `server/var/main_app/storage`에 저장한다.
 
 ## MQTT
 

@@ -82,7 +82,7 @@
 전체 스트림 정합이 끝난 최종 H는 공용 서버 설정 경로에 저장된다.
 
 ```text
-server/config/homography/CAM_01/homography_channel_<channel>_mm.json
+server/config/operational/homography/CAM_01/homography_channel_<channel>_mm.json
 ```
 
 main 서버는 이 파일의 `H_pixel_to_world`, `image_size`, `stream_id`, `channel`을 읽어

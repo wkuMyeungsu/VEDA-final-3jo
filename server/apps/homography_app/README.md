@@ -14,12 +14,10 @@
 ## 구조
 
 ```text
-02_homography/
+apps/homography_app/
 ├── README.md       # 전체 개요
-├── app/             # Python 웹 UI/API
-├── engine/          # C++ 알고리즘 라이브러리·CLI
-├── config/          # 마커 격자 및 실행 설정
-└── tests/           # 테스트 및 테스트 데이터
+├── web/             # Python 웹 UI/API
+└── processing/      # C++ 알고리즘 라이브러리·CLI·테스트
 ```
 
 실행 흐름은 다음과 같음.
@@ -27,17 +25,17 @@
 ```text
 브라우저
   ↓
-app/ 웹 UI·API
+web/ 웹 UI·API
   ↓
-engine/ CLI 또는 homography_core
+processing/ CLI 또는 homography_core
   ↓
 ArUco 검출·호모그래피 계산
 ```
 
 세부 문서는 다음을 참고함.
 
-- [웹 앱 문서](app/README.md)
-- [엔진 및 CLI 문서](engine/README.md)
+- [웹 앱 문서](web/README.md)
+- [처리 엔진 및 CLI 문서](processing/README.md)
 
 ## TODO
 

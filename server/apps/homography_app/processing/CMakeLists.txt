@@ -19,7 +19,7 @@ target_include_directories(homography_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_include_directories(homography_core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party
 )
 target_link_libraries(homography_core PUBLIC ${OpenCV_LIBS})
 
@@ -29,7 +29,7 @@ target_compile_definitions(homography_tool PRIVATE HOMOGRAPHY_TOOL_VERSION="1")
 
 if(BUILD_TESTING)
     add_executable(homography_unit_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit_tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit_tests.cpp
     )
     target_link_libraries(homography_unit_tests PRIVATE homography_core)
     add_test(NAME homography_unit_tests COMMAND homography_unit_tests)

@@ -152,21 +152,33 @@ std::string resolveConfigRelativePath(const SafetyServerConfig& config, const st
 }
 
 std::string resolveConfigDirectory() {
-    const char* candidates[] = {"server/01_main/config", "config", "../config",
-                                "../../config", "01_Workspace/server/01_main/config"};
+    const char* candidates[] = {
+        "server/config/safety",
+        "config/safety",
+        "../config/safety",
+        "../../config/safety",
+        "01_Workspace/server/config/safety",
+        // 이전 로컬 배치가 남아 있는 장비에서 명시적 인자 없이 한 번 더 찾는다.
+        "server/01_main/config",
+    };
     for (const char* candidate : candidates)
         if (std::filesystem::is_directory(candidate)) return candidate;
     return candidates[0];
 }
 
 std::string resolveCommonConfigDirectory(const std::string& config_dir) {
-    // 기본 배치는 server/01_main/config와 server/config를 나란히 둔다.
+    // 기본 배치는 server/config/safety와 server/config를 나란히 둔다.
     // 다른 위치에서 실행할 때는 --common-config-dir로 명시할 수 있다.
     const std::filesystem::path app_dir(config_dir);
     const auto sibling_common = app_dir.parent_path().parent_path() / "config";
     if (std::filesystem::is_directory(sibling_common)) return sibling_common.string();
-    const char* candidates[] = {"server/config", "config", "../config",
-                                "../../config", "01_Workspace/server/config"};
+    const char* candidates[] = {
+        "server/config",
+        "config",
+        "../config",
+        "../../config",
+        "01_Workspace/server/config",
+    };
     for (const char* candidate : candidates)
         if (std::filesystem::is_directory(candidate)) return candidate;
     return candidates[0];
@@ -174,7 +186,7 @@ std::string resolveCommonConfigDirectory(const std::string& config_dir) {
 
 SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir,
                                                    const std::string& common_config_dir) {
-    // 위험·센서·MQTT 정책은 main 전용 폴더에 두고, 카메라 목록·모델과 H는
+    // 위험·센서·MQTT 정책은 config/safety에 두고, 카메라 목록·모델과 H는
     // 두 앱이 함께 쓰는 server/config에서 읽는다.
     const std::filesystem::path dir(config_dir);
     const std::filesystem::path common_dir(common_config_dir.empty() ? config_dir : common_config_dir);
@@ -406,8 +418,9 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
         c.sensor.stub_tof_distance_mm < 0)
         schema(system_path.string(), "handover/tracking/sensor/stream 설정 범위 오류");
     const auto& out = object(system, "output_storage", system_path.string());
-    // 설정 파일과 실행 중 생성되는 로그·DB를 섞지 않도록 config의 상위 앱 디렉터리를 저장 기준으로 삼는다.
-    const auto storage_dir = dir.parent_path();
+    // 설정 파일과 실행 중 생성되는 로그·DB를 섞지 않도록 server/var/main_app를
+    // 저장 기준으로 삼는다. 상대 출력명(storage/foo.csv)은 이 기준 아래에 둔다.
+    const auto storage_dir = common_dir.parent_path() / "var" / "main_app";
     c.output_storage.object_csv = (storage_dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
     c.output_storage.aruco_csv = (storage_dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
     c.output_storage.event_db = (storage_dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();

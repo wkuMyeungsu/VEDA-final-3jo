@@ -24,7 +24,7 @@
     실행 전 환경변수 GIO_USE_PROXY_RESOLVER=dummy 설정을 권장한다.
 [ ] object 경로 / aruco 경로 각각의 delta_ms 로그 실측값을 확정해 Confluence 에 기록한다.
 [ ] 위 실측 지연 폭을 근거로 Task 27(world 좌표 전달 방식: 함수 호출 vs IPC)을 최종 결정한다.
-    (해당 결정·배선 항목은 01_main 루트의 Task 27 작업이다.)
+    (해당 결정·배선 항목은 main_app 루트의 Task 27 작업이다.)
 
 ── 메모 ──
 파서/라우터/타이밍 코드는 완성 상태다. 남은 건 순수 실연동 검증이라, 이 저장소에서
