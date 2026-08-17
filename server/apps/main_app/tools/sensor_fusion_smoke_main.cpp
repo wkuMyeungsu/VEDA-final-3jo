@@ -1,4 +1,4 @@
-// sensor_fusion_smoke_test.cpp
+// sensor_fusion_smoke_main.cpp
 // [로컬 하드웨어 스모크 테스트] 실제 I2C 센서(MPU6050 + VL53L1X)가 연결된
 // 라즈베리파이에서만 의미가 있다. danger_engine 실행 경로(danger_judgment_engine_main.cpp,
 // ResultPublisher/ResultDispatcher/EventLogger/LatencyLogger, server-단말 TCP/JSON)와는
@@ -15,8 +15,9 @@
 // 출력: 매 회 SensorInput 필드(imu_ok/tof_ok/tof_distance_mm/imu_accel_g)와
 //       JudgmentResult(camera_risk/tof_risk/final_risk/exception)를 콘솔에 출력.
 //
-// 빌드: cmake --build build --target sensor_fusion_smoke_test
-// 실행 (실제 I2C 하드웨어 필요, 라즈베리파이에서): sudo ./sensor_fusion_smoke_test
+// 이 파일은 자동 CTest에 등록하지 않는 하드웨어 진단 도구다.
+// 실행하려면 배포 장비의 센서 드라이버/헤더를 포함한 별도 수동 빌드가 필요하다.
+// 실제 I2C 하드웨어 필요, 라즈베리파이에서 실행: sudo ./sensor_fusion_smoke_main
 //   (권한 거부되면 sudo 필요 - I2C 디바이스 파일 접근 권한)
 
 #include <iomanip>
