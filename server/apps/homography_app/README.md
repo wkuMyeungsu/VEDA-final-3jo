@@ -17,7 +17,8 @@
 apps/homography_app/
 ├── README.md       # 전체 개요
 ├── web/             # Python 웹 UI/API
-└── processing/      # C++ 알고리즘 라이브러리·CLI·테스트
+├── processing/      # C++ 알고리즘 라이브러리·CLI·단위 테스트
+└── tests/           # 웹 전역 정합·통합 검증
 ```
 
 실행 흐름은 다음과 같음.
@@ -30,6 +31,20 @@ web/ 웹 UI·API
 processing/ CLI 또는 homography_core
   ↓
 ArUco 검출·호모그래피 계산
+```
+
+## 검증 테스트
+
+전역 정합 테스트는 정합에 사용하지 않은 독립 체크 포인트를 최종 H로
+다시 투영한다. 따라서 공통 마커 위치의 적합 RMSE만 낮은 경우를 성공으로
+간주하지 않는다. 연결 그래프 단절, 공통 마커 일직선 배치, 검출 노이즈,
+잘못된 공통 마커의 교차검증도 함께 확인한다.
+
+```sh
+cmake -S server -B /tmp/veda-server-test-build
+cmake --build /tmp/veda-server-test-build -j2
+cd /tmp/veda-server-test-build
+ctest --output-on-failure
 ```
 
 세부 문서는 다음을 참고함.
