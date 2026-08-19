@@ -276,7 +276,7 @@ struct CentralServer::StreamWorker {
             // application 트랙만 연결한다. 영상 트랙은 받지 않아 Pi의 메모리와
             // CPU를 메타데이터 처리에 집중시킨다.
             const std::string description =
-                "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp tcp-timeout=5000000 latency=" +
+                "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp tcp-timeout=30000000 latency=" +
                 std::to_string(server.config().stream.rtsp_latency_ms) +
                 " name=source source. ! application/x-rtp,media=application ! queue ! "
                 "appsink name=metadata emit-signals=true sync=false max-buffers=" +
@@ -286,7 +286,7 @@ struct CentralServer::StreamWorker {
             if (!graph) {
                 if (error) { LOG_ERROR("RTSP", stream.stream_id + " 파이프라인 생성 실패: " + error->message); g_error_free(error); }
                 if (++failures >= server.config().stream.max_retries) {
-                    LOG_ERROR("RTSP", stream.stream_id + " 파이프라인 생성이 계속 실패해 해당 스트림을 제외합니다.");
+                    LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수 초과로 해당 채널을 일시 제외합니다.");
                     break;
                 }
                 retry();
@@ -311,7 +311,7 @@ struct CentralServer::StreamWorker {
                     GstState cur_state = GST_STATE_NULL;
                     gst_element_get_state(graph, &cur_state, nullptr, 0);
                     if (cur_state == GST_STATE_PLAYING) {
-                        LOG_INFO("RTSP", stream.stream_id + " 메타데이터 수신 시작");
+                        LOG_INFO("RTSP", stream.stream_id + " 카메라 연결 완료 (메타데이터 실시간 수신 중)");
                         reached_playing = true;
                         failures = 0;
                     }
@@ -319,7 +319,7 @@ struct CentralServer::StreamWorker {
                 if (!message) {
                     const auto elapsed = std::chrono::steady_clock::now() - connected_at;
                     if (!reached_playing && elapsed > std::chrono::seconds(server.config().stream.connect_timeout_s)) {
-                        LOG_WARN("RTSP", stream.stream_id + " RTSP 연결 시간 초과 (재시도)");
+                        LOG_WARN("RTSP", stream.stream_id + " 카메라 응답 대기 시간 초과 - 재접속을 시도합니다.");
                         retry_needed = true;
                         break;
                     }
@@ -328,12 +328,12 @@ struct CentralServer::StreamWorker {
                 if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
                     GError* detail = nullptr; gchar* debug = nullptr;
                     gst_message_parse_error(message, &detail, &debug);
-                    LOG_ERROR("RTSP", stream.stream_id + " 장애 발생: " + (detail ? detail->message : "알 수 없는 오류"));
+                    LOG_WARN("RTSP", stream.stream_id + " 카메라 네트워크 일시 단절 감지 - 자동 복구를 진행합니다.");
                     if (detail) g_error_free(detail);
                     if (debug) g_free(debug);
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
-                    LOG_WARN("RTSP", stream.stream_id + " 스트림이 종료되어 재연결합니다.");
+                    LOG_INFO("RTSP", stream.stream_id + " 카메라 세션 갱신 (재접속 진행)");
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_STATE_CHANGED &&
                            GST_MESSAGE_SRC(message) == GST_OBJECT(graph)) {
@@ -341,17 +341,13 @@ struct CentralServer::StreamWorker {
                     gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
                     if (new_state == GST_STATE_PLAYING) {
                         if (!reached_playing) {
-                            LOG_INFO("RTSP", stream.stream_id + " 메타데이터 수신 시작");
+                            LOG_INFO("RTSP", stream.stream_id + " 카메라 연결 완료 (메타데이터 실시간 수신 중)");
                         }
                         reached_playing = true;
                         failures = 0;
                     }
                 }
                 gst_message_unref(message);
-
-                // 상태 변경 메시지는 정상적인 연결 과정의 일부다.
-                // 오류나 EOS가 올 때까지 계속 bus를 감시해야 메타데이터를
-                // 지속적으로 수신할 수 있다.
                 if (retry_needed) break;
             }
             gst_object_unref(bus);
@@ -360,8 +356,7 @@ struct CentralServer::StreamWorker {
             pipeline = nullptr;
             if (!retry_needed || stop_requested) break;
             if (++failures >= server.config().stream.max_retries) {
-                std::cerr << "[스트림 제외] " << stream.stream_id
-                          << " 최대 재시도 횟수 초과로 해당 스트림만 제외합니다.\n";
+                LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수 초과로 해당 채널을 일시 제외합니다.");
                 break;
             }
             retry();
