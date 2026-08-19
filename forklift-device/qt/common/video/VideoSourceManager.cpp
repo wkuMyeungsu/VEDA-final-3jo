@@ -21,8 +21,12 @@ VideoSourceManager::VideoSourceManager(QObject *parent)
 
 VideoSourceManager::~VideoSourceManager()
 {
-    clearPendingStops();                                                       // - 정지 예약 정리: 소멸 중에 타이머가 죽은 소스를 건드리지 않게 먼저 제거
-    if (g_instance == this)                                                    // - 인스턴스 해제: 소멸 시 전역 포인터 초기화
+    clearPendingStops();
+    const QList<IVideoSource *> uniqueValues = m_sources.values();
+    const QSet<IVideoSource *> uniqueSet(uniqueValues.begin(), uniqueValues.end());
+    qDeleteAll(uniqueSet);
+    m_sources.clear();
+    if (g_instance == this)
         g_instance = nullptr;
 }
 
@@ -33,13 +37,19 @@ VideoSourceManager *VideoSourceManager::instance()
 
 void VideoSourceManager::setCameras(const QVector<CameraInfo> &cameras)
 {
-    clearPendingStops();                                                       // - 정지 예약 정리: 소스를 지우기 전에 먼저 없애야 타이머가 사라진 소스를 건드리지 않음
-    qDeleteAll(m_sources);                                                     // - 기존 소스 정리: 이전 영상 소스 메모리 전체 해제
-    m_sources.clear();                                                         // - 맵 초기화: 영상 소스 저장용 맵 비우기
+    clearPendingStops();
+    const QList<IVideoSource *> uniqueValues = m_sources.values();
+    const QSet<IVideoSource *> uniqueSet(uniqueValues.begin(), uniqueValues.end());
+    qDeleteAll(uniqueSet);
+    m_sources.clear();
 
-    for (const CameraInfo &info : cameras) {                                   // - 카메라 목록 순회: 설정별 영상 소스 객체 생성
-        if (IVideoSource *source = createSource(info))                         // - 소스 생성 검증: 생성된 영상 소스 존재 시 맵에 추가
-            m_sources.insert(info.cameraId, source);                           // - 소스 저장: 카메라 ID를 키로 영상 소스 객체 보관
+    for (const CameraInfo &info : cameras) {
+        if (IVideoSource *source = createSource(info)) {
+            if (!info.streamId.isEmpty())
+                m_sources.insert(info.streamId, source);
+            if (!info.cameraId.isEmpty() && !m_sources.contains(info.cameraId))
+                m_sources.insert(info.cameraId, source);
+        }
     }
 }
 

@@ -14,10 +14,14 @@ VideoSourceType videoSourceTypeFromString(const QString &value);                
 
 // - 카메라 정보 구조체 (cameras.json 데이터 보관)
 struct CameraInfo {
-    QString cameraId;                                                           // - 카메라 식별자: 카메라 구분용 고유 ID
+    QString streamId;                                                           // - 스트림 식별자: 단일 카메라 다채널 구분용 (예: CAM_01_CH_01)
+    QString cameraId;                                                           // - 카메라 식별자: 물리 카메라 구분용 ID (예: CAM_01)
+    int channel = 0;                                                            // - 채널 번호: 0, 1, 2, 3
     QString name;                                                               // - 카메라 이름: 화면 표시용 명칭
     QString zone;                                                               // - 설치 구역: 카메라 설치 위치 정보
     VideoSourceType sourceType = VideoSourceType::Mock;                         // - 영상 소스 유형: 연결 방식 (기본값: Mock)
     QString rtspUrl;                                                            // - RTSP 주소: 네트워크 영상 스트리밍 URL
     QString localFilePath;                                                      // - 비디오 파일 경로: 로컬 영상 파일 저장 경로
+
+    QString effectiveId() const { return streamId.isEmpty() ? cameraId : streamId; }
 };
