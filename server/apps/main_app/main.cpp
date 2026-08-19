@@ -270,6 +270,7 @@ struct CentralServer::StreamWorker {
     void run() {
         int failures = 0;
         bool has_connected_before = false;
+        const int max_retries = server.config().stream.max_retries;
         while (running && !stop_requested) {
             reassembler.reset();
             // application 트랙만 연결한다. 영상 트랙은 받지 않아 Pi의 메모리와
@@ -284,8 +285,8 @@ struct CentralServer::StreamWorker {
             GstElement* graph = gst_parse_launch(description.c_str(), &error);
             if (!graph) {
                 if (error) { LOG_ERROR("RTSP", stream.stream_id + " 파이프라인 생성 실패: " + error->message); g_error_free(error); }
-                if (++failures >= server.config().stream.max_retries) {
-                    LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수 초과로 해당 채널을 일시 제외합니다.");
+                if (++failures >= max_retries) {
+                    LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수(" + std::to_string(max_retries) + "회) 초과로 해당 채널을 일시 제외합니다.");
                     break;
                 }
                 retry();
@@ -326,7 +327,9 @@ struct CentralServer::StreamWorker {
                 if (!message) {
                     const auto elapsed = std::chrono::steady_clock::now() - connected_at;
                     if (!reached_playing && elapsed > std::chrono::seconds(server.config().stream.connect_timeout_s)) {
-                        LOG_WARN("RTSP", stream.stream_id + " 카메라 응답 대기 시간 초과 - 재접속을 시도합니다.");
+                        ++failures;
+                        LOG_WARN("RTSP", stream.stream_id + " 카메라 응답 대기 시간 초과 - 재접속 시도 (" +
+                                             std::to_string(failures) + "/" + std::to_string(max_retries) + ")");
                         retry_needed = true;
                         break;
                     }
@@ -335,7 +338,9 @@ struct CentralServer::StreamWorker {
                 if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
                     GError* detail = nullptr; gchar* debug = nullptr;
                     gst_message_parse_error(message, &detail, &debug);
-                    LOG_WARN("RTSP", stream.stream_id + " 카메라 네트워크 일시 단절 감지 - 자동 복구를 진행합니다.");
+                    ++failures;
+                    LOG_WARN("RTSP", stream.stream_id + " 카메라 네트워크 일시 단절 감지 - 자동 복구 시도 (" +
+                                         std::to_string(failures) + "/" + std::to_string(max_retries) + ")");
                     if (detail) g_error_free(detail);
                     if (debug) g_free(debug);
                     retry_needed = true;
@@ -360,8 +365,8 @@ struct CentralServer::StreamWorker {
             gst_object_unref(graph);
             pipeline = nullptr;
             if (!retry_needed || stop_requested) break;
-            if (++failures >= server.config().stream.max_retries) {
-                LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수 초과로 해당 채널을 일시 제외합니다.");
+            if (failures >= max_retries) {
+                LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수(" + std::to_string(max_retries) + "회) 초과로 해당 채널을 일시 제외합니다.");
                 break;
             }
             retry();
