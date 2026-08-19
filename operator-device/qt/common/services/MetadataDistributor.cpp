@@ -37,6 +37,27 @@ void MetadataDistributor::setSource(IMetadataSource *source)
     }
 }
 
+// 데모 패널 전용 보조 입력
+// - 실서버 소스(m_source)는 그대로 두고 데모 값만 추가로 흘려보냄
+// - connectionStateChanged는 일부러 연결 안 함 -- 서버 연결 배지는 실제 링크 상태가 진실이어야 함
+// - start()/stop() 대상도 아님 -- 수명은 호출한 쪽(main.cpp)이 관리
+void MetadataDistributor::setDemoSource(IMetadataSource *source)
+{
+    if (m_demoSource == source)
+        return;
+    // 주 소스와 같은 객체면 아래 disconnect가 주 경로까지 끊어버림 -- 애초에 붙일 필요도 없음
+    if (source && source == m_source)
+        return;
+
+    if (m_demoSource)
+        disconnect(m_demoSource, nullptr, this, nullptr);
+
+    m_demoSource = source;
+
+    if (m_demoSource)
+        connect(m_demoSource, &IMetadataSource::metadataReceived, this, &MetadataDistributor::handleMetadata);
+}
+
 void MetadataDistributor::start()
 {
     if (m_source)

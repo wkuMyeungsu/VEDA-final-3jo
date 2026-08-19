@@ -31,6 +31,11 @@ public:
     // source의 소유권은 호출한 쪽이 계속 가짐 -- MetadataDistributor는 연결(connect)만 함
     // (delete는 안 함 -- main.cpp에서 스택 변수로 관리)
     void setSource(IMetadataSource *source);
+
+    // 데모 패널 전용 보조 입력 -- setSource()로 붙인 실서버 소스는 그대로 두고
+    // metadataReceived만 추가로 받아씀. mqtt 모드에서도 데모 버튼이 먹히게 하려는 용도
+    void setDemoSource(IMetadataSource *source);
+
     void start();
     void stop();
 
@@ -63,5 +68,6 @@ private:
     EventLogModel m_eventLogModel;
     AlertListModel m_alertListModel;
     IMetadataSource *m_source = nullptr;    // 현재 연결된 데이터 출처 (Mock 또는 실서버 연동체)
+    IMetadataSource *m_demoSource = nullptr; // 데모 패널 보조 입력 (mqtt 모드에서만 씀, 없으면 nullptr)
     RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected;
 };
