@@ -46,8 +46,15 @@ QVector<CameraInfo> ConfigLoader::parseCamerasJson(const QByteArray &jsonData)
         info.rtspUrl = obj.value(QStringLiteral("rtsp_url")).toString();
         info.localFilePath = obj.value(QStringLiteral("local_file_path")).toString();
 
-        if (info.cameraId.isEmpty() && info.streamId.isEmpty()) {
-            qCWarning(lcConfig) << "skipping camera entry with empty camera_id and stream_id";
+        // camera_id/stream_id 중 하나만 있어도 다른 쪽을 채워 서로 보완
+        if (info.cameraId.isEmpty() && !info.streamId.isEmpty()) {
+            info.cameraId = info.streamId;
+        } else if (info.streamId.isEmpty() && !info.cameraId.isEmpty()) {
+            info.streamId = info.cameraId;
+        }
+
+        if (info.cameraId.isEmpty()) {
+            qCWarning(lcConfig) << "skipping camera entry with an empty camera_id";
             continue;
         }
         result.append(info);
@@ -108,8 +115,8 @@ QVector<OperatorAccount> ConfigLoader::parseOperatorsJson(const QByteArray &json
         account.role = operatorRoleFromString(obj.value(QStringLiteral("role")).toString());
         account.pinHash = obj.value(QStringLiteral("pin_hash")).toString();
 
-        if (account.operatorId.isEmpty()) {
-            qCWarning(lcConfig) << "skipping operator entry with an empty operator_id";
+        if (account.operatorId.isEmpty() || account.pinHash.isEmpty()) {
+            qCWarning(lcConfig) << "skipping operator entry with an empty operator_id or pin_hash";
             continue;
         }
         result.append(account);

@@ -1,6 +1,7 @@
 #include "VideoSourceManager.h"
 
 #include <QLoggingCategory>
+#include <QSet>
 
 #include "LocalFileVideoSource.h"
 #include "MockVideoSource.h"
@@ -21,6 +22,13 @@ VideoSourceManager::VideoSourceManager(QObject *parent)
 
 VideoSourceManager::~VideoSourceManager()
 {
+    // 같은 source가 effId/streamId/cameraId 등 여러 키로 중복 저장되므로,
+    // qDeleteAll을 값 그대로 돌리면 같은 포인터를 두 번 이상 delete함 -- 중복 제거 후 삭제
+    const QList<IVideoSource *> uniqueValues = m_sources.values();
+    const QSet<IVideoSource *> uniqueSet(uniqueValues.begin(), uniqueValues.end());
+    qDeleteAll(uniqueSet);
+    m_sources.clear();
+
     if (g_instance == this)
         g_instance = nullptr;
 }
@@ -33,7 +41,10 @@ VideoSourceManager *VideoSourceManager::instance()
 void VideoSourceManager::setCameras(const QVector<CameraInfo> &cameras)
 {
     // 재호출 시 이전 소스는 전부 정리 (재연결/재시작 시나리오 대비)
-    qDeleteAll(m_sources);
+    // 같은 source가 여러 키로 중복 저장되므로 중복 제거 후 삭제 (이중 delete 방지)
+    const QList<IVideoSource *> uniqueValues = m_sources.values();
+    const QSet<IVideoSource *> uniqueSet(uniqueValues.begin(), uniqueValues.end());
+    qDeleteAll(uniqueSet);
     m_sources.clear();
 
     for (const CameraInfo &info : cameras) {

@@ -12,6 +12,7 @@ server/01_main/config/homography/*.json
 .env
 forklift-device/qt/config/cameras.json
 operator-device/qt/config/cameras.json
+operator-device/qt/config/operators.json
 
 # 데모 영상
 *.mp4
