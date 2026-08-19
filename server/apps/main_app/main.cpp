@@ -381,15 +381,19 @@ void CentralServer::start() {
     sensor_receiver_.start();
     assignment_publisher_.start();
     event_logger_.start();
-    latency_logger_.start();
+    if (config_.output_storage.enable_raw_csv_logging) {
+        latency_logger_.start();
+    }
     for (auto& terminal : terminals_) {
         terminal->publisher.start();
         terminal->dispatcher.onStateChangeEvent(
             [this](const JudgmentResult& result, int previous) {
                 event_logger_.log(result, previous);
             });
-        terminal->dispatcher.onLatencyEvent(
-            [this](const LatencyStamps& stamps) { latency_logger_.log(stamps); });
+        if (config_.output_storage.enable_raw_csv_logging) {
+            terminal->dispatcher.onLatencyEvent(
+                [this](const LatencyStamps& stamps) { latency_logger_.log(stamps); });
+        }
         JudgmentResult idle = risk_transport::ResultDispatcher::idleResult();
         idle.terminal_id = terminal->device.terminal_id;
         terminal->dispatcher.primeIdle(idle);
@@ -415,7 +419,9 @@ void CentralServer::stop() {
     assignment_publisher_.stop();
     sensor_receiver_.stop();
     event_logger_.stop();
-    latency_logger_.stop();
+    if (config_.output_storage.enable_raw_csv_logging) {
+        latency_logger_.stop();
+    }
 }
 
 }  // namespace
