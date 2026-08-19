@@ -213,7 +213,7 @@ struct CentralServer::StreamWorker {
     }
     void stop() {
         if (!running.exchange(false)) return;
-        if (pipeline) gst_element_send_event(pipeline, gst_event_new_eos());
+        if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);
         if (thread.joinable()) thread.join();
     }
 

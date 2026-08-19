@@ -333,7 +333,7 @@ private:
         // 다 비우고 끝날 때까지 기다린다.
         if (manage_server_status_) publishStatus(kOfflinePayload);
         mosquitto_disconnect(mosq_);
-        mosquitto_loop_stop(mosq_, /*force=*/false);   // 네트워크 스레드 조인
+        mosquitto_loop_stop(mosq_, /*force=*/true);   // 네트워크 스레드 즉시 종료
         mosquitto_destroy(mosq_);
         mosq_ = nullptr;
         libRelease();
