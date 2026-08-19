@@ -187,9 +187,7 @@ void CentralServer::process(const MetadataEvent& event) {
         assignment_publisher_.publish(terminal->device.terminal_id, *changed,
                                       event.aruco.camera_id, event.aruco.channel,
                                       nowIso8601Ms());
-        std::cout << "[핸드오버] " << terminal->device.terminal_id << " -> "
-                  << *changed << " (카메라=" << event.aruco.camera_id
-                  << ", 채널=" << event.aruco.channel << ")\n";
+        LOG_INFO("HANDOVER", "지게차(" + terminal->device.terminal_id + ") 관제 채널 자동 전환 -> [" + *changed + "]");
     }
 }
 

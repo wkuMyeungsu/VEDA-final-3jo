@@ -1,4 +1,5 @@
 #include "config_loader/safety_server_config.hpp"
+#include "logging/logger.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -325,28 +326,24 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                 s.image_width_px = item.at("image_width_px").get<int>();
                 s.image_height_px = item.at("image_height_px").get<int>();
             } catch (const std::exception&) {
-                std::cerr << "[경고] " << camera_id
-                          << " 채널 설정을 읽을 수 없어 해당 채널을 제외합니다.\n";
+                LOG_WARN("CONFIG", camera_id + " 채널 설정을 읽을 수 없어 해당 채널을 제외합니다.");
                 continue;
             }
             if (s.channel < 1 || s.channel > expected_channels ||
                 s.rtsp_url.rfind("rtsp://", 0) != 0 || s.homography_file.empty() ||
                 s.image_width_px < 1 || s.image_height_px < 1 || channels[{camera_id, s.channel}]) {
-                std::cerr << "[경고] " << camera_id << " 채널 " << s.channel
-                          << " 설정이 잘못되어 해당 채널을 제외합니다.\n";
+                LOG_WARN("CONFIG", camera_id + " 채널 " + std::to_string(s.channel) + " 설정이 잘못되어 해당 채널을 제외합니다.");
                 continue;
             }
             channels[{camera_id,s.channel}] = true;
             s.stream_id = camera_id + "_CH_" + (s.channel < 10 ? "0" : "") + std::to_string(s.channel);
             if (stream_ids[s.stream_id]) {
-                std::cerr << "[경고] stream_id 중복으로 " << s.stream_id
-                          << " 스트림을 제외합니다.\n";
+                LOG_WARN("CONFIG", "stream_id 중복으로 " + s.stream_id + " 스트림을 제외합니다.");
                 continue;
             }
             stream_ids[s.stream_id] = true;
             if (!std::filesystem::exists(common_dir / s.homography_file)) {
-                std::cerr << "[경고] " << s.stream_id << " 호모그래피 파일이 없어"
-                          << " 해당 스트림을 제외합니다: " << s.homography_file << "\n";
+                LOG_WARN("CONFIG", s.stream_id + " 호모그래피 파일이 없어 해당 채널을 제외합니다 (" + s.homography_file + ")");
                 continue;
             }
             const auto h_path = (common_dir / s.homography_file).lexically_normal();
@@ -372,12 +369,10 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                         schema(h_path.string(), "H_pixel_to_world에 유효하지 않은 수가 있음");
                 }
             } catch (const SafetyServerConfigError& error) {
-                std::cerr << "[경고] " << s.stream_id << " 호모그래피가 유효하지 않아"
-                          << " 해당 스트림을 제외합니다: " << error.what() << "\n";
+                LOG_WARN("CONFIG", s.stream_id + " 호모그래피가 유효하지 않아 해당 채널을 제외합니다: " + error.what());
                 continue;
             } catch (const std::exception& e) {
-                std::cerr << "[경고] " << s.stream_id << " 호모그래피를 읽을 수 없어"
-                          << " 해당 스트림을 제외합니다: " << e.what() << "\n";
+                LOG_WARN("CONFIG", s.stream_id + " 호모그래피를 읽을 수 없어 해당 채널을 제외합니다: " + e.what());
                 continue;
             }
             configured_channels.insert(s.channel);
@@ -390,9 +385,8 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             c.streams.push_back(std::move(s));
         }
         if (configured_channels.size() != static_cast<std::size_t>(expected_channels)) {
-            std::cerr << "[경고] " << camera_id << "는 모델상 " << expected_channels
-                      << "개 채널이지만 사용 가능한 스트림은 " << configured_channels.size()
-                      << "개입니다. 동작 가능한 채널만 사용합니다.\n";
+            LOG_WARN("CONFIG", camera_id + " (" + std::to_string(expected_channels) + "채널 모델) 중 활성화된 " +
+                                   std::to_string(configured_channels.size()) + "개 채널로 안전 관제를 시작합니다.");
         }
     }
     const auto& fl = devices.at("forklifts");

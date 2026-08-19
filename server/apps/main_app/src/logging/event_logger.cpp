@@ -9,6 +9,7 @@
 //   직접:  g++ -std=c++17 EventLogger.cpp danger_judgment_engine.cpp ... -lsqlite3 -pthread
 
 #include "logging/event_logger.hpp"
+#include "logging/logger.hpp"
 
 #include <sqlite3.h>
 
@@ -68,7 +69,7 @@ bool EventLogger::start() {
 
     running_.store(true);
     worker_ = std::thread(&EventLogger::run, this);
-    std::cerr << "[EventLogger] 이벤트 로그 시작 - " << db_path_ << "\n";
+    LOG_INFO("STORAGE", "위험 이벤트 DB 연결 완료 (" + db_path_ + ")");
     return true;
 }
 

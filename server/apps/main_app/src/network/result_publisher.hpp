@@ -16,6 +16,7 @@
 #include <mosquitto.h>
 
 #include "network/mqtt_tls_options.hpp"
+#include "logging/logger.hpp"
 
 // ResultPublisher - 판정 결과 MQTT 송신기 (헤더 온리)
 //
@@ -214,31 +215,20 @@ private:
         auto* self = static_cast<ResultPublisher*>(obj);
         if (rc == 0) {
             ++self->connected_;
-            std::cerr << "[ResultPublisher] 브로커 연결 - " << self->broker_host_ << ':'
-                      << self->broker_port_ << " (topic=" << self->topic_ << ")\n";
-            // birth 메시지. 재연결 때마다 다시 나가야 retain된 offline이 덮어써지므로
-            // start() 경로가 아니라 이 콜백에 둔다(최초 연결/재연결 모두 여기를 지난다).
-            // setState()보다 먼저 보내, 하트비트가 먼저 나가서 단말이 "offline인데
-            // risk_event는 오는" 상태를 보는 구간을 없앤다.
+            LOG_INFO("MQTT", "위험 판정 결과 송신 브로커 연결 완료 (" + self->broker_host_ + ":" +
+                                 std::to_string(self->broker_port_) + ", 토픽: " + self->topic_ + ")");
             if (self->manage_server_status_) self->publishStatus(kOnlinePayload);
             self->setState(LinkState::CONNECTED);
         } else {
-            // 브로커가 CONNACK로 거부한 경우(인증/프로토콜 등). 소켓은 붙었으므로
-            // 재연결 백오프가 계속 재시도한다.
-            std::cerr << "[ResultPublisher] 브로커가 연결 거부 - "
-                      << mosquitto_connack_string(rc) << " (rc=" << rc << ")\n";
+            LOG_WARN("MQTT", "위험 판정 결과 송신 브로커 연결 거부 (" + std::string(mosquitto_connack_string(rc)) + ")");
             self->setState(LinkState::CONNECTING);
         }
     }
 
     static void onDisconnectCb(struct mosquitto*, void* obj, int rc) {
         auto* self = static_cast<ResultPublisher*>(obj);
-        // rc == 0이면 우리가 부른 mosquitto_disconnect()(= stop() 경로)라 재연결하지 않는다.
-        // rc != 0은 예기치 않은 끊김이고, loop_start 스레드가 백오프를 두고 재연결한다.
         if (rc != 0 && self->running_.load()) {
-            std::cerr << "[ResultPublisher] 브로커 연결 끊김 (rc=" << rc << ") - "
-                      << kReconnectDelayMinSec << "~" << kReconnectDelayMaxSec
-                      << "초 백오프로 재연결 대기\n";
+            LOG_WARN("MQTT", "위험 판정 결과 송신 브로커 연결 일시 끊김 - 자동 재연결 대기 중");
             self->setState(LinkState::CONNECTING);
         } else {
             self->setState(LinkState::DISCONNECTED);

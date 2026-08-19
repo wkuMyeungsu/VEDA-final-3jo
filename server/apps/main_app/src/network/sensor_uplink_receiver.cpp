@@ -13,6 +13,7 @@
 // 파싱한 terminal_id)뿐이다.
 
 #include "network/sensor_uplink_receiver.hpp"
+#include "logging/logger.hpp"
 
 #include <iostream>
 #include <cstdlib>
@@ -168,30 +169,22 @@ void SensorUplinkReceiver::onMessageTrampoline(mosquitto*, void* userdata, const
 
 void SensorUplinkReceiver::onConnect(int rc) {
     if (rc != 0) {
-        // 연결 자체가 브로커에게 거부됨(인증/프로토콜 등) - 이 경우는 재접속을 반복해도
-        // 안 되는 사유일 수 있어 눈에 띄게 남긴다. 네트워크 단절로 인한 재접속 시도는
-        // mosquitto 내부에서 조용히 반복되므로 여기 안 찍힌다(rc==0으로만 불림).
-        std::cerr << "[SensorUplinkReceiver] MQTT 연결 실패 (rc=" << rc << ": "
-                  << mosquitto_connack_string(rc) << ")\n";
+        LOG_WARN("MQTT", "지게차 센서 데이터 수신 브로커 연결 실패 (rc=" + std::to_string(rc) + ": " + mosquitto_connack_string(rc) + ")");
         return;
     }
     connected_ = true;
-    std::cerr << "[SensorUplinkReceiver] MQTT 연결됨 - " << broker_host_ << ':' << broker_port_
-              << " (구독: " << kSubscribeTopic << ")\n";
+    LOG_INFO("MQTT", "지게차 센서 데이터 수신 브로커 연결 완료 (" + broker_host_ + ":" + std::to_string(broker_port_) + ", 구독: " + kSubscribeTopic + ")");
 
     const int sub_rc = mosquitto_subscribe(mosq_, nullptr, kSubscribeTopic, /*qos=*/0);
     if (sub_rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[SensorUplinkReceiver] 구독 실패 (" << mosquitto_strerror(sub_rc) << ")\n";
+        LOG_WARN("MQTT", "지게차 센서 데이터 토픽 구독 실패 (" + std::string(mosquitto_strerror(sub_rc)) + ")");
     }
 }
 
 void SensorUplinkReceiver::onDisconnect(int rc) {
     connected_ = false;
     if (rc != 0) {
-        // rc==0이면 stop()에 의한 의도적 disconnect. 그 외에는 네트워크 단절 -
-        // mosquitto_reconnect_delay_set()으로 설정한 재접속이 내부적으로 시작된다.
-        std::cerr << "[SensorUplinkReceiver] MQTT 연결 끊김 (rc=" << rc
-                  << ") - 재접속 대기 중\n";
+        LOG_WARN("MQTT", "지게차 센서 데이터 수신 브로커 연결 일시 끊김 - 자동 재연결 대기 중");
     }
 }
 
