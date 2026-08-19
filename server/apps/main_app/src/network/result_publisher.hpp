@@ -11,6 +11,7 @@
 #include <cstring>
 #include <iostream>
 #include <functional>
+#include <unistd.h>
 
 #include <mosquitto.h>
 
@@ -253,8 +254,8 @@ private:
     bool connectBroker() {
         libRetain();
 
-        // 클라이언트 ID를 단말별로 고정해 브로커 로그에서 누가 붙었는지 바로 보이게 한다.
-        const std::string client_id = "forklift-server-" + terminal_id_;
+        // 클라이언트 ID에 PID를 포함해 프로세스 간 ID 충돌 및 강제 연결 끊김(rc=7)을 방지한다.
+        const std::string client_id = "forklift-server-" + terminal_id_ + "-" + std::to_string(::getpid());
         mosq_ = mosquitto_new(client_id.c_str(), /*clean_session=*/true, this);
         if (mosq_ == nullptr) {
             std::cerr << "[ResultPublisher] mosquitto_new 실패 - MQTT 송신 비활성\n";

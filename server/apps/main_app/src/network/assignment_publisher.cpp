@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <unistd.h>
 
 namespace risk_transport {
 namespace {
@@ -86,7 +87,8 @@ void AssignmentPublisher::publish(const std::string& terminal_id, const std::str
 
 bool AssignmentPublisher::connect() {
     retainMqtt();
-    mosq_ = mosquitto_new("forklift-server-assignment", true, this);
+    const std::string client_id = "forklift-server-assignment-" + std::to_string(::getpid());
+    mosq_ = mosquitto_new(client_id.c_str(), true, this);
     if (!mosq_) { releaseMqtt(); return false; }
     mosquitto_connect_callback_set(mosq_, &AssignmentPublisher::onConnect);
     mosquitto_disconnect_callback_set(mosq_, &AssignmentPublisher::onDisconnect);
