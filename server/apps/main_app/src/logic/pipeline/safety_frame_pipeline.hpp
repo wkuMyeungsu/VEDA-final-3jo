@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include "config/safety_server_config.hpp"
+#include "config_loader/safety_server_config.hpp"
 #include "input/aruco_metadata_parser.hpp"
 #include "input/onvif_metadata_parser.hpp"
 #include "logic/homography/homography_transformer.hpp"

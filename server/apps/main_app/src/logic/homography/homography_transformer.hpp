@@ -6,7 +6,7 @@
 #include <string>
 
 #include "common/types.hpp"
-#include "config/safety_server_config.hpp"
+#include "config_loader/safety_server_config.hpp"
 
 namespace forklift::logic {
 

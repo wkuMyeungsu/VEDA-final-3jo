@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-#include "config/safety_server_config.hpp"
+#include "config_loader/safety_server_config.hpp"
 
 namespace {
 int failures = 0;

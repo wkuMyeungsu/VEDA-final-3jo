@@ -22,7 +22,7 @@
 
 #include "common/types.hpp"
 #include "common/latency_stamps.hpp"  // LatencyStamps (서버 내부 지연 계측, JudgmentResult에 얹는다)
-#include "config/safety_server_config.hpp"
+#include "config_loader/safety_server_config.hpp"
 
 // ============================================================
 // 1. 데이터 구조 정의

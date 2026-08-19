@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "common/metadata_timing.hpp"
-#include "config/safety_server_config.hpp"
+#include "config_loader/safety_server_config.hpp"
 #include "input/aruco_metadata_parser.hpp"
 #include "input/metadata_router.hpp"
 #include "input/onvif_metadata_parser.hpp"

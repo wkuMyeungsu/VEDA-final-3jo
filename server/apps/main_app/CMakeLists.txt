@@ -28,7 +28,7 @@ set(SERVER_THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party)
 # 설정 계층: 모든 지게차가 공유하는 안전 서버 JSON 설정 로드
 # json.hpp는 무겁고(약 900KB) 이 타깃 안에서만 필요하므로 include를 PRIVATE로 막는다.
 add_library(server_config STATIC
-    src/config/safety_server_config.cpp
+    src/config_loader/safety_server_config.cpp
 )
 target_include_directories(server_config
     PUBLIC  ${SERVER_SRC_DIR}

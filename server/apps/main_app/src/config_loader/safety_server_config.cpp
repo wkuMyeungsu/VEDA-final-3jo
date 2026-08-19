@@ -1,4 +1,4 @@
-#include "config/safety_server_config.hpp"
+#include "config_loader/safety_server_config.hpp"
 
 #include <cmath>
 #include <filesystem>
