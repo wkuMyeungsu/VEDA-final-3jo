@@ -328,7 +328,7 @@ struct CentralServer::StreamWorker {
                     const auto elapsed = std::chrono::steady_clock::now() - connected_at;
                     if (!reached_playing && elapsed > std::chrono::seconds(server.config().stream.connect_timeout_s)) {
                         ++failures;
-                        LOG_WARN("RTSP", stream.stream_id + " 카메라 응답 대기 시간 초과 - 재접속 시도 (" +
+                        LOG_WARN("RTSP", stream.stream_id + " 카메라 응답 없음 - 접속 재시도 (" +
                                              std::to_string(failures) + "/" + std::to_string(max_retries) + ")");
                         retry_needed = true;
                         break;
@@ -339,13 +339,13 @@ struct CentralServer::StreamWorker {
                     GError* detail = nullptr; gchar* debug = nullptr;
                     gst_message_parse_error(message, &detail, &debug);
                     ++failures;
-                    LOG_WARN("RTSP", stream.stream_id + " 카메라 네트워크 일시 단절 감지 - 자동 복구 시도 (" +
+                    LOG_WARN("RTSP", stream.stream_id + " 카메라 연결 끊김 감지 - 재접속 시도 (" +
                                          std::to_string(failures) + "/" + std::to_string(max_retries) + ")");
                     if (detail) g_error_free(detail);
                     if (debug) g_free(debug);
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
-                    LOG_INFO("RTSP", stream.stream_id + " 카메라 세션 갱신 (재접속 진행)");
+                    LOG_INFO("RTSP", stream.stream_id + " 카메라 세션 자동 갱신 진행");
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_STATE_CHANGED &&
                            GST_MESSAGE_SRC(message) == GST_OBJECT(graph)) {
