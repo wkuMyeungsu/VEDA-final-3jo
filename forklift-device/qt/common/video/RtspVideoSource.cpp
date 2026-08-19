@@ -96,9 +96,22 @@ void RtspVideoSource::start()
     m_firstFrameLogged = false;                                                 // - 기록 표시 초기화: 이번 구동의 첫 프레임 로그를 다시 남기도록 설정
 
     const QByteArray url = m_rtspUrl.toString().toUtf8();                       // - URL 문자열 변환: UTF-8 바이너리로 변환
-    QByteArray description = "rtspsrc protocols=tcp latency=100 location=\"" + url + "\""
-        + " ! decodebin ! videoconvert !"
-          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true"; // - 파이프라인 문자열 생성: 자동 코덱(H.264/H.265) 디코딩 및 RGB appsink 출력
+    QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
+        + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
+          " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
+          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true"; // - 파이프라인 문자열 생성: RTSP 영상 파이프라인 구성 (영상 브랜치는 항상 포함)
+
+    // - 일부 배포판(라즈베리파이 OS 등)에 rtponvifmetadatadepay 미포함
+    // - 없는 엘리먼트를 문자열에 넣으면 파싱 실패로 영상 브랜치까지 같이 죽음
+    GstElementFactory *metaFactory = gst_element_factory_find("rtponvifmetadatadepay"); // - 엘리먼트 확인: 메타데이터 depay 설치 여부 조회
+    if (metaFactory) {
+        gst_object_unref(metaFactory);                                          // - 참조 해제: 조회용 팩토리 참조 반환
+        description += " src. ! application/x-rtp,media=application,encoding-name=VND.ONVIF.METADATA !"
+                        " rtponvifmetadatadepay ! appsink name=metasink emit-signals=true sync=false"; // - 브랜치 추가: ONVIF 메타데이터 수신 경로 연결
+    } else {
+        qCWarning(lcRtsp) << "camera" << m_cameraId
+                           << "rtponvifmetadatadepay not available, ONVIF metadata disabled (video unaffected)"; // - 경고 로그: 메타데이터 비활성 기록, 영상은 정상 구동
+    }
 
     GError *error = nullptr;                                                    // - 에러 객체 생성: 파이프라인 생성 에러 보관용
     m_pipeline = gst_parse_launch(description.constData(), &error);             // - 파이프라인 생성: 문자열 기반 GStreamer 파이프라인 수립

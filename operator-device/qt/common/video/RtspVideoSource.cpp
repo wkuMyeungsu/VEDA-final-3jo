@@ -59,9 +59,16 @@ void RtspVideoSource::start()
     if (m_pipeline)
         return; // 이미 실행 중
 
+    // 카메라(192.168.0.3, profile2)로 gst-launch-1.0 -v 실측 검증된 구성:
+    // 이 URL 하나에 영상(H264) + ONVIF 메타데이터 트랙이 같이 들어있고,
+    // 캡스 필터(media=video,encoding-name=H264)로 영상 트랙만 골라 씀.
     const QByteArray url = m_rtspUrl.toString().toUtf8();
-    const QByteArray description = "rtspsrc protocols=tcp latency=100 location=\"" + url + "\""
-        + " ! decodebin ! videoconvert !"
+    // location 값을 따옴표로 감싼다 -- QUrl::toString()이 %21을 다시 '!'로 풀어버릴 수 있는데,
+    // 따옴표 없이 넣으면 gst_parse_launch가 그 '!'를 파이프라인 구분자로 오해해서
+    // location 값이 중간에 잘린다 (Resource not found로 이어짐).
+    const QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
+        + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
+          " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
           " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true";
 
     GError *error = nullptr;
