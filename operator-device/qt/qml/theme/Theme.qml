@@ -29,15 +29,15 @@ QtObject {
     readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.04) // - hover 시 덧칠 오버레이
     readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.15) // - press 시 덧칠 오버레이
 
-    // --- Risk levels (Modern vibrant tone + glass tint backgrounds) ---
+    // --- Risk levels (Modern vibrant tone; Bg 불투명도는 위험도에 비례 -- 안전 배너 시인성 확보) ---
     readonly property color colorSafe: "#22c55e"
-    readonly property color colorSafeBg: Qt.rgba(0.13, 0.77, 0.37, 0.12)
+    readonly property color colorSafeBg: Qt.rgba(0.13, 0.77, 0.37, 0.20)
     readonly property color colorCaution: "#f59e0b"
-    readonly property color colorCautionBg: Qt.rgba(0.96, 0.62, 0.04, 0.12)
+    readonly property color colorCautionBg: Qt.rgba(0.96, 0.62, 0.04, 0.35)
     readonly property color colorDanger: "#ef4444"
-    readonly property color colorDangerBg: Qt.rgba(0.94, 0.27, 0.27, 0.15)
+    readonly property color colorDangerBg: Qt.rgba(0.94, 0.27, 0.27, 0.55)
     readonly property color colorEmergency: "#f43f5e"
-    readonly property color colorEmergencyBg: Qt.rgba(0.96, 0.25, 0.37, 0.20)
+    readonly property color colorEmergencyBg: Qt.rgba(0.96, 0.25, 0.37, 0.70)
 
     // 통신/카메라 끊김 등으로 riskLevel을 신뢰할 수 없을 때 쓰는 중립색 (안전으로 오인 방지)
     readonly property color colorUnknown: "#94a3b8"

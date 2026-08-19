@@ -6,42 +6,45 @@ import QtQuick
 // tokens plus a handful of small mapping helpers (risk level -> color,
 // connection state -> label) so QML never repeats those switch statements.
 QtObject {
-    // --- Surfaces ---
-    readonly property color colorBackground: "#0b0f1a"
-    readonly property color colorSurface: "#141a29"
-    readonly property color colorSurfaceElevated: "#1b2233"
-    readonly property color colorBorder: "#2a3245"
-    readonly property color colorBorderStrong: "#3a445c"
+    // --- Surfaces (Deep Slate & Glass) ---
+    readonly property color colorBackground: "#080c14"
+    readonly property color colorSurface: "#101622"
+    readonly property color colorSurfaceElevated: "#161e2e"
+    readonly property color colorSurfaceGlass: Qt.rgba(0.06, 0.09, 0.14, 0.85)
+    readonly property color colorBorder: Qt.rgba(1, 1, 1, 0.07)
+    readonly property color colorBorderStrong: Qt.rgba(1, 1, 1, 0.14)
+    readonly property color colorBorderAccent: Qt.rgba(0.31, 0.55, 0.97, 0.35)
 
     // --- Text ---
-    readonly property color colorTextPrimary: "#eef1f7"
-    readonly property color colorTextSecondary: "#9aa4bb"
-    readonly property color colorTextMuted: "#6b7690"
+    readonly property color colorTextPrimary: "#f1f5f9"
+    readonly property color colorTextSecondary: "#94a3b8"
+    readonly property color colorTextMuted: "#64748b"
 
     readonly property color colorAccent: "#4f8cf7"
+    readonly property color colorAccentAlpha20: Qt.rgba(0.31, 0.55, 0.97, 0.18)
     readonly property color colorFocusRing: colorAccent          // - 포커스 링 전용 별칭
-    readonly property color colorSurfaceSunken: "#070a12"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
-    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.6)    // - 모달/오버레이 배경 딤
-    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.06)   // - 융기 표면 상단 하이라이트 선
-    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.05) // - hover 시 덧칠 오버레이
-    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.12) // - press 시 덧칠 오버레이
+    readonly property color colorSurfaceSunken: "#060910"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
+    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.65)   // - 모달/오버레이 배경 딤
+    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.05)   // - 융기 표면 상단 하이라이트 선
+    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.04) // - hover 시 덧칠 오버레이
+    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.15) // - press 시 덧칠 오버레이
 
-    // --- Risk levels (color + text + icon, never color alone) ---
-    readonly property color colorSafe: "#3cb371"
-    readonly property color colorSafeBg: "#15271d"
-    readonly property color colorCaution: "#f5a623"
-    readonly property color colorCautionBg: "#332810"
-    readonly property color colorDanger: "#e0473f"
-    readonly property color colorDangerBg: "#331414"
-    readonly property color colorEmergency: "#ff3b3b"
-    readonly property color colorEmergencyBg: "#3d0a0a"
+    // --- Risk levels (Modern vibrant tone; Bg 불투명도는 위험도에 비례 -- 안전 배너 시인성 확보) ---
+    readonly property color colorSafe: "#22c55e"
+    readonly property color colorSafeBg: Qt.rgba(0.13, 0.77, 0.37, 0.20)
+    readonly property color colorCaution: "#f59e0b"
+    readonly property color colorCautionBg: Qt.rgba(0.96, 0.62, 0.04, 0.35)
+    readonly property color colorDanger: "#ef4444"
+    readonly property color colorDangerBg: Qt.rgba(0.94, 0.27, 0.27, 0.55)
+    readonly property color colorEmergency: "#f43f5e"
+    readonly property color colorEmergencyBg: Qt.rgba(0.96, 0.25, 0.37, 0.70)
 
     // 통신/카메라 끊김 등으로 riskLevel을 신뢰할 수 없을 때 쓰는 중립색 (안전으로 오인 방지)
-    readonly property color colorUnknown: "#9aa4bb"
-    readonly property color colorUnknownBg: "#20263a"
+    readonly property color colorUnknown: "#94a3b8"
+    readonly property color colorUnknownBg: Qt.rgba(0.58, 0.64, 0.72, 0.10)
 
-    readonly property color colorPersonBox: "#4fc3f7"
-    readonly property color colorForkliftBox: "#ffb74d"
+    readonly property color colorPersonBox: "#38bdf8"
+    readonly property color colorForkliftBox: "#fb923c"
 
     // --- Spacing scale ---
     readonly property int spacingXxs: 2
