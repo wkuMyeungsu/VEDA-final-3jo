@@ -1,7 +1,8 @@
 # 공통 카메라 설정
 
-`server/config`는 안전 서버와 호모그래피 앱이 함께 읽는 카메라 영역이다.
-두 앱 중 어느 한쪽의 설정 폴더를 다른 쪽에서 참조하지 않는다.
+`server/config`는 안전 서버와 호모그래피 앱이 함께 읽는 공용 카메라 영역이다.
+앱별 정책과 호모그래피 결과는 `safety/`, `homography/`로 분리한다.
+호모그래피 결과는 같은 `homography/` 루트 아래 카메라별 디렉터리에 둔다.
 
 ## 파일 역할
 
@@ -15,17 +16,17 @@
 ## 경로 기준
 
 `camera_list.json`의 `homography_file`은 이 폴더를 기준으로 한 상대경로다.
-따라서 `homography/CAM_01/homography_channel_3_mm.json`은 다음 파일을 뜻한다.
+따라서 `homography/CAM_01/homography_result_cam01_ch03_mm.json`은 다음 파일을 뜻한다.
 
 ```text
-server/config/homography/CAM_01/homography_channel_3_mm.json
+server/config/homography/CAM_01/homography_result_cam01_ch03_mm.json
 ```
 
 main을 다른 위치에서 실행할 때는 다음처럼 공통 설정 폴더를 명시할 수 있다.
 
 ```sh
 forklift_safety_server \
-  --config-dir /path/to/server/01_main/config \
+  --config-dir /path/to/server/config/safety \
   --common-config-dir /path/to/server/config
 ```
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Server Monitoring Console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veda3
+WorkingDirectory=/home/veda3/01_Workspace/server/apps/monitoring_app
+Environment=SERVER_MONITORING_PORT=8000
+ExecStart=/usr/bin/python3 /home/veda3/01_Workspace/server/apps/monitoring_app/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

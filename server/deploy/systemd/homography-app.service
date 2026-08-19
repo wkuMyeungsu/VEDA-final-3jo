@@ -1,0 +1,22 @@
+[Unit]
+Description=Homography App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veda3
+WorkingDirectory=/home/veda3/01_Workspace/server/apps/homography_app/web
+Environment=HOMOGRAPHY_APP_PORT=8001
+Environment=HOMOGRAPHY_CONFIG_DIR=/home/veda3/01_Workspace/server/config/homography
+Environment=HOMOGRAPHY_TOOL=/home/veda3/01_Workspace/server/apps/homography_app/processing/build/homography_tool
+Environment=SERVER_COMMON_CONFIG_DIR=/home/veda3/01_Workspace/server/config
+Environment=SAFETY_SERVER_HOMOGRAPHY_DIR=/home/veda3/01_Workspace/server/config/homography
+ExecStart=/usr/bin/python3 /home/veda3/01_Workspace/server/apps/homography_app/web/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
