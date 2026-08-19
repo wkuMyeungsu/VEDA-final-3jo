@@ -48,6 +48,10 @@ add_executable(test_assignment_publisher test_assignment_publisher.cpp)
 target_link_libraries(test_assignment_publisher PRIVATE server_network)
 add_test(NAME assignment_publisher_test COMMAND test_assignment_publisher)
 
+add_executable(test_result_publisher test_result_publisher.cpp)
+target_link_libraries(test_result_publisher PRIVATE server_network)
+add_test(NAME result_publisher_test COMMAND test_result_publisher)
+
 add_executable(test_safety_server_config test_safety_server_config.cpp)
 target_link_libraries(test_safety_server_config PRIVATE server_config)
 add_test(NAME safety_server_config_test COMMAND test_safety_server_config)
@@ -79,6 +83,7 @@ set_tests_properties(
     judgment_engine_test
     judgment_pipeline_test
     assignment_publisher_test
+    result_publisher_test
     safety_server_config_test
     homography_transformer_test
     marker_channel_tracker_test
