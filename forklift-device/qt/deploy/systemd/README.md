@@ -53,7 +53,8 @@ systemctl --user daemon-reload
 
 **ExecStart 옵션**: `--demo`(데모 패널), `--camera <id>`(시작 카메라),
 `--config <dir>`(설정 디렉터리 강제 지정) 조정 가능 — 상위
-[docs/README.md 실행 방법](../../docs/README.md#실행-방법) 참고. `--config`를
+[forklift-device/README.md](../../../README.md#1-라즈베리파이-실기기--linux-빌드-및-실행) 참고. `--config`를
+
 안 주면 실행 파일 옆 `config/`를 읽으므로 `WorkingDirectory` 설정과 무관하게
 항상 올바른 경로를 찾음 (`ConfigLoader`가 CWD가 아니라
 `QCoreApplication::applicationDirPath()` 기준으로 계산, [main.cpp:43-45](../../apps/operator_terminal/main.cpp#L43-L45)).

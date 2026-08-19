@@ -20,29 +20,54 @@
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
 
+#include <cstdio>
 #include <QDateTime>
-#include <QFile>
-#include <QTextStream>
+#include <QDebug>
 
-void customLogHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
+namespace {
+void unifiedConsoleLogHandler(QtMsgType type, const QMessageLogContext &/*context*/, const QString &msg)
 {
-    static QFile logFile("app_debug.log");
-    if (!logFile.isOpen()) {
-        logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    const char *levelStr = "INFO";
+    switch (type) {
+    case QtDebugMsg:    levelStr = "DEBUG"; break;
+    case QtInfoMsg:     levelStr = "INFO"; break;
+    case QtWarningMsg:  levelStr = "WARN"; break;
+    case QtCriticalMsg: levelStr = "ERROR"; break;
+    case QtFatalMsg:    levelStr = "FATAL"; break;
     }
-    QTextStream ts(&logFile);
-    ts << "[" << QDateTime::currentDateTime().toString("HH:mm:ss.zzz") << "] "
-       << (type == QtCriticalMsg ? "CRITICAL: " : (type == QtWarningMsg ? "WARNING: " : "INFO: "))
-       << msg << " (" << context.file << ":" << context.line << ")\n";
-    ts.flush();
+
+    const QString timeStr = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz"));
+    const QString output = QStringLiteral("[%1] [%2] %3\n").arg(timeStr, QString::fromLatin1(levelStr), msg);
+
+    if (type == QtCriticalMsg || type == QtFatalMsg) {
+        std::fputs(output.toLocal8Bit().constData(), stderr);
+        std::fflush(stderr);
+    } else {
+        std::fputs(output.toLocal8Bit().constData(), stdout);
+        std::fflush(stdout);
+    }
 }
+} // namespace
 
 int main(int argc, char *argv[])
 {
-    qInstallMessageHandler(customLogHandler);
+#ifdef Q_OS_WIN
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE *dummy;
+        freopen_s(&dummy, "CONOUT$", "w", stdout);
+        freopen_s(&dummy, "CONOUT$", "w", stderr);
+    }
+#endif
+    qInstallMessageHandler(unifiedConsoleLogHandler);
     
     // RtspVideoSource가 GStreamer API를 쓰기 전에 반드시 한 번 필요
     gst_init(&argc, &argv); 
+
+
 
     // Qt GUI 앱 초기화
     QGuiApplication app(argc, argv);

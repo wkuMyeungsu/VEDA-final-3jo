@@ -8,7 +8,15 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <cstdio>
+#include <QDateTime>
+#include <QDebug>
 #include <gst/gst.h>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
@@ -23,15 +31,50 @@
 #include "ActiveCameraController.h"
 #include "OperatorDemoController.h"
 
+namespace {
+void unifiedConsoleLogHandler(QtMsgType type, const QMessageLogContext &/*context*/, const QString &msg)
+{
+    const char *levelStr = "INFO";
+    switch (type) {
+    case QtDebugMsg:    levelStr = "DEBUG"; break;
+    case QtInfoMsg:     levelStr = "INFO"; break;
+    case QtWarningMsg:  levelStr = "WARN"; break;
+    case QtCriticalMsg: levelStr = "ERROR"; break;
+    case QtFatalMsg:    levelStr = "FATAL"; break;
+    }
+
+    const QString timeStr = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz"));
+    const QString output = QStringLiteral("[%1] [%2] %3\n").arg(timeStr, QString::fromLatin1(levelStr), msg);
+
+    if (type == QtCriticalMsg || type == QtFatalMsg) {
+        std::fputs(output.toLocal8Bit().constData(), stderr);
+        std::fflush(stderr);
+    } else {
+        std::fputs(output.toLocal8Bit().constData(), stdout);
+        std::fflush(stdout);
+    }
+}
+} // namespace
+
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_WIN
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE *dummy;
+        freopen_s(&dummy, "CONOUT$", "w", stdout);
+        freopen_s(&dummy, "CONOUT$", "w", stderr);
+    }
+#endif
+    qInstallMessageHandler(unifiedConsoleLogHandler);                             // - 콘솔 표준 로그 핸들러 설치
     gst_init(&argc, &argv);                                                       // - GStreamer 초기화: RTSP 영상 수신 라이브러리 초기화
+
    
     QGuiApplication app(argc, argv);                                             // - 애플리케이션 생성: Qt GUI 애플리케이션 객체 생성      
     QNetworkProxyFactory::setUseSystemConfiguration(false);                      // - 시스템 프록시 자동 탐색 끄기: 조회 중 멈추는 문제 회피, 내부망 직접 접속이라 프록시 불필요
 
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyOperatorTerminal")); // - 앱 이름 설정: 시스템 식별용 이름 지정
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));       // - 조직 이름 설정: 시스템 조직명 지정
+
 
     // QtQuick Controls는 기본 플랫폼 스타일을 쓰기 때문에 다크 테마 화면 위에서
     // Switch/ComboBox/Button만 밝게 붕 떠 보임 -- 팔레트를 실제로 반영하는 "Basic"
@@ -134,12 +177,19 @@ int main(int argc, char *argv[])
 
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
-        [] { QCoreApplication::exit(-1); }, Qt::QueuedConnection);                // - UI 생성 실패 처리: QML 객체 생성 실패 시 앱 종료
+        [](const QUrl &url) {
+            qCritical() << "QML Object creation failed for:" << url;
+            QCoreApplication::exit(-1);
+        }, Qt::QueuedConnection);                // - UI 생성 실패 처리: QML 객체 생성 실패 시 앱 종료
 
     engine.loadFromModule("Safety.OperatorTerminal", "OperatorWindow");         // - QML 화면 로드: 메인 화면 모듈 불러오기
 
-    if (engine.rootObjects().isEmpty())                                          // - 화면 로드 검증: 루트 객체 생성 실패 시 종료
+    if (engine.rootObjects().isEmpty()) {                                        // - 화면 로드 검증: 루트 객체 생성 실패 시 종료
+        qCritical() << "Engine rootObjects is EMPTY!";
         return -1;
+    }
 
+    qDebug() << "Operator terminal successfully loaded and running.";
     return app.exec();                                                           // - 앱 이벤트 루프 실행: 메인 이벤트 루프 개시 및 실행
+
 }
