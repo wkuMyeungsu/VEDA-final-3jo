@@ -25,8 +25,12 @@ ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, Meta
     , m_videoManager(videoManager)                                         // - 영상 소스 관리자 객체 보관
     , m_warningDevice(warningDevice)                                       // - 경고 장치 제어 객체 보관
 {
-    for (const CameraInfo &info : cameras)                                 // - 카메라 목록 등록: 제공된 카메라 정보를 맵에 저장
-        m_cameras.insert(info.cameraId, info);
+    for (const CameraInfo &info : cameras) {
+        if (!info.streamId.isEmpty())
+            m_cameras.insert(info.streamId, info);
+        if (!info.cameraId.isEmpty())
+            m_cameras.insert(info.cameraId, info);
+    }
 
     if (m_metadataDistributor)                                             // - 데이터 수신 이벤트 연결: 분배기의 데이터 갱신 신호 연결
         connect(m_metadataDistributor, &MetadataDistributor::metadataUpdated, this,
@@ -209,7 +213,9 @@ void ActiveCameraController::handleWarningDeviceStateChanged()
 
 void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)
 {
-    if (metadata.cameraId() != m_activeCameraId)                          // - 카메라 ID 검증: 현재 활성 카메라 데이터가 아닌 경우 무시
+    const bool matches = (!metadata.streamId().isEmpty() && metadata.streamId() == m_activeCameraId)
+                         || (metadata.cameraId() == m_activeCameraId);
+    if (!matches)
         return;
 
     m_latest = metadata;                                                   // - 최신 위험 데이터 갱신: 수신된 메타데이터 저장

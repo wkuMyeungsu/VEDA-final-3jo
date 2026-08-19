@@ -1,6 +1,10 @@
 #include "RiskEventSource.h"
 
+#if __has_include(<mosquitto/libmosquitto.h>)
+#include <mosquitto/libmosquitto.h>
+#else
 #include <mosquitto.h>
+#endif
 
 #include <QDateTime>
 #include <QJsonDocument>
@@ -93,7 +97,7 @@ void RiskEventSource::onConnect(struct mosquitto *mosq, void *obj, int rc)
 
     QMetaObject::invokeMethod(self, [self, rc]() {                       // - Qt 상태(연결 상태, 워치독 기준 시각) 갱신은 메인 스레드로 위임
         if (rc != 0) {
-            qCWarning(lcRiskEventSource) << "connect failed, rc=" << rc << mosquitto_connack_string(rc); // - 경고 로그: 접속 실패 원인 기록
+            qCWarning(lcRiskEventSource) << "connect failed, rc=" << rc;
             return;
         }
         qCInfo(lcRiskEventSource) << "connected to broker, subscribed to" << self->m_topic; // - 정보 로그: 접속 및 구독 완료 기록

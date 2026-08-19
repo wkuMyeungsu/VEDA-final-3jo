@@ -14,7 +14,9 @@ class RiskMetadata
 {
     Q_GADGET                                                                       // - QML 값 타입 등록용 매크로
     QML_VALUE_TYPE(riskMetadata)                                                   // - QML 타입명 지정: 'riskMetadata'로 QML 접근 가능
+    Q_PROPERTY(QString streamId READ streamId WRITE setStreamId)                   // - 스트림 ID 속성: 스트림 식별자
     Q_PROPERTY(QString cameraId READ cameraId WRITE setCameraId)                   // - 카메라 ID 속성: 카메라 식별자
+    Q_PROPERTY(int channel READ channel WRITE setChannel)                          // - 채널 속성: 채널 번호
     Q_PROPERTY(QString zone READ zone WRITE setZone)                               // - 구역 속성: 설치 위치 정보
     Q_PROPERTY(RiskTypes::RiskLevel riskLevel READ riskLevel WRITE setRiskLevel)   // - 위험 단계 속성: 위험 수준 (Safe/Warning/Danger 등)
     Q_PROPERTY(double distanceM READ distanceM WRITE setDistanceM)                 // - 측정 거리 속성: 감지 대상과의 거리(m)
@@ -27,8 +29,14 @@ class RiskMetadata
 public:
     RiskMetadata() = default;                                                      // - 기본 생성자: 초기화된 기본 객체 생성
 
+    QString streamId() const { return m_streamId; }                                // - 스트림 ID 조회: 식별용 ID 반환
+    void setStreamId(const QString &id) { m_streamId = id; }                       // - 스트림 ID 설정: 식별용 ID 지정
+
     QString cameraId() const { return m_cameraId; }                                // - 카메라 ID 조회: 식별용 ID 반환
     void setCameraId(const QString &id) { m_cameraId = id; }                        // - 카메라 ID 설정: 식별용 ID 지정
+
+    int channel() const { return m_channel; }                                      // - 채널 조회: 채널 번호 반환
+    void setChannel(int ch) { m_channel = ch; }                                    // - 채널 설정: 채널 번호 지정
 
     QString zone() const { return m_zone; }                                        // - 구역 조회: 설치 위치 정보 반환
     void setZone(const QString &zone) { m_zone = zone; }                            // - 구역 설정: 설치 위치 정보 지정
@@ -58,7 +66,9 @@ public:
     QJsonObject toJson() const;                                                    // - JSON 변환: 현재 메타데이터를 JSON 객체로 구성하여 반환
 
 private:
+    QString m_streamId;                                                            // - 스트림 ID: 스트림 식별 문자열 보관
     QString m_cameraId;                                                            // - 카메라 ID: 카메라 식별 문자열 보관
+    int m_channel = 0;                                                             // - 채널: 채널 번호 보관
     QString m_zone;                                                                // - 설치 구역: 카메라 설치 위치 보관
     RiskTypes::RiskLevel m_riskLevel = RiskTypes::RiskLevel::Safe;                 // - 위험 단계: 위험 수준 보관 (기본값: Safe)
     double m_distanceM = 0.0;                                                      // - 측정 거리: 감지 대상과의 거리(m) 보관
