@@ -275,7 +275,7 @@ struct CentralServer::StreamWorker {
             // application 트랙만 연결한다. 영상 트랙은 받지 않아 Pi의 메모리와
             // CPU를 메타데이터 처리에 집중시킨다.
             const std::string description =
-                "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp tcp-timeout=30000000 latency=" +
+                "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp do-rtsp-keep-alive=true tcp-timeout=30000000 latency=" +
                 std::to_string(server.config().stream.rtsp_latency_ms) +
                 " name=source source. ! application/x-rtp,media=application ! queue ! "
                 "appsink name=metadata emit-signals=true sync=false max-buffers=" +
