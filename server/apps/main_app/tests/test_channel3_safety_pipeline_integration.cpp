@@ -1,4 +1,5 @@
-// 채널 3 실제 호모그래피를 사용하는 축소 공간 위험 판정 통합 테스트.
+// 고정 fixture/테스트 입력을 사용하는 채널 3 위험 판정 파이프라인 통합 테스트.
+// 실제 장비 기반 E2E 지표로 집계하지 않는다.
 // 운영 main과 같은 SafetyFramePipeline을 호출해 ArUco ID부터 JSON·SQLite까지 검증한다.
 
 #include <sqlite3.h>
@@ -71,7 +72,7 @@ forklift::common::PixelPoint worldToPixel(const WorldPoint& world) {
 
 forklift::config::SafetyServerConfig testConfig() {
     forklift::config::SafetyServerConfig config;
-    config.source_path = "channel3_e2e_config.json";
+    config.source_path = "channel3_pipeline_integration_config.json";
     // 334×242mm 축소 공간에서 단계 전환을 모두 볼 수 있도록 실제 기준을 1:10로 줄인다.
     config.danger_judgment = {300.0, 150.0, 40.0, 10.0, 100.0, 50.0, 2.0, 0.0};
     config.forklift_detection.marker_id = kForkliftMarkerId;
@@ -164,7 +165,7 @@ std::string objectXml(const std::vector<WorldPoint>& people) {
 }
 
 std::string temporaryDbPath() {
-    return (std::filesystem::temp_directory_path() / "channel3_safety_e2e.db").string();
+    return (std::filesystem::temp_directory_path() / "channel3_safety_pipeline_integration.db").string();
 }
 
 void removeDb(const std::string& path) {

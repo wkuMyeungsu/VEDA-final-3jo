@@ -60,15 +60,19 @@ add_executable(test_homography_transformer test_homography_transformer.cpp)
 target_link_libraries(test_homography_transformer PRIVATE server_homography)
 add_test(NAME homography_transformer_test COMMAND test_homography_transformer)
 
-# 실제 채널 3 H를 거쳐 ArUco ID·최근접 사람·판정·JSON·SQLite를 한 흐름으로 검증한다.
-add_executable(test_channel3_safety_e2e test_channel3_safety_e2e.cpp)
-target_compile_definitions(test_channel3_safety_e2e PRIVATE
-    CHANNEL3_HOMOGRAPHY_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/homography_channel_3_mm.json"
+# 고정 fixture와 테스트 입력으로 실제 파이프라인 연결을 검증한다.
+# 실제 장비/실시간 입력을 사용하지 않으므로 운영 E2E 지표에는 포함하지 않는다.
+add_executable(test_channel3_safety_pipeline_integration
+    test_channel3_safety_pipeline_integration.cpp
 )
-target_link_libraries(test_channel3_safety_e2e PRIVATE
+target_compile_definitions(test_channel3_safety_pipeline_integration PRIVATE
+    CHANNEL3_HOMOGRAPHY_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/homography_channel_3_pipeline.json"
+)
+target_link_libraries(test_channel3_safety_pipeline_integration PRIVATE
     server_frame_pipeline server_logging server_network SQLite::SQLite3 Threads::Threads
 )
-add_test(NAME channel3_safety_e2e_test COMMAND test_channel3_safety_e2e)
+add_test(NAME channel3_safety_pipeline_integration_test
+         COMMAND test_channel3_safety_pipeline_integration)
 
 # 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
 add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)
@@ -100,9 +104,9 @@ set_tests_properties(
 )
 
 set_tests_properties(
-    channel3_safety_e2e_test
+    channel3_safety_pipeline_integration_test
     PROPERTIES
-        LABELS "e2e"
+        LABELS "integration"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
