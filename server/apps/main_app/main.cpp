@@ -269,6 +269,7 @@ struct CentralServer::StreamWorker {
 
     void run() {
         int failures = 0;
+        bool has_connected_before = false;
         while (running && !stop_requested) {
             reassembler.reset();
             // application 트랙만 연결한다. 영상 트랙은 받지 않아 Pi의 메모리와
@@ -300,6 +301,16 @@ struct CentralServer::StreamWorker {
             GstBus* bus = gst_element_get_bus(graph);
             bool retry_needed = false;
             bool reached_playing = false;
+            auto logConnected = [&]() {
+                if (!has_connected_before) {
+                    LOG_INFO("RTSP", stream.stream_id + " 카메라 최초 연결 성공 (실시간 관제 시작)");
+                    has_connected_before = true;
+                } else {
+                    LOG_INFO("RTSP", stream.stream_id + " 카메라 재연결 성공 (정상 복구 완료)");
+                }
+                reached_playing = true;
+                failures = 0;
+            };
             const auto connected_at = std::chrono::steady_clock::now();
             while (running && !stop_requested) {
                 GstMessage* message = gst_bus_timed_pop_filtered(
@@ -309,9 +320,7 @@ struct CentralServer::StreamWorker {
                     GstState cur_state = GST_STATE_NULL;
                     gst_element_get_state(graph, &cur_state, nullptr, 0);
                     if (cur_state == GST_STATE_PLAYING) {
-                        LOG_INFO("RTSP", stream.stream_id + " 카메라 연결 완료 (메타데이터 실시간 수신 중)");
-                        reached_playing = true;
-                        failures = 0;
+                        logConnected();
                     }
                 }
                 if (!message) {
@@ -339,10 +348,8 @@ struct CentralServer::StreamWorker {
                     gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
                     if (new_state == GST_STATE_PLAYING) {
                         if (!reached_playing) {
-                            LOG_INFO("RTSP", stream.stream_id + " 카메라 연결 완료 (메타데이터 실시간 수신 중)");
+                            logConnected();
                         }
-                        reached_playing = true;
-                        failures = 0;
                     }
                 }
                 gst_message_unref(message);
