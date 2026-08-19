@@ -421,6 +421,9 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     // 설정 파일과 실행 중 생성되는 로그·DB를 섞지 않도록 server/var/main_app를
     // 저장 기준으로 삼는다. 상대 출력명(storage/foo.csv)은 이 기준 아래에 둔다.
     const auto storage_dir = common_dir.parent_path() / "var" / "main_app";
+    if (out.contains("enable_raw_csv_logging") && out.at("enable_raw_csv_logging").is_boolean()) {
+        c.output_storage.enable_raw_csv_logging = out.at("enable_raw_csv_logging").get<bool>();
+    }
     c.output_storage.object_csv = (storage_dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
     c.output_storage.aruco_csv = (storage_dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
     c.output_storage.event_db = (storage_dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();

@@ -1,5 +1,6 @@
 // aruco_csv_logger.cpp
 #include "logging/aruco_csv_logger.hpp"
+#include <chrono>
 #include <iostream>
 
 ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath) {
@@ -40,5 +41,11 @@ void ArucoCsvLogger::logFrame(const ArucoFrame& frame) {
         }
         file_ << "\n";
     }
-    file_.flush();  // 중간에 프로그램이 꺼져도 지금까지 쓴 줄은 보존되게
+
+    static auto last_flush = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_flush >= std::chrono::seconds(1)) {
+        file_.flush();
+        last_flush = now;
+    }
 }

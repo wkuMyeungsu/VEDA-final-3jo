@@ -162,7 +162,9 @@ std::unique_ptr<TerminalContext> CentralServer::makeTerminal(
 
 void CentralServer::process(const MetadataEvent& event) {
     if (event.type == MetadataEvent::Type::Object) {
-        object_logger_.logFrame(event.object);
+        if (config_.output_storage.enable_raw_csv_logging) {
+            object_logger_.logFrame(event.object);
+        }
         for (auto& terminal : terminals_) {
             if (!terminal->pipeline.activeStreamId() ||
                 *terminal->pipeline.activeStreamId() != event.object.stream_id)
@@ -175,7 +177,9 @@ void CentralServer::process(const MetadataEvent& event) {
         return;
     }
 
-    aruco_logger_.logFrame(event.aruco);
+    if (config_.output_storage.enable_raw_csv_logging) {
+        aruco_logger_.logFrame(event.aruco);
+    }
     for (auto& terminal : terminals_) {
         const auto changed = terminal->pipeline.processArucoStreamFrame(event.aruco);
         if (!changed) continue;
@@ -302,6 +306,16 @@ struct CentralServer::StreamWorker {
                 GstMessage* message = gst_bus_timed_pop_filtered(
                     bus, 200 * GST_MSECOND,
                     static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS | GST_MESSAGE_STATE_CHANGED));
+                if (!reached_playing) {
+                    GstState cur_state = GST_STATE_NULL;
+                    gst_element_get_state(graph, &cur_state, nullptr, 0);
+                    if (cur_state == GST_STATE_PLAYING) {
+                        std::cerr << "[RTSP 연결] " << stream.stream_id
+                                  << " 메타데이터 수신 시작\n";
+                        reached_playing = true;
+                        failures = 0;
+                    }
+                }
                 if (!message) {
                     const auto elapsed = std::chrono::steady_clock::now() - connected_at;
                     if (!reached_playing && elapsed > std::chrono::seconds(server.config().stream.connect_timeout_s)) {
@@ -330,9 +344,6 @@ struct CentralServer::StreamWorker {
                     GstState old_state, new_state, pending;
                     gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
                     if (new_state == GST_STATE_PLAYING) {
-                        // NULL -> READY -> PAUSED 같은 중간 상태 메시지를
-                        // 받은 즉시 파이프라인을 닫으면 SDP 수신 전에 연결이 끊긴다.
-                        // PLAYING까지 기다린 뒤에도 메타데이터를 계속 받는다.
                         if (!reached_playing) {
                             std::cerr << "[RTSP 연결] " << stream.stream_id
                                       << " 메타데이터 수신 시작\n";
@@ -415,21 +426,22 @@ void CentralServer::stop() {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    g_setenv("GIO_USE_PROXY_RESOLVER", "dummy", TRUE);
     gst_init(&argc, &argv);
     std::string config_dir = forklift::config::resolveConfigDirectory();
     std::string common_config_dir;
-    for (int index = 1; index < argc; index += 2) {
-        if (index + 1 >= argc) {
-            std::cerr << "사용법: " << argv[0]
-                      << " [--config-dir PATH] [--common-config-dir PATH]\n";
-            return 1;
-        }
+    bool enable_debug_csv_flag = false;
+    for (int index = 1; index < argc; ++index) {
         const std::string option = argv[index];
-        if (option == "--config-dir") config_dir = argv[index + 1];
-        else if (option == "--common-config-dir") common_config_dir = argv[index + 1];
-        else {
+        if (option == "--config-dir" && index + 1 < argc) {
+            config_dir = argv[++index];
+        } else if (option == "--common-config-dir" && index + 1 < argc) {
+            common_config_dir = argv[++index];
+        } else if (option == "--enable-debug-csv") {
+            enable_debug_csv_flag = true;
+        } else {
             std::cerr << "사용법: " << argv[0]
-                      << " [--config-dir PATH] [--common-config-dir PATH]\n";
+                      << " [--config-dir PATH] [--common-config-dir PATH] [--enable-debug-csv]\n";
             return 1;
         }
     }
@@ -443,6 +455,9 @@ int main(int argc, char* argv[]) {
         std::cerr << "[기동 실패] " << error.what() << "\n";
         return 2;
     }
+    if (enable_debug_csv_flag) {
+        config.output_storage.enable_raw_csv_logging = true;
+    }
     for (const auto* path : {&config.output_storage.object_csv, &config.output_storage.aruco_csv,
                              &config.output_storage.event_db, &config.output_storage.latency_csv}) {
         const auto parent = std::filesystem::path(*path).parent_path();
@@ -450,6 +465,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::signal(SIGINT, onSignal);
+    std::signal(SIGTERM, onSignal);
     CentralServer server(std::move(config));
     server.start();
     server.startWorkers();

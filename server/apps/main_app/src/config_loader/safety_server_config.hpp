@@ -90,6 +90,7 @@ struct ForkliftDevice {
 };
 
 struct OutputStorageConfig {
+    bool enable_raw_csv_logging = false; // 객체/ArUco 원시 CSV 로깅 활성화 여부 (디버깅 전용, 기본 false)
     std::string object_csv;         // 객체 메타데이터 CSV
     std::string aruco_csv;          // ArUco 메타데이터 CSV
     std::string event_db;           // 위험 상태 변화 SQLite
