@@ -36,17 +36,25 @@ QVector<CameraInfo> ConfigLoader::parseCamerasJson(const QByteArray &jsonData)
     for (const QJsonValue &value : cameras) {                                 // - 배열 순회: 각 카메라 정보 항목 반복 처리
         const QJsonObject obj = value.toObject();                             // - 객체 변환: JSON 항목을 객체 형태로 변환
 
-        CameraInfo info;                                                      // - 카메라 정보 구조체 생성: 세부 데이터 보관용
-        info.cameraId = obj.value(QStringLiteral("camera_id")).toString();      // - 카메라 ID 추출: 식별용 문자열 수집
-        info.name = obj.value(QStringLiteral("name")).toString();              // - 카메라 이름 추출: 화면 표시용 명칭 수집
-        info.zone = obj.value(QStringLiteral("zone")).toString();              // - 설치 구역 추출: 카메라 설치 위치 수집
-        info.sourceType = videoSourceTypeFromString(obj.value(QStringLiteral("source_type")).toString()); // - 영상 유형 변환: 문자열을 소스 타입 열거형으로 변환
-        info.rtspUrl = obj.value(QStringLiteral("rtsp_url")).toString();        // - RTSP 주소 추출: 스트리밍 URL 수집
-        info.localFilePath = obj.value(QStringLiteral("local_file_path")).toString(); // - 비디오 파일 경로 추출: 로컬 파일 경로 수집
+        CameraInfo info;
+        info.streamId = obj.value(QStringLiteral("stream_id")).toString();
+        info.cameraId = obj.value(QStringLiteral("camera_id")).toString();
+        info.channel = obj.value(QStringLiteral("channel")).toInt();
+        info.name = obj.value(QStringLiteral("name")).toString();
+        info.zone = obj.value(QStringLiteral("zone")).toString();
+        info.sourceType = videoSourceTypeFromString(obj.value(QStringLiteral("source_type")).toString());
+        info.rtspUrl = obj.value(QStringLiteral("rtsp_url")).toString();
+        info.localFilePath = obj.value(QStringLiteral("local_file_path")).toString();
 
-        if (info.cameraId.isEmpty()) {                                        // - ID 검증: 필수 항목인 카메라 ID 누락 여부 확인
-            qCWarning(lcConfig) << "skipping camera entry with an empty camera_id"; // - 경고 로그: 누락 항목 건너뜀 로그 기록
-            continue;                                                         // - 항목 건너뜀: 무효한 정보 배열 추가 생략
+        if (info.cameraId.isEmpty() && !info.streamId.isEmpty()) {
+            info.cameraId = info.streamId;
+        } else if (info.streamId.isEmpty() && !info.cameraId.isEmpty()) {
+            info.streamId = info.cameraId;
+        }
+
+        if (info.cameraId.isEmpty()) {
+            qCWarning(lcConfig) << "skipping camera entry with an empty camera_id";
+            continue;
         }
         result.append(info);                                                  // - 목록 추가: 유효한 카메라 정보 결과 배열에 저장
     }

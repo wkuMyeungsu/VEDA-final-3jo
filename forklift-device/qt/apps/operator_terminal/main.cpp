@@ -114,15 +114,15 @@ int main(int argc, char *argv[])
         mockMetadataSource.start();                                             // - 타이머 가동: 버튼으로 지정한 데모 상태가 계속 유지되도록
     }
 
-    handoverClient.setTerminalId(appConfig.terminalId);                          // - 단말 ID 설정: 핸도버 클라이언트에 식별자 지정
-    handoverClient.connectToServer(appConfig.serverHost, appConfig.handoverPort);// - 제어 채널 접속: 서버 핸도버 포트로 연결 시도
-    metadataDistributor.start();                                                 // - 데이터 분배 시작: 메타데이터 수신 및 분배 개시
-    QString initialCameraId = parser.value(cameraOption);                       // - 초기 카메라 ID 추출: 실행 옵션값 확인
-    if (initialCameraId.isEmpty())                                               // - 기본값 확인: 옵션 없을 경우 설정 파일의 기본 ID 사용
+    handoverClient.setTerminalId(appConfig.terminalId);
+    handoverClient.connectToServer(appConfig.mqttBrokerHost, appConfig.mqttBrokerPort);
+    metadataDistributor.start();
+    QString initialCameraId = parser.value(cameraOption);
+    if (initialCameraId.isEmpty())
         initialCameraId = appConfig.defaultCameraId;
-    if (initialCameraId.isEmpty() && !cameras.isEmpty())                         // - 예외 처리: 기본 ID도 없을 경우 첫 번째 카메라 ID 사용
-        initialCameraId = cameras.first().cameraId;
-    activeCamera.setActiveCameraId(initialCameraId);                             // - 초기 카메라 설정: 첫 표시 카메라 지정 및 활성화
+    if (initialCameraId.isEmpty() && !cameras.isEmpty())
+        initialCameraId = cameras.first().effectiveId();
+    activeCamera.setActiveCameraId(initialCameraId);
 
     QQmlApplicationEngine engine;                                                // - QML 엔진 생성: UI 렌더링 엔진 초기화
     QQmlContext *ctx = engine.rootContext();                                     // - QML 컨텍스트 추출: C++ 객체 노출용 루트 컨텍스트 획득

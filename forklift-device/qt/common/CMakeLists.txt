@@ -12,7 +12,43 @@ pkg_check_modules(GST REQUIRED IMPORTED_TARGET
 )
 
 # RiskEventSource가 MQTT(libmosquitto)로 위험 판정 데이터를 구독하므로 링크 필요.
-pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
+pkg_check_modules(MOSQUITTO IMPORTED_TARGET libmosquitto)
+
+add_library(mosquitto_dep INTERFACE)
+
+if(MOSQUITTO_FOUND)
+    target_link_libraries(mosquitto_dep INTERFACE PkgConfig::MOSQUITTO)
+else()
+    set(MOSQUITTO_ROOT "$ENV{MOSQUITTO_ROOT}" CACHE PATH "libmosquitto 설치 경로 (mosquitto.h가 있는 폴더의 상위)")
+
+    find_path(MOSQUITTO_INCLUDE_DIR mosquitto.h
+        HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+        PATH_SUFFIXES devel include
+    )
+    find_library(MOSQUITTO_LIBRARY
+        NAMES mosquitto libmosquitto mosquitto.lib
+        HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+        PATH_SUFFIXES devel lib
+    )
+    if(WIN32 AND NOT MOSQUITTO_LIBRARY)
+        find_file(MOSQUITTO_LIBRARY NAMES mosquitto.dll
+            HINTS ${MOSQUITTO_ROOT} "C:/Program Files/mosquitto" "C:/mosquitto"
+            PATH_SUFFIXES "" bin
+        )
+    endif()
+
+    if(NOT MOSQUITTO_INCLUDE_DIR OR NOT MOSQUITTO_LIBRARY)
+        message(FATAL_ERROR
+            "libmosquitto를 찾지 못했습니다 (RiskEventSource의 MQTT 수신에 필요).\n"
+            "  리눅스 : sudo apt install libmosquitto-dev\n"
+            "  Windows: mosquitto 공식 설치본 설치 후 필요하면 경로를 직접 지정\n"
+            "           cmake -DMOSQUITTO_ROOT=\"C:/Program Files/mosquitto\" ...\n"
+            "  탐색 결과: include=${MOSQUITTO_INCLUDE_DIR} lib=${MOSQUITTO_LIBRARY}")
+    endif()
+
+    target_include_directories(mosquitto_dep INTERFACE ${MOSQUITTO_INCLUDE_DIR})
+    target_link_libraries(mosquitto_dep INTERFACE ${MOSQUITTO_LIBRARY})
+endif()
 
 qt_add_library(safety_common STATIC)
 
@@ -39,6 +75,8 @@ target_link_libraries(safety_common
         Qt6::Multimedia
         Qt6::Network
         Qt6::SerialPort
+    PRIVATE
+        mosquitto_dep
 )
 
 # Shared QML files (qml/theme, qml/components) live one level up from this
@@ -139,4 +177,4 @@ qt_add_qml_module(safety_common
         services/DemoController.cpp
 )
 
-target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST PkgConfig::MOSQUITTO)
+target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST mosquitto_dep)
