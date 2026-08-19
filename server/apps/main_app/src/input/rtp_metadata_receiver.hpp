@@ -37,6 +37,9 @@ public:
     std::optional<std::string> feed(const uint8_t* payload, size_t payloadSize,
                                      uint16_t sequenceNumber, bool marker);
 
+    // 스트림이 끊기거나 재연결될 때 시퀀스 번호 및 버퍼를 초기화한다.
+    void reset();
+
 private:
     std::string buffer_;       // 지금까지 이어붙인 조각들
     uint16_t lastSeq_ = 0;     // 마지막으로 본 시퀀스 번호

@@ -1,0 +1,17 @@
+[Unit]
+Description=Forklift Safety Central Server
+After=network-online.target mosquitto.service
+Wants=network-online.target
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/forklift_safety_server --config-dir /etc/forklift_safety/safety --common-config-dir /etc/forklift_safety
+Restart=always
+RestartSec=2
+User=pms
+LimitNOFILE=65536
+Environment=GIO_USE_PROXY_RESOLVER=dummy
+
+[Install]
+WantedBy=multi-user.target

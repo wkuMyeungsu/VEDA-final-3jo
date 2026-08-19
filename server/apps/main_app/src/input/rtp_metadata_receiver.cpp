@@ -68,3 +68,9 @@ std::optional<std::string> OnvifMetadataReassembler::feed(
     buffer_.clear();  // 다음 문서를 위해 초기화
     return completed;
 }
+
+void OnvifMetadataReassembler::reset() {
+    buffer_.clear();
+    lastSeq_ = 0;
+    hasLastSeq_ = false;
+}

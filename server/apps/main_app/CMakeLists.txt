@@ -122,3 +122,7 @@ target_link_libraries(event_log_viewer PRIVATE server_judgment SQLite::SQLite3)
 
 enable_testing()
 add_subdirectory(tests)
+
+install(TARGETS forklift_safety_server event_log_viewer
+    RUNTIME DESTINATION bin
+)

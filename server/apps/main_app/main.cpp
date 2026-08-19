@@ -28,6 +28,7 @@
 #include "logging/csv_logger.hpp"
 #include "logging/event_logger.hpp"
 #include "logging/latency_logger.hpp"
+#include "logging/logger.hpp"
 #include "network/assignment_publisher.hpp"
 #include "network/network_sensor_reader.hpp"
 #include "network/result_dispatcher.hpp"
@@ -271,10 +272,11 @@ struct CentralServer::StreamWorker {
     void run() {
         int failures = 0;
         while (running && !stop_requested) {
+            reassembler.reset();
             // application 트랙만 연결한다. 영상 트랙은 받지 않아 Pi의 메모리와
             // CPU를 메타데이터 처리에 집중시킨다.
             const std::string description =
-                "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp latency=" +
+                "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp tcp-timeout=5000000 latency=" +
                 std::to_string(server.config().stream.rtsp_latency_ms) +
                 " name=source source. ! application/x-rtp,media=application ! queue ! "
                 "appsink name=metadata emit-signals=true sync=false max-buffers=" +
@@ -282,10 +284,9 @@ struct CentralServer::StreamWorker {
             GError* error = nullptr;
             GstElement* graph = gst_parse_launch(description.c_str(), &error);
             if (!graph) {
-                if (error) { std::cerr << "[오류] " << stream.stream_id << ": " << error->message << "\n"; g_error_free(error); }
+                if (error) { LOG_ERROR("RTSP", stream.stream_id + " 파이프라인 생성 실패: " + error->message); g_error_free(error); }
                 if (++failures >= server.config().stream.max_retries) {
-                    std::cerr << "[스트림 제외] " << stream.stream_id
-                              << " 파이프라인 생성이 계속 실패해 해당 스트림을 제외합니다.\n";
+                    LOG_ERROR("RTSP", stream.stream_id + " 파이프라인 생성이 계속 실패해 해당 스트림을 제외합니다.");
                     break;
                 }
                 retry();
@@ -310,8 +311,7 @@ struct CentralServer::StreamWorker {
                     GstState cur_state = GST_STATE_NULL;
                     gst_element_get_state(graph, &cur_state, nullptr, 0);
                     if (cur_state == GST_STATE_PLAYING) {
-                        std::cerr << "[RTSP 연결] " << stream.stream_id
-                                  << " 메타데이터 수신 시작\n";
+                        LOG_INFO("RTSP", stream.stream_id + " 메타데이터 수신 시작");
                         reached_playing = true;
                         failures = 0;
                     }
@@ -319,7 +319,7 @@ struct CentralServer::StreamWorker {
                 if (!message) {
                     const auto elapsed = std::chrono::steady_clock::now() - connected_at;
                     if (!reached_playing && elapsed > std::chrono::seconds(server.config().stream.connect_timeout_s)) {
-                        std::cerr << "[연결 시간 초과] " << stream.stream_id << " RTSP 연결을 확인합니다.\n";
+                        LOG_WARN("RTSP", stream.stream_id + " RTSP 연결 시간 초과 (재시도)");
                         retry_needed = true;
                         break;
                     }
@@ -328,16 +328,12 @@ struct CentralServer::StreamWorker {
                 if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
                     GError* detail = nullptr; gchar* debug = nullptr;
                     gst_message_parse_error(message, &detail, &debug);
-                    std::cerr << "[RTSP 장애] " << stream.stream_id << ": "
-                              << (detail ? detail->message : "알 수 없는 오류") << "\n";
+                    LOG_ERROR("RTSP", stream.stream_id + " 장애 발생: " + (detail ? detail->message : "알 수 없는 오류"));
                     if (detail) g_error_free(detail);
                     if (debug) g_free(debug);
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
-                    // EOS는 해당 RTSP 스트림이 끝났다는 뜻이다.
-                    // 중앙 서버 전체를 멈추지 않고 이 스트림만 재연결한다.
-                    std::cerr << "[RTSP 종료] " << stream.stream_id
-                              << " 스트림이 종료되어 재연결합니다.\n";
+                    LOG_WARN("RTSP", stream.stream_id + " 스트림이 종료되어 재연결합니다.");
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_STATE_CHANGED &&
                            GST_MESSAGE_SRC(message) == GST_OBJECT(graph)) {
@@ -345,8 +341,7 @@ struct CentralServer::StreamWorker {
                     gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
                     if (new_state == GST_STATE_PLAYING) {
                         if (!reached_playing) {
-                            std::cerr << "[RTSP 연결] " << stream.stream_id
-                                      << " 메타데이터 수신 시작\n";
+                            LOG_INFO("RTSP", stream.stream_id + " 메타데이터 수신 시작");
                         }
                         reached_playing = true;
                         failures = 0;
@@ -437,11 +432,19 @@ int main(int argc, char* argv[]) {
             config_dir = argv[++index];
         } else if (option == "--common-config-dir" && index + 1 < argc) {
             common_config_dir = argv[++index];
-        } else if (option == "--enable-debug-csv") {
+        } else if (option == "--enable-debug-csv" || option == "--debug") {
             enable_debug_csv_flag = true;
+        } else if (option == "--help" || option == "-h") {
+            std::cout << "사용법: " << argv[0] << " [옵션]\n\n"
+                      << "옵션:\n"
+                      << "  --config-dir PATH         안전 설정 디렉터리 경로 (기본값: 자동 감지)\n"
+                      << "  --common-config-dir PATH  공통 설정 디렉터리 경로 (기본값: 자동 감지)\n"
+                      << "  --debug, --enable-debug-csv 디버그 원시 CSV 로깅 활성화\n"
+                      << "  --help, -h                도움말 출력\n";
+            return 0;
         } else {
             std::cerr << "사용법: " << argv[0]
-                      << " [--config-dir PATH] [--common-config-dir PATH] [--enable-debug-csv]\n";
+                      << " [--config-dir PATH] [--common-config-dir PATH] [--debug] [--help]\n";
             return 1;
         }
     }
@@ -452,12 +455,20 @@ int main(int argc, char* argv[]) {
     try {
         config = forklift::config::loadMultiCameraServerConfig(config_dir, common_config_dir);
     } catch (const forklift::config::SafetyServerConfigError& error) {
-        std::cerr << "[기동 실패] " << error.what() << "\n";
+        LOG_ERROR("CONFIG", std::string("기동 실패: ") + error.what());
         return 2;
     }
     if (enable_debug_csv_flag) {
         config.output_storage.enable_raw_csv_logging = true;
     }
+
+    const auto storage_parent = std::filesystem::path(config.output_storage.event_db).parent_path();
+    if (!storage_parent.empty()) {
+        std::filesystem::create_directories(storage_parent);
+        const auto server_log_path = (storage_parent / "server.log").string();
+        forklift::logging::Logger::instance().setLogFile(server_log_path);
+    }
+
     for (const auto* path : {&config.output_storage.object_csv, &config.output_storage.aruco_csv,
                              &config.output_storage.event_db, &config.output_storage.latency_csv}) {
         const auto parent = std::filesystem::path(*path).parent_path();
@@ -469,9 +480,12 @@ int main(int argc, char* argv[]) {
     CentralServer server(std::move(config));
     server.start();
     server.startWorkers();
-    std::cout << "중앙 안전 서버 시작: RTSP " << server.config().streams.size()
-              << "개, TERM " << server.config().forklifts.size() << "개\n";
+    LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (RTSP 스트림: " +
+                           std::to_string(server.config().streams.size()) + "개, 지게차 단말: " +
+                           std::to_string(server.config().forklifts.size()) + "개)");
     while (!stop_requested) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    LOG_INFO("SERVER", "서버 종료 신호 수신, 안전 종료를 진행합니다...");
     server.stop();
+    LOG_INFO("SERVER", "중앙 안전 서버가 성공적으로 종료되었습니다.");
     return 0;
 }

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <set>
+#include <unistd.h>
 
 #include <nlohmann/json.hpp>
 
@@ -151,37 +152,78 @@ std::string resolveConfigRelativePath(const SafetyServerConfig& config, const st
     return (std::filesystem::path(config.source_path).parent_path() / candidate).lexically_normal().string();
 }
 
+static std::filesystem::path getExecutableDirectory() {
+    char buffer[4096];
+    const ssize_t len = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+    if (len != -1) {
+        buffer[len] = '\0';
+        return std::filesystem::path(buffer).parent_path();
+    }
+    return std::filesystem::current_path();
+}
+
 std::string resolveConfigDirectory() {
+    const auto exe_dir = getExecutableDirectory();
+    const std::filesystem::path exe_candidates[] = {
+        exe_dir / ".." / ".." / "config" / "safety",          // build/apps/main_app -> server/config/safety
+        exe_dir / ".." / ".." / ".." / "config" / "safety",   // deeper build folder
+        exe_dir / ".." / "config" / "safety",
+        exe_dir / "config" / "safety",
+    };
+    for (const auto& candidate : exe_candidates) {
+        if (std::filesystem::is_directory(candidate)) {
+            return candidate.lexically_normal().string();
+        }
+    }
+
     const char* candidates[] = {
+        "/etc/forklift_safety/safety",
+        "/etc/forklift_safety",
         "server/config/safety",
         "config/safety",
         "../config/safety",
         "../../config/safety",
         "01_Workspace/server/config/safety",
-        // 이전 로컬 배치가 남아 있는 장비에서 명시적 인자 없이 한 번 더 찾는다.
         "server/01_main/config",
     };
-    for (const char* candidate : candidates)
+    for (const char* candidate : candidates) {
         if (std::filesystem::is_directory(candidate)) return candidate;
-    return candidates[0];
+    }
+    return candidates[2]; // 기본값: server/config/safety
 }
 
 std::string resolveCommonConfigDirectory(const std::string& config_dir) {
-    // 기본 배치는 server/config/safety와 server/config를 나란히 둔다.
-    // 다른 위치에서 실행할 때는 --common-config-dir로 명시할 수 있다.
     const std::filesystem::path app_dir(config_dir);
+    if (config_dir == "/etc/forklift_safety/safety" || config_dir == "/etc/forklift_safety") {
+        return "/etc/forklift_safety";
+    }
     const auto sibling_common = app_dir.parent_path().parent_path() / "config";
-    if (std::filesystem::is_directory(sibling_common)) return sibling_common.string();
+    if (std::filesystem::is_directory(sibling_common)) return sibling_common.lexically_normal().string();
+
+    const auto exe_dir = getExecutableDirectory();
+    const std::filesystem::path exe_candidates[] = {
+        exe_dir / ".." / ".." / "config",
+        exe_dir / ".." / "config",
+        exe_dir / "config",
+    };
+    for (const auto& candidate : exe_candidates) {
+        if (std::filesystem::is_directory(candidate)) {
+            return candidate.lexically_normal().string();
+        }
+    }
+
     const char* candidates[] = {
+        "/etc/forklift_safety",
         "server/config",
         "config",
         "../config",
         "../../config",
         "01_Workspace/server/config",
     };
-    for (const char* candidate : candidates)
+    for (const char* candidate : candidates) {
         if (std::filesystem::is_directory(candidate)) return candidate;
-    return candidates[0];
+    }
+    return candidates[1]; // 기본값: server/config
 }
 
 SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir,
@@ -418,9 +460,12 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
         c.sensor.stub_tof_distance_mm < 0)
         schema(system_path.string(), "handover/tracking/sensor/stream 설정 범위 오류");
     const auto& out = object(system, "output_storage", system_path.string());
-    // 설정 파일과 실행 중 생성되는 로그·DB를 섞지 않도록 server/var/main_app를
-    // 저장 기준으로 삼는다. 상대 출력명(storage/foo.csv)은 이 기준 아래에 둔다.
-    const auto storage_dir = common_dir.parent_path() / "var" / "main_app";
+    std::filesystem::path storage_dir;
+    if (common_dir.string().rfind("/etc/forklift_safety", 0) == 0) {
+        storage_dir = "/var/log/forklift_safety";
+    } else {
+        storage_dir = common_dir.parent_path() / "var" / "main_app";
+    }
     if (out.contains("enable_raw_csv_logging") && out.at("enable_raw_csv_logging").is_boolean()) {
         c.output_storage.enable_raw_csv_logging = out.at("enable_raw_csv_logging").get<bool>();
     }
