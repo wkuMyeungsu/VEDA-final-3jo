@@ -50,13 +50,13 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: Theme.topBarHeight
+        height: 44
     }
 
     RiskHud {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: topBar.bottom
-        anchors.topMargin: Theme.spacingMd
+        anchors.topMargin: 12
         riskLevel: activeCamera.riskLevel
         exceptionState: activeCamera.exceptionState
         distanceM: activeCamera.distanceM
@@ -64,9 +64,9 @@ ApplicationWindow {
     }
 
     StatusStrip {
-        anchors.left: parent.left
+        anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.margins: Theme.spacingLg
+        anchors.bottomMargin: 16
     }
 
     DemoPanel {

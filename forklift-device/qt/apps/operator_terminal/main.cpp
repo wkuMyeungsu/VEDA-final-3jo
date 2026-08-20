@@ -8,6 +8,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QFontDatabase>
 #include <cstdio>
 #include <QDateTime>
 #include <QDebug>
@@ -72,9 +73,32 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);                                             // - 애플리케이션 생성: Qt GUI 애플리케이션 객체 생성      
     QNetworkProxyFactory::setUseSystemConfiguration(false);                      // - 시스템 프록시 자동 탐색 끄기: 조회 중 멈추는 문제 회피, 내부망 직접 접속이라 프록시 불필요
 
+    // Pretendard 폰트 동적 로드
+    QString fontsDir = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("fonts"));
+    if (QDir(fontsDir).exists()) {
+        const QStringList fontFiles = {
+            QStringLiteral("Pretendard-Regular.otf"),
+            QStringLiteral("Pretendard-Medium.otf"),
+            QStringLiteral("Pretendard-SemiBold.otf"),
+            QStringLiteral("Pretendard-Bold.otf")
+        };
+        for (const QString &fontFile : fontFiles) {
+            QString fontPath = QDir(fontsDir).filePath(fontFile);
+            int fontId = QFontDatabase::addApplicationFont(fontPath);
+            if (fontId != -1) {
+                qInfo() << "Loaded font:" << fontFile;
+            }
+        }
+    }
+
+    QFont appFont(QStringLiteral("Pretendard"), 10);
+    appFont.setFamilies({QStringLiteral("Pretendard"), QStringLiteral("Segoe UI Variable Text"), QStringLiteral("Segoe UI"), QStringLiteral("Malgun Gothic"), QStringLiteral("sans-serif")});
+    appFont.setStyleStrategy(QFont::PreferAntialias);
+    appFont.setHintingPreference(QFont::PreferFullHinting);
+    QGuiApplication::setFont(appFont);
+
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyOperatorTerminal")); // - 앱 이름 설정: 시스템 식별용 이름 지정
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));       // - 조직 이름 설정: 시스템 조직명 지정
-
 
     // QtQuick Controls는 기본 플랫폼 스타일을 쓰기 때문에 다크 테마 화면 위에서
     // Switch/ComboBox/Button만 밝게 붕 떠 보임 -- 팔레트를 실제로 반영하는 "Basic"
@@ -82,20 +106,20 @@ int main(int argc, char *argv[])
     // 개별 재정의를 안 한 컨트롤도 기본값부터 다크 톤을 따르게 함
     QQuickStyle::setStyle(QStringLiteral("Basic"));                              // - 스타일 고정: 팔레트 미반영 플랫폼 스타일 방지
     QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor("#0b0f1a"));                   // - Theme.colorBackground
-    darkPalette.setColor(QPalette::WindowText, QColor("#eef1f7"));               // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::Base, QColor("#141a29"));                     // - Theme.colorSurface
-    darkPalette.setColor(QPalette::AlternateBase, QColor("#1b2233"));            // - Theme.colorSurfaceElevated
-    darkPalette.setColor(QPalette::Text, QColor("#eef1f7"));                     // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::Button, QColor("#1b2233"));                   // - Theme.colorSurfaceElevated
-    darkPalette.setColor(QPalette::ButtonText, QColor("#eef1f7"));               // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::Light, QColor("#3a445c"));                    // - Theme.colorBorderStrong
-    darkPalette.setColor(QPalette::Midlight, QColor("#1b2233"));                 // - Theme.colorSurfaceElevated
-    darkPalette.setColor(QPalette::Dark, QColor("#3a445c"));                     // - Theme.colorBorderStrong
-    darkPalette.setColor(QPalette::Mid, QColor("#2a3245"));                      // - Theme.colorBorder
-    darkPalette.setColor(QPalette::Highlight, QColor("#4f8cf7"));                // - Theme.colorAccent
-    darkPalette.setColor(QPalette::HighlightedText, QColor("#eef1f7"));          // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::PlaceholderText, QColor("#6b7690"));          // - Theme.colorTextMuted
+    darkPalette.setColor(QPalette::Window, QColor("#0c0e12"));                   // - Theme.colorBackground
+    darkPalette.setColor(QPalette::WindowText, QColor("#ffffff"));               // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Base, QColor("#16191f"));                     // - Theme.colorSurface
+    darkPalette.setColor(QPalette::AlternateBase, QColor("#20252e"));            // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::Text, QColor("#ffffff"));                     // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Button, QColor("#20252e"));                   // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::ButtonText, QColor("#ffffff"));               // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Light, QColor("#4b5563"));                    // - Theme.colorBorderStrong
+    darkPalette.setColor(QPalette::Midlight, QColor("#20252e"));                 // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::Dark, QColor("#374151"));                     // - Theme.colorBorderStrong
+    darkPalette.setColor(QPalette::Mid, QColor("#1f2937"));                      // - Theme.colorBorder
+    darkPalette.setColor(QPalette::Highlight, QColor("#F37321"));                // - Theme.colorAccent (Hanwha Orange)
+    darkPalette.setColor(QPalette::HighlightedText, QColor("#ffffff"));          // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::PlaceholderText, QColor("#9ca3af"));          // - Theme.colorTextMuted
     QGuiApplication::setPalette(darkPalette);                                    // - 적용: 앱 전역 기본 팔레트로 설정
 
     QCommandLineParser parser;                                                   // - 명령어 파서 생성: 실행 옵션 해석 객체 생성

@@ -45,4 +45,7 @@ add_custom_command(TARGET operator_terminal POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${SAFETY_CONFIG_SOURCE_DIR}
         $<TARGET_FILE_DIR:operator_terminal>/config
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/fonts
+        $<TARGET_FILE_DIR:operator_terminal>/fonts
 )

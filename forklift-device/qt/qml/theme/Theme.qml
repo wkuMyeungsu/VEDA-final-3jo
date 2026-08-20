@@ -6,32 +6,32 @@ import QtQuick
 // tokens plus a handful of small mapping helpers (risk level -> color,
 // connection state -> label) so QML never repeats those switch statements.
 QtObject {
-    // --- Surfaces (Deep Slate & Glass) ---
-    readonly property color colorBackground: "#080c14"
-    readonly property color colorSurface: "#101622"
-    readonly property color colorSurfaceElevated: "#161e2e"
-    readonly property color colorSurfaceGlass: Qt.rgba(0.06, 0.09, 0.14, 0.85)
-    readonly property color colorBorder: Qt.rgba(1, 1, 1, 0.07)
-    readonly property color colorBorderStrong: Qt.rgba(1, 1, 1, 0.14)
-    readonly property color colorBorderAccent: Qt.rgba(0.31, 0.55, 0.97, 0.35)
+    // --- Surfaces (Deep Dark & Hanwha Dark Glass) ---
+    readonly property color colorBackground: "#0c0e12"
+    readonly property color colorSurface: "#16191f"
+    readonly property color colorSurfaceElevated: "#20252e"
+    readonly property color colorSurfaceGlass: Qt.rgba(0.08, 0.10, 0.14, 0.85)
+    readonly property color colorBorder: Qt.rgba(1, 1, 1, 0.08)
+    readonly property color colorBorderStrong: Qt.rgba(1, 1, 1, 0.16)
+    readonly property color colorBorderAccent: Qt.rgba(0.95, 0.45, 0.13, 0.40)
 
     // --- Text ---
-    readonly property color colorTextPrimary: "#f1f5f9"
-    readonly property color colorTextSecondary: "#94a3b8"
-    readonly property color colorTextMuted: "#64748b"
+    readonly property color colorTextPrimary: "#ffffff"
+    readonly property color colorTextSecondary: "#9ca3af"
+    readonly property color colorTextMuted: "#6b7280"
 
-    readonly property color colorAccent: "#4f8cf7"
-    readonly property color colorAccentAlpha20: Qt.rgba(0.31, 0.55, 0.97, 0.18)
+    readonly property color colorAccent: "#F37321"               // Hanwha Orange
+    readonly property color colorAccentAlpha20: Qt.rgba(0.95, 0.45, 0.13, 0.20)
     readonly property color colorFocusRing: colorAccent          // - 포커스 링 전용 별칭
-    readonly property color colorSurfaceSunken: "#060910"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
-    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.65)   // - 모달/오버레이 배경 딤
-    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.05)   // - 융기 표면 상단 하이라이트 선
-    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.04) // - hover 시 덧칠 오버레이
-    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.15) // - press 시 덧칠 오버레이
+    readonly property color colorSurfaceSunken: "#080a0e"        // - 카드보다 어두운 침하 표면 (영상 웰 등)
+    readonly property color colorScrim: Qt.rgba(0, 0, 0, 0.70)   // - 모달/오버레이 배경 딤
+    readonly property color colorHairlineTop: Qt.rgba(1, 1, 1, 0.08)   // - 융기 표면 상단 하이라이트 선
+    readonly property color colorHoverOverlay: Qt.rgba(1, 1, 1, 0.05) // - hover 시 덧칠 오버레이
+    readonly property color colorPressOverlay: Qt.rgba(0, 0, 0, 0.20) // - press 시 덧칠 오버레이
 
     // --- Risk levels (Modern vibrant tone; Bg 불투명도는 위험도에 비례 -- 안전 배너 시인성 확보) ---
-    readonly property color colorSafe: "#22c55e"
-    readonly property color colorSafeBg: Qt.rgba(0.13, 0.77, 0.37, 0.20)
+    readonly property color colorSafe: "#10b981"
+    readonly property color colorSafeBg: Qt.rgba(0.06, 0.72, 0.51, 0.20)
     readonly property color colorCaution: "#f59e0b"
     readonly property color colorCautionBg: Qt.rgba(0.96, 0.62, 0.04, 0.35)
     readonly property color colorDanger: "#ef4444"
@@ -44,7 +44,7 @@ QtObject {
     readonly property color colorUnknownBg: Qt.rgba(0.58, 0.64, 0.72, 0.10)
 
     readonly property color colorPersonBox: "#38bdf8"
-    readonly property color colorForkliftBox: "#fb923c"
+    readonly property color colorForkliftBox: "#F37321"
 
     // --- Spacing scale ---
     readonly property int spacingXxs: 2

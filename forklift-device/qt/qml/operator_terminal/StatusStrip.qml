@@ -1,74 +1,60 @@
 import QtQuick
+import QtQuick.Layouts
 import Safety.Common
 
-// Server / camera / sensor connection status: an icon-centric compact row
-// anchored to a corner over the video. Output-only display, no touch
-// target sizing needed -- width follows content instead of a fixed card.
+// Exception-driven Quiet Status Banner:
+// Invisible during normal operation (0% visual clutter).
+// Smoothly pops up at bottom-center ONLY when a real disconnection or hardware fault occurs.
 Rectangle {
     id: root
-    width: contentColumn.implicitWidth + Theme.spacingMd * 2
-    height: contentColumn.implicitHeight + Theme.spacingSm * 2
-    radius: Theme.radiusMd
-    color: Qt.rgba(Theme.colorSurface.r, Theme.colorSurface.g, Theme.colorSurface.b, 0.82)
-    border.color: Theme.colorBorder
-    border.width: Theme.borderWidthHairline
 
-    // Anchored bottom-left over the video, so growth (badge row appearing)
-    // has to happen upward/rightward only -- the parent anchors left+bottom,
-    // never letting this cross into the video center or the RiskHud above.
-    Column {
-        id: contentColumn
+    readonly property bool hasServerFault: serverConnection.connectionState !== 2
+    readonly property bool hasVideoFault: activeCamera.videoConnectionState !== 2
+    readonly property bool hasFpgaFault: activeCamera.fpgaErrorLatched
+    readonly property bool hasAnyFault: hasServerFault || hasVideoFault || hasFpgaFault
+
+    visible: opacity > 0
+    opacity: hasAnyFault ? 1.0 : 0.0
+
+    Behavior on opacity { NumberAnimation { duration: 250 } }
+
+    implicitWidth: faultRow.implicitWidth + 32
+    height: 36
+    radius: Theme.radiusPill
+    color: Qt.rgba(0.12, 0.04, 0.05, 0.92)
+    border.width: 1.5
+    border.color: Theme.colorCaution
+
+    RowLayout {
+        id: faultRow
         anchors.centerIn: parent
-        spacing: Theme.spacingXs
+        spacing: 10
 
-        Row {
-            id: contentRow
-            spacing: Theme.spacingMd
+        Rectangle {
+            width: 52
+            height: 20
+            radius: 3
+            color: Theme.colorCaution
 
-            ConnectionIndicator {
-                compact: true
-                label: "서버"
-                state: serverConnection.connectionState
+            Text {
+                anchors.centerIn: parent
+                text: "SYSTEM"
+                color: "#000000"
+                font.pixelSize: 10
+                font.bold: true
             }
-            ConnectionIndicator {
-                compact: true
-                label: "카메라"
-                state: activeCamera.videoConnectionState
-            }
-            ConnectionIndicator {
-                compact: true
-                label: "센서"
-                // No dedicated sensor channel yet: sensor health rides on the
-                // metadata pipeline, degraded explicitly by a SENSOR_FAULT
-                // exception.
-                state: activeCamera.exceptionState === 1 ? 0 : metadataDistributor.connectionState
-            }
-            ConnectionIndicator {
-                compact: true
-                label: "FPGA"
-                state: activeCamera.fpgaConnectionState
-            }
-        }
-
-        // FPGA 패킷 파싱 누적 오류(체크섬/프로토콜/타임아웃) 표시줄. 평소엔 visible이
-        // false라 자리를 안 차지하다가, 하나라도 누적되면 나타남 -- ESTOP/전진차단처럼
-        // 즉시 위험한 상태는 아니라서 전체화면 오버레이(EstopOverlay) 대신 여기 붙임.
-        // "누적"이라는 단어와 아래 안내 문구로 지금 순간의 오류가 아니라 정비 전까지
-        // 계속 유지되는 상태임을 알림 -- 색만으로 표시하지 않음.
-        StatusBadge {
-            visible: activeCamera.fpgaErrorLatched
-            icon: "⚠"
-            text: "FPGA 오류 누적: " + Theme.fpgaLatchLabel(activeCamera.checksumErrorLatched,
-                                                            activeCamera.protocolErrorLatched,
-                                                            activeCamera.timeoutErrorLatched)
-            accentColor: Theme.colorCaution
         }
 
         Text {
-            visible: activeCamera.fpgaErrorLatched
-            text: "정비자가 초기화할 때까지 유지됩니다"
-            color: Theme.colorTextMuted
-            font.pixelSize: Theme.typeCaption.size
+            color: Theme.colorTextPrimary
+            font.pixelSize: 12
+            font.bold: true
+            text: {
+                if (root.hasServerFault) return "관제 시스템 무선 연결 재시도 중..."
+                if (root.hasVideoFault) return "CCTV 영상 스트림 수신 대기 중..."
+                if (root.hasFpgaFault) return "FPGA 제동 제어기 오류 누적 (정비 점검 필요)"
+                return "시스템 점검"
+            }
         }
     }
 }
