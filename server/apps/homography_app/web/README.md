@@ -1,94 +1,170 @@
-# 호모그래피 보정 앱
+# 호모그래피 웹 앱
 
-이 앱은 등록된 모든 CCTV의 모든 채널을 `stream_id`별로 차례대로
-보정하고, 캡처한 전체 스트림을 공통 마커로 동시에 정합해 보드 전체의
-공통 mm 좌표를 만드는 도구다.
-예를 들어 `CAM_01`의 1번과 `CAM_02`의 1번은 각각
-`CAM_01_CH_01`, `CAM_02_CH_01`이라는 서로 다른 스트림이다.
+등록된 CCTV를 선택하고 각 채널의 캡처·ArUco 검출·호모그래피 산출·전체 정합을
+브라우저에서 수행하는 LAN용 HTTP UI/API다. 실제 계산은 C++
+`processing/build/homography_tool`에 위임한다.
 
-## 작업 순서
+## 한눈에 보기
 
-1. `CCTV · CH`가 함께 표시된 스트림을 선택하고 `선택 스트림 캡처`를 누른다.
-2. 검출된 ArUco 마커의 꼭짓점을 확인한다. 어긋난 꼭짓점은 화면에서
-   주황색 점을 드래그해 보정한다.
-3. 마커 검은 사각형 한 변의 실제 길이(mm)를 입력하고 `이 채널 로컬 H
-   산출`을 누른다.
-4. 겹치는 마커가 있는 다른 CCTV의 채널도 같은 방법으로 로컬 H를 산출한다.
-5. 모든 스트림의 로컬 H가 준비되면 전체 맵 기준 스트림 하나를 선택한다. 각
-   스트림 쌍의 공통 마커가 최소 개수 이상이고, 전체 스트림이 연결망으로
-   이어져야 정합 버튼이 활성화된다.
-6. `전체 채널 정합`을 누르면 모든 CCTV×채널 스트림 쌍의 공통 마커 제약을
-   한 번에 사용해 전체 오차가 최소가 되는 전역 변환을 계산한다. 스트림을 순서대로
-   누적하지 않으므로 연결 순서에 따른 오차 누적을 피한다.
-7. 정합이 끝나면 공통 마커의 전체 맵 좌표 오차를 수치로 확인한다. 이 값은
-   정합에 사용한 마커를 모두 넣었을 때의 적합 오차다.
-8. 공통 마커가 4개 이상이면 마커 하나를 번갈아 제외하고 나머지 마커로
-   제외된 위치를 예측하는 교차검증도 함께 표시한다. 이 값은 마커 위치에서의
-   일반화 오차를 보는 지표라서, 단순 적합 오차와 구분해서 판단해야 한다.
+- 기본 주소: `http://<server-address>:8001`
+- 바인드 주소: `ADMIN_GUI_HOST`, 기본 `0.0.0.0`
+- 포트: `HOMOGRAPHY_APP_PORT`, 기본 `8001`
+- 공통 설정: `SERVER_COMMON_CONFIG_DIR`, 기본 `server/config`
+- 호모그래피 설정: `HOMOGRAPHY_CONFIG_DIR`, 기본 `server/config/homography`
+- 처리 도구: `HOMOGRAPHY_TOOL`, 기본 `processing/build/homography_tool`
+- 임시 결과: `HOMOGRAPHY_RESULT_DIR`, 기본 `/tmp/homography-results`
+- 최종 H 저장: `SAFETY_SERVER_HOMOGRAPHY_DIR`, 기본 `server/config/homography`
+- 실행 방식: Python 표준 라이브러리 HTTP server + subprocess
+- 인증: 애플리케이션 인증 없음, 신뢰된 LAN 또는 별도 reverse proxy 범위에서 사용
 
-X/Y 기준선, 자로 잰 거리, 관심 영역은 이 흐름에 사용하지 않는다. 마커
-ID와 네 꼭짓점 순서를 대응점으로 사용하므로, 같은 ID의 마커 방향과 위치가
-정합에 함께 반영된다. 공통 마커가 한 직선에 몰려 기하적으로 불안정하면
-서버가 정합을 거부한다.
+## 구조
 
-교차검증 RMSE는 공통 마커 하나를 숨긴 상태에서 그 마커의 네 꼭짓점을
-예측한 오차다. 따라서 현재 배치한 마커 사이의 품질을 추정할 수 있지만,
-마커가 전혀 없는 맵 바깥 영역의 실제 오차를 보증하지는 않는다. 전체 맵을
-수치로 검증하려면 정합 계산에서 제외한 체크 마커를 맵 전체에 골고루 두고
-그 위치를 독립적으로 비교해야 한다.
+### 목록
 
-## 설정
+- 공통 설정 로더: `camera_model.json`, `camera_list.json`
+- CCTV 입력: RTSP preview·고해상도 HTTP snapshot
+- 처리 위임: `homography_tool gen-marker`, `detect-markers`, `solve-manual`,
+  `align-markers`
+- 작업 결과: capture ID별 임시 디렉터리
+- 운영 결과: 전체 정합 성공 시 카메라별 H JSON 원자적 저장
+- 정적 UI: `static/index.html`, `static/homography.js`, `static/homography.css`
 
-공통 `server/config/camera_model.json`에는 카메라 종류별 채널 수를,
-`server/config/camera_list.json`에는 실제 CCTV 목록과 `camera_id ↔ model`
-매핑을 저장한다. 호모그래피 앱과 안전 서버는 이 공통 파일을 같이 읽으며,
-호모그래피 전용 정책은 `server/config/homography/homography_config.json`에 둔다.
-비밀번호가 들어가는 `camera_list.json`은 운영 장비에서만 작성한다.
+### 상세
 
-```sh
-cd /home/veda3/01_Workspace/server
-cp config/camera_list.sample.json config/camera_list.json
-chmod 600 config/camera_list.json
+```text
+브라우저
+  → web/server.py
+  → camera_list.json의 CCTV·채널 검증
+  → RTSP/HTTP 캡처
+  → processing/build/homography_tool
+  → /tmp/homography-results/<capture_id>
+  → 전체 정합 성공 시 config/homography/CAM_*/ 운영 H
 ```
 
-`homography_config.json`의 `map`은 겹치는 채널을 연결할 정책만 정한다.
+웹 앱은 `camera_id`와 `channel`을 `stream_id`로 평탄화한다.
 
-검증 화면이 한 번에 합성할 수 있는 최대 스트림 수는 별도
-`server/config/homography/stream_config.json`에서 관리한다.
+```text
+CAM_01 + channel 1 → CAM_01_CH_01
+CAM_01 + channel 3 → CAM_01_CH_03
+CAM_02 + channel 1 → CAM_02_CH_01
+```
+
+요청은 `stream_id` 사용을 우선한다. 일부 camera API는 기존 호출과의 호환을 위해
+`channel`만 받은 요청도 허용하지만, CCTV가 여러 대인 환경에서는 `stream_id`를
+사용해야 채널이 섞이지 않는다.
+
+## 작업
+
+### 목록
+
+- 스트림 선택
+- preview·고해상도 캡처
+- ArUco marker 검출
+- marker 꼭짓점 보정
+- 채널별 local H 산출
+- 전체 CCTV×채널 global alignment
+- global RMSE·교차검증 확인
+- verification region 저장
+
+### 상세
+
+1. 화면에서 CCTV와 채널을 선택한다.
+2. `선택 스트림 캡처`로 RTSP preview와 고해상도 이미지를 만든다.
+3. 검출된 marker ID와 네 꼭짓점을 확인한다.
+4. 오검출 코너가 있으면 화면에서 보정한다.
+5. marker 한 변의 실제 길이(mm)를 입력하고 local H를 산출한다.
+6. 참여하는 모든 스트림의 local H를 준비한다.
+7. anchor stream과 capture ID 목록을 선택해 전체 정합을 실행한다.
+8. global RMSE와 교차검증 결과를 확인한다.
+9. 전체 정합이 성공하면 `config/homography/<camera_id>/`에 최종 H가 저장된다.
+
+local solve 단계에서는 운영 H를 갱신하지 않는다. 운영 파일은
+`/api/homography/global-align` 성공 시에만 저장된다.
+
+## API
+
+### 목록
+
+| Method | 경로 | 역할 |
+| --- | --- | --- |
+| GET | `/` | 호모그래피 UI |
+| GET | `/api/status` | 카메라·스트림·정합 정책 상태 |
+| GET | `/api/camera/frame` | 최신 JPEG frame |
+| GET | `/api/camera/video` | MJPEG preview, `overlay=1` 지원 |
+| GET | `/api/camera/detections` | 최신 검출 결과 |
+| GET | `/artifacts/<capture_id>/<name>` | 임시 결과 파일 |
+| POST | `/api/camera/settings` | 현재 카메라·모델 선택 저장 |
+| POST | `/api/camera/detect` | 캡처와 marker 검출 |
+| POST | `/api/homography/solve` | 캡처 기준 local H 산출 |
+| POST | `/api/homography/global-align` | 전체 스트림 정합·운영 H 저장 |
+| POST | `/api/homography/region` | 검증 영역 저장 |
+| POST | `/api/homography/solve-manual` | 정적 이미지 기반 수동 산출 |
+
+### 주요 요청
+
+camera API와 전체 정합 요청은 `stream_id`를 사용한다.
 
 ```json
 {
-  "verification": {
-    "max_streams": 16
+  "stream_id": "CAM_01_CH_03"
+}
+```
+
+전체 정합은 최소 두 stream과 anchor stream, 각 stream의 capture ID가 필요하다.
+
+```json
+{
+  "stream_ids": ["CAM_01_CH_02", "CAM_01_CH_03"],
+  "anchor_stream_id": "CAM_01_CH_02",
+  "capture_ids": {
+    "CAM_01_CH_02": "capture-id-02",
+    "CAM_01_CH_03": "capture-id-03"
   }
 }
 ```
 
-이 값은 실제 CCTV RTSP 수신 개수가 아니라, 전체 맵 검증 화면의 WebGL 입력
-슬롯 수다. 실제 정합 대상은 `camera_list.json`에 등록된 모든 CCTV×채널이며,
-설정값을 넘는 경우에는 검증 화면이 명확한 오류를 표시한다.
+`/api/status`는 안전 서버 상태를 수집하는 API가 아니다. 현재 웹 앱 자체의
+카메라 목록, 지원 채널 수, stream 목록, 정합 정책과 도구 경로를 반환하며
+`server_monitoring` 값은 placeholder다.
 
-```json
-"map": {
-  "min_common_markers": 3
-}
+## 설정
+
+### 목록
+
+- `server/config/camera_model.json`: 모델별 채널 수
+- `server/config/camera_list.json`: CCTV ID·모델·RTSP/HTTP 연결·채널
+- `server/config/homography/homography_config.json`: marker·정합 정책
+- `server/config/homography/stream_config.json`: 검증 화면 stream 슬롯
+- `server/config/homography/CAM_*/`: 최종 운영 H
+
+### 상세
+
+공통 카메라 설정은 안전 서버와 호모그래피 앱이 함께 읽는다. 실제 CCTV 계정이
+포함될 수 있는 `camera_list.json`은 샘플에서 생성하고 운영 장비에만 둔다.
+
+```sh
+cd /home/pms/20_server_workspace
+cp server/config/camera_list.sample.json server/config/camera_list.json
+chmod 600 server/config/camera_list.json
 ```
 
-- `min_common_markers`: 스트림 쌍을 전체 정합 제약으로 사용할 최소 공통 ID 수.
-  기본값은 3.
-- 지원 채널 수는 `camera_model.json`의 `channel_count`와
-  `camera_list.json`의 `model` 매핑으로 결정한다.
+`camera_model.json`의 `channel_count`와 `camera_list.json`의 실제 채널 목록이
+일치해야 한다. 지원 가능한 모델·채널은 앱 기동 시 검증한다.
 
-## 결과 저장
+## 결과
 
-스트림별 로컬 H는 임시 작업 결과에 남고, 전체 정합이 완료되면 참여한
-모든 스트림의 운영 파일을 원자적으로 새로 만들거나 덮어쓴다.
+### 목록
 
-```text
-server/config/homography/CAM_01/homography_result_cam01_ch03_mm.json
-```
+- 작업 결과: `/tmp/homography-results/<capture_id>/`
+- marker JSON: `markers.json`
+- 캡처 이미지: `capture.jpg`, `rtsp-capture.jpg`
+- local H: `homography_manual.json` 또는 `outputs.manual` 지정 이름
+- 최종 H: `server/config/homography/<camera_id>/`
+- 작업 결과 보관: `ADMIN_GUI_RESULT_TTL_SEC`, 기본 3600초
 
-운영 H에는 서버가 실제로 읽을 값만 저장한다.
+### 상세
+
+최종 운영 H는 다음 필드를 포함한다.
 
 ```json
 {
@@ -102,43 +178,93 @@ server/config/homography/CAM_01/homography_result_cam01_ch03_mm.json
 }
 ```
 
-로컬 H와 채널 간 제약은 현재 앱 세션에서만 전역 계산에 사용하고 운영
-경로에는 저장하지 않는다. 최종 H는 공용 `server/config/homography/CAM_*`에
-저장되며 main이 같은 파일을 직접 읽는다. RMSE, 사용 마커, 캡처 ID 같은 상세 정보도
-`/tmp/homography-results/<capture_id>` 아래 작업 결과에만 남긴다.
+작업 결과는 임시 파일이며, TTL 정리 대상이다. 최종 H에 포함되지 않는 RMSE,
+사용 marker, capture ID 등의 상세 결과도 작업 디렉터리와 API 응답에서 확인한다.
 
 ## 실행
 
-systemd 서비스:
+### 개발 실행
+
+```sh
+cd /home/pms/20_server_workspace
+cmake -S server/apps/homography_app/processing \
+  -B server/apps/homography_app/processing/build \
+  -DBUILD_TESTING=ON
+cmake --build server/apps/homography_app/processing/build -j2
+
+ADMIN_GUI_HOST=0.0.0.0 \
+HOMOGRAPHY_CONFIG_DIR=server/config/homography \
+HOMOGRAPHY_TOOL=server/apps/homography_app/processing/build/homography_tool \
+SERVER_COMMON_CONFIG_DIR=server/config \
+  python3 server/apps/homography_app/web/server.py
+```
+
+브라우저에서 다음 주소를 연다.
+
+```text
+http://127.0.0.1:8001
+http://<server-address>:8001
+```
+
+### systemd 실행
 
 ```sh
 sudo systemctl restart homography-app.service
 sudo systemctl status homography-app.service --no-pager
 ```
 
-개발 실행:
+unit 파일은 `server/deploy/systemd/homography-app.service`에 있다. 설치 환경에
+따라 `User`, `WorkingDirectory`, `ExecStart`, 설정·도구 경로를 수정한다.
+
+## 검증
+
+### 목록
+
+- C++ 처리 엔진 단위 테스트
+- 웹 전역 정합 테스트
+- 연결 그래프 단절·공통 marker 부족 검증
+- global RMSE·교차검증 검증
+
+### 명령
 
 ```sh
-cd /home/veda3/01_Workspace/server
-HOMOGRAPHY_CONFIG_DIR=server/config/homography \
-HOMOGRAPHY_TOOL=server/apps/homography_app/processing/build/homography_tool \
-  python3 server/apps/homography_app/web/server.py
-```
+cd /home/pms/20_server_workspace
 
-브라우저 주소:
-
-```text
-http://127.0.0.1:8001
-```
-
-다른 PC에서는 라즈베리파이 주소를 사용한다.
-
-```text
-http://192.168.0.13:8001
-```
-
-엔진을 수정했다면 먼저 빌드한다.
-
-```sh
+# 처리 엔진 빌드·테스트
+cmake -S server/apps/homography_app/processing \
+  -B server/apps/homography_app/processing/build \
+  -DBUILD_TESTING=ON
 cmake --build server/apps/homography_app/processing/build -j2
+ctest --test-dir server/apps/homography_app/processing/build \
+  --output-on-failure
+
+# 웹 전역 정합 테스트
+cmake -S server -B server/build
+cmake --build server/build -j2
+QT_QPA_PLATFORM=offscreen \
+  ctest --test-dir server/build -R homography_global_alignment_test \
+  --output-on-failure
 ```
+
+## 운영
+
+### 목록
+
+- LAN 접근 범위 제한
+- `camera_list.json` 권한 제한
+- 임시 결과 디스크 사용량 확인
+- 운영 H 저장 권한 확인
+- systemd unit 경로 확인
+
+### 상세
+
+인증 계층이 없는 내부 도구이므로 `ADMIN_GUI_HOST=0.0.0.0`로 열 때는 방화벽,
+관리망, reverse proxy 중 하나로 접근 범위를 제한한다. 카메라 비밀번호가 포함된
+`camera_list.json`은 Git에 넣지 않고 `chmod 600`을 유지한다.
+
+## 문서
+
+- [호모그래피 앱 전체 개요](../README.md)
+- [호모그래피 처리 엔진](../processing/README.md)
+- [호모그래피 설정·결과](../../../config/homography/README.md)
+- [서버 전체 문서](../../../README.md)
