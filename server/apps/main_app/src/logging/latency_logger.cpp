@@ -8,7 +8,6 @@
 #include "logging/logger.hpp"
 
 #include <filesystem>
-#include <iostream>
 #include <utility>
 
 namespace risk_log {
@@ -32,7 +31,7 @@ bool LatencyLogger::start() {
 
     running_.store(true);
     worker_ = std::thread(&LatencyLogger::run, this);
-    LOG_INFO("DEBUG", "지연 시간 측정 로그 시작 - " + csv_path_);
+    LOG_INFO("DEBUG", "지연 시간 측정 CSV 로깅 시작 (" + csv_path_ + ")");
     return true;
 #endif
 }
@@ -59,12 +58,13 @@ void LatencyLogger::log(const LatencyStamps& stamps) {
             queue_.pop_front();
             std::size_t total = ++dropped_overflow_;
             if (total == 1) {
-                std::cerr << "[LatencyLogger] queue full (max=" << max_queue_size_
-                          << ") - 가장 오래된 항목 1건 드랍 (누적 드랍=" << total << ")\n";
+                LOG_WARN("DEBUG", "지연 시간 CSV 대기열 초과 (이전 항목 1건 건너뜀, 누적: " +
+                                  std::to_string(total) + ")");
                 last_logged_drop_total_ = total;
             } else if (total - last_logged_drop_total_ >= drop_log_interval_) {
-                std::cerr << "[LatencyLogger] dropped " << (total - last_logged_drop_total_)
-                          << " more (total: " << total << ")\n";
+                LOG_WARN("DEBUG", "지연 시간 CSV 대기열 초과 누적 " +
+                                  std::to_string(total - last_logged_drop_total_) +
+                                  "건 (누적: " + std::to_string(total) + ")");
                 last_logged_drop_total_ = total;
             }
         }
@@ -100,7 +100,7 @@ bool LatencyLogger::openFile() {
 
     file_.open(csv_path_, std::ios::out | std::ios::app);
     if (!file_.is_open()) {
-        LOG_WARN("DEBUG", "지연 시간 측정 CSV 파일을 열 수 없음 - " + csv_path_);
+        LOG_WARN("DEBUG", "지연 시간 측정 CSV 파일 열기 실패 (경로: " + csv_path_ + ")");
         return false;
     }
 
@@ -163,8 +163,9 @@ void LatencyLogger::flushDropLogSummary() {
     std::lock_guard<std::mutex> lk(mtx_);
     std::size_t total = dropped_overflow_.load();
     if (total > last_logged_drop_total_) {
-        std::cerr << "[LatencyLogger] dropped " << (total - last_logged_drop_total_)
-                  << " more (total: " << total << ") - 종료 시 잔여 요약\n";
+        LOG_WARN("DEBUG", "지연 시간 CSV 건너뜀 요약 (추가: " +
+                          std::to_string(total - last_logged_drop_total_) +
+                          "건, 누적: " + std::to_string(total) + ")");
         last_logged_drop_total_ = total;
     }
 }

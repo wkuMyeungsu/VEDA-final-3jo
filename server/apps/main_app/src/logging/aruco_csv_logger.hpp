@@ -14,7 +14,7 @@ class ArucoCsvLogger {
 public:
     // filePath: 저장할 CSV 경로. 파일이 이미 있으면 헤더 없이 이어붙이고,
     //           없으면 새로 만들면서 헤더 한 줄을 먼저 씀.
-    explicit ArucoCsvLogger(const std::string& filePath);
+    explicit ArucoCsvLogger(const std::string& filePath, bool enabled = false);
     ~ArucoCsvLogger();
 
     // frame 하나를 받아서 그 안의 마커들을 한 줄씩 파일에 추가

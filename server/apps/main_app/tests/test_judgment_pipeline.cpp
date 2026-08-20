@@ -1,8 +1,10 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "logic/judgment/judgment_pipeline.h"
+#include "network/result_dispatcher.hpp"
 
 namespace {
 
@@ -113,11 +115,40 @@ void testDeviceRadiusAndHandover() {
           "핸드오버 시 이전 stream의 EMERGENCY 히스테리시스를 리셋");
 }
 
+void testAlertHookOnlyRunsOnStateTransition() {
+    std::cout << "\n[ALERT 로그 훅 상태 전이 정책]\n";
+    std::vector<std::pair<RiskLevel, RiskLevel>> transitions;
+    risk_transport::ResultDispatcher dispatcher(
+        [](const std::string&) {}, std::chrono::hours(1));
+    dispatcher.onAlert([&](const JudgmentResult& previous, const JudgmentResult& current) {
+        transitions.emplace_back(previous.final_risk, current.final_risk);
+    });
+
+    JudgmentResult safe = risk_transport::ResultDispatcher::idleResult();
+    safe.terminal_id = kTerminal;
+    JudgmentResult danger = safe;
+    danger.final_risk = RiskLevel::DANGER;
+    danger.distance_mm = 700.0;
+
+    dispatcher.primeIdle(safe);
+    dispatcher.submit(safe);    // idle -> 첫 실제 SAFE: 운영 ALERT는 생략
+    dispatcher.submit(danger);  // SAFE -> DANGER: 1건
+    dispatcher.submit(danger);  // 같은 상태 heartbeat 후보: 추가 없음
+    dispatcher.submit(safe);    // DANGER -> SAFE: 1건
+
+    check(transitions.size() == 2, "ALERT 훅은 위험 상태 전이에서만 호출");
+    check(transitions.size() >= 2 &&
+              transitions[0] == std::make_pair(RiskLevel::SAFE, RiskLevel::DANGER) &&
+              transitions[1] == std::make_pair(RiskLevel::DANGER, RiskLevel::SAFE),
+          "ALERT 훅이 SAFE↔DANGER 전이를 순서대로 전달");
+}
+
 }  // namespace
 
 int main() {
     testStreamIdentityMapping();
     testRiskAndJson();
     testDeviceRadiusAndHandover();
+    testAlertHookOnlyRunsOnStateTransition();
     return failures == 0 ? 0 : 1;
 }

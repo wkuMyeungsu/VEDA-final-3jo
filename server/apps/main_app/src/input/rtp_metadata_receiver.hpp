@@ -44,4 +44,7 @@ private:
     std::string buffer_;       // 지금까지 이어붙인 조각들
     uint16_t lastSeq_ = 0;     // 마지막으로 본 시퀀스 번호
     bool hasLastSeq_ = false;  // lastSeq_가 유효한 값인지 (첫 패킷 이전엔 false)
+    std::size_t sequence_gap_count_ = 0;
+    std::size_t last_logged_sequence_gap_ = 0;
+    static constexpr std::size_t kSequenceGapLogInterval = 100;
 };

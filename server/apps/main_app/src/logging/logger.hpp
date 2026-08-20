@@ -1,7 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <ctime>
+#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -25,17 +28,37 @@ public:
         return instance_;
     }
 
-    void setLogFile(const std::string& filepath) {
+    // 설정 파일을 읽는 동안 발생한 로그도 최종 server.log에 남겨야 한다.
+    // 로그 파일 경로는 설정 로드가 끝난 뒤에야 확정되므로, 그 전까지는
+    // 소량만 메모리에 보관했다가 파일이 열리면 한 번에 flush한다.
+    bool setLogFile(const std::string& filepath) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (file_stream_.is_open()) {
             file_stream_.close();
         }
         if (!filepath.empty()) {
             file_stream_.open(filepath, std::ios::app);
+        } else {
+            return false;
         }
+
+        if (!file_stream_.is_open()) return false;
+
+        while (!pending_lines_.empty()) {
+            file_stream_ << pending_lines_.front();
+            pending_lines_.pop_front();
+        }
+        file_stream_.flush();
+        return static_cast<bool>(file_stream_);
     }
 
+    // DEBUG 로그는 일반 운영 환경에서 기본적으로 끈다. 호출부가
+    // 디버그 모드나 명시적 진단 옵션을 켰을 때만 파일/콘솔 I/O를 수행한다.
+    void setDebugEnabled(bool enabled) { debug_enabled_.store(enabled); }
+
     void log(LogLevel level, const std::string& tag, const std::string& message) {
+        if (level == LogLevel::Debug && !debug_enabled_.load()) return;
+
         const auto now = std::chrono::system_clock::now();
         const auto now_time_t = std::chrono::system_clock::to_time_t(now);
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -65,6 +88,13 @@ public:
         if (file_stream_.is_open()) {
             file_stream_ << log_line;
             file_stream_.flush();
+        } else {
+            // 기동 실패처럼 파일 경로 자체를 끝내 확정하지 못하는 경우에도
+            // 메모리가 무한히 늘지 않도록 최근 로그만 보관한다.
+            if (pending_lines_.size() >= kPendingLineLimit) {
+                pending_lines_.pop_front();
+            }
+            pending_lines_.push_back(log_line);
         }
     }
 
@@ -79,15 +109,18 @@ private:
     static const char* levelToString(LogLevel level) {
         switch (level) {
             case LogLevel::Debug: return "DEBUG";
-            case LogLevel::Info:  return "INFO ";
-            case LogLevel::Warn:  return "WARN ";
+            case LogLevel::Info:  return "INFO";
+            case LogLevel::Warn:  return "WARN";
             case LogLevel::Error: return "ERROR";
-            default:              return "LOG  ";
+            default:              return "LOG";
         }
     }
 
+    static constexpr std::size_t kPendingLineLimit = 256;
     std::mutex mutex_;
     std::ofstream file_stream_;
+    std::deque<std::string> pending_lines_;
+    std::atomic<bool> debug_enabled_{false};
 };
 
 }  // namespace forklift::logging

@@ -15,7 +15,6 @@
 #include "network/sensor_uplink_receiver.hpp"
 #include "logging/logger.hpp"
 
-#include <iostream>
 #include <cstdlib>
 #include <unistd.h>
 #include <mosquitto.h>
@@ -174,41 +173,44 @@ void SensorUplinkReceiver::onMessageTrampoline(mosquitto*, void* userdata, const
 
 void SensorUplinkReceiver::onConnect(int rc) {
     if (rc != 0) {
-        LOG_WARN("MQTT", "지게차 센서 데이터 수신 브로커 연결 실패 (rc=" + std::to_string(rc) + ": " + mosquitto_connack_string(rc) + ")");
+        LOG_WARN("SENSOR", "지게차 센서 통합 수신 브로커 연결 실패 (rc=" + std::to_string(rc) +
+                              ": " + mosquitto_connack_string(rc) + ")");
         return;
     }
     connected_ = true;
-    LOG_INFO("MQTT", "지게차 센서 데이터 수신 브로커 연결 완료 (" + broker_host_ + ":" + std::to_string(broker_port_) + ", 구독: " + kSubscribeTopic + ")");
+    LOG_INFO("SENSOR", "지게차 센서 통합 수신 연결 완료 (" + broker_host_ + ":" +
+                         std::to_string(broker_port_) + ", 구독: " + kSubscribeTopic + ")");
 
     const int sub_rc = mosquitto_subscribe(mosq_, nullptr, kSubscribeTopic, /*qos=*/0);
     if (sub_rc != MOSQ_ERR_SUCCESS) {
-        LOG_WARN("MQTT", "지게차 센서 데이터 토픽 구독 실패 (" + std::string(mosquitto_strerror(sub_rc)) + ")");
+        LOG_WARN("SENSOR", "지게차 센서 토픽 구독 실패 (" + std::string(kSubscribeTopic) +
+                              ", 사유: " + mosquitto_strerror(sub_rc) + ")");
     }
 }
 
 void SensorUplinkReceiver::onDisconnect(int rc) {
     connected_ = false;
     if (rc != 0) {
-        LOG_WARN("MQTT", "지게차 센서 데이터 수신 브로커 연결 일시 끊김 - 자동 재연결 대기 중");
+        LOG_WARN("SENSOR", "지게차 센서 통신 끊김 (자동 재연결 대기)");
     }
 }
 
 void SensorUplinkReceiver::logParseFailure(const std::string& why, const std::string& topic,
                                             const std::string& payload) {
-    // 카운터는 매번 정확히 증가시키고 stderr만 rate limit한다. 단말이 깨진 메시지를 계속
-    // 흘리면 건건이 찍는 순간 unbuffered stderr가 mosquitto 콜백 스레드를 붙잡는다
-    // (ResultPublisher의 드랍 로그와 같은 이유·같은 정책).
+    // 카운터는 매번 정확히 증가시키고 로그만 rate limit한다. 단말이 깨진 메시지를 계속
+    // 흘리면 건건이 찍는 순간 mosquitto 콜백 스레드를 붙잡는다.
     const std::size_t total = ++parse_failures_;
     if (total == 1) {
-        std::cerr << "[SensorUplinkReceiver] 파싱 실패로 1건 버림 (" << why
-                  << ") - 수신 계속 (누적 실패=" << total << ", topic=" << topic
-                  << ", payload=" << payload << ")\n";
+        LOG_WARN("SENSOR", "센서 데이터 형식 오류 (사유: " + why + ", 토픽: " + topic +
+                             ", 수신 계속, 누적: " + std::to_string(total) + ")");
         last_logged_parse_failure_total_ = total;
     } else if (total - last_logged_parse_failure_total_ >= kParseLogInterval) {
-        std::cerr << "[SensorUplinkReceiver] dropped " << (total - last_logged_parse_failure_total_)
-                  << " more (total: " << total << ") - 마지막 사유: " << why << "\n";
+        LOG_WARN("SENSOR", "센서 데이터 형식 오류 누적 " +
+                             std::to_string(total - last_logged_parse_failure_total_) +
+                             "건 (누적: " + std::to_string(total) + ", 마지막 사유: " + why + ")");
         last_logged_parse_failure_total_ = total;
     }
+    (void)payload;
 }
 
 bool SensorUplinkReceiver::isConfiguredTerminal(const std::string& terminal_id) const {
@@ -254,7 +256,7 @@ void SensorUplinkReceiver::start() {
     const std::string client_id = "forklift-server-sensor-" + std::to_string(::getpid());
     mosq_ = mosquitto_new(client_id.c_str(), /*clean_session=*/true, this);
     if (!mosq_) {
-        std::cerr << "[SensorUplinkReceiver] mosquitto_new() 실패\n";
+        LOG_ERROR("SENSOR", "센서 수신 초기화 실패 (mosquitto_new -> 수신 비활성)");
         running_ = false;
         return;
     }
@@ -278,9 +280,8 @@ void SensorUplinkReceiver::start() {
                                           tls_.client_key_path.c_str(),
                                           /*pw_callback=*/nullptr);
         if (trc != MOSQ_ERR_SUCCESS) {
-            std::cerr << "[SensorUplinkReceiver] mosquitto_tls_set 실패 (" << mosquitto_strerror(trc)
-                      << ") - ca=" << tls_.ca_cert_path << " cert=" << tls_.client_cert_path
-                      << " key=" << tls_.client_key_path << " - MQTT 수신 비활성\n";
+            LOG_ERROR("SENSOR", "센서 수신 TLS 설정 실패 (사유: " + std::string(mosquitto_strerror(trc)) +
+                                " -> 수신 비활성)");
             mosquitto_destroy(mosq_);
             mosq_ = nullptr;
             running_ = false;
@@ -290,13 +291,18 @@ void SensorUplinkReceiver::start() {
 
     const int rc = mosquitto_connect_async(mosq_, broker_host_.c_str(), broker_port_, /*keepalive=*/60);
     if (rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[SensorUplinkReceiver] MQTT 접속 시작 실패 (" << mosquitto_strerror(rc)
-                  << ") - " << broker_host_ << ':' << broker_port_ << "\n";
+        LOG_WARN("SENSOR", "지게차 센서 통합 수신 연결 시작 실패 (" +
+                             std::string(mosquitto_strerror(rc)) + ", " + broker_host_ + ":" +
+                             std::to_string(broker_port_) + ")");
     }
 
     // mosquitto_loop_start()가 내부 네트워크 스레드를 띄워 connect/reconnect/read/dispatch를
     // 전부 맡는다. 이 클래스는 콜백만 받으면 되므로 별도 워커 스레드가 필요 없다.
-    mosquitto_loop_start(mosq_);
+    const int loop_rc = mosquitto_loop_start(mosq_);
+    if (loop_rc != MOSQ_ERR_SUCCESS) {
+        LOG_ERROR("SENSOR", "센서 수신 네트워크 스레드 시작 실패 (" +
+                            std::string(mosquitto_strerror(loop_rc)) + ")");
+    }
 }
 
 void SensorUplinkReceiver::stop() {

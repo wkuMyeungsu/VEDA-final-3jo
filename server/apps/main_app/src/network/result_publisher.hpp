@@ -9,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <functional>
 #include <unistd.h>
 
@@ -146,18 +145,19 @@ public:
             if (queue_.size() >= max_queue_size_) {
                 queue_.pop_front();
                 // 카운터는 매 드랍마다 증가시키고(droppedCount()는 항상 정확),
-                // stderr 로그만 rate limit한다. 수신 측이 오래 느려지면 드랍이 연속으로
-                // 발생하는데, 건건이 찍으면 unbuffered stderr가 판정 루프까지 느리게 만든다.
+                // 로그만 rate limit한다. 수신 측이 오래 느려지면 드랍이 연속으로
+                // 발생하는데, 건건이 찍으면 판정 루프까지 느려질 수 있다.
                 std::size_t total = ++dropped_overflow_;
                 if (total == 1) {
                     // 첫 드랍은 즉시 (백프레셔가 시작됐다는 신호)
-                    std::cerr << "[ResultPublisher] queue full (max=" << max_queue_size_
-                              << ") - 가장 오래된 결과 1건 드랍 (누적 드랍=" << total << ")\n";
+                    LOG_WARN(logTag(), logTarget() + " 전송 대기열 초과 (이전 판정값 1건 건너뜀, 누적: " +
+                                            std::to_string(total) + ")");
                     last_logged_drop_total_ = total;
                 } else if (total - last_logged_drop_total_ >= drop_log_interval_) {
                     // 이후로는 drop_log_interval_건마다 요약 1줄
-                    std::cerr << "[ResultPublisher] dropped " << (total - last_logged_drop_total_)
-                              << " more (total: " << total << ")\n";
+                    LOG_WARN(logTag(), logTarget() + " 전송 대기열 초과 누적 " +
+                                            std::to_string(total - last_logged_drop_total_) +
+                                            "건 (누적: " + std::to_string(total) + ")");
                     last_logged_drop_total_ = total;
                 }
             }
@@ -204,10 +204,20 @@ private:
         std::lock_guard<std::mutex> lk(mtx_);
         std::size_t total = dropped_overflow_.load();
         if (total > last_logged_drop_total_) {
-            std::cerr << "[ResultPublisher] dropped " << (total - last_logged_drop_total_)
-                      << " more (total: " << total << ") - 종료 시 잔여 요약\n";
+            LOG_WARN(logTag(), logTarget() + " 전송 건너뜀 요약 (추가: " +
+                                    std::to_string(total - last_logged_drop_total_) +
+                                    "건, 누적: " + std::to_string(total) + ")");
             last_logged_drop_total_ = total;
         }
+    }
+
+    const char* logTag() const {
+        return manage_server_status_ ? "SERVER" : "RISK";
+    }
+
+    std::string logTarget() const {
+        return manage_server_status_ ? std::string("서버 상태")
+                                     : "[" + terminal_id_ + "] 위험 경보";
     }
 
     // [주의] mosquitto 콜백(네트워크 스레드)에서도 불린다. onStateChange_는 start() 전에
@@ -221,12 +231,13 @@ private:
         auto* self = static_cast<ResultPublisher*>(obj);
         if (rc == 0) {
             ++self->connected_;
-            LOG_INFO("MQTT", "위험 판정 결과 송신 브로커 연결 완료 (" + self->broker_host_ + ":" +
-                                 std::to_string(self->broker_port_) + ", 토픽: " + self->topic_ + ")");
+            LOG_INFO(self->logTag(), self->logTarget() + " 송신 연결 완료 (" + self->broker_host_ + ":" +
+                                      std::to_string(self->broker_port_) + ", 토픽: " + self->topic_ + ")");
             if (self->manage_server_status_) self->publishStatus(kOnlinePayload);
             self->setState(LinkState::CONNECTED);
         } else {
-            LOG_WARN("MQTT", "위험 판정 결과 송신 브로커 연결 거부 (" + std::string(mosquitto_connack_string(rc)) + ")");
+            LOG_WARN(self->logTag(), self->logTarget() + " 송신 브로커 연결 거부 (사유: " +
+                                      std::string(mosquitto_connack_string(rc)) + ")");
             self->setState(LinkState::CONNECTING);
         }
     }
@@ -234,7 +245,7 @@ private:
     static void onDisconnectCb(struct mosquitto*, void* obj, int rc) {
         auto* self = static_cast<ResultPublisher*>(obj);
         if (rc != 0 && self->running_.load()) {
-            LOG_WARN("MQTT", "위험 판정 결과 송신 브로커 연결 일시 끊김 - 자동 재연결 대기 중");
+            LOG_WARN(self->logTag(), self->logTarget() + " 통신 끊김 (자동 재연결 대기)");
             self->setState(LinkState::CONNECTING);
         } else {
             self->setState(LinkState::DISCONNECTED);
@@ -254,7 +265,7 @@ private:
         const std::string client_id = "forklift-server-" + terminal_id_ + "-" + std::to_string(::getpid());
         mosq_ = mosquitto_new(client_id.c_str(), /*clean_session=*/true, this);
         if (mosq_ == nullptr) {
-            std::cerr << "[ResultPublisher] mosquitto_new 실패 - MQTT 송신 비활성\n";
+            LOG_ERROR(logTag(), logTarget() + " 초기화 실패 (mosquitto_new -> 송신 비활성)");
             libRelease();
             setState(LinkState::DISCONNECTED);
             return false;
@@ -281,9 +292,9 @@ private:
                                         tls_.client_key_path.c_str(),
                                         /*pw_callback=*/nullptr);
             if (trc != MOSQ_ERR_SUCCESS) {
-                std::cerr << "[ResultPublisher] mosquitto_tls_set 실패 (" << mosquitto_strerror(trc)
-                          << ") - ca=" << tls_.ca_cert_path << " cert=" << tls_.client_cert_path
-                          << " key=" << tls_.client_key_path << " - MQTT 송신 비활성\n";
+                LOG_ERROR(logTag(), logTarget() + " TLS 설정 실패 (사유: " +
+                                        std::string(mosquitto_strerror(trc)) +
+                                        " -> 송신 비활성)");
                 mosquitto_destroy(mosq_);
                 mosq_ = nullptr;
                 libRelease();
@@ -299,16 +310,16 @@ private:
 
         int rc = mosquitto_connect(mosq_, broker_host_.c_str(), broker_port_, kKeepaliveSec);
         if (rc != MOSQ_ERR_SUCCESS) {
-            std::cerr << "[ResultPublisher] 브로커 초기 연결 실패 - " << broker_host_ << ':'
-                      << broker_port_ << " (" << mosquitto_strerror(rc)
-                      << ") - 백오프 재연결로 계속 시도\n";
+            LOG_WARN(logTag(), logTarget() + " 브로커 초기 연결 실패 (" +
+                                  broker_host_ + ":" + std::to_string(broker_port_) + ", 사유: " +
+                                  mosquitto_strerror(rc) + " -> 백오프 재연결)");
         }
 
         rc = mosquitto_loop_start(mosq_);
         if (rc != MOSQ_ERR_SUCCESS) {
             // 네트워크 스레드가 안 뜨면 재연결도 publish도 불가능하므로 여기서만 포기한다.
-            std::cerr << "[ResultPublisher] mosquitto_loop_start 실패 ("
-                      << mosquitto_strerror(rc) << ") - MQTT 송신 비활성\n";
+            LOG_ERROR(logTag(), logTarget() + " 네트워크 스레드 시작 실패 (" +
+                                     std::string(mosquitto_strerror(rc)) + " -> 송신 비활성)");
             mosquitto_destroy(mosq_);
             mosq_ = nullptr;
             libRelease();
@@ -347,8 +358,8 @@ private:
                                    kQos, kRetain);
         if (rc != MOSQ_ERR_SUCCESS) {
             // 실패해도 판정 결과 송신은 계속한다. 다음 재연결 때 다시 시도된다.
-            std::cerr << "[ResultPublisher] 상태 publish 실패 (" << kStatusTopic << " <- "
-                      << payload << ", " << mosquitto_strerror(rc) << ")\n";
+            LOG_WARN("SERVER", "서버 상태 송신 실패 (토픽: " + std::string(kStatusTopic) +
+                                ", 사유: " + mosquitto_strerror(rc) + ")");
         }
     }
 
@@ -398,9 +409,9 @@ private:
                 // 단말이 위험도를 거꾸로 보게 된다. 연결이 돌아오면 다음 판정 결과
                 // (늦어도 200ms 하트비트)부터 정상 전송된다.
                 std::size_t total = ++send_failures_;
-                std::cerr << "[ResultPublisher] publish 실패로 결과 1건 드랍 ("
-                          << mosquitto_strerror(last_publish_error_)
-                          << ", 누적 전송실패=" << total << ")\n";
+                LOG_WARN(logTag(), logTarget() + " 전송 실패로 판정값 1건 건너뜀 (사유: " +
+                                      std::string(mosquitto_strerror(last_publish_error_)) +
+                                      ", 누적: " + std::to_string(total) + ")");
             }
         }
     }
@@ -409,7 +420,10 @@ private:
     std::string broker_host_;
     uint16_t    broker_port_;
     MqttTlsOptions tls_;
-    bool manage_server_status_ = true;
+    // 서버 상태 publisher는 명시적으로 ServerStatus 역할을 받은 인스턴스만 맡는다.
+    // 기본값을 서버 상태로 두면 단말 publisher 생성 경로가 누락됐을 때
+    // 첫 단말이 서버 상태를 대신 발행하는 단일 단말 가정이 다시 생길 수 있다.
+    bool manage_server_status_ = false;
     std::string topic_;                  // "forklift/risk/<terminal_id>" (생성자에서 1회 계산)
 
     struct mosquitto* mosq_ = nullptr;   // libmosquitto 핸들 (start()~stop() 동안만 유효)
