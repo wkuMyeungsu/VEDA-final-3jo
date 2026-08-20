@@ -1,7 +1,10 @@
 {
   "network": {
-    "mqtt_host": "127.0.0.1", "mqtt_port": 1883,
-    "result_heartbeat_ms": 200, "tls_enabled": false
+    "mqtt_host": "127.0.0.1", "mqtt_port": 8883,
+    "result_heartbeat_ms": 200, "tls_enabled": true,
+    "ca_cert_path": "/etc/forklift_safety/certs/ca.crt",
+    "client_cert_path": "/etc/forklift_safety/certs/client-server.crt",
+    "client_key_path": "/etc/forklift_safety/certs/client-server.key"
   },
   "handover": {"confirm_frames": 3, "lost_grace_ms": 500},
   "tracking": {"iou_threshold": 0.3, "world_distance_threshold_mm": 1000.0, "max_missed_frames": 5},

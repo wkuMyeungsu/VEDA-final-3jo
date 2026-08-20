@@ -19,7 +19,7 @@
        ┌────────────────────────────────┐
        │  🍓 중앙 안전 서버 (라즈베리파이 #1)  │
        │  - server/ (C++ 안전 판정 서버)   │
-       │  - IP: 192.168.0.13 (MQTT 1883) │
+       │  - IP: 192.168.0.13 (MQTT TLS 8883)│
        └──────┬─────────────────┬───────┘
               │ MQTT (위험 이벤트) │ MQTT (관제 데이터)
               ▼                 ▼
@@ -89,5 +89,4 @@
 - **중앙 관제 센터**: [`operator-device/README.md`](operator-device/README.md)
 - **중앙 안전 서버**: [`server/README.md`](server/README.md)
 - **현장 CCTV (ArUco)**: [`cctv/ArUCoDetector/README.md`](cctv/ArUCoDetector/README.md)
-
 
