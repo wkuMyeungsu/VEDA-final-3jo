@@ -81,7 +81,7 @@ Rectangle {
                         Text {
                             id: filterText1
                             anchors.centerIn: parent
-                            text: "🚨 위험경보"
+                            text: "위험 경보"
                             color: root.filterMode === 1 ? Theme.colorDanger : Theme.colorTextMuted
                             font.pixelSize: Theme.typeCaption.size - 1
                         }
@@ -104,7 +104,7 @@ Rectangle {
                         Text {
                             id: filterText2
                             anchors.centerIn: parent
-                            text: "⚠ 통신/센서 장애"
+                            text: "통신/센서 장애"
                             color: root.filterMode === 2 ? Theme.colorCaution : Theme.colorTextMuted
                             font.pixelSize: Theme.typeCaption.size - 1
                         }

@@ -29,6 +29,15 @@ Item {
         return false;
     }
 
+    function moveLeft() { gridView.currentIndex = Math.max(0, gridView.currentIndex - 1) }
+    function moveRight() { gridView.currentIndex = Math.min(gridView.count - 1, gridView.currentIndex + 1) }
+    function moveUp() { gridView.currentIndex = Math.max(0, gridView.currentIndex - 1) }
+    function moveDown() { gridView.currentIndex = Math.min(gridView.count - 1, gridView.currentIndex + 1) }
+    function activateCurrent() {
+        if (root.zones.length > 0)
+            root.zoneSelected(root.zones[Math.max(0, gridView.currentIndex)].zoneId)
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: Theme.spacingMd
@@ -54,6 +63,7 @@ Item {
 
         // 구역 카드 그리드/목록
         GridView {
+            id: gridView
             Layout.fillWidth: true
             Layout.fillHeight: true
             cellWidth: 360
@@ -62,12 +72,13 @@ Item {
             model: root.zones
 
             delegate: Rectangle {
+                property bool isCurrent: GridView.isCurrentItem
                 width: 340
                 height: 200
                 radius: Theme.radiusMd
-                color: zoneMouse.containsMouse ? "#1e293b" : "#141a29"
-                border.width: isZoneAlert(modelData.zoneId) ? 2 : 1
-                border.color: isZoneAlert(modelData.zoneId) ? Theme.colorDanger : (zoneMouse.containsMouse ? Theme.colorAccent : "#334155")
+                color: (isCurrent || zoneMouse.containsMouse) ? Theme.colorSurfaceElevated : Theme.colorSurface
+                border.width: isZoneAlert(modelData.zoneId) ? 2 : (isCurrent ? 2 : 1)
+                border.color: isZoneAlert(modelData.zoneId) ? Theme.colorDanger : (isCurrent || zoneMouse.containsMouse ? Theme.colorAccent : Theme.colorBorder)
 
                 Behavior on border.color { ColorAnimation { duration: 150 } }
                 Behavior on color { ColorAnimation { duration: 150 } }
@@ -88,12 +99,14 @@ Item {
                             radius: Theme.radiusSm
                             color: isZoneAlert(modelData.zoneId) ? Theme.colorDangerBg : Qt.rgba(1, 1, 1, 0.08)
                             border.width: 1
-                            border.color: isZoneAlert(modelData.zoneId) ? Theme.colorDanger : "#475569"
+                            border.color: isZoneAlert(modelData.zoneId) ? Theme.colorDanger : Theme.colorBorder
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "📁"
-                                font.pixelSize: 18
+                                text: "ZONE"
+                                color: Theme.colorAccent
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
                             }
                         }
 
@@ -126,7 +139,7 @@ Item {
                             Text {
                                 id: alertTxt
                                 anchors.centerIn: parent
-                                text: "🚨 위험"
+                                text: "위험 감지"
                                 color: Theme.colorDanger
                                 font.pixelSize: 11
                                 font.weight: Font.Bold
@@ -150,7 +163,7 @@ Item {
                         Layout.fillWidth: true
 
                         Text {
-                            text: "📹 물리 카메라 " + modelData.cameraCount + "대 · " + modelData.channelCount + "개 채널"
+                            text: "물리 카메라 " + modelData.cameraCount + "대 · " + modelData.channelCount + "개 채널"
                             color: "#cbd5e1"
                             font.pixelSize: 12
                             Layout.fillWidth: true

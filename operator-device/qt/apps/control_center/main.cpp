@@ -19,13 +19,16 @@
 #include "services/ServerConnectionService.h"
 #include "video/IVideoSource.h"
 #include "video/VideoSourceManager.h"
-
 #include <cstdio>
 #include <QDateTime>
 #include <QDebug>
+#include <QFont>
+#include <QFontDatabase>
+#include <QQuickWindow>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <dwmapi.h>
 #endif
 
 namespace {
@@ -50,6 +53,12 @@ void unifiedConsoleLogHandler(QtMsgType type, const QMessageLogContext &/*contex
         std::fputs(output.toLocal8Bit().constData(), stdout);
         std::fflush(stdout);
     }
+
+    FILE *f = std::fopen("C:/VEDA_Final_project/control_center_debug.log", "a");
+    if (f) {
+        std::fputs(output.toUtf8().constData(), f);
+        std::fclose(f);
+    }
 }
 } // namespace
 
@@ -63,6 +72,7 @@ int main(int argc, char *argv[])
     }
 #endif
     qInstallMessageHandler(unifiedConsoleLogHandler);
+    qDebug() << "=== Control Center Starting ===";
     
     // RtspVideoSource가 GStreamer API를 쓰기 전에 반드시 한 번 필요
     gst_init(&argc, &argv); 
@@ -72,6 +82,23 @@ int main(int argc, char *argv[])
     // Qt GUI 앱 초기화
     QGuiApplication app(argc, argv);
     QNetworkProxyFactory::setUseSystemConfiguration(false);                      // - 시스템 프록시 자동 탐색 끄기
+
+    // Pretendard 모던 고딕 폰트 로드 및 전역 적용
+    QString fontDir = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("fonts"));
+    if (!QDir(fontDir).exists()) {
+        fontDir = QStringLiteral("c:/VEDA_Final_project/operator-device/qt/fonts");
+    }
+    QFontDatabase::addApplicationFont(fontDir + QStringLiteral("/Pretendard-Regular.otf"));
+    QFontDatabase::addApplicationFont(fontDir + QStringLiteral("/Pretendard-Medium.otf"));
+    QFontDatabase::addApplicationFont(fontDir + QStringLiteral("/Pretendard-SemiBold.otf"));
+    QFontDatabase::addApplicationFont(fontDir + QStringLiteral("/Pretendard-Bold.otf"));
+
+    QFont appFont(QStringLiteral("Pretendard"), 10);
+    appFont.setFamilies({QStringLiteral("Pretendard"), QStringLiteral("Segoe UI Variable Text"), QStringLiteral("Segoe UI"), QStringLiteral("Malgun Gothic"), QStringLiteral("sans-serif")});
+    appFont.setStyleStrategy(QFont::PreferAntialias);
+    appFont.setHintingPreference(QFont::PreferFullHinting);
+    QGuiApplication::setFont(appFont);
+
     // Qt 앱 이름/조직명 설정 (설정 저장 시 사용됨)
     QGuiApplication::setApplicationName(QStringLiteral("ForkliftSafetyControlCenter"));
     QGuiApplication::setOrganizationName(QStringLiteral("ForkliftSafety"));
@@ -82,20 +109,20 @@ int main(int argc, char *argv[])
     // 채워서 QML에서 개별 재정의를 안 한 컨트롤도 기본값부터 다크 톤을 따르게 함
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor("#0b0f1a"));          // - Theme.colorBackground
-    darkPalette.setColor(QPalette::WindowText, QColor("#eef1f7"));      // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::Base, QColor("#141a29"));            // - Theme.colorSurface
-    darkPalette.setColor(QPalette::AlternateBase, QColor("#1b2233"));   // - Theme.colorSurfaceElevated
-    darkPalette.setColor(QPalette::Text, QColor("#eef1f7"));            // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::Button, QColor("#1b2233"));          // - Theme.colorSurfaceElevated
-    darkPalette.setColor(QPalette::ButtonText, QColor("#eef1f7"));      // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::Light, QColor("#3a445c"));           // - Theme.colorBorderStrong
-    darkPalette.setColor(QPalette::Midlight, QColor("#1b2233"));        // - Theme.colorSurfaceElevated
-    darkPalette.setColor(QPalette::Dark, QColor("#3a445c"));            // - Theme.colorBorderStrong
-    darkPalette.setColor(QPalette::Mid, QColor("#2a3245"));             // - Theme.colorBorder
-    darkPalette.setColor(QPalette::Highlight, QColor("#4f8cf7"));       // - Theme.colorAccent
-    darkPalette.setColor(QPalette::HighlightedText, QColor("#eef1f7")); // - Theme.colorTextPrimary
-    darkPalette.setColor(QPalette::PlaceholderText, QColor("#6b7690")); // - Theme.colorTextMuted
+    darkPalette.setColor(QPalette::Window, QColor("#0c0e12"));          // - Theme.colorBackground
+    darkPalette.setColor(QPalette::WindowText, QColor("#ffffff"));      // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Base, QColor("#16191f"));            // - Theme.colorSurface
+    darkPalette.setColor(QPalette::AlternateBase, QColor("#20252e"));   // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::Text, QColor("#ffffff"));            // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Button, QColor("#20252e"));          // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::ButtonText, QColor("#ffffff"));      // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::Light, QColor("#4b5563"));           // - Theme.colorBorderStrong
+    darkPalette.setColor(QPalette::Midlight, QColor("#20252e"));        // - Theme.colorSurfaceElevated
+    darkPalette.setColor(QPalette::Dark, QColor("#374151"));            // - Theme.colorBorderStrong
+    darkPalette.setColor(QPalette::Mid, QColor("#1f2937"));             // - Theme.colorBorder
+    darkPalette.setColor(QPalette::Highlight, QColor("#F37321"));       // - Theme.colorAccent (Hanwha Orange)
+    darkPalette.setColor(QPalette::HighlightedText, QColor("#ffffff")); // - Theme.colorTextPrimary
+    darkPalette.setColor(QPalette::PlaceholderText, QColor("#9ca3af")); // - Theme.colorTextMuted
     QGuiApplication::setPalette(darkPalette);
 
     //
@@ -175,6 +202,14 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("authService"), &authService);
 
     QObject::connect(
+        &engine, &QQmlApplicationEngine::warnings, &app,
+        [](const QList<QQmlError> &warnings) {
+            for (const auto &w : warnings) {
+                qCritical() << "QML Error/Warning:" << w.toString();
+            }
+        });
+
+    QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [](const QUrl &url) {
             qCritical() << "QML Object creation failed for:" << url;
@@ -187,6 +222,21 @@ int main(int argc, char *argv[])
         qCritical() << "Engine rootObjects is EMPTY!";
         return -1;
     }
+
+#ifdef Q_OS_WIN
+    if (auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first())) {
+        HWND hwnd = reinterpret_cast<HWND>(window->winId());
+        if (hwnd) {
+            // DWMWA_USE_IMMERSIVE_DARK_MODE (20)
+            BOOL darkMode = TRUE;
+            DwmSetWindowAttribute(hwnd, 20, &darkMode, sizeof(darkMode));
+
+            // DWMWA_SYSTEMBACKDROP_TYPE (38) -> 3: DWMSBT_TRANSIENTWINDOW (Acrylic)
+            DWORD backdropType = 3;
+            DwmSetWindowAttribute(hwnd, 38, &backdropType, sizeof(backdropType));
+        }
+    }
+#endif
 
     qDebug() << "QML application successfully loaded and running.";
     return app.exec();

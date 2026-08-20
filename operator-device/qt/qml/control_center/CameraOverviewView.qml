@@ -31,6 +31,15 @@ Item {
         return false;
     }
 
+    function moveLeft() { gridView.currentIndex = Math.max(0, gridView.currentIndex - 1) }
+    function moveRight() { gridView.currentIndex = Math.min(gridView.count - 1, gridView.currentIndex + 1) }
+    function moveUp() { gridView.currentIndex = Math.max(0, gridView.currentIndex - 1) }
+    function moveDown() { gridView.currentIndex = Math.min(gridView.count - 1, gridView.currentIndex + 1) }
+    function activateCurrent() {
+        if (root.camerasInZone.length > 0)
+            root.cameraSelected(root.camerasInZone[Math.max(0, gridView.currentIndex)].cameraId)
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: Theme.spacingMd
@@ -63,7 +72,7 @@ Item {
             }
 
             Text {
-                text: "📁 " + root.zoneId + " › 설치 카메라 목록"
+                text: root.zoneId + " › 설치 카메라 목록"
                 color: "#ffffff"
                 font.pixelSize: Theme.typeHeading.size
                 font.weight: Font.Bold
@@ -73,6 +82,7 @@ Item {
 
         // 카메라 카드 그리드
         GridView {
+            id: gridView
             Layout.fillWidth: true
             Layout.fillHeight: true
             cellWidth: 380
@@ -81,12 +91,13 @@ Item {
             model: root.camerasInZone
 
             delegate: Rectangle {
+                property bool isCurrent: GridView.isCurrentItem
                 width: 360
                 height: 210
                 radius: Theme.radiusMd
-                color: camMouse.containsMouse ? Theme.colorSurfaceElevated : Theme.colorSurface
-                border.width: isCameraAlert(modelData.cameraId) ? 2 : Theme.borderWidthHairline
-                border.color: isCameraAlert(modelData.cameraId) ? Theme.colorDanger : (camMouse.containsMouse ? Theme.colorAccent : Theme.colorBorder)
+                color: (isCurrent || camMouse.containsMouse) ? Theme.colorSurfaceElevated : Theme.colorSurface
+                border.width: isCameraAlert(modelData.cameraId) ? 2 : (isCurrent ? 2 : Theme.borderWidthHairline)
+                border.color: isCameraAlert(modelData.cameraId) ? Theme.colorDanger : (isCurrent || camMouse.containsMouse ? Theme.colorAccent : Theme.colorBorder)
 
                 Behavior on border.color { ColorAnimation { duration: 150 } }
 
@@ -110,8 +121,10 @@ Item {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "📹"
-                                font.pixelSize: 18
+                                text: "CAM"
+                                color: Theme.colorAccent
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
                             }
                         }
 
@@ -143,7 +156,7 @@ Item {
                             Text {
                                 id: camAlertTxt
                                 anchors.centerIn: parent
-                                text: "🚨 위험"
+                                text: "위험 감지"
                                 color: Theme.colorDanger
                                 font.pixelSize: 11
                                 font.weight: Font.Bold
@@ -159,7 +172,7 @@ Item {
                         Repeater {
                             model: modelData.channels
                             Text {
-                                text: "  ├─ 🟢 " + modelData
+                                text: "  ├─ " + modelData
                                 color: Theme.colorTextMuted
                                 font.pixelSize: Theme.typeLabel.size + 1
                             }

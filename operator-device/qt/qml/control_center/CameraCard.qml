@@ -54,60 +54,10 @@ Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             height: Theme.cameraCardChromeHeight
-            color: Qt.rgba(0.04, 0.06, 0.10, 0.72)
-
-            Row {
-                anchors.left: parent.left
-                anchors.leftMargin: Theme.spacingSm
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Theme.spacingXs
-
-                // 연결 상태 표시 점
-                Rectangle {
-                    width: 6
-                    height: 6
-                    radius: 3
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: Theme.connectionColor(root.videoConnectionState)
-                }
-
-                // 1단계: 구역 뱃지 (Zone)
-                Rectangle {
-                    implicitWidth: zoneText.implicitWidth + 8
-                    height: 18
-                    radius: 3
-                    color: Qt.rgba(1, 1, 1, 0.08)
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    Text {
-                        id: zoneText
-                        anchors.centerIn: parent
-                        text: root.zone.length > 0 ? root.zone : "ZONE"
-                        color: Theme.colorTextSecondary
-                        font.pixelSize: 10
-                        font.weight: Font.DemiBold
-                    }
-                }
-
-                // 구분자
-                Text {
-                    text: "›"
-                    color: Theme.colorTextMuted
-                    font.pixelSize: Theme.typeCaption.size
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                // 2단계 & 3단계: 카메라 & 채널 명칭
-                Text {
-                    text: root.cameraName.length > 0 ? root.cameraName : root.cameraId
-                    color: Theme.colorTextPrimary
-                    font.pixelSize: Theme.typeCaption.size
-                    font.weight: Font.Medium
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
+            color: Qt.rgba(0.04, 0.06, 0.10, 0.85)
 
             RiskBanner {
+                id: riskBanner
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.spacingSm
                 anchors.verticalCenter: parent.verticalCenter
@@ -115,17 +65,86 @@ Rectangle {
                 riskLevel: root.riskLevel
                 exceptionState: root.exceptionState
             }
+
+            Item {
+                id: topInfoArea
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.spacingSm
+                anchors.right: riskBanner.visible ? riskBanner.left : parent.right
+                anchors.rightMargin: Theme.spacingSm
+                anchors.verticalCenter: parent.verticalCenter
+                height: 22
+
+                Row {
+                    id: fixedPrefixRow
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+
+                    // 연결 상태 표시 점
+                    Rectangle {
+                        width: 7
+                        height: 7
+                        radius: 3.5
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: Theme.connectionColor(root.videoConnectionState)
+                    }
+
+                    // 1단계: 구역 뱃지 (Zone)
+                    Rectangle {
+                        implicitWidth: zoneText.implicitWidth + 10
+                        height: 22
+                        radius: 4
+                        color: Qt.rgba(1, 1, 1, 0.12)
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Text {
+                            id: zoneText
+                            anchors.centerIn: parent
+                            text: root.zone.length > 0 ? root.zone : "ZONE"
+                            color: Theme.colorTextSecondary
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    // 구분자
+                    Text {
+                        text: "›"
+                        color: Theme.colorTextMuted
+                        font.pixelSize: 13
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                // 2단계 & 3단계: 카메라 & 채널 명칭 (폭 초과 시 깔끔한 말줄임 ...)
+                Text {
+                    id: cameraNameText
+                    anchors.left: fixedPrefixRow.right
+                    anchors.leftMargin: 6
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.cameraName.length > 0 ? root.cameraName : root.cameraId
+                    color: Theme.colorTextPrimary
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+            }
         }
 
-        // 하단 실시간 거리 오버레이 (위험 발생 시 또는 거리 유효 시)
+        // 하단 실시간 거리 오버레이: 이상/위험(Caution/Danger/Emergency/장애) 발생 시에만 팝업
         Rectangle {
             id: bottomFloatingBar
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             height: Theme.cameraCardFooterHeight
-            color: Qt.rgba(0.04, 0.06, 0.10, 0.65)
-            visible: root.isAlert || root.distanceValid
+            color: Qt.rgba(0.04, 0.06, 0.10, 0.85)
+            visible: root.isAlert
+            opacity: root.isAlert ? 1.0 : 0.0
+
+            Behavior on opacity { NumberAnimation { duration: 180 } }
 
             Row {
                 anchors.right: parent.right
@@ -136,13 +155,13 @@ Rectangle {
                 Text {
                     text: "접근 거리:"
                     color: Theme.colorTextMuted
-                    font.pixelSize: Theme.typeCaption.size - 1
+                    font.pixelSize: 12
                 }
                 Text {
                     text: root.distanceValid ? root.distanceM.toFixed(2) + " m" : "측정 불가"
-                    color: root.isAlert ? Theme.riskColor(root.riskLevel) : Theme.colorTextPrimary
-                    font.pixelSize: Theme.typeCaption.size
-                    font.weight: Font.Medium
+                    color: Theme.riskColor(root.riskLevel)
+                    font.pixelSize: 13
+                    font.weight: Font.DemiBold
                 }
             }
         }

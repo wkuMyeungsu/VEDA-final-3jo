@@ -83,3 +83,7 @@ storage/latency.csv
 # ArUco/검출 CSV 로그 (실행마다 타임스탬프로 자동 생성)
 aruco_markers_*.csv
 detections_*.csv
+
+# 관제 센터 임시 산출물
+captures/
+*.log

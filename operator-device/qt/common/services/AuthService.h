@@ -7,6 +7,8 @@
 
 #include "../models/OperatorAccount.h"
 
+class QQuickWindow;
+
 // Gates console access behind operator ID + PIN. Authenticates entirely
 // against the local config/operators.json -- there is no backend, so this
 // exists to keep an audit trail of who is at the console and to keep the
@@ -31,6 +33,9 @@ public:
 
     Q_INVOKABLE bool login(const QString &operatorId, const QString &pin);
     Q_INVOKABLE void logout();
+    Q_INVOKABLE QString takeSnapshot(QQuickWindow *window);
+    Q_INVOKABLE void openCapturesFolder();
+    Q_INVOKABLE QString defaultCapturesPath();
 
     bool loggedIn() const { return m_currentIndex >= 0; }
     QString currentOperatorName() const;

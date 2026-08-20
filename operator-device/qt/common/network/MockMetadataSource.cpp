@@ -14,7 +14,9 @@ MockMetadataSource::MockMetadataSource(QVector<CameraInfo> cameras, QObject *par
     for (const CameraInfo &info : cameras) {
         CameraState state;
         state.zone = info.zone;
-        m_states.insert(info.cameraId, state);
+        m_states.insert(info.effectiveId(), state);
+        if (info.effectiveId() != info.cameraId)
+            m_states.insert(info.cameraId, state);
     }
 
     m_timer.setInterval(kTickIntervalMs);
@@ -148,21 +150,17 @@ RiskMetadata MockMetadataSource::generateForCamera(const QString &cameraId, Came
         distance = state.overrideDistanceM;
         exception = state.overrideException;
     } else {
-        // 위험도: SAFE 70% / CAUTION 15% / DANGER 10% / EMERGENCY 5% 가중치
-        // 위험도 높을수록 거리 범위도 가깝게 좁힘
+        // 기본 상태는 차분하고 안정적인 SAFE 유지 (95%)
         const int roll = rng->bounded(100);
-        if (roll < 70) {
+        if (roll < 95) {
             level = RiskTypes::RiskLevel::Safe;
-            distance = 3.0 + rng->generateDouble() * 5.0;
-        } else if (roll < 85) {
+            distance = 6.0;
+        } else if (roll < 98) {
             level = RiskTypes::RiskLevel::Caution;
-            distance = 1.5 + rng->generateDouble() * 1.5;
-        } else if (roll < 95) {
-            level = RiskTypes::RiskLevel::Danger;
-            distance = 0.5 + rng->generateDouble() * 1.0;
+            distance = 2.5;
         } else {
-            level = RiskTypes::RiskLevel::Emergency;
-            distance = rng->generateDouble() * 0.5;
+            level = RiskTypes::RiskLevel::Danger;
+            distance = 1.2;
         }
 
         // 3% 확률로 예외 상태도 하나 얹음 (5종 중 랜덤)

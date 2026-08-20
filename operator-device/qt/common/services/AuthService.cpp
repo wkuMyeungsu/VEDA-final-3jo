@@ -1,7 +1,12 @@
 #include "AuthService.h"
 
+#include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDesktopServices>
+#include <QDir>
 #include <QLoggingCategory>
+#include <QProcess>
+#include <QUrl>
 
 namespace {
 Q_LOGGING_CATEGORY(lcAuth, "safety.auth")
@@ -111,3 +116,73 @@ void AuthService::tickLock()
     }
     emit lockRemainingSecondsChanged();
 }
+
+#include <QQuickWindow>
+#include <QImage>
+#include <QThreadPool>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
+QString AuthService::takeSnapshot(QQuickWindow *window)
+{
+    if (!window) {
+        qWarning(lcAuth) << "takeSnapshot failed: window is null";
+        return {};
+    }
+
+    const QString capturesDir = defaultCapturesPath();
+    QDir(capturesDir).mkpath(QStringLiteral("."));
+
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss_zzz"));
+    const QString filename = QStringLiteral("snapshot_%1.png").arg(timestamp);
+    const QString fullPath = QDir(capturesDir).filePath(filename);
+
+    const QImage img = window->grabWindow();
+    if (img.isNull()) {
+        qWarning(lcAuth) << "takeSnapshot failed: grabWindow returned null image";
+        return {};
+    }
+
+    // 비동기 스레드 풀에서 디스크 쓰기 수행 (메인 GUI 스레드 멈칫 0.0초)
+    QThreadPool::globalInstance()->start([img, fullPath]() {
+        const bool ok = img.save(fullPath, "PNG");
+        if (ok) {
+            qInfo(lcAuth) << "Snapshot successfully saved to:" << fullPath;
+        } else {
+            qWarning(lcAuth) << "Failed to save snapshot to:" << fullPath;
+        }
+    });
+
+    return filename;
+}
+
+void AuthService::openCapturesFolder()
+{
+    const QString path = defaultCapturesPath();
+    QDir(path).mkpath(QStringLiteral("."));
+
+#ifdef Q_OS_WIN
+    // 윈도우 표준 explore 동사로 100% 확실하게 탐색기 폴더 창 팝업
+    HINSTANCE res = ShellExecuteW(nullptr, L"explore", path.toStdWString().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(res) <= 32) {
+        ShellExecuteW(nullptr, L"open", path.toStdWString().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+#endif
+}
+
+QString AuthService::defaultCapturesPath()
+{
+    const QString path = QStringLiteral("C:/VEDA_Final_project/captures");
+    QDir dir(path);
+    if (!dir.exists()) {
+        dir.mkpath(QStringLiteral("."));
+    }
+    return QDir::toNativeSeparators(dir.absolutePath());
+}
+
+
