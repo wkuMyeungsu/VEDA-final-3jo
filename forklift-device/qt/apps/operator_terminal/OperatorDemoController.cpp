@@ -18,12 +18,7 @@ void OperatorDemoController::setActiveCameraId(const QString &cameraId)
 
 void OperatorDemoController::triggerHandover(const QString &fromCameraId, const QString &toCameraId)
 {
-    if (!m_activeCamera)
-        return;
-
-    // A real handover would be server-driven; here we just require the
-    // caller to name the camera it believes is currently active, so the
-    // demo panel can show a clear "from -> to" affordance.
-    if (m_activeCamera->activeCameraId() == fromCameraId)
+    Q_UNUSED(fromCameraId);
+    if (m_activeCamera && !toCameraId.isEmpty())
         m_activeCamera->setActiveCameraId(toCameraId);
 }

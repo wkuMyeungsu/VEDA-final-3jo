@@ -214,7 +214,8 @@ void ActiveCameraController::handleWarningDeviceStateChanged()
 void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)
 {
     const bool matches = (!metadata.streamId().isEmpty() && metadata.streamId() == m_activeCameraId)
-                         || (metadata.cameraId() == m_activeCameraId);
+                         || (metadata.cameraId() == m_activeCameraId)
+                         || (m_cameras.contains(m_activeCameraId) && metadata.cameraId() == m_cameras[m_activeCameraId].cameraId && metadata.streamId().isEmpty());
     if (!matches)
         return;
 

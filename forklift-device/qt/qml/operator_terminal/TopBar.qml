@@ -11,6 +11,15 @@ Rectangle {
     border.width: 1
     border.color: Theme.colorBorder
 
+    readonly property int activeChannelIndex: {
+        var id = activeCamera.activeCameraId
+        if (id.indexOf("CH_01") !== -1 || id.indexOf("CH_1") !== -1 || id === "CAM_01") return 1
+        if (id.indexOf("CH_02") !== -1 || id.indexOf("CH_2") !== -1 || id === "CAM_02") return 2
+        if (id.indexOf("CH_03") !== -1 || id.indexOf("CH_3") !== -1 || id === "CAM_03") return 3
+        if (id.indexOf("CH_04") !== -1 || id.indexOf("CH_4") !== -1 || id === "CAM_04") return 4
+        return 1
+    }
+
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: Theme.spacingLg
@@ -61,7 +70,7 @@ Rectangle {
                 Text {
                     id: chText
                     anchors.centerIn: parent
-                    text: "CH 01"
+                    text: "CH 0" + root.activeChannelIndex
                     color: Theme.colorTextSecondary
                     font.pixelSize: 11
                     font.bold: true
@@ -71,10 +80,15 @@ Rectangle {
             // 4채널 미니 도트 (● ○ ○ ○)
             Row {
                 spacing: 4
-                Rectangle { width: 6; height: 6; radius: 3; color: Theme.colorAccent }
-                Rectangle { width: 6; height: 6; radius: 3; color: Qt.rgba(1, 1, 1, 0.25) }
-                Rectangle { width: 6; height: 6; radius: 3; color: Qt.rgba(1, 1, 1, 0.25) }
-                Rectangle { width: 6; height: 6; radius: 3; color: Qt.rgba(1, 1, 1, 0.25) }
+                Repeater {
+                    model: 4
+                    Rectangle {
+                        width: 6
+                        height: 6
+                        radius: 3
+                        color: (index + 1 === root.activeChannelIndex) ? Theme.colorAccent : Qt.rgba(1, 1, 1, 0.25)
+                    }
+                }
             }
         }
 

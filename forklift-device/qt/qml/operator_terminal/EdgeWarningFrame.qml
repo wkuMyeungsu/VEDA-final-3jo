@@ -1,8 +1,9 @@
 import QtQuick
 import Safety.Common
 
-// High-tech Slim HUD Warning Frame: 2px neon hairline border + 4 L-shaped corner brackets.
-// Does NOT block central camera video, but pulses vibrantly in peripheral vision on Danger/Emergency.
+// Soft Ambient Edge Light Glow:
+// Radiates a smooth, cinematic warning glow inward from all 4 edges of the screen.
+// Zero hard lines, zero brackets — purely soft light that gently breathes on Danger/Emergency.
 Item {
     id: root
     property int riskLevel: 0
@@ -14,75 +15,68 @@ Item {
     visible: opacity > 0
     opacity: isAlert ? pulseFactor : 0.0
 
-    Behavior on opacity { NumberAnimation { duration: 180 } }
+    Behavior on opacity { NumberAnimation { duration: 250 } }
 
-    // 1) 2px 슬림 네온 외곽선
+    readonly property int glowDepth: 52
+    readonly property real maxAlpha: riskLevel >= 2 ? 0.65 : 0.45
+
+    // 상단 앰비언트 글로우 (Top Edge Glow)
     Rectangle {
-        anchors.fill: parent
-        color: "transparent"
-        border.color: root.accent
-        border.width: root.isAlert ? 2 : 0
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.glowDepth
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+            GradientStop { position: 1.0; color: "transparent" }
+        }
     }
 
-    // 2) 4개 모서리 L자 하이테크 HUD 브라켓
-    readonly property int bracketLen: 32
-    readonly property int bracketThick: 3
+    // 하단 앰비언트 글로우 (Bottom Edge Glow)
+    Rectangle {
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.glowDepth
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+        }
+    }
 
-    // 좌상단 (Top-Left)
-    Item {
+    // 좌측 앰비언트 글로우 (Left Edge Glow)
+    Rectangle {
         anchors.left: parent.left
         anchors.top: parent.top
-        anchors.margins: 4
-        width: root.bracketLen
-        height: root.bracketLen
-
-        Rectangle { width: root.bracketLen; height: root.bracketThick; color: root.accent }
-        Rectangle { width: root.bracketThick; height: root.bracketLen; color: root.accent }
+        anchors.bottom: parent.bottom
+        width: root.glowDepth
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+            GradientStop { position: 1.0; color: "transparent" }
+        }
     }
 
-    // 우상단 (Top-Right)
-    Item {
+    // 우측 앰비언트 글로우 (Right Edge Glow)
+    Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 4
-        width: root.bracketLen
-        height: root.bracketLen
-
-        Rectangle { anchors.right: parent.right; width: root.bracketLen; height: root.bracketThick; color: root.accent }
-        Rectangle { anchors.right: parent.right; width: root.bracketThick; height: root.bracketLen; color: root.accent }
-    }
-
-    // 좌하단 (Bottom-Left)
-    Item {
-        anchors.left: parent.left
         anchors.bottom: parent.bottom
-        anchors.margins: 4
-        width: root.bracketLen
-        height: root.bracketLen
-
-        Rectangle { anchors.bottom: parent.bottom; width: root.bracketLen; height: root.bracketThick; color: root.accent }
-        Rectangle { anchors.bottom: parent.bottom; width: root.bracketThick; height: root.bracketLen; color: root.accent }
+        width: root.glowDepth
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+        }
     }
 
-    // 우하단 (Bottom-Right)
-    Item {
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 4
-        width: root.bracketLen
-        height: root.bracketLen
-
-        Rectangle { anchors.right: parent.right; anchors.bottom: parent.bottom; width: root.bracketLen; height: root.bracketThick; color: root.accent }
-        Rectangle { anchors.right: parent.right; anchors.bottom: parent.bottom; width: root.bracketThick; height: root.bracketLen; color: root.accent }
-    }
-
-    // 3) Danger / Emergency 펄스 애니메이션
+    // Danger / Emergency 부드러운 숨쉬기(Breathing Light) 펄스 애니메이션
     SequentialAnimation {
         running: root.riskLevel >= 2
         loops: Animation.Infinite
         onStopped: root.pulseFactor = 1.0
 
-        NumberAnimation { target: root; property: "pulseFactor"; to: 0.35; duration: 350; easing.type: Easing.InOutQuad }
-        NumberAnimation { target: root; property: "pulseFactor"; to: 1.0; duration: 350; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "pulseFactor"; to: 0.35; duration: 400; easing.type: Easing.InOutSine }
+        NumberAnimation { target: root; property: "pulseFactor"; to: 1.0; duration: 400; easing.type: Easing.InOutSine }
     }
 }

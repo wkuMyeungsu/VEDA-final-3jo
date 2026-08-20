@@ -155,12 +155,12 @@ Rectangle {
                 id: cameraCombo
                 width: parent.width
                 model: cameraListModel
-                textRole: "cameraId"
-                valueRole: "cameraId"
+                textRole: "name"
+                valueRole: "streamId"
             }
 
             StyledButton {
-                text: "이 카메라로 전환 (handover)"
+                text: "선택한 채널로 전환"
                 onClicked: demoController.triggerHandover(activeCamera.activeCameraId, cameraCombo.currentValue)
             }
 
@@ -189,7 +189,7 @@ Rectangle {
             }
 
             StyledButton {
-                text: "위험 상태 해제"
+                text: "위험 상태 해제 (정상 복귀)"
                 onClicked: demoController.clearCameraRisk(activeCamera.activeCameraId)
             }
 
@@ -200,10 +200,16 @@ Rectangle {
                 spacing: Theme.spacingXs
 
                 Repeater {
-                    model: ["SENSOR_FAULT", "DEAD_RECKONING", "EMERGENCY_IMPACT", "NETWORK_DISCONNECTED", "CAMERA_DISCONNECTED"]
+                    model: [
+                        { id: "DEAD_RECKONING", name: "자율 항법 (추측항법)" },
+                        { id: "SENSOR_FAULT", name: "센서 점검" },
+                        { id: "EMERGENCY_IMPACT", name: "비상 충돌" },
+                        { id: "NETWORK_DISCONNECTED", name: "통신 끊김" },
+                        { id: "CAMERA_DISCONNECTED", name: "카메라 끊김" }
+                    ]
                     delegate: StyledButton {
-                        text: modelData
-                        onClicked: demoController.setCameraRisk(activeCamera.activeCameraId, 2, 1.0, modelData)
+                        text: modelData.name
+                        onClicked: demoController.setCameraRisk(activeCamera.activeCameraId, 0, 0.0, modelData.id)
                     }
                 }
             }
