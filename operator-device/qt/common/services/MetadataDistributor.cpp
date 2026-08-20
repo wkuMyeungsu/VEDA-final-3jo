@@ -97,12 +97,24 @@ void MetadataDistributor::handleMetadata(const RiskMetadata &metadata)
                              metadata.riskLevel(), metadata.distanceM(), metadata.distanceValid(),
                              metadata.exceptionState());
 
-    // 4) 이벤트 로그는 "특이사항"일 때만 기록 -> EventLogPanel.qml
-    //    SAFE + 예외없음(평상시)은 로그 안 남김 -> 로그가 Event로만 채워짐
+    // 4) 이벤트 로그는 "특이사항 발생 또는 상태 전이"일 때만 기록 (스팸 방지)
+    //    동일한 예외/위험 상태가 계속 유지될 때는 중복 로깅하지 않고 상태 전이 시에만 1회 기록
     const bool noteworthy =
         metadata.riskLevel() != RiskTypes::RiskLevel::Safe || metadata.exceptionState() != RiskTypes::ExceptionState::None;
-    if (noteworthy)
-        m_eventLogModel.addEntry(metadata);
+
+    const bool riskChanged = (m_lastLoggedRisk.value(targetId, RiskTypes::RiskLevel::Safe) != metadata.riskLevel());
+    const bool exceptionChanged = (m_lastLoggedException.value(targetId, RiskTypes::ExceptionState::None) != metadata.exceptionState());
+
+    if (noteworthy) {
+        if (riskChanged || exceptionChanged) {
+            m_lastLoggedRisk.insert(targetId, metadata.riskLevel());
+            m_lastLoggedException.insert(targetId, metadata.exceptionState());
+            m_eventLogModel.addEntry(metadata);
+        }
+    } else {
+        m_lastLoggedRisk.insert(targetId, RiskTypes::RiskLevel::Safe);
+        m_lastLoggedException.insert(targetId, RiskTypes::ExceptionState::None);
+    }
 
     // 5) 실시간 구독 중인 QML(ExpandedCameraView.qml 등)에 원본 그대로 전달
     emit metadataUpdated(metadata);

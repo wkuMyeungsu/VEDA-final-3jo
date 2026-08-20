@@ -178,7 +178,7 @@ Item {
                     id: cameraCombo
                     width: parent.width
                     model: cameraListModel
-                    textRole: "cameraId"
+                    textRole: "name"
                     valueRole: "cameraId"
                 }
 

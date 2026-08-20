@@ -70,4 +70,6 @@ private:
     IMetadataSource *m_source = nullptr;    // 현재 연결된 데이터 출처 (Mock 또는 실서버 연동체)
     IMetadataSource *m_demoSource = nullptr; // 데모 패널 보조 입력 (mqtt 모드에서만 씀, 없으면 nullptr)
     RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected;
+    QHash<QString, RiskTypes::RiskLevel> m_lastLoggedRisk;
+    QHash<QString, RiskTypes::ExceptionState> m_lastLoggedException;
 };

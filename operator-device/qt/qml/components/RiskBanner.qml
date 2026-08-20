@@ -1,9 +1,6 @@
 import QtQuick
 import Safety.Common
 
-// Risk-level banner: icon + label (+ optional exception state), colored by
-// severity. Used both compact (camera card header) and large (operator
-// terminal HUD) via the `large` flag.
 Rectangle {
     id: root
     property int riskLevel: 0
@@ -17,40 +14,51 @@ Rectangle {
     color: dataStale ? Theme.colorUnknownBg : Theme.riskBgColor(riskLevel)
     border.color: accent
     border.width: Theme.borderWidthHairline
-    radius: large ? Theme.radiusMd : Theme.radiusPill
-    implicitHeight: contentColumn.implicitHeight + (large ? Theme.spacingSm : Theme.spacingXs) * 2
-    implicitWidth: contentColumn.implicitWidth + (large ? Theme.spacingLg : Theme.spacingMd) * 2
+    radius: large ? Theme.radiusMd : Theme.radiusXs
+    height: large ? (contentColumn.implicitHeight + Theme.spacingSm * 2) : 22
+    implicitHeight: height
+    implicitWidth: large ? (contentColumn.implicitWidth + Theme.spacingLg * 2) : (compactRow.implicitWidth + 12)
 
+    // 대형 뷰(Large HUD)일 때 Column 레이아웃
     Column {
         id: contentColumn
         anchors.centerIn: parent
-        spacing: root.large ? Theme.spacingXs : 2
+        spacing: Theme.spacingXs
+        visible: root.large
 
-        Row {
-            id: contentRow
+        Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: root.large ? Theme.spacingSm : Theme.spacingXs
-
-            Text {
-                text: root.dataStale ? "?" : Theme.riskIcon(root.riskLevel)
-                color: root.accent
-                font.pixelSize: root.large ? Theme.typeTitle.size : Theme.typeCaption.size
-                font.weight: Font.DemiBold
-            }
-            Text {
-                text: root.dataStale ? "UNKNOWN" : Theme.riskLabel(root.riskLevel)
-                color: root.accent
-                font.weight: Font.DemiBold
-                font.pixelSize: root.large ? Theme.typeTitle.size : Theme.typeCaption.size
-                font.letterSpacing: 0.5
-            }
+            text: root.dataStale ? "UNKNOWN" : Theme.riskLabel(root.riskLevel)
+            color: root.accent
+            font.weight: Font.Bold
+            font.pixelSize: Theme.typeTitle.size
+            font.letterSpacing: 0.5
         }
         Text {
             visible: root.exceptionState !== 0
             anchors.horizontalCenter: parent.horizontalCenter
             text: Theme.exceptionLabel(root.exceptionState)
             color: Theme.colorTextSecondary
-            font.pixelSize: root.large ? Theme.typeBody.size : (Theme.typeCaption.size - 1)
+            font.pixelSize: Theme.typeBody.size
+        }
+    }
+
+    // 소형/카드 뷰(Compact)일 때 단일 행(Single Row) 레이아웃
+    Row {
+        id: compactRow
+        anchors.centerIn: parent
+        spacing: 4
+        visible: !root.large
+
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.dataStale 
+                  ? Theme.exceptionLabel(root.exceptionState) 
+                  : Theme.riskLabel(root.riskLevel)
+            color: root.accent
+            font.weight: Font.DemiBold
+            font.pixelSize: 10
+            font.letterSpacing: 0.2
         }
     }
 }

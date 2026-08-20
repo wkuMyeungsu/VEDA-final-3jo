@@ -13,9 +13,14 @@ target_link_libraries(control_center PRIVATE
     Qt6::QuickControls2
 )
 
+if(WIN32)
+    target_link_libraries(control_center PRIVATE dwmapi)
+endif()
+
 set(CONTROL_CENTER_QML_FILES
     ${CMAKE_SOURCE_DIR}/qml/control_center/ControlCenterWindow.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/AppBar.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/NavSidebar.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/CameraGrid.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/CameraCard.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/HoverOverlay.qml
@@ -30,6 +35,8 @@ set(CONTROL_CENTER_QML_FILES
     ${CMAKE_SOURCE_DIR}/qml/control_center/ZoneListView.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/CameraOverviewView.qml
     ${CMAKE_SOURCE_DIR}/qml/control_center/FocusLayoutView.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/SopModal.qml
+    ${CMAKE_SOURCE_DIR}/qml/control_center/HelpModal.qml
 )
 foreach(qml_file ${CONTROL_CENTER_QML_FILES})
     get_filename_component(qml_alias ${qml_file} NAME)
@@ -53,6 +60,12 @@ add_custom_command(TARGET control_center POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${SAFETY_CONFIG_SOURCE_DIR}
         $<TARGET_FILE_DIR:control_center>/config
+)
+
+add_custom_command(TARGET control_center POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/fonts
+        $<TARGET_FILE_DIR:control_center>/fonts
 )
 
 # - mosquitto 의존 DLL들을 빌드 후 실행 파일 옆에 복사 (없으면 창 없이 조용히 종료)
