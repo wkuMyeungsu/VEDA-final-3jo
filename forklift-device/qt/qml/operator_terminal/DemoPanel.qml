@@ -161,7 +161,32 @@ Rectangle {
 
             StyledButton {
                 text: "선택한 채널로 전환"
-                onClicked: demoController.triggerHandover(activeCamera.activeCameraId, cameraCombo.currentValue)
+                onClicked: {
+                    var target = cameraCombo.currentValue ? cameraCombo.currentValue : cameraCombo.currentText
+                    demoController.triggerHandover(activeCamera.activeCameraId, target)
+                }
+            }
+
+            Text { text: "채널 원클릭 빠른 전환"; color: Theme.colorTextSecondary; font.pixelSize: Theme.typeCaption.size }
+
+            Grid {
+                columns: 2
+                spacing: Theme.spacingXs
+                width: parent.width
+
+                Repeater {
+                    model: [
+                        { id: "CAM_01_CH_01", label: "CH 1 창고 입구" },
+                        { id: "CAM_01_CH_02", label: "CH 2 적재 구역" },
+                        { id: "CAM_01_CH_03", label: "CH 3 출하 게이트" },
+                        { id: "CAM_01_CH_04", label: "CH 4 통로 교차로" }
+                    ]
+                    delegate: StyledButton {
+                        width: (parent.width - Theme.spacingXs) / 2
+                        text: modelData.label
+                        onClicked: demoController.triggerHandover(activeCamera.activeCameraId, modelData.id)
+                    }
+                }
             }
 
             StyledSwitch {

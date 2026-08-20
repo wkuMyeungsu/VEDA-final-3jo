@@ -74,7 +74,7 @@ QVariant CameraListModel::data(const QModelIndex &index, int role) const
 
     const Row &row = m_rows.at(index.row());                                   // - 행 참조: 요청 인덱스의 데이터 획득
     switch (role) {
-    case CameraIdRole: return row.info.cameraId;                               // - ID 반환: 카메라 ID 전달
+    case CameraIdRole: return row.info.effectiveId();                          // - ID 반환: effectiveId(스트림 ID) 전달
     case NameRole: return row.info.name;                                       // - 이름 반환: 카메라 명칭 전달
     case ZoneRole: return row.info.zone;                                       // - 구역 반환: 설치 위치 전달
     case RiskLevelRole: return QVariant::fromValue(row.riskLevel);             // - 위험 단계 반환: 위험 수준 전달
@@ -82,6 +82,8 @@ QVariant CameraListModel::data(const QModelIndex &index, int role) const
     case DistanceRole: return row.distanceM;                                  // - 거리 반환: 측정 거리 전달
     case DistanceValidRole: return row.distanceValid;                         // - 거리 유효성 반환: 유효성 전달
     case VideoConnectionStateRole: return QVariant::fromValue(row.videoConnectionState); // - 영상 상태 반환: 영상 연결 상태 전달
+    case StreamIdRole: return row.info.effectiveId();                          // - 스트림 ID 반환: 채널별 스트림 식별자 전달
+    case ChannelRole: return row.info.channel;                                 // - 채널 번호 반환: 채널 인덱스 전달
     default: return {};                                                        // - 기본값 반환: 정의되지 않은 역할 요청 시 빈 값 반환
     }
 }
@@ -97,5 +99,7 @@ QHash<int, QByteArray> CameraListModel::roleNames() const
         {DistanceRole, "distanceM"},                                          // - 역할 매핑: QML distanceM 속성 연결
         {DistanceValidRole, "distanceValid"},                                 // - 역할 매핑: QML distanceValid 속성 연결
         {VideoConnectionStateRole, "videoConnectionState"},                   // - 역할 매핑: QML videoConnectionState 속성 연결
+        {StreamIdRole, "streamId"},                                           // - 역할 매핑: QML streamId 속성 연결
+        {ChannelRole, "channel"},                                             // - 역할 매핑: QML channel 속성 연결
     };
 }
