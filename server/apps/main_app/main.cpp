@@ -499,7 +499,13 @@ void CentralServer::start() {
 void CentralServer::startWorkers() {
     for (const auto& stream : config_.streams)
         workers_.push_back(std::make_unique<StreamWorker>(*this, stream));
-    for (auto& worker : workers_) worker->start();
+    for (std::size_t index = 0; index < workers_.size(); ++index) {
+        workers_[index]->start();
+        // 일부 멀티채널 RTSP 장비는 여러 SETUP 요청을 동시에 처리하지 못한다.
+        // 첫 채널의 세션 협상이 시작된 뒤 다음 채널을 열어 초기 연결 충돌을 피한다.
+        if (index + 1 < workers_.size())
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+    }
 }
 
 void CentralServer::stop() {
