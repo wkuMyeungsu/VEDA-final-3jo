@@ -343,14 +343,17 @@ struct CentralServer::StreamWorker {
         const int max_retries = server.config().stream.max_retries;
         while (running && !stop_requested) {
             reassembler.reset();
-            // application 트랙만 연결한다. 영상 트랙은 받지 않아 Pi의 메모리와
-            // CPU를 메타데이터 처리에 집중시킨다.
+            // 영상은 디코딩·저장하지 않지만, RTSP 세션의 video pad도 fakesink로
+            // 소비해야 일부 카메라에서 파이프라인이 PLAYING까지 올라간다.
+            // 실제 처리는 application 트랙의 메타데이터만 수행한다.
             const std::string description =
                 "rtspsrc location=\"" + stream.rtsp_url + "\" protocols=tcp do-rtsp-keep-alive=true tcp-timeout=30000000 latency=" +
                 std::to_string(server.config().stream.rtsp_latency_ms) +
-                " name=source source. ! application/x-rtp,media=application ! queue ! "
+                " name=source "
+                "source. ! application/x-rtp,media=application ! queue ! "
                 "appsink name=metadata emit-signals=true sync=false max-buffers=" +
-                std::to_string(server.config().stream.appsink_max_buffers) + " drop=true";
+                std::to_string(server.config().stream.appsink_max_buffers) + " drop=true "
+                "source. ! application/x-rtp,media=video ! queue ! fakesink sync=false async=false";
             GError* error = nullptr;
             GstElement* graph = gst_parse_launch(description.c_str(), &error);
             if (!graph) {
