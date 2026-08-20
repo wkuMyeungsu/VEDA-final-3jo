@@ -7,9 +7,10 @@ Requires=mosquitto.service
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/forklift_safety_server --config-dir /etc/forklift_safety/safety --common-config-dir /etc/forklift_safety
+WorkingDirectory=/home/veda3/forklift-safety-server/server
 Restart=always
 RestartSec=2
-User=pms
+User=veda3
 LimitNOFILE=65536
 Environment=GIO_USE_PROXY_RESOLVER=dummy
 

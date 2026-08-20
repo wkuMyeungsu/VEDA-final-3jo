@@ -83,3 +83,17 @@ homography/CAM_02/homography_result_cam02_ch01_mm.json
 
 assignment는 `type`, `terminal_id`, `stream_id`, `camera_id`, `channel`, `utc_time`을
 포함한다. TCP 9001 카메라 할당 서버는 사용하지 않는다.
+
+운영 MQTT는 mTLS listener `8883`을 사용한다. `system_config.json`의
+`tls_enabled`를 켜고 CA·중앙 서버용 client 인증서·개인키 경로를 설정해야 한다.
+개인키는 Git에 넣지 말고 `/etc/forklift_safety/certs/`에 설치한다.
+
+```text
+sudo ./server/scripts/install-server.sh
+```
+
+설치 스크립트는 `main_app`, 호모그래피 엔진, 호모그래피 앱, 모니터링 앱을 빌드·설치하고
+현재 저장소 경로를 사용하는 systemd 유닛을 등록한다. 운영 기본값에서는 모니터링 앱만
+자동 실행하며, 호모그래피 앱은 설치만 하고 중지·비활성화한다. 필요할 때
+`sudo systemctl start homography-app.service`로 수동 실행한다. Mosquitto의 평문 `1883` listener는
+지게차 단말과 관제 PC의 `8883` 전환을 확인한 뒤 별도로 닫는다.
