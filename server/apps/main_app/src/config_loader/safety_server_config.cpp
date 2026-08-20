@@ -218,31 +218,49 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             s.camera_id = camera_id;
             s.camera_model = camera_model;
             s.camera_channel_count = expected_channels;
+            const auto channelLabel = [&](int channel) {
+                return camera_id + " " + std::to_string(channel) + "번 채널";
+            };
             try {
                 s.channel = item.at("channel").get<int>();
                 s.rtsp_url = item.at("rtsp_url").get<std::string>();
                 s.homography_file = item.at("homography_file").get<std::string>();
                 s.image_width_px = item.at("image_width_px").get<int>();
                 s.image_height_px = item.at("image_height_px").get<int>();
-            } catch (const std::exception&) {
-                LOG_WARN("CONFIG", camera_id + " 채널 설정을 읽을 수 없어 해당 채널을 제외합니다.");
+            } catch (const std::exception& error) {
+                std::string itemLabel = camera_id + " 채널 항목";
+                if (item.contains("channel") && item.at("channel").is_number_integer()) {
+                    itemLabel = channelLabel(item.at("channel").get<int>());
+                }
+                LOG_WARN("CONFIG", itemLabel + " 제외 (사유: JSON 파싱 실패 - " + error.what() + ")");
                 continue;
             }
-            if (s.channel < 1 || s.channel > expected_channels ||
-                s.rtsp_url.rfind("rtsp://", 0) != 0 || s.homography_file.empty() ||
-                s.image_width_px < 1 || s.image_height_px < 1 || channels[{camera_id, s.channel}]) {
-                LOG_WARN("CONFIG", camera_id + " 채널 " + std::to_string(s.channel) + " 설정이 잘못되어 해당 채널을 제외합니다.");
+
+            std::string invalidReason;
+            if (s.channel < 1 || s.channel > expected_channels) {
+                invalidReason = std::to_string(expected_channels) + "채널 모델 지원 범위 초과";
+            } else if (s.rtsp_url.rfind("rtsp://", 0) != 0) {
+                invalidReason = "RTSP 주소 형식 오류";
+            } else if (s.homography_file.empty()) {
+                invalidReason = "좌표변환 파일 경로가 비어 있음";
+            } else if (s.image_width_px < 1 || s.image_height_px < 1) {
+                invalidReason = "영상 해상도 설정 오류";
+            } else if (channels[{camera_id, s.channel}]) {
+                invalidReason = "동일 카메라 내 채널 번호 중복";
+            }
+            if (!invalidReason.empty()) {
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: " + invalidReason + ")");
                 continue;
             }
             channels[{camera_id,s.channel}] = true;
             s.stream_id = camera_id + "_CH_" + (s.channel < 10 ? "0" : "") + std::to_string(s.channel);
             if (stream_ids[s.stream_id]) {
-                LOG_WARN("CONFIG", "stream_id 중복으로 " + s.stream_id + " 스트림을 제외합니다.");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 스트림 ID 중복 - " + s.stream_id + ")");
                 continue;
             }
             stream_ids[s.stream_id] = true;
             if (!std::filesystem::exists(common_dir / s.homography_file)) {
-                LOG_WARN("CONFIG", s.stream_id + " 호모그래피 파일이 없어 해당 채널을 제외합니다 (" + s.homography_file + ")");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 없음 - " + s.homography_file + ")");
                 continue;
             }
             const auto h_path = (common_dir / s.homography_file).lexically_normal();
@@ -268,10 +286,10 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                         schema(h_path.string(), "H_pixel_to_world에 유효하지 않은 수가 있음");
                 }
             } catch (const SafetyServerConfigError& error) {
-                LOG_WARN("CONFIG", s.stream_id + " 호모그래피가 유효하지 않아 해당 채널을 제외합니다: " + error.what());
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 규격 오류 - " + error.what() + ")");
                 continue;
             } catch (const std::exception& e) {
-                LOG_WARN("CONFIG", s.stream_id + " 호모그래피를 읽을 수 없어 해당 채널을 제외합니다: " + e.what());
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 읽기 실패 - " + e.what() + ")");
                 continue;
             }
             configured_channels.insert(s.channel);
@@ -280,8 +298,8 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             c.streams.push_back(std::move(s));
         }
         if (configured_channels.size() != static_cast<std::size_t>(expected_channels)) {
-            LOG_WARN("CONFIG", camera_id + " (" + std::to_string(expected_channels) + "채널 모델) 중 활성화된 " +
-                                   std::to_string(configured_channels.size()) + "개 채널로 안전 관제를 시작합니다.");
+            LOG_WARN("CONFIG", camera_id + " (" + std::to_string(expected_channels) + "채널 모델): 활성화된 " +
+                                   std::to_string(configured_channels.size()) + "개 채널로 시작");
         }
     }
     const auto& fl = devices.at("forklifts");

@@ -14,11 +14,10 @@
 // 데이터 구조/공개 인터페이스 선언은 cross_camera_reid.h 참고.
 
 #include "logic/tracking/cross_camera_reid.h"
+#include "logging/logger.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <iostream>
 
 // ============================================================
 // 1. 매칭 점수 계산 헬퍼
@@ -110,10 +109,10 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
         const Detection& d = detections[c.det_idx];
 
         if (c.is_handover) {
-            std::cout << "  [핸드오버] track_id=" << t.track_id
-                      << " : stream " << t.stream_id << " -> " << d.stream_id
-                      << " (world 거리=" << std::fixed << std::setprecision(2)
-                              << euclideanDistance(t.last_world, d.world) << "mm) ID 승계\n";
+            LOG_DEBUG("CCTV", "사람 트랙 핸드오버 (track_id=" + std::to_string(t.track_id) +
+                               ", " + t.stream_id + " -> " + d.stream_id +
+                               ", world 거리=" + std::to_string(euclideanDistance(t.last_world, d.world)) +
+                               "mm)");
         }
 
         t.stream_id   = d.stream_id;
@@ -136,8 +135,9 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             [&](const Track& t) {
                 bool expired = t.missed_frames > max_missed_frames_;
                 if (expired) {
-                    std::cout << "  [트랙 소멸] track_id=" << t.track_id
-                              << " (" << t.missed_frames << "프레임 연속 미검출)\n";
+                    LOG_DEBUG("CCTV", "사람 트랙 만료 (track_id=" + std::to_string(t.track_id) +
+                                       ", " + std::to_string(t.missed_frames) +
+                                       "프레임 연속 미검출)");
                 }
                 return expired;
             }),
@@ -154,8 +154,8 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             nt.last_bbox     = detections[di].bbox;
             nt.last_world    = detections[di].world;
             nt.last_seen_s   = now_s;
-            std::cout << "  [신규 트랙] track_id=" << nt.track_id
-                      << " (stream " << nt.stream_id << ")\n";
+            LOG_DEBUG("CCTV", "사람 트랙 생성 (track_id=" + std::to_string(nt.track_id) +
+                               ", stream: " + nt.stream_id + ")");
             tracks_.push_back(nt);
         }
     }

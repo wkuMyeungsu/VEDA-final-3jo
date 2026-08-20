@@ -95,7 +95,7 @@ int main() {
     const std::string csvPath = "aruco_markers_test.csv";
     std::remove(csvPath.c_str());
     {
-        ArucoCsvLogger logger(csvPath);
+        ArucoCsvLogger logger(csvPath, true);
         logger.logFrame(*parsed);
     }
     std::ifstream csv(csvPath);

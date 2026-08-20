@@ -11,6 +11,7 @@
 //              (엔진 구현이 필요한 링크 단계에서 danger_judgment_engine.cpp를 함께 넣는다)
 
 #include "logic/judgment/judgment_pipeline.h"
+#include "logging/logger.hpp"
 
 #include <iostream>
 #include <string>
@@ -42,8 +43,7 @@ SensorInput StubSensorReader::read() {
     static bool warned = false;
     if (!warned) {
         warned = true;
-        std::cerr << "[stub] StubSensorReader 사용 중 - 실제 IMU/ToF 드라이버로 교체하기 전까지"
-                     " 센서 예외(SENSOR_FAULT/EMERGENCY_IMPACT)와 ToF 근접 경보가 발동하지 않습니다\n";
+        LOG_WARN("SENSOR", "스텁 센서 사용 중 (실제 IMU/ToF 드라이버 연결 전까지 센서 예외와 ToF 근접 경보 비활성)");
     }
 
     SensorInput sen;

@@ -405,20 +405,22 @@ void testBackpressureDropsOldest() {
     // start() 전에 몰아넣는다 -> 워커가 아직 없어 큐가 확실히 넘치므로 결과가 결정적이다
     // (ResultPublisher 테스트가 쓰는 것과 같은 방식).
     std::ostringstream captured;
-    std::streambuf* saved = std::cerr.rdbuf(captured.rdbuf());
+    std::streambuf* saved_out = std::cout.rdbuf(captured.rdbuf());
+    std::streambuf* saved_err = std::cerr.rdbuf(captured.rdbuf());
     for (int i = 0; i < kCount; ++i) {
         // risk_level 자리에 순번을 넣을 수는 없으므로(0~3만 유효) camera_id로 순번을 식별한다.
         logger.log(makeResult(RiskLevel::SAFE, ExceptionState::NONE, 2000.0,
                               "seq_" + std::to_string(i)),
                    risk_transport::ResultDispatcher::kNoPreviousRisk);
     }
-    std::cerr.rdbuf(saved);
+    std::cout.rdbuf(saved_out);
+    std::cerr.rdbuf(saved_err);
 
     check(logger.droppedCount() == static_cast<std::size_t>(kCount) - kCapacity,
           "드랍 카운터 " + std::to_string(kCount - static_cast<int>(kCapacity)) +
           " (실제: " + std::to_string(logger.droppedCount()) + ")");
-    check(captured.str().find("queue full") != std::string::npos,
-          "첫 드랍 시 stderr에 백프레셔 로그가 남음");
+    check(captured.str().find("DB 저장 대기열 초과") != std::string::npos,
+          "첫 드랍 시 표준 로그에 백프레셔 메시지가 남음");
 
     if (!logger.start()) { check(false, "start() 성공"); return; }
     check(logger.flushWithin(std::chrono::seconds(3)), "워커가 3초 안에 큐를 비움");
@@ -434,7 +436,7 @@ void testBackpressureDropsOldest() {
     check(!rows.empty() && rows.back().camera_id == "seq_" + std::to_string(kCount - 1),
           "마지막 행은 seq_" + std::to_string(kCount - 1) + " (최신 이벤트는 보존)");
 
-    std::cout << "  --- 실제 stderr 출력 ---\n";
+    std::cout << "  --- 실제 백프레셔 로그 출력 ---\n";
     std::istringstream lines(captured.str());
     std::string line;
     while (std::getline(lines, line)) std::cout << "  | " << line << "\n";

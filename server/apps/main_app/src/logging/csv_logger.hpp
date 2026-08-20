@@ -12,7 +12,7 @@ class CsvLogger {
 public:
     // filePath: 저장할 CSV 경로. 파일이 이미 있으면 헤더 없이 이어붙이고,
     //           없으면 새로 만들면서 헤더 한 줄을 먼저 씀.
-    explicit CsvLogger(const std::string& filePath);
+    explicit CsvLogger(const std::string& filePath, bool enabled = false);
     ~CsvLogger();
 
     // frame 하나를 받아서 그 안의 객체들을 한 줄씩 파일에 추가

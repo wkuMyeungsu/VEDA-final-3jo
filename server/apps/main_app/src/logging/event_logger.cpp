@@ -14,7 +14,6 @@
 #include <sqlite3.h>
 
 #include <filesystem>
-#include <iostream>
 #include <utility>
 
 namespace risk_log {
@@ -69,7 +68,7 @@ bool EventLogger::start() {
 
     running_.store(true);
     worker_ = std::thread(&EventLogger::run, this);
-    LOG_INFO("STORAGE", "위험 이벤트 DB 연결 완료 (" + db_path_ + ")");
+    LOG_INFO("STORAGE", "위험 이벤트 DB 연결 완료 (경로: " + db_path_ + ")");
     return true;
 }
 
@@ -103,12 +102,13 @@ void EventLogger::log(const JudgmentResult& r, int previous_risk_level) {
             // 카운터는 매 드랍마다 증가시키고(droppedCount()는 항상 정확), stderr만 rate limit한다.
             std::size_t total = ++dropped_overflow_;
             if (total == 1) {
-                std::cerr << "[EventLogger] queue full (max=" << max_queue_size_
-                          << ") - 가장 오래된 이벤트 1건 드랍 (누적 드랍=" << total << ")\n";
+                LOG_WARN("STORAGE", "DB 저장 대기열 초과 (이전 이벤트 1건 건너뜀, 누적: " +
+                                   std::to_string(total) + ")");
                 last_logged_drop_total_ = total;
             } else if (total - last_logged_drop_total_ >= drop_log_interval_) {
-                std::cerr << "[EventLogger] dropped " << (total - last_logged_drop_total_)
-                          << " more (total: " << total << ")\n";
+                LOG_WARN("STORAGE", "DB 저장 대기열 초과 누적 " +
+                                   std::to_string(total - last_logged_drop_total_) +
+                                   "건 (누적: " + std::to_string(total) + ")");
                 last_logged_drop_total_ = total;
             }
         }
@@ -189,7 +189,7 @@ bool EventLogger::ensureTerminalIdColumn() {
     // 기존 events.db 파일(CREATE TABLE IF NOT EXISTS 시점에 이미 존재)에는 컬럼이
     // 자동으로 붙지 않으므로 여기서 한 번 보강한다. 새로 만든 DB는 CREATE TABLE에
     // 이미 terminal_id가 포함돼 있어 이 분기를 타지 않는다.
-    std::cerr << "[EventLogger] 기존 events.db에 terminal_id 컬럼이 없어 ALTER TABLE로 추가합니다\n";
+    LOG_INFO("STORAGE", "기존 이벤트 DB 스키마 보강 (terminal_id 컬럼 추가)");
     if (!exec("ALTER TABLE events ADD COLUMN terminal_id TEXT")) return false;
     return true;
 }
@@ -210,7 +210,7 @@ bool EventLogger::ensureDistanceMmColumn() {
     }
     sqlite3_finalize(statement);
     if (found) return true;
-    std::cerr << "[EventLogger] 기존 events.db에 distance_mm 컬럼을 추가합니다\n";
+    LOG_INFO("STORAGE", "기존 이벤트 DB 스키마 보강 (distance_mm 컬럼 추가)");
     return exec("ALTER TABLE events ADD COLUMN distance_mm REAL");
 }
 
@@ -307,8 +307,8 @@ void EventLogger::writeBatch(const std::vector<Row>& rows) {
         } else {
             std::size_t total = ++write_failures_;
             if (total == 1 || total - last_logged_failure_total_ >= drop_log_interval_) {
-                std::cerr << "[EventLogger] INSERT 실패로 이벤트 유실 (누적 실패=" << total
-                          << ") - " << lastError() << "\n";
+                LOG_ERROR("STORAGE", "이벤트 DB 저장 실패 (누적: " + std::to_string(total) +
+                                    ", 사유: " + lastError() + ")");
                 last_logged_failure_total_ = total;
             }
         }
@@ -318,8 +318,8 @@ void EventLogger::writeBatch(const std::vector<Row>& rows) {
         // 커밋이 깨지면 이 배치는 통째로 롤백된다 -> 성공 카운트에 넣으면 안 된다.
         exec("ROLLBACK");
         write_failures_ += ok_count;
-        std::cerr << "[EventLogger] COMMIT 실패 - 배치 " << ok_count
-                  << "건 롤백 (" << lastError() << ")\n";
+        LOG_ERROR("STORAGE", "이벤트 DB 저장 확정 실패 (" + std::to_string(ok_count) +
+                            "건 롤백, 사유: " + lastError() + ")");
         return;
     }
     written_ += ok_count;
@@ -386,8 +386,9 @@ void EventLogger::flushDropLogSummary() {
     std::lock_guard<std::mutex> lk(mtx_);
     std::size_t total = dropped_overflow_.load();
     if (total > last_logged_drop_total_) {
-        std::cerr << "[EventLogger] dropped " << (total - last_logged_drop_total_)
-                  << " more (total: " << total << ") - 종료 시 잔여 요약\n";
+        LOG_WARN("STORAGE", "DB 저장 건너뜀 요약 (추가: " +
+                           std::to_string(total - last_logged_drop_total_) +
+                           "건, 누적: " + std::to_string(total) + ")");
         last_logged_drop_total_ = total;
     }
 }
@@ -399,7 +400,7 @@ void EventLogger::setError(const std::string& what) {
     }
     // start() 실패는 조용히 넘어가면 "로그가 왜 안 쌓이지"로 이어지므로 항상 한 줄 남긴다.
     // (반복되는 INSERT 실패 로그는 writeBatch() 쪽에서 따로 rate limit한다.)
-    if (!running_.load()) std::cerr << "[EventLogger] " << what << "\n";
+    if (!running_.load()) LOG_ERROR("STORAGE", what);
 }
 
 } // namespace risk_log

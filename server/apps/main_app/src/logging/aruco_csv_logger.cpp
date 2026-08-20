@@ -2,15 +2,16 @@
 #include "logging/aruco_csv_logger.hpp"
 #include "logging/logger.hpp"
 #include <chrono>
-#include <iostream>
 
-ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath) {
+ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath, bool enabled) {
+    if (!enabled) return;
+
     // 파일이 이미 있었는지 미리 확인 -> 있으면 헤더를 또 안 씀 (이어붙이기 모드)
     bool fileExists = std::ifstream(filePath).good();
 
     file_.open(filePath, std::ios::app);
     if (!file_.is_open()) {
-        LOG_WARN("DEBUG", "마커 검출 CSV 파일을 열 수 없음 - " + filePath);
+        LOG_WARN("DEBUG", "마커 검출 CSV 파일 열기 실패 (경로: " + filePath + ")");
         return;
     }
 
@@ -18,7 +19,7 @@ ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath) {
         file_ << "camera_utc,server_received_utc,delta_ms,channel,marker_id,stream_id,camera_id,"
                  "x0,y0,x1,y1,x2,y2,x3,y3\n";
     }
-    LOG_INFO("DEBUG", "마커 검출 원시 로그 시작 - " + filePath);
+    LOG_INFO("DEBUG", "마커 검출 CSV 로깅 시작 (" + filePath + ")");
 }
 
 ArucoCsvLogger::~ArucoCsvLogger() {

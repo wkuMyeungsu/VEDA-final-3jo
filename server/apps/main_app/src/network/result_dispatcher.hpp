@@ -8,7 +8,6 @@
 #include <ctime>
 #include <functional>
 #include <iomanip>
-#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -16,6 +15,7 @@
 
 #include "logic/judgment/danger_judgment_engine.h"
 #include "common/latency_stamps.hpp"
+#include "logging/logger.hpp"
 
 // ResultDispatcher - 판정 결과 송신 정책 (헤더 온리, 소켓 의존성 없음)
 //
@@ -65,6 +65,12 @@ public:
     //                  0(SAFE)이 유효한 위험도라서 "직전 없음"을 0으로 표현할 수 없다.
     using EventSink = std::function<void(const JudgmentResult&, int prev_risk_level)>;
 
+    // 사람이 읽는 ALERT 로그용 상태 변화 훅. DB 이벤트 훅과 분리해, 저장 정책과
+    // 운영 콘솔 메시지 정책이 서로 묶이지 않도록 한다. 최초 실제 판정은 이전 상태가
+    // 없으므로 호출하지 않고, heartbeat 재전송에서도 호출하지 않는다.
+    using AlertSink = std::function<void(const JudgmentResult& previous,
+                                         const JudgmentResult& current)>;
+
     // [추가] 지연 계측 훅(LatencySink).
     // event_sink_와 같은 이유로 여기(상태 변화가 실제로 일어난 지점)에서만 부른다 -
     // 하트비트 재전송까지 남기면 t0/t1이 없는(직전 프레임 값 재사용) 스냅숏이 매 200ms
@@ -98,7 +104,9 @@ public:
     // (다음 하트비트가 최신 값을 싣고 나간다).
     void submit(const JudgmentResult& r) {
         bool changed = false;
+        bool has_previous_state = false;
         int  prev_risk = kNoPreviousRisk;
+        JudgmentResult previous;
         {
             std::lock_guard<std::mutex> lk(mtx_);
             // last_is_idle_(기동 시 프라이밍 값)이면 내용이 같더라도 "변화"로 친다.
@@ -109,7 +117,11 @@ public:
             // last_를 덮어쓰기 전에 직전 위험도를 떠 둔다 (이벤트 로그의 previous_risk_level).
             // has_last_가 false면 직전 상태가 없으므로 sentinel을 그대로 둔다 -> DB에 NULL.
             // idle 프라이밍 값도 같은 취급이다("SAFE에서 내려왔다"가 아니라 "직전 판정 없음").
-            if (changed && has_last_ && !last_is_idle_) prev_risk = static_cast<int>(last_.final_risk);
+            if (changed && has_last_ && !last_is_idle_) {
+                previous = last_;
+                has_previous_state = true;
+                prev_risk = static_cast<int>(last_.final_risk);
+            }
             last_    = r;
             has_last_ = true;
             last_is_idle_ = false;
@@ -129,6 +141,7 @@ public:
         logSend("변화", r);
         sink_(toJson(r));
         if (event_sink_) event_sink_(r, prev_risk);
+        if (alert_sink_ && has_previous_state) alert_sink_(previous, r);
         if (latency_sink_) latency_sink_(stamps);
         cv_.notify_one();   // 하트비트 스레드가 리셋된 시각 기준으로 다시 자도록 깨운다
     }
@@ -137,6 +150,9 @@ public:
     // start()/submit() 전에 한 번만 설정하는 것을 전제로 한다 - 동작 중 교체는 지원하지 않는다
     // (ResultPublisher::onStateChange와 같은 규약).
     void onStateChangeEvent(EventSink cb) { event_sink_ = std::move(cb); }
+
+    // 운영자용 ALERT 로그 훅. 상태 변화가 발생한 판정 루프에서만 호출한다.
+    void onAlert(AlertSink cb) { alert_sink_ = std::move(cb); }
 
     // 지연 계측 훅을 등록한다 (예: LatencyLogger::log). 위 onStateChangeEvent()와 같은 규약 -
     // start()/submit() 전에 한 번만 설정한다.
@@ -251,19 +267,19 @@ private:
     // 런타임 토글은 요구사항이 아니고, 로그 일련번호에 구멍이 생기지도 않는다).
     inline static const bool send_log_enabled_ = readSendLogEnv();
 
-    // 송신 1건을 stderr에 한 줄로 남긴다.
+    // 송신 1건을 DEBUG 로그로 한 줄 남긴다.
     // 이 채널은 "변화 즉시 + 무변화 시 주기 재전송"이라 두 경로가 섞여 나가는데,
     // 나간 줄만 봐서는 어느 쪽인지 구분되지 않아 하트비트 주기 실측이 불가능했다.
     // reason으로 경로를 구분하고, mono_ms(단조 시계)를 같이 찍어 재전송 간격을
     // 벽시계 보정(NTP 등)과 무관하게 계산할 수 있게 한다.
     //
-    // 기본은 꺼짐이다(kSendLogEnvVar 참고). 정상 운영 중에는 stderr I/O가 송신 경로에
+    // 기본은 꺼짐이다(kSendLogEnvVar 참고). 정상 운영 중에는 로그 I/O가 송신 경로에
     // 아예 끼어들지 않아야 하므로, 출력만 막는 게 아니라 함수 전체를 건너뛴다.
     // send_seq_까지 같이 멈추지만 이 값은 로그 줄 번호 전용이라(다른 곳에서 읽지 않는다)
     // 문제가 없다 - 실제 송신 건수는 change_sends_/heartbeat_sends_가 호출부에서
     // 따로 세고 있고, 그쪽은 이 플래그와 무관하게 항상 증가한다.
     //
-    // 호출 규약: mtx_를 잡지 않은 구간에서 부를 것. 송신 경로에 stderr I/O가
+    // 호출 규약: mtx_를 잡지 않은 구간에서 부를 것. 송신 경로에 로그 I/O가
     // 얹히므로, 락을 든 채로 부르면 판정 루프의 submit()까지 같이 밀린다.
     void logSend(const char* reason, const JudgmentResult& r) {
         if (!send_log_enabled_) return;
@@ -295,9 +311,8 @@ private:
              << " exception_state=" << toString(r.exception)
              << " t=" << std::put_time(&tm_buf, "%H:%M:%S")
              << '.' << std::setfill('0') << std::setw(3) << wall_ms
-             << " mono_ms=" << mono_ms
-             << "\n";
-        std::cerr << line.str();
+             << " mono_ms=" << mono_ms;
+        LOG_DEBUG("RISK", line.str());
     }
 
     void run() {
@@ -330,6 +345,7 @@ private:
 
     Sink sink_;
     EventSink event_sink_;     // 상태 변화 시에만 호출. 미등록이면 로깅 없이 동작한다.
+    AlertSink alert_sink_;     // 상태 변화 시에만 호출. 미등록이면 운영 로그 없이 동작한다.
     LatencySink latency_sink_; // 상태 변화 시에만 호출. 미등록이면 지연 계측 없이 동작한다.
     std::chrono::milliseconds period_;
 

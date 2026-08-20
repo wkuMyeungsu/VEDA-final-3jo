@@ -1,6 +1,6 @@
 // rtp_metadata_receiver.cpp
 #include "input/rtp_metadata_receiver.hpp"
-#include <iostream>
+#include "logging/logger.hpp"
 
 bool parseRtpHeader(const uint8_t* buffer, size_t size, RtpHeaderInfo& outInfo) {
     // 최소 12바이트(고정 헤더 크기)는 있어야 파싱 가능
@@ -47,8 +47,18 @@ std::optional<std::string> OnvifMetadataReassembler::feed(
         if (sequenceNumber != expected) {
             // 패킷이 하나 이상 빠졌다는 뜻 -> 지금까지 모은 조각은 이미 깨진 상태이므로
             // 그대로 이어붙이면 잘못된 XML을 파서에 넘기게 됨. 버리고 이 패킷부터 새로 시작.
-            std::cerr << "[경고] RTP 시퀀스 갭 감지 (expected=" << expected
-                      << ", got=" << sequenceNumber << "). 지금까지 모은 프레임 폐기 후 재시작.\n";
+            const std::size_t total = ++sequence_gap_count_;
+            if (total == 1) {
+                LOG_WARN("CCTV", "RTP 패킷 순서 누락 (expected=" + std::to_string(expected) +
+                                  ", got=" + std::to_string(sequenceNumber) +
+                                  " -> 현재 프레임 폐기 후 재시작)");
+                last_logged_sequence_gap_ = total;
+            } else if (total - last_logged_sequence_gap_ >= kSequenceGapLogInterval) {
+                LOG_WARN("CCTV", "RTP 패킷 순서 누락 누적 " +
+                                  std::to_string(total - last_logged_sequence_gap_) +
+                                  "건 (누적: " + std::to_string(total) + ")");
+                last_logged_sequence_gap_ = total;
+            }
             buffer_.clear();
         }
     }
@@ -73,4 +83,6 @@ void OnvifMetadataReassembler::reset() {
     buffer_.clear();
     lastSeq_ = 0;
     hasLastSeq_ = false;
+    sequence_gap_count_ = 0;
+    last_logged_sequence_gap_ = 0;
 }

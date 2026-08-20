@@ -2,15 +2,16 @@
 #include "logging/csv_logger.hpp"
 #include "logging/logger.hpp"
 #include <chrono>
-#include <iostream>
 
-CsvLogger::CsvLogger(const std::string& filePath) {
+CsvLogger::CsvLogger(const std::string& filePath, bool enabled) {
+    if (!enabled) return;
+
     // 파일이 이미 있었는지 미리 확인 -> 있으면 헤더를 또 안 씀 (이어붙이기 모드)
     bool fileExists = std::ifstream(filePath).good();
 
     file_.open(filePath, std::ios::app);
     if (!file_.is_open()) {
-        LOG_WARN("DEBUG", "객체 검출 CSV 파일을 열 수 없음 - " + filePath);
+        LOG_WARN("DEBUG", "객체 검출 CSV 파일 열기 실패 (경로: " + filePath + ")");
         return;
     }
 
@@ -19,7 +20,7 @@ CsvLogger::CsvLogger(const std::string& filePath) {
                  "bbox_left,bbox_top,bbox_right,bbox_bottom,"
                  "ground_x,ground_y,stream_id,camera_id,channel\n";
     }
-    LOG_INFO("DEBUG", "객체 검출 원시 로그 시작 - " + filePath);
+    LOG_INFO("DEBUG", "객체 검출 CSV 로깅 시작 (" + filePath + ")");
 }
 
 CsvLogger::~CsvLogger() {

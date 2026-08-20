@@ -49,6 +49,69 @@ std::vector<std::string> configuredTerminalIds(
     return ids;
 }
 
+std::string alertTarget(const JudgmentResult& result) {
+    return result.terminal_id.empty() ? std::string("지게차")
+                                     : "[" + result.terminal_id + "]";
+}
+
+std::string alertContext(const JudgmentResult& result) {
+    std::string context;
+    if (result.distance_mm >= 0.0) {
+        context = "거리: " + std::to_string(static_cast<int>(result.distance_mm)) + "mm";
+    }
+    const std::string stream = result.stream_id.empty()
+                                   ? (result.source_camera_id.empty() ? result.camera_id
+                                                                      : result.source_camera_id)
+                                   : result.stream_id;
+    if (!stream.empty()) {
+        if (!context.empty()) context += ", ";
+        context += stream;
+    }
+    return context.empty() ? std::string() : " (" + context + ")";
+}
+
+void logAlertTransition(const JudgmentResult& previous, const JudgmentResult& current,
+                        int sensor_stale_timeout_ms) {
+    const std::string target = alertTarget(current);
+    if (previous.final_risk != current.final_risk) {
+        const int old_level = static_cast<int>(previous.final_risk);
+        const int new_level = static_cast<int>(current.final_risk);
+        const std::string transition = toString(previous.final_risk) + " -> " +
+                                       toString(current.final_risk);
+        const std::string context = alertContext(current);
+        if (new_level > old_level && current.final_risk == RiskLevel::EMERGENCY) {
+            LOG_ERROR("ALERT", target + " 비상 정지 발령: " + transition + context);
+        } else if (new_level > old_level) {
+            LOG_WARN("ALERT", target + " 위험도 상승: " + transition + context);
+        } else if (current.final_risk == RiskLevel::SAFE) {
+            LOG_INFO("ALERT", target + " 위험 해제: " + transition + context);
+        } else {
+            LOG_INFO("ALERT", target + " 위험도 하락: " + transition + context);
+        }
+    }
+
+    if (previous.exception == current.exception) return;
+    switch (current.exception) {
+        case ExceptionState::SENSOR_FAULT:
+            LOG_WARN("ALERT", target + " 센서 신호 끊김 (" +
+                               std::to_string(sensor_stale_timeout_ms) +
+                               "ms 초과 -> 최소 주의 유지)");
+            break;
+        case ExceptionState::DEAD_RECKONING:
+            LOG_WARN("ALERT", target + " 지게차 위치 추적 불가 (마커 미검출 -> 추정 위치 사용)");
+            break;
+        case ExceptionState::EMERGENCY_IMPACT:
+            LOG_ERROR("ALERT", target + " 충돌 충격 감지 (비상 대응 유지)");
+            break;
+        case ExceptionState::UNCONFIRMED_PROXIMITY:
+            LOG_WARN("ALERT", target + " 미확인 근접 감지 (센서 감지, CCTV 미확인)");
+            break;
+        case ExceptionState::NONE:
+            LOG_INFO("ALERT", target + " 예외 상태 해제 (정상 판정 복귀)");
+            break;
+    }
+}
+
 // 한 worker가 만든 완성 프레임을 중앙 처리 루프로 넘길 때 사용하는 이벤트다.
 struct MetadataEvent {
     enum class Type { Object, Aruco } type;
@@ -96,8 +159,10 @@ public:
                                 tlsOptions()),
           event_logger_(config_.output_storage.event_db),
           latency_logger_(config_.output_storage.latency_csv),
-          object_logger_(config_.output_storage.object_csv),
-          aruco_logger_(config_.output_storage.aruco_csv) {
+          object_logger_(config_.output_storage.object_csv,
+                         config_.output_storage.enable_raw_csv_logging),
+          aruco_logger_(config_.output_storage.aruco_csv,
+                        config_.output_storage.enable_raw_csv_logging) {
         for (const auto& device : config_.forklifts)
             terminals_.push_back(makeTerminal(device));
     }
@@ -191,7 +256,7 @@ void CentralServer::process(const MetadataEvent& event) {
         assignment_publisher_.publish(terminal->device.terminal_id, *changed,
                                       event.aruco.camera_id, event.aruco.channel,
                                       nowIso8601Ms());
-        LOG_INFO("HANDOVER", "지게차(" + terminal->device.terminal_id + ") 관제 채널 자동 전환 -> [" + *changed + "]");
+        LOG_INFO("HANDOVER", terminal->device.terminal_id + " 관제 채널 자동 전환 -> [" + *changed + "]");
     }
 }
 
@@ -257,8 +322,9 @@ struct CentralServer::StreamWorker {
         auto parsed = parseArucoMetadata(xml);
         if (!parsed) return;
         if (parsed->channel != stream.channel) {
-            std::cerr << "[경고] " << stream.stream_id << " ArUco Channel 불일치: "
-                      << parsed->channel << " != " << stream.channel << "\n";
+            LOG_WARN("CCTV", stream.stream_id + " ArUco 채널 불일치 (메타데이터: " +
+                               std::to_string(parsed->channel) + ", 설정: " +
+                               std::to_string(stream.channel) + " -> 프레임 제외)");
             return;
         }
         auto frame = *parsed;
@@ -288,9 +354,14 @@ struct CentralServer::StreamWorker {
             GError* error = nullptr;
             GstElement* graph = gst_parse_launch(description.c_str(), &error);
             if (!graph) {
-                if (error) { LOG_ERROR("RTSP", stream.stream_id + " 파이프라인 생성 실패: " + error->message); g_error_free(error); }
+                if (error) {
+                    LOG_ERROR("CCTV", stream.stream_id + " 스트림 생성 실패 (사유: " +
+                                         std::string(error->message) + ")");
+                    g_error_free(error);
+                }
                 if (++failures >= max_retries) {
-                    LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수(" + std::to_string(max_retries) + "회) 초과로 해당 채널을 일시 제외합니다.");
+                    LOG_ERROR("CCTV", stream.stream_id + " 제외 (사유: 재연결 " +
+                                         std::to_string(max_retries) + "회 실패)");
                     break;
                 }
                 retry();
@@ -308,10 +379,10 @@ struct CentralServer::StreamWorker {
             bool reached_playing = false;
             auto logConnected = [&]() {
                 if (!has_connected_before) {
-                    LOG_INFO("RTSP", stream.stream_id + " 카메라 최초 연결 성공 (실시간 관제 시작)");
+                    LOG_INFO("CCTV", stream.stream_id + " 카메라 연결 성공 (최초)");
                     has_connected_before = true;
                 } else {
-                    LOG_INFO("RTSP", stream.stream_id + " 카메라 재연결 성공 (정상 복구 완료)");
+                    LOG_INFO("CCTV", stream.stream_id + " 카메라 재연결 성공 (정상 복구)");
                 }
                 reached_playing = true;
                 failures = 0;
@@ -332,8 +403,10 @@ struct CentralServer::StreamWorker {
                     const auto elapsed = std::chrono::steady_clock::now() - connected_at;
                     if (!reached_playing && elapsed > std::chrono::seconds(server.config().stream.connect_timeout_s)) {
                         ++failures;
-                        LOG_WARN("RTSP", stream.stream_id + " 카메라 응답 없음 - 접속 재시도 (" +
-                                             std::to_string(failures) + "/" + std::to_string(max_retries) + ")");
+                        LOG_WARN("CCTV", stream.stream_id + " 카메라 응답 없음 (" +
+                                             std::to_string(server.config().stream.connect_timeout_s) +
+                                             "초 타임아웃 -> 재연결 " + std::to_string(failures) +
+                                             "/" + std::to_string(max_retries) + ")");
                         retry_needed = true;
                         break;
                     }
@@ -343,13 +416,15 @@ struct CentralServer::StreamWorker {
                     GError* detail = nullptr; gchar* debug = nullptr;
                     gst_message_parse_error(message, &detail, &debug);
                     ++failures;
-                    LOG_WARN("RTSP", stream.stream_id + " 카메라 연결 끊김 감지 - 재접속 시도 (" +
-                                         std::to_string(failures) + "/" + std::to_string(max_retries) + ")");
+                    std::string reason = detail ? detail->message : "네트워크 오류";
+                    LOG_WARN("CCTV", stream.stream_id + " 카메라 연결 끊김 (사유: " + reason +
+                                         " -> 재연결 " + std::to_string(failures) + "/" +
+                                         std::to_string(max_retries) + ")");
                     if (detail) g_error_free(detail);
                     if (debug) g_free(debug);
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
-                    LOG_INFO("RTSP", stream.stream_id + " 카메라 세션 자동 갱신 진행");
+                    LOG_INFO("CCTV", stream.stream_id + " 카메라 연결 재설정 (사유: 세션 만료 -> 자동 갱신)");
                     retry_needed = true;
                 } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_STATE_CHANGED &&
                            GST_MESSAGE_SRC(message) == GST_OBJECT(graph)) {
@@ -370,7 +445,8 @@ struct CentralServer::StreamWorker {
             pipeline = nullptr;
             if (!retry_needed || stop_requested) break;
             if (failures >= max_retries) {
-                LOG_ERROR("RTSP", stream.stream_id + " 최대 재접속 시도 횟수(" + std::to_string(max_retries) + "회) 초과로 해당 채널을 일시 제외합니다.");
+                LOG_ERROR("CCTV", stream.stream_id + " 제외 (사유: 재연결 " +
+                                     std::to_string(max_retries) + "회 실패)");
                 break;
             }
             retry();
@@ -399,6 +475,10 @@ void CentralServer::start() {
         terminal->dispatcher.onStateChangeEvent(
             [this](const JudgmentResult& result, int previous) {
                 event_logger_.log(result, previous);
+            });
+        terminal->dispatcher.onAlert(
+            [this](const JudgmentResult& previous, const JudgmentResult& current) {
+                logAlertTransition(previous, current, config_.sensor.stale_timeout_ms);
             });
         if (config_.output_storage.enable_raw_csv_logging) {
             terminal->dispatcher.onLatencyEvent(
@@ -472,18 +552,24 @@ int main(int argc, char* argv[]) {
     try {
         config = forklift::config::loadMultiCameraServerConfig(config_dir, common_config_dir);
     } catch (const forklift::config::SafetyServerConfigError& error) {
-        LOG_ERROR("CONFIG", std::string("기동 실패: ") + error.what());
+        LOG_ERROR("CONFIG", std::string("서버 기동 실패 (사유: ") + error.what() + ")");
         return 2;
     }
     if (enable_debug_csv_flag) {
         config.output_storage.enable_raw_csv_logging = true;
     }
+    forklift::logging::Logger::instance().setDebugEnabled(
+        config.output_storage.enable_raw_csv_logging ||
+        risk_transport::ResultDispatcher::sendLogEnabled());
 
     const auto storage_parent = std::filesystem::path(config.output_storage.event_db).parent_path();
     if (!storage_parent.empty()) {
         std::filesystem::create_directories(storage_parent);
         const auto server_log_path = (storage_parent / "server.log").string();
-        forklift::logging::Logger::instance().setLogFile(server_log_path);
+        if (!forklift::logging::Logger::instance().setLogFile(server_log_path)) {
+            LOG_WARN("STORAGE", "서버 로그 파일 열기 실패 (경로: " + server_log_path +
+                                  " -> 콘솔 출력 유지)");
+        }
     }
 
     for (const auto* path : {&config.output_storage.object_csv, &config.output_storage.aruco_csv,
@@ -497,12 +583,12 @@ int main(int argc, char* argv[]) {
     CentralServer server(std::move(config));
     server.start();
     server.startWorkers();
-    LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (RTSP 스트림: " +
+    LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (CCTV 스트림: " +
                            std::to_string(server.config().streams.size()) + "개, 지게차 단말: " +
-                           std::to_string(server.config().forklifts.size()) + "개)");
+                           std::to_string(server.config().forklifts.size()) + "대)");
     while (!stop_requested) std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    LOG_INFO("SERVER", "서버 종료 신호 수신, 안전 종료를 진행합니다...");
+    LOG_INFO("SERVER", "서버 종료 신호 감지 (안전 종료 진행)");
     server.stop();
-    LOG_INFO("SERVER", "중앙 안전 서버가 성공적으로 종료되었습니다.");
+    LOG_INFO("SERVER", "중앙 안전 서버 정상 종료 완료");
     return 0;
 }
