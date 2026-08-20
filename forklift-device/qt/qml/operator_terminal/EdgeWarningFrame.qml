@@ -1,37 +1,98 @@
 import QtQuick
 import Safety.Common
 
-// Full-screen edge highlight: a colored border that thickens at higher
-// risk and pulses at Danger/Emergency, so risk is visible in peripheral
-// vision without reading text.
+// High-Intensity Soft Ambient Edge Light Glow:
+// Radiates a vivid, deep cinematic warning glow inward from all 4 edges of the screen.
+// Deep 80px gradient falloff with breathing pulse on Danger/Emergency for unmissable peripheral awareness.
 Item {
     id: root
     property int riskLevel: 0
 
     readonly property color accent: Theme.riskColor(riskLevel)
-    readonly property int frameWidth: riskLevel === 0 ? 0 : (riskLevel >= 2 ? 14 : 8)
-    readonly property real baseOpacity: riskLevel === 0 ? 0 : 0.9  // - 위험도에 따른 기본 불투명도
-    property real pulseFactor: 1.0                                  // - 펄스 배율: 애니메이션이 이 값만 변경
+    readonly property bool isAlert: riskLevel > 0
+    property real pulseFactor: 1.0
 
+    visible: opacity > 0
+    opacity: isAlert ? pulseFactor : 0.0
+
+    Behavior on opacity { NumberAnimation { duration: 200 } }
+
+    readonly property int glowDepth: 80
+    readonly property real maxAlpha: riskLevel >= 2 ? 0.90 : 0.65
+
+    // 1) 외곽 최외선 2px 네온 액센트 라인 (선명한 빛 테두리)
     Rectangle {
-        id: frame
         anchors.fill: parent
         color: "transparent"
-        border.color: root.accent
-        border.width: root.frameWidth
-        // - 기본값 x 배율: 애니메이션이 opacity를 직접 쓰면 바인딩이 끊겨 위험도 복귀 시 값이 고정됨
-        opacity: root.baseOpacity * root.pulseFactor
-
-        Behavior on border.width { NumberAnimation { duration: Theme.animationNormal } }
-        Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
+        border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha)
+        border.width: root.isAlert ? 2 : 0
     }
 
+    // 2) 상단 앰비언트 글로우 (Top Edge Glow)
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.glowDepth
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+            GradientStop { position: 0.25; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.60) }
+            GradientStop { position: 0.60; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.20) }
+            GradientStop { position: 1.0; color: "transparent" }
+        }
+    }
+
+    // 3) 하단 앰비언트 글로우 (Bottom Edge Glow)
+    Rectangle {
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.glowDepth
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 0.40; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.20) }
+            GradientStop { position: 0.75; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.60) }
+            GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+        }
+    }
+
+    // 4) 좌측 앰비언트 글로우 (Left Edge Glow)
+    Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: root.glowDepth
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+            GradientStop { position: 0.25; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.60) }
+            GradientStop { position: 0.60; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.20) }
+            GradientStop { position: 1.0; color: "transparent" }
+        }
+    }
+
+    // 5) 우측 앰비언트 글로우 (Right Edge Glow)
+    Rectangle {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: root.glowDepth
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 0.40; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.20) }
+            GradientStop { position: 0.75; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha * 0.60) }
+            GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.maxAlpha) }
+        }
+    }
+
+    // Danger / Emergency 부드러운 숨쉬기(Breathing Light) 펄스 애니메이션
     SequentialAnimation {
         running: root.riskLevel >= 2
         loops: Animation.Infinite
-        onStopped: root.pulseFactor = 1.0 // - 펄스 종료 시 배율 복귀
+        onStopped: root.pulseFactor = 1.0
 
-        NumberAnimation { target: root; property: "pulseFactor"; to: 0.5; duration: Theme.animationSlow; easing.type: Theme.easingStandard }
-        NumberAnimation { target: root; property: "pulseFactor"; to: 1.0; duration: Theme.animationSlow; easing.type: Theme.easingStandard }
+        NumberAnimation { target: root; property: "pulseFactor"; to: 0.40; duration: 380; easing.type: Easing.InOutSine }
+        NumberAnimation { target: root; property: "pulseFactor"; to: 1.0; duration: 380; easing.type: Easing.InOutSine }
     }
 }

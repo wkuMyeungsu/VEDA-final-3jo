@@ -10,11 +10,13 @@ constexpr int kTickIntervalMs = 1200;
 MockMetadataSource::MockMetadataSource(QVector<CameraInfo> cameras, QObject *parent)
     : IMetadataSource(parent)
 {
-    // 카메라 목록으로 초기 상태 맵 구성 (zone만 미리 채워두고 나머진 기본값)
+    // 카메라 목록으로 초기 상태 맵 구성 (streamId / effectiveId 및 cameraId 둘 다 등록)
     for (const CameraInfo &info : cameras) {
         CameraState state;
         state.zone = info.zone;
-        m_states.insert(info.cameraId, state);
+        m_states.insert(info.effectiveId(), state);
+        if (info.effectiveId() != info.cameraId)
+            m_states.insert(info.cameraId, state);
     }
 
     m_timer.setInterval(kTickIntervalMs);
@@ -43,6 +45,14 @@ void MockMetadataSource::setRiskOverride(const QString &cameraId, RiskTypes::Ris
                                           RiskTypes::ExceptionState exception)
 {
     auto it = m_states.find(cameraId);
+    if (it == m_states.end()) {
+        for (auto fallbackIt = m_states.begin(); fallbackIt != m_states.end(); ++fallbackIt) {
+            if (fallbackIt.key().startsWith(cameraId) || cameraId.startsWith(fallbackIt.key())) {
+                it = fallbackIt;
+                break;
+            }
+        }
+    }
     if (it == m_states.end())
         return;
 
@@ -50,7 +60,7 @@ void MockMetadataSource::setRiskOverride(const QString &cameraId, RiskTypes::Ris
     it->overrideLevel = level;
     it->overrideDistanceM = distanceM;
     it->overrideException = exception;
-    emitCameraUpdate(cameraId);
+    emitCameraUpdate(it.key());
 }
 
 void MockMetadataSource::clearRiskOverride(const QString &cameraId)

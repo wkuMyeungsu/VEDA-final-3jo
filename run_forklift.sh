@@ -5,13 +5,22 @@
 set -e
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET_DIR="$ROOT_DIR/forklift-device/qt"
-EXE_PATH="$TARGET_DIR/build/operator_terminal"
+EXE_PATH=""
+if [ -f "$TARGET_DIR/build/apps/operator_terminal/operator_terminal" ]; then
+    EXE_DIR="$TARGET_DIR/build/apps/operator_terminal"
+    EXE_PATH="$EXE_DIR/operator_terminal"
+elif [ -f "$TARGET_DIR/build/operator_terminal" ]; then
+    EXE_DIR="$TARGET_DIR/build"
+    EXE_PATH="$EXE_DIR/operator_terminal"
+fi
 
-if [ ! -f "$EXE_PATH" ]; then
+if [ -z "$EXE_PATH" ]; then
     echo "[INFO] 실행 파일이 없어 빌드를 먼저 진행합니다..."
     "$ROOT_DIR/build_forklift.sh"
+    EXE_DIR="$TARGET_DIR/build/apps/operator_terminal"
+    EXE_PATH="$EXE_DIR/operator_terminal"
 fi
 
 echo "[INFO] 지게차 운전자 단말을 실행합니다..."
-cd "$TARGET_DIR/build"
+cd "$EXE_DIR"
 ./operator_terminal "$@"

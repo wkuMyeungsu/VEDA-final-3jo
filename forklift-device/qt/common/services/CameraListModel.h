@@ -21,6 +21,8 @@ public:
         DistanceRole,                                                          // - 측정 거리 역할: 감지 거리(m)
         DistanceValidRole,                                                     // - 거리 유효성 역할: 거리 측정 가능 여부
         VideoConnectionStateRole,                                              // - 영상 연결 상태 역할: 영상 접속 상태
+        StreamIdRole,                                                          // - 스트림 ID 역할: 채널별 스트림 식별자
+        ChannelRole,                                                           // - 채널 번호 역할: 채널 인덱스
     };
     Q_ENUM(Roles)                                                              // - Roles 열거형 Qt 등록
 
