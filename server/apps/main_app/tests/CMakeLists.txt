@@ -75,9 +75,9 @@ add_test(NAME channel3_safety_pipeline_integration_test
          COMMAND test_channel3_safety_pipeline_integration)
 
 # 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
-add_executable(test_marker_channel_tracker test_marker_channel_tracker.cpp)
-target_link_libraries(test_marker_channel_tracker PRIVATE server_tracking)
-add_test(NAME marker_channel_tracker_test COMMAND test_marker_channel_tracker)
+add_executable(test_marker_stream_tracker test_marker_channel_tracker.cpp)
+target_link_libraries(test_marker_stream_tracker PRIVATE server_tracking)
+add_test(NAME marker_stream_tracker_test COMMAND test_marker_stream_tracker)
 
 set_tests_properties(
     onvif_metadata_parser_test
@@ -90,7 +90,7 @@ set_tests_properties(
     result_publisher_test
     safety_server_config_test
     homography_transformer_test
-    marker_channel_tracker_test
+    marker_stream_tracker_test
     PROPERTIES
         LABELS "unit"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"

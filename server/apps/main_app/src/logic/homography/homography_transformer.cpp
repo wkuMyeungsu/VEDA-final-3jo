@@ -10,7 +10,7 @@ namespace forklift::logic {
 namespace {
 using nlohmann::json;
 
-HomographyTransformer::ChannelHomography loadOne(const std::string& path, int expected_width, int expected_height) {
+HomographyTransformer::StreamHomography loadOne(const std::string& path, int expected_width, int expected_height) {
     std::ifstream input(path);
     if (!input) throw std::runtime_error("파일을 찾을 수 없음");
     json root;
@@ -22,7 +22,7 @@ HomographyTransformer::ChannelHomography loadOne(const std::string& path, int ex
     if (width != expected_width || height != expected_height) throw std::runtime_error("보정 해상도와 설정 해상도가 다름");
     const auto& matrix = root.at("H_pixel_to_world");
     if (!matrix.is_array() || matrix.size() != 3) throw std::runtime_error("H_pixel_to_world는 3x3 행렬이어야 함");
-    HomographyTransformer::ChannelHomography result;
+    HomographyTransformer::StreamHomography result;
     result.image_width_px = width;
     result.image_height_px = height;
     for (int row = 0; row < 3; ++row) {
@@ -38,11 +38,6 @@ HomographyTransformer::ChannelHomography loadOne(const std::string& path, int ex
 }  // namespace
 
 HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& config) {
-    for (const auto& [channel, configured_path] : config.homography.files) {
-        const std::string path = config::resolveConfigRelativePath(config, configured_path);
-        try { channels_.emplace(channel, loadOne(path, config.homography.image_width_px, config.homography.image_height_px)); }
-        catch (const std::exception& e) { load_errors_[channel] = path + ": " + e.what(); }
-    }
     for (const auto& [stream_id, configured_path] : config.homography.stream_files) {
         const auto size_it = config.homography.stream_image_sizes.find(stream_id);
         if (size_it == config.homography.stream_image_sizes.end()) {
@@ -58,22 +53,8 @@ HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& c
     }
 }
 
-bool HomographyTransformer::hasChannel(int channel) const { return channels_.count(channel) != 0; }
-
 bool HomographyTransformer::hasStream(const std::string& stream_id) const {
     return streams_.count(stream_id) != 0;
-}
-
-std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(int channel, const common::PixelPoint& pixel) const {
-    const auto it = channels_.find(channel);
-    if (it == channels_.end() || !std::isfinite(pixel.x) || !std::isfinite(pixel.y)) return std::nullopt;
-    const auto& h = it->second.h;
-    const double denominator = h[6] * pixel.x + h[7] * pixel.y + h[8];
-    if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;
-    const double x = (h[0] * pixel.x + h[1] * pixel.y + h[2]) / denominator;
-    const double y = (h[3] * pixel.x + h[4] * pixel.y + h[5]) / denominator;
-    if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
-    return common::WorldPoint{x, y};
 }
 
 std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(

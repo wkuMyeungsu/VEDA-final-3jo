@@ -8,7 +8,7 @@
 //   - [보강] 같은 카메라라도 검출 주기가 낮거나 이동이 빨라 IoU가 깨질 경우를 대비해,
 //           world 좌표 근접도를 항상 fallback으로 함께 확인한다 (둘 중 더 확실한 신호 채택).
 //
-// Detection.world는 main.cpp에서 채널별 호모그래피로 변환한 mm 좌표다.
+// Detection.world는 main.cpp에서 stream별 호모그래피로 변환한 mm 좌표다.
 // 변환에 실패한 검출은 이 트래커에 넣지 않아 임의 좌표가 매칭을 오염시키지 않게 한다.
 //
 // 데이터 구조/공개 인터페이스 선언은 cross_camera_reid.h 참고.
@@ -73,8 +73,8 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             double iou_score = -1.0;   // 유효하지 않으면 -1
             double world_score = -1.0;
 
-            if (t.camera_id == d.camera_id) {
-                // 동일 카메라: IoU 우선 (프레임 간 연속성, bbox 비교 가능)
+            if (t.stream_id == d.stream_id) {
+                // 동일 스트림: IoU 우선 (프레임 간 연속성, bbox 비교 가능)
                 double v = iou(t.last_bbox, d.bbox);
                 if (v >= iou_threshold_) iou_score = v;
             }
@@ -90,7 +90,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
 
             if (iou_score < 0.0 && world_score < 0.0) continue; // 둘 다 임계값 밖 -> 매칭 후보 아님
 
-            bool is_handover = (t.camera_id != d.camera_id);
+            bool is_handover = (t.stream_id != d.stream_id);
             double score = std::max(iou_score, world_score); // 둘 중 더 확실한 신호 채택
             candidates.push_back({ti, di, score, is_handover});
         }
@@ -111,12 +111,14 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
 
         if (c.is_handover) {
             std::cout << "  [핸드오버] track_id=" << t.track_id
-                      << " : camera " << t.camera_id << " -> camera " << d.camera_id
+                      << " : stream " << t.stream_id << " -> " << d.stream_id
                       << " (world 거리=" << std::fixed << std::setprecision(2)
                               << euclideanDistance(t.last_world, d.world) << "mm) ID 승계\n";
         }
 
+        t.stream_id   = d.stream_id;
         t.camera_id   = d.camera_id;
+        t.channel     = d.channel;
         t.last_bbox   = d.bbox;
         t.last_world  = d.world;
         t.last_seen_s = now_s;
@@ -146,12 +148,14 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
         if (!det_matched[di]) {
             Track nt;
             nt.track_id      = next_id_++;
+            nt.stream_id     = detections[di].stream_id;
             nt.camera_id     = detections[di].camera_id;
+            nt.channel       = detections[di].channel;
             nt.last_bbox     = detections[di].bbox;
             nt.last_world    = detections[di].world;
             nt.last_seen_s   = now_s;
             std::cout << "  [신규 트랙] track_id=" << nt.track_id
-                      << " (camera " << nt.camera_id << ")\n";
+                      << " (stream " << nt.stream_id << ")\n";
             tracks_.push_back(nt);
         }
     }

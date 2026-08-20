@@ -1,10 +1,11 @@
-// 고정 fixture/테스트 입력을 사용하는 채널 3 위험 판정 파이프라인 통합 테스트.
+// 고정 fixture/테스트 입력을 사용하는 stream CAM_01_CH_03 위험 판정 파이프라인 통합 테스트.
 // 실제 장비 기반 E2E 지표로 집계하지 않는다.
 // 운영 main과 같은 SafetyFramePipeline을 호출해 ArUco ID부터 JSON·SQLite까지 검증한다.
 
 #include <sqlite3.h>
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -25,7 +26,11 @@
 namespace {
 
 constexpr int kChannel = 3;
-constexpr int kForkliftMarkerId = 0;
+constexpr int kOtherChannel = 2;
+constexpr int kForkliftMarkerId = 1;
+constexpr const char* kCameraId = "CAM_01";
+constexpr const char* kStreamId = "CAM_01_CH_03";
+constexpr const char* kOtherStreamId = "CAM_01_CH_02";
 constexpr const char* kTerminalId = "TEST_FORKLIFT_01";
 
 // 실제 채널 3 산출물의 픽셀→월드 행렬이다. 테스트 입력을 만들 때만 역행렬로 사용하고,
@@ -74,11 +79,16 @@ forklift::config::SafetyServerConfig testConfig() {
     forklift::config::SafetyServerConfig config;
     config.source_path = "channel3_pipeline_integration_config.json";
     // 334×242mm 축소 공간에서 단계 전환을 모두 볼 수 있도록 실제 기준을 1:10로 줄인다.
-    config.danger_judgment = {300.0, 150.0, 40.0, 10.0, 100.0, 50.0, 2.0, 0.0};
-    config.forklift_detection.marker_id = kForkliftMarkerId;
-    config.homography.files[kChannel] = CHANNEL3_HOMOGRAPHY_PATH;
-    config.homography.image_width_px = 2592;
-    config.homography.image_height_px = 1520;
+    config.danger_judgment = {300.0, 150.0, 40.0, 10.0, 100.0, 50.0, 2.0};
+    config.forklifts.push_back({kTerminalId, kForkliftMarkerId, 0.0});
+    config.homography.stream_files[kStreamId] = CHANNEL3_HOMOGRAPHY_PATH;
+    config.homography.stream_image_sizes[kStreamId] = {2592, 1520};
+    config.homography.stream_files[kOtherStreamId] = CHANNEL3_HOMOGRAPHY_PATH;
+    config.homography.stream_image_sizes[kOtherStreamId] = {2592, 1520};
+    config.streams.push_back({kStreamId, kCameraId, "PNM-C16083RVQ", 4, kChannel,
+                              "rtsp://test", CHANNEL3_HOMOGRAPHY_PATH, 2592, 1520});
+    config.streams.push_back({kOtherStreamId, kCameraId, "PNM-C16083RVQ", 4, kOtherChannel,
+                              "rtsp://test-2", CHANNEL3_HOMOGRAPHY_PATH, 2592, 1520});
     config.handover.confirm_frames = 3;
     config.handover.lost_grace_ms = 500;
     config.tracking = {0.3, 1000.0, 5};
@@ -200,23 +210,41 @@ int main() {
 
     FixedSensorReader sensors;
     const auto config = testConfig();
-    forklift::logic::SafetyFramePipeline pipeline(config, kTerminalId, sensors);
-    check(pipeline.homographyLoadErrors().empty(), "채널 3 실제 H 계약과 해상도 검증");
+    const auto device_it = std::find_if(
+        config.forklifts.begin(), config.forklifts.end(),
+        [](const auto& device) { return device.terminal_id == kTerminalId; });
+    check(device_it != config.forklifts.end(), "TERM별 설정 목록에서 대상 terminal_id를 선택");
+    if (device_it == config.forklifts.end()) return 1;
+    const auto& device = *device_it;
+    forklift::logic::SafetyFramePipeline pipeline(config, device, sensors);
+    check(pipeline.homographyStreamLoadErrors().empty(), "stream별 실제 H 계약과 해상도 검증");
 
     const WorldPoint forkliftWorld{20.0, 120.0};
     ArucoFrame aruco;
     aruco.channel = kChannel;
-    // 잘못된 ID를 앞에 배치해도 설정된 ID 0의 중심을 선택해야 한다.
+    aruco.stream_id = kStreamId;
+    aruco.camera_id = kCameraId;
+    // 잘못된 ID를 앞에 배치해도 TERM별 설정 ID 1의 중심을 선택해야 한다.
     aruco.markers = {markerAt(7, {300.0, 220.0}), markerAt(kForkliftMarkerId, forkliftWorld)};
-    const auto parsedAruco = parseArucoMetadata(arucoXml(aruco));
+    auto parsedAruco = parseArucoMetadata(arucoXml(aruco));
     check(parsedAruco && parsedAruco->markers.size() == 2,
           "채널 3 ArUco XML에서 ID와 네 꼭짓점 파싱");
     if (!parsedAruco) return 1;
-    check(!pipeline.processArucoFrame(*parsedAruco), "첫 번째 ID 0 프레임에서는 채널 미확정");
-    check(!pipeline.processArucoFrame(*parsedAruco), "두 번째 ID 0 프레임에서도 채널 미확정");
-    const auto channel = pipeline.processArucoFrame(*parsedAruco);
-    check(channel && *channel == kChannel && pipeline.activeCameraId() == kChannel,
-          "ID 0을 3프레임 확인한 뒤 활성 채널 3 확정");
+    parsedAruco->stream_id = kStreamId;
+    parsedAruco->camera_id = kCameraId;
+    check(!pipeline.processArucoStreamFrame(*parsedAruco), "첫 번째 TERM marker 프레임에서는 stream 미확정");
+    check(!pipeline.processArucoStreamFrame(*parsedAruco), "두 번째 TERM marker 프레임에서도 stream 미확정");
+    const auto stream = pipeline.processArucoStreamFrame(*parsedAruco);
+    check(stream && *stream == kStreamId && pipeline.activeCameraId() == kCameraId,
+          "TERM marker를 3프레임 확인한 뒤 활성 stream 확정");
+
+    auto otherStreamObjects = parseOnvifMetadata(objectXml({{330.0, 120.0}}));
+    otherStreamObjects.stream_id = kOtherStreamId;
+    otherStreamObjects.camera_id = kCameraId;
+    otherStreamObjects.channel = kOtherChannel;
+    const auto otherStreamOutput = pipeline.processObjectFrame(otherStreamObjects, 0.5);
+    check(otherStreamOutput.forklift_localized && otherStreamOutput.transformed_people == 1,
+          "활성 stream이 아닌 다른 stream의 객체도 H 변환·판정 대상으로 수집");
 
     const std::string databasePath = temporaryDbPath();
     removeDb(databasePath);
@@ -249,8 +277,11 @@ int main() {
     int nearestTrackId = -1;
     for (const auto& step : steps) {
         // 두 번째 사람은 항상 멀리 두어 최근접 선택이 실제로 수행되는지 확인한다.
-        const MetadataFrame objects = parseOnvifMetadata(
+        auto objects = parseOnvifMetadata(
             objectXml({{320.0, 220.0}, step.person}));
+        objects.stream_id = kStreamId;
+        objects.camera_id = kCameraId;
+        objects.channel = kChannel;
         check(objects.objects.size() == 2,
               std::string(step.name) + ": ONVIF XML에서 Human bbox 두 개 파싱");
         const auto output = pipeline.processObjectFrame(objects, timestamp++);
@@ -270,14 +301,14 @@ int main() {
         check(result.final_risk == step.expected && near(result.distance_mm, step.distance_mm),
               std::string(step.name) + ": 거리 " + std::to_string(step.distance_mm) +
                   "mm → " + toString(step.expected));
-        check(result.camera_id == "CAM_03" && result.terminal_id == kTerminalId &&
+        check(result.camera_id == kCameraId && result.terminal_id == kTerminalId &&
                   result.exception == ExceptionState::NONE,
               std::string(step.name) + ": 채널·단말·센서 융합 결과 유지");
         check(published.size() == step.expected_publish_count,
               std::string(step.name) + ": 상태 변화 시에만 JSON 발행");
     }
 
-    check(!published.empty() && published.back().find("\"camera_id\":\"CAM_03\"") != std::string::npos &&
+    check(!published.empty() && published.back().find("\"camera_id\":\"CAM_01\"") != std::string::npos &&
               published.back().find("\"distance_mm\":60") != std::string::npos &&
               published.back().find("\"risk_level\":2") != std::string::npos,
           "최종 DANGER 결과가 distance_mm JSON 계약으로 발행됨");

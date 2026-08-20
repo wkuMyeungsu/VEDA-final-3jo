@@ -11,11 +11,8 @@
 // 전부 DangerJudgmentEngine 쪽에 있고, 선택 로직은 nearest_person_selector 쪽에 있다.
 // 여기서는 값을 옮기고 호출만 한다(두 컴포넌트의 로직은 건드리지 않았다).
 //
-// 이번 범위:
-//   - 활성 카메라 1대(단일 camera_id) 기준 처리만
-//   - SensorInput(IMU/ToF)은 드라이버 연동 전이라 스텁 리더로 대체, 인터페이스만 확정
-// 범위 밖:
-//   - 핸드오버 구간(여러 camera_id 동시 중첩) 처리 -> 아래 JudgmentPipeline의 [TODO] 참고
+// 카메라·스트림·단말 식별자는 모두 문자열/목록 기반으로 전달한다. 특정 카메라
+// 번호를 생성자에 박아 두지 않으며, 담당 스트림은 ArUco 핸드오버 결과로 갱신한다.
 //
 // 구현은 judgment_pipeline.cpp에 있다. 이 헤더는 표준 헤더 + 두 컴포넌트 헤더만 쓰므로
 // POSIX 의존성이 없다(gmtime_r/소켓 의존성은 엔진 .cpp와 ResultPublisher 쪽에만 있다).
@@ -77,27 +74,16 @@ struct PipelineOutput {
     bool camera_id_mismatch = false;
 };
 
-// 활성 카메라 1대 기준으로 상류 결과를 엔진 입력으로 바꿔 평가하는 파이프라인.
-//
-// [TODO] 핸드오버 구간(여러 camera_id가 같은 지게차/사람을 동시에 보는 구간) 처리는
-//        이번 범위에서 제외했다. 계획된 방식:
-//          1) 겹치는 camera_id별로 CameraInput을 각각 만들어 evaluate()를 따로 돌린다
-//          2) 그 결과들 중 worst-case(더 위험한 쪽)를 최종 판정으로 채택한다
-//             (엔진 내부의 worstOf()와 같은 원칙을 파이프라인 레벨에 한 번 더 적용)
-//          3) camera_id/zone은 채택된 쪽 값을 그대로 내보낸다
-//        지금은 활성 카메라 1대만 다루므로, 다른 camera_id가 섞여 들어오면
-//        PipelineOutput.camera_id_mismatch로만 표시하고 판정은 평소대로 진행한다.
-//        (사람을 버리는 쪽이 안전 측면에서 더 위험하므로 무시/드랍하지 않는다.)
+// 상류 결과를 엔진 입력으로 바꿔 평가하는 단말별 파이프라인.
 class JudgmentPipeline {
 public:
-    // active_camera_id: 이 파이프라인이 담당하는 활성 카메라.
-    //                   음수면 "미확정"으로 보고 하류 JSON에 camera_id=null로 나간다.
     // terminal_id: 이 파이프라인이 결과를 보낼 단말 식별자. processFrame()이 evaluate() 호출
     //              후 결과에 그대로 채워 넣는다(값 검증 없이 통과). 빈 문자열이면 하류 JSON에
     //              terminal_id=null로 나간다(camera_id와 동일 규약).
     // sensors: 호출부가 소유한다(파이프라인보다 오래 살아야 함).
-    JudgmentPipeline(int active_camera_id, const std::string& terminal_id, ISensorReader& sensors,
+    JudgmentPipeline(const std::string& terminal_id, ISensorReader& sensors,
                      const forklift::config::DangerJudgmentConfig& judgment_config,
+                     double collision_radius_mm,
                      std::chrono::milliseconds dead_reckoning_release_grace);
 
     // 한 프레임 처리: 상류 입력 -> CameraInput 매핑 -> SensorInput 읽기 -> evaluate().
@@ -117,12 +103,13 @@ public:
     // 상류 결과가 활성 카메라에서 온 것인지 여부 (found=false면 판단 대상 아님 -> false).
     bool isCameraIdMismatch(const NearestPersonResult& nearest) const;
 
-    int activeCameraId() const { return active_camera_id_; }
+    const std::string& activeStreamId() const { return active_stream_id_; }
+    const std::string& activeCameraId() const { return active_camera_id_; }
+    int activeChannel() const { return active_channel_; }
     const std::string& terminalId() const { return terminal_id_; }
 
-    // 담당 카메라를 바꾼다(핸드오버). MarkerChannelTracker가 액티브 채널 변경을
-    // 알려올 때 호출부가 부른다 - 생성자 인자로 한 번 박고 마는 값이었는데,
-    // 지게차를 따라 카메라가 바뀌면 하류 JSON의 camera_id도 같이 따라가야 한다.
+    // 담당 스트림을 바꾼다(핸드오버). stream_id가 바뀌면 camera_id와 channel도
+    // 함께 갱신하고, 새 시야의 첫 판정에 이전 시야의 히스테리시스를 물리지 않는다.
     //
     // 카메라가 바뀌면 엔진의 EMERGENCY 히스테리시스 래치도 같이 푼다. 직전 카메라
     // 기준 거리로 걸린 래치를, 시야도 좌표계도 다른 새 카메라의 첫 프레임에 그대로
@@ -133,23 +120,17 @@ public:
     // [주의] 이 함수와 processFrame()은 같은 스레드에서 불러야 한다. 엔진 히스테리시스가
     //        원래부터 단일 스레드 전제라(엔진 헤더 evaluate() 주석) 여기에도 락을 두지
     //        않았다. main.cpp에서는 둘 다 appsink 콜백 스레드에서만 호출된다.
-    void setActiveCameraId(int camera_id);
+    void setActiveStream(const std::string& stream_id, const std::string& camera_id, int channel);
 
     // 테스트와 진단에서 현재 래치 상태를 읽을 수 있게 엔진의 읽기 전용 참조만 제공한다.
     // 판정 임계값은 공통 JSON에서 생성 시 주입되며 호출부에서 변경할 수 없다.
     const DangerJudgmentEngine& engine() const { return engine_; }
 
 private:
-    int                  active_camera_id_;
+    std::string          active_stream_id_;
+    std::string          active_camera_id_;
+    int                  active_channel_ = -1;
     std::string          terminal_id_;
     ISensorReader*       sensors_;   // non-owning
     DangerJudgmentEngine engine_;
 };
-
-// ============================================================
-// 3. 출력 헬퍼
-// ============================================================
-
-// camera_id 표기 방식: "CAM_01" 같은 "CAM_%02d" 포맷 (단말(Qt) 인터페이스 규약,
-// cameras.json 키 포맷과 일치). 음수(미확정)는 빈 문자열 -> 하류 JSON에서 null.
-std::string cameraIdToString(int camera_id);

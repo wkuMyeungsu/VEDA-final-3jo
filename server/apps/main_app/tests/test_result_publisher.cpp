@@ -21,7 +21,8 @@ std::string captureOverflowLogs(std::size_t count,
     std::streambuf* saved = std::cerr.rdbuf(publishLogs.rdbuf());
 
     risk_transport::ResultPublisher publisher(
-        "test-terminal", "127.0.0.1", 1883, {}, false);
+        "test-terminal", "127.0.0.1", 1883, {},
+        risk_transport::ResultPublisherRole::RiskResult);
     for (std::size_t i = 0; i < count; ++i) {
         publisher.publish("{\"seq\":" + std::to_string(i) + "}");
     }
@@ -73,12 +74,27 @@ void testOverflowDropsOldestAndRateLimitsLogs() {
           "종료 시 rate limit 잔여 49건이 한 줄로 요약됨");
 }
 
+void testTopicsAreSelectedByRole() {
+    std::cout << "\n[테스트 3] 위험 결과와 서버 상태 토픽은 역할로 분리됨\n";
+
+    risk_transport::ResultPublisher risk(
+        "TERM_01", "127.0.0.1", 1883, {}, risk_transport::ResultPublisherRole::RiskResult);
+    risk_transport::ResultPublisher status(
+        "SERVER", "127.0.0.1", 1883, {}, risk_transport::ResultPublisherRole::ServerStatus);
+
+    check(risk.topic() == "forklift/risk/TERM_01",
+          "단말 publisher는 자신의 risk 토픽을 사용함");
+    check(status.topic() == "forklift/status/server",
+          "서버 상태 publisher는 단말 목록의 첫 항목과 무관하게 status 토픽을 사용함");
+}
+
 }  // namespace
 
 int main() {
     std::cout << "=== ResultPublisher 큐/드랍 정책 테스트 ===\n";
     testNoOverflowWithinCapacity();
     testOverflowDropsOldestAndRateLimitsLogs();
+    testTopicsAreSelectedByRole();
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";
     return failures == 0 ? 0 : 1;

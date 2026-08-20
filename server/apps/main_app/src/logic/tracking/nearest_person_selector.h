@@ -42,7 +42,9 @@ using WorldPoint = forklift::common::WorldPoint;
 // 정의하고 cross_camera_reid.h/.cpp는 이 헤더를 include해서 재사용한다.
 struct Track {
     int         track_id;
-    int         camera_id;
+    std::string stream_id;
+    std::string camera_id;
+    int         channel = -1;
     BoundingBox last_bbox;
     WorldPoint  last_world;
     double      last_seen_s = 0.0;
@@ -53,7 +55,9 @@ struct Track {
 struct NearestPersonResult {
     bool       found = false;
     int        track_id = -1;
-    int        camera_id = -1;   // 선택된 트랙을 보고 있던 카메라 (found=false면 -1 유지)
+    std::string stream_id;
+    std::string camera_id;
+    int        channel = -1;   // 선택된 트랙의 스트림 채널 (found=false면 -1 유지)
     WorldPoint position;
     double     distance_mm = std::numeric_limits<double>::max();
 };

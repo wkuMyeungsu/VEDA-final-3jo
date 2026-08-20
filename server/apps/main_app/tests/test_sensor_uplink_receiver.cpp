@@ -89,7 +89,7 @@ std::string makeSamplePayload(const std::string& camera_id, int tof_mm, int64_t 
 // 실제로 브로커에 쏘는 쪽은 이 클래스가 맡는다(옛 TCP 버전의 FakeTerminal과 같은 역할).
 class TestPublisher {
 public:
-    TestPublisher() : mosq_(mosquitto_new(nullptr, true, this)) {
+    TestPublisher() : mosq_(mosquitto_new("sensor-uplink-test-publisher", true, this)) {
         if (mosq_) {
             mosquitto_connect_callback_set(mosq_, &TestPublisher::onConnectTrampoline);
             mosquitto_publish_callback_set(mosq_, &TestPublisher::onPublishTrampoline);
@@ -105,12 +105,12 @@ public:
     bool publish(const std::string& topic, const std::string& payload) {
         if (!mosq_) return false;
         connected_ = false;
-        if (mosquitto_connect(mosq_, "127.0.0.1", kBrokerPort, /*keepalive=*/60) != MOSQ_ERR_SUCCESS) {
+        if (mosquitto_connect_async(mosq_, "127.0.0.1", kBrokerPort, /*keepalive=*/60) != MOSQ_ERR_SUCCESS) {
             return false;
         }
-        // CONNACK를 실제로 받을 때까지 돌려준다 (동기 connect는 TCP 연결까지만 보장한다).
+        // CONNACK를 실제로 받을 때까지 돌려준다.
         for (int i = 0; i < 100 && !connected_; ++i) {
-            mosquitto_loop(mosq_, 20, 1);
+            if (mosquitto_loop(mosq_, 20, 1) != MOSQ_ERR_SUCCESS) return false;
         }
         if (!connected_) return false;
 
@@ -176,6 +176,10 @@ bool waitForSample(const SensorUplinkReceiver& rx, const std::string& terminal_i
 
 bool nearlyEqual(double a, double b) { return std::fabs(a - b) < 1e-9; }
 
+void onProbeConnect(mosquitto*, void* userdata, int rc) {
+    *static_cast<bool*>(userdata) = rc == MOSQ_ERR_SUCCESS;
+}
+
 // hello 없이(토픽으로 바로 식별) 정상 수신 -> getLatest()가 보낸 값 그대로인지,
 // 최신값이 이전 값을 덮어쓰는지(캐시 = last-write-wins).
 void testReceivesLatestSample() {
@@ -184,7 +188,7 @@ void testReceivesLatestSample() {
     const std::string term = uniqueTerminalId("T1");
     const std::string topic = topicFor(term);
 
-    SensorUplinkReceiver rx;
+    SensorUplinkReceiver rx({term});
     rx.start();
     check(waitForConnected(rx, 3000), "브로커에 연결됨");
 
@@ -232,7 +236,7 @@ void testSurvivesMalformedPayloads() {
     const std::string term = uniqueTerminalId("T2");
     const std::string topic = topicFor(term);
 
-    SensorUplinkReceiver rx;
+    SensorUplinkReceiver rx({term});
     rx.start();
     check(waitForConnected(rx, 3000), "브로커에 연결됨");
 
@@ -290,7 +294,7 @@ void testStaleAfterTimeout() {
     const std::string term = uniqueTerminalId("T3");
     const std::string topic = topicFor(term);
 
-    SensorUplinkReceiver rx;
+    SensorUplinkReceiver rx({term});
     rx.start();
     check(waitForConnected(rx, 3000), "브로커에 연결됨");
 
@@ -328,7 +332,7 @@ void testStaleBeforeAnyData() {
     const std::string term = uniqueTerminalId("T4");
     const std::string topic = topicFor(term);
 
-    SensorUplinkReceiver rx;
+    SensorUplinkReceiver rx({term});
 
     // (1) start() 전 - MQTT 클라이언트조차 없음
     check(rx.isStale(term), "start() 전 isStale() == true");
@@ -363,7 +367,7 @@ void testCachePerTerminal() {
     const std::string termA = uniqueTerminalId("T5A");
     const std::string termB = uniqueTerminalId("T5B");
 
-    SensorUplinkReceiver rx;
+    SensorUplinkReceiver rx({termA, termB});
     rx.start();
     check(waitForConnected(rx, 3000), "브로커에 연결됨");
 
@@ -384,9 +388,12 @@ void testCachePerTerminal() {
           "단말 B 캐시가 B의 값 그대로 (실제: " + sb.camera_id + "/" +
           std::to_string(sb.tof_distance_mm) + ")");
 
-    // 존재하지 않는 제3의 terminal_id는 여전히 stale/없음이어야 한다 (다른 단말과 안 섞임).
+    // 설정에 없는 terminal_id는 유효한 payload여도 동적으로 등록하지 않고 거부한다.
     const std::string termC = uniqueTerminalId("T5C");
-    check(!rx.hasSample(termC), "발행한 적 없는 terminal_id는 hasSample() == false");
+    check(pub.publish(topicFor(termC), makeSamplePayload("cam2", 333, 1754380800002LL)),
+          "미등록 단말 메시지 발행");
+    check(waitForParseFailures(rx, 1, 3000), "미등록 terminal_id 메시지를 거부함");
+    check(!rx.hasSample(termC), "미등록 terminal_id는 캐시에 동적으로 등록되지 않음");
     check(rx.isStale(termC), "발행한 적 없는 terminal_id는 isStale() == true");
 
     check(rx.receivedCount() == 2,
@@ -406,11 +413,18 @@ int main() {
     // 성공으로 위장하지 않고 실패시킨다. 기본 CTest 묶음에는 등록하지 않으며,
     // -DENABLE_NETWORK_INTEGRATION_TESTS=ON으로 명시적으로 활성화한다.
     mosquitto_lib_init();
-    mosquitto* probe = mosquitto_new(nullptr, true, nullptr);
-    const int probe_rc = probe ? mosquitto_connect(probe, "127.0.0.1", kBrokerPort, 2)
-                               : MOSQ_ERR_NOMEM;
+    bool probe_connected = false;
+    mosquitto* probe = mosquitto_new("sensor-uplink-test-probe", true, &probe_connected);
+    int probe_rc = probe ? MOSQ_ERR_SUCCESS : MOSQ_ERR_NOMEM;
     if (probe) {
-        if (probe_rc == MOSQ_ERR_SUCCESS) mosquitto_disconnect(probe);
+        mosquitto_connect_callback_set(probe, &onProbeConnect);
+        probe_rc = mosquitto_connect_async(probe, "127.0.0.1", kBrokerPort, 60);
+        for (int i = 0; probe_rc == MOSQ_ERR_SUCCESS && !probe_connected && i < 100; ++i)
+            probe_rc = mosquitto_loop(probe, 20, 1);
+        if (probe_rc == MOSQ_ERR_SUCCESS && !probe_connected) probe_rc = MOSQ_ERR_CONN_LOST;
+    }
+    if (probe) {
+        if (probe_connected) mosquitto_disconnect(probe);
         mosquitto_destroy(probe);
     }
     mosquitto_lib_cleanup();

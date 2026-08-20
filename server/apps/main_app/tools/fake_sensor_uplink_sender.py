@@ -1,55 +1,14 @@
 #!/usr/bin/env python3
-# fake_sensor_uplink_sender.py
-#
-# [주의 - 더 이상 서버와 프로토콜이 맞지 않음] SensorUplinkReceiver가 TCP+NDJSON+hello에서
-# MQTT 구독(forklift/sensor/+, QoS 0, retain 없음) 방식으로 교체됐다(서버 측 수신 경로
-# "최신값 캐시" 방식 팀 확정). 이 스크립트는 옛 TCP 프로토콜용이라 지금 서버에는 그대로
-# 접속조차 안 된다. 검증/디버깅용으로는 참고 스키마 + 아래 mosquitto_pub 대체 명령을 써라.
-# 이 파일 자체는 옛 TCP 채널이 부활할 경우를 대비해 지우지 않고 남겨둔다.
-#
-# MQTT 대체 명령 (mosquitto-clients 패키지의 mosquitto_pub, 이 환경엔 이미 설치돼 있음):
-#   토픽 형식: forklift/sensor/<terminal_id>  (terminal_id는 payload가 아니라 토픽에 싣는다 - hello 없음)
-#
-#   단발 전송:
-#     mosquitto_pub -h 127.0.0.1 -p 1883 -t forklift/sensor/TERM_01 -q 0 -m \
-#       '{"camera_id":"cam0","tof_ok":true,"tof_distance_mm":420,"imu_ok":true,
-#         "imu_accel_x_g":0.02,"imu_accel_y_g":-0.01,"imu_accel_z_g":1.01,"ts_ms":1754380800123}'
-#
-#   주기 전송(쉘 루프, --interval 0.5초 흉내):
-#     while true; do
-#       mosquitto_pub -h 127.0.0.1 -p 1883 -t forklift/sensor/TERM_01 -q 0 -m \
-#         "{\"camera_id\":\"cam0\",\"tof_ok\":true,\"tof_distance_mm\":800,\"imu_ok\":true,\
-#           \"imu_accel_x_g\":0.0,\"imu_accel_y_g\":0.0,\"imu_accel_z_g\":1.0,\"ts_ms\":$(date +%s%3N)}"
-#       sleep 0.5
-#     done
-#
-#   isStale() 전환 확인(--disconnect-after 대체): 위 루프를 Ctrl+C로 멈추고 kDefaultStaleTimeoutMs
-#   (1200ms)만큼 기다리면 된다 - MQTT는 연결이 아니라 메시지 흐름이 끊기는 것으로 stale이 되므로
-#   "접속 종료"라는 이벤트 자체가 없다.
-#
-#   --corrupt-every 대체(깨진 JSON 섞어 보내기): -m 뒤에 깨진 JSON을 그냥 한 번 실어 보내면 된다.
-#     mosquitto_pub -h 127.0.0.1 -p 1883 -t forklift/sensor/TERM_01 -q 0 -m '{"camera_id":'
-#
-# ── 아래는 옛 TCP 버전 원본 주석/코드(참고용, 지금 서버와 호환되지 않음) ──────────
-#
-# 입력값: 접속할 서버 주소/포트, 단말 식별자, 전송 주기 (아래 옵션 참고)
-# 처리과정:
-#   1) SensorUplinkReceiver(기본 9002)에 TCP로 접속
-#   2) hello 한 줄을 보내 terminal_id를 등록
-#   3) 그 뒤로 --interval 간격마다 센서 스키마 한 줄(NDJSON)을 계속 전송
-#      (tof_distance_mm은 랜덤 워크로 조금씩 변하고, IMU는 정지 상태 기준 고정값 + 미세 노이즈)
-# 출력값: 보낸 줄을 콘솔에 그대로 출력 (서버 쪽 로그와 눈으로 대조하기 위함)
-#
-# 실제 단말 송신기가 아니라 서버 수신기 검증용 스텁이다. 실제 단말 송신 코드는
-# forklift-device 쪽에 별도로 들어간다 (Confluence "단말→서버 센서 업링크 채널 협의" 5-1 참고).
-#
-# 사용법:
-#   python3 fake_sensor_uplink_sender.py                          # 127.0.0.1:9002 로 접속
-#   python3 fake_sensor_uplink_sender.py --port 19002             # 테스트 포트로 접속
-#   python3 fake_sensor_uplink_sender.py --disconnect-after 3     # 3초 뒤 강제 종료 (isStale 검증용)
-#   python3 fake_sensor_uplink_sender.py --corrupt-every 5        # 5줄마다 깨진 JSON 섞어 보내기
-#
-# Ctrl+C로 종료하면 소켓을 정리하고 끝난다.
+"""Publish fake sensor samples to the server's MQTT uplink.
+
+The sender deliberately uses the same topology as the production path:
+``forklift/sensor/<terminal_id>`` identifies the terminal and the JSON payload
+contains only that terminal's sensor sample. A single MQTT connection can
+publish samples for any number of terminals.
+
+This script uses only Python's standard library, so it can run on the target
+Raspberry Pi without installing paho-mqtt or relying on mosquitto_pub.
+"""
 
 import argparse
 import json
@@ -58,27 +17,121 @@ import socket
 import sys
 import time
 
-DEFAULT_PORT = 9002  # Confluence 제안값. 서버 SensorUplinkReceiver::kDefaultPort와 같은 값.
+
+DEFAULT_BROKER_HOST = "127.0.0.1"
+DEFAULT_BROKER_PORT = 1883
+DEFAULT_KEEPALIVE_SECONDS = 60
+
+
+def encode_remaining_length(length):
+    encoded = bytearray()
+    while True:
+        digit = length % 128
+        length //= 128
+        if length:
+            digit |= 0x80
+        encoded.append(digit)
+        if not length:
+            return bytes(encoded)
+
+
+def encode_utf8(value):
+    encoded = value.encode("utf-8")
+    if len(encoded) > 0xFFFF:
+        raise ValueError("MQTT UTF-8 field is too long")
+    return len(encoded).to_bytes(2, "big") + encoded
+
+
+def recv_exact(sock, size):
+    chunks = bytearray()
+    while len(chunks) < size:
+        chunk = sock.recv(size - len(chunks))
+        if not chunk:
+            raise ConnectionError("MQTT broker closed the connection")
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+def read_packet(sock):
+    header = recv_exact(sock, 1)[0]
+    multiplier = 1
+    remaining_length = 0
+    for _ in range(4):
+        digit = recv_exact(sock, 1)[0]
+        remaining_length += (digit & 0x7F) * multiplier
+        if not digit & 0x80:
+            break
+        multiplier *= 128
+    else:
+        raise ValueError("invalid MQTT remaining length")
+    return header >> 4, recv_exact(sock, remaining_length)
+
+
+def connect_mqtt(host, port, client_id):
+    sock = socket.create_connection((host, port), timeout=5)
+    connect_payload = encode_utf8(client_id)
+    variable_header = encode_utf8("MQTT") + bytes((4, 0x02)) + DEFAULT_KEEPALIVE_SECONDS.to_bytes(2, "big")
+    packet = variable_header + connect_payload
+    sock.sendall(bytes((0x10,)) + encode_remaining_length(len(packet)) + packet)
+
+    packet_type, connack = read_packet(sock)
+    if packet_type != 2 or len(connack) < 2 or connack[1] != 0:
+        return_code = connack[1] if len(connack) >= 2 else "unknown"
+        raise ConnectionError("MQTT CONNECT rejected (return code: %s)" % return_code)
+    return sock
+
+
+def publish_qos0(sock, topic, payload):
+    packet = encode_utf8(topic) + payload
+    sock.sendall(bytes((0x30,)) + encode_remaining_length(len(packet)) + packet)
+
+
+def ping(sock):
+    sock.sendall(b"\xC0\x00")
+    packet_type, _ = read_packet(sock)
+    if packet_type != 13:
+        raise ConnectionError("unexpected MQTT packet while waiting for PINGRESP")
+
+
+def disconnect(sock):
+    try:
+        sock.sendall(b"\xE0\x00")
+    finally:
+        sock.close()
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="센서 업링크(단말→서버) 가짜 송신기")
-    p.add_argument("--host", default="127.0.0.1", help="서버 주소 (기본: 127.0.0.1)")
-    p.add_argument("--port", type=int, default=DEFAULT_PORT,
-                   help="서버 포트 (기본: %d)" % DEFAULT_PORT)
-    p.add_argument("--terminal-id", default="TERM_01", help="hello로 보낼 단말 식별자")
-    p.add_argument("--camera-id", default="cam0", help="센서 줄에 실을 camera_id")
-    p.add_argument("--interval", type=float, default=0.5, help="전송 주기(초, 기본: 0.5)")
-    p.add_argument("--disconnect-after", type=float, default=None, metavar="N",
-                   help="N초 뒤 소켓을 강제로 끊고 종료 (서버 isStale 전환 확인용)")
-    p.add_argument("--corrupt-every", type=int, default=0, metavar="N",
-                   help="N줄마다 깨진 JSON을 한 줄 섞는다 (0=사용 안 함)")
-    return p.parse_args()
+    parser = argparse.ArgumentParser(description="MQTT 센서 업링크 가짜 송신기")
+    parser.add_argument("--host", default=DEFAULT_BROKER_HOST, help="MQTT 브로커 주소")
+    parser.add_argument("--port", type=int, default=DEFAULT_BROKER_PORT, help="MQTT 브로커 포트")
+    parser.add_argument(
+        "--terminal-id",
+        action="append",
+        required=True,
+        metavar="ID",
+        help="센서를 보낼 단말 ID. 여러 단말은 이 옵션을 반복 지정",
+    )
+    parser.add_argument("--camera-id", default="CAM_01", help="센서 payload의 camera_id")
+    parser.add_argument("--interval", type=float, default=0.5, help="단말별 전송 주기(초)")
+    parser.add_argument("--distance", type=int, default=800, help="초기 ToF 거리(mm)")
+    parser.add_argument(
+        "--disconnect-after",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="지정한 시간이 지나면 MQTT 연결을 닫고 종료 (stale 테스트용)",
+    )
+    parser.add_argument(
+        "--corrupt-every",
+        type=int,
+        default=0,
+        metavar="N",
+        help="N번째 발행마다 깨진 JSON을 전송 (0=사용 안 함)",
+    )
+    return parser.parse_args()
 
 
 def make_sample(camera_id, tof_mm):
-    # 스키마는 Confluence "단말→서버 센서 업링크 채널 협의" 3번 초안 그대로다.
-    # ToF는 정수 mm, IMU는 3축 원시 g값 (magnitude 계산은 서버 담당).
     return {
         "camera_id": camera_id,
         "tof_ok": True,
@@ -86,55 +139,66 @@ def make_sample(camera_id, tof_mm):
         "imu_ok": True,
         "imu_accel_x_g": round(random.uniform(-0.03, 0.03), 3),
         "imu_accel_y_g": round(random.uniform(-0.03, 0.03), 3),
-        "imu_accel_z_g": round(1.00 + random.uniform(-0.02, 0.02), 3),  # 정지 상태 중력 약 1.0g
+        "imu_accel_z_g": round(1.00 + random.uniform(-0.02, 0.02), 3),
         "ts_ms": int(time.time() * 1000),
     }
 
 
 def next_distance(tof_mm):
-    # 랜덤 워크. 200~3000mm 안에서만 움직이게 잘라 ToF 측정 범위를 벗어나지 않게 한다.
-    tof_mm += random.randint(-60, 60)
-    return max(200, min(3000, tof_mm))
+    return max(200, min(3000, tof_mm + random.randint(-60, 60)))
 
 
 def run(args):
-    sock = socket.create_connection((args.host, args.port), timeout=5)
-    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    print("[송신기] 접속 완료 - %s:%d" % (args.host, args.port))
+    if args.interval <= 0:
+        raise ValueError("--interval must be greater than zero")
+    if args.distance < 0:
+        raise ValueError("--distance must not be negative")
+    if args.corrupt_every < 0:
+        raise ValueError("--corrupt-every must not be negative")
 
+    client_id = "fake-sensor-" + str(int(time.time() * 1000))
+    sock = connect_mqtt(args.host, args.port, client_id)
+    print("[송신기] MQTT 연결 완료 - %s:%d" % (args.host, args.port))
+    print("[송신기] 대상 단말 - %s" % ", ".join(args.terminal_id))
+
+    distances = {terminal_id: args.distance for terminal_id in args.terminal_id}
     started = time.monotonic()
+    last_io = started
+    sent = 0
     try:
-        hello = {"type": "hello", "terminal_id": args.terminal_id}
-        sock.sendall((json.dumps(hello) + "\n").encode("utf-8"))
-        print("[송신기] hello 전송 - %s" % json.dumps(hello, ensure_ascii=False))
-
-        tof_mm = 800
-        sent = 0
         while True:
-            if args.disconnect_after is not None:
-                if time.monotonic() - started >= args.disconnect_after:
-                    print("[송신기] --disconnect-after %.1fs 도달 - 접속 종료"
-                          % args.disconnect_after)
-                    return
+            if args.disconnect_after is not None and time.monotonic() - started >= args.disconnect_after:
+                print("[송신기] --disconnect-after %.1fs 도달 - MQTT 연결 종료" % args.disconnect_after)
+                return
 
-            sent += 1
-            if args.corrupt_every and sent % args.corrupt_every == 0:
-                line = '{"camera_id": "%s", "tof_ok": tr' % args.camera_id  # 일부러 깨뜨림
-            else:
-                tof_mm = next_distance(tof_mm)
-                line = json.dumps(make_sample(args.camera_id, tof_mm))
+            for terminal_id in args.terminal_id:
+                sent += 1
+                topic = "forklift/sensor/" + terminal_id
+                if args.corrupt_every and sent % args.corrupt_every == 0:
+                    payload = b'{"camera_id":'
+                else:
+                    distances[terminal_id] = next_distance(distances[terminal_id])
+                    payload = json.dumps(
+                        make_sample(args.camera_id, distances[terminal_id]),
+                        separators=(",", ":"),
+                    ).encode("utf-8")
 
-            sock.sendall((line + "\n").encode("utf-8"))
-            print("[송신기] %s" % line)
-            time.sleep(args.interval)
+                publish_qos0(sock, topic, payload)
+                last_io = time.monotonic()
+                print("[송신기] %s <- %s" % (topic, payload.decode("utf-8")))
+
+            deadline = time.monotonic() + args.interval
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                if time.monotonic() - last_io >= DEFAULT_KEEPALIVE_SECONDS / 2:
+                    ping(sock)
+                    last_io = time.monotonic()
+                time.sleep(min(remaining, 0.25))
     finally:
-        # Ctrl+C / --disconnect-after / 예외 어느 경로로 나가든 소켓은 항상 정리한다.
-        try:
-            sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        sock.close()
-        print("[송신기] 소켓 정리 완료")
+        disconnect(sock)
+        print("[송신기] MQTT 연결 정리 완료")
 
 
 def main():
@@ -143,12 +207,8 @@ def main():
         run(args)
     except KeyboardInterrupt:
         print("\n[송신기] Ctrl+C - 종료합니다")
-    except ConnectionRefusedError:
-        print("[오류] 접속 거부 - 서버가 %s:%d 에서 listen 중인지 확인하세요"
-              % (args.host, args.port))
-        sys.exit(1)
-    except OSError as e:
-        print("[오류] 소켓 오류: %s" % e)
+    except (ConnectionError, OSError, ValueError) as error:
+        print("[오류] %s" % error, file=sys.stderr)
         sys.exit(1)
 
 

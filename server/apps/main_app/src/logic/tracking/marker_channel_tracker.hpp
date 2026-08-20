@@ -1,9 +1,10 @@
 // marker_channel_tracker.hpp
-// 지게차 마커가 보이는 카메라 채널 추적 - 공개 인터페이스
+// 지게차 마커가 보이는 stream 추적 - 공개 인터페이스
 // 담당: 검출·추적 & IMU·ToF 센서 (박수빈)
 //
-// 목적: "지금 지게차가 어느 카메라에 보이는가"만 판단한다. 카메라별로 도착하는 ArUco
-//       프레임을 먹고, 액티브 카메라 채널이 실제로 바뀌는 순간에만 새 채널을 돌려준다.
+// 목적: "지금 지게차가 어느 stream에 보이는가"만 판단한다. 카메라 N대의
+//       stream M개에서 도착하는 ArUco 프레임을 먹고, 액티브 stream이 실제로
+//       바뀌는 순간에만 새 stream_id를 돌려준다.
 //       바뀌지 않으면 아무 신호도 내지 않는다(nullopt) - 호출부가 매 프레임
 //       sendCameraAssignment()를 때리지 않도록 하는 게 이 클래스의 존재 이유다.
 //
@@ -13,12 +14,11 @@
 //     여기서는 마커가 "보이냐 안 보이냐"만 본다(좌표는 안 쓴다).
 //
 // ── 판정 규칙 ────────────────────────────────────────────────
-//   1) 카메라별로 마커 연속 검출 프레임 수(streak)를 센다. 한 프레임이라도 미검출이면
-//      그 카메라의 streak은 0으로 리셋된다.
-//   2) streak >= confirm_frames 인 카메라를 "확정 후보"로 본다.
-//   3) 액티브 카메라가 아직 없으면, 확정되는 즉시 그 카메라를 액티브로 잡는다.
+//   1) stream별로 마커 연속 검출 프레임 수(streak)를 센다.
+//   2) streak >= confirm_frames 인 stream을 "확정 후보"로 본다.
+//   3) 액티브 stream이 아직 없으면, 확정되는 즉시 그 stream을 액티브로 잡는다.
 //   4) 액티브가 있으면, 액티브에서 마커를 마지막으로 본 지 lost_grace를 넘겼고
-//      && 다른 카메라가 확정 후보일 때만 전환한다.
+//      다른 stream이 확정 후보일 때만 전환한다.
 //
 // ── 왜 이런 비대칭 구조인가 (히스테리시스) ──────────────────
 //   DangerJudgmentEngine::classifyByDistance()의 EMERGENCY 래치와 같은 원칙이다.
@@ -47,36 +47,37 @@
 
 #include "input/aruco_metadata_parser.hpp"  // ArucoFrame (타입 정의만 사용, 링크 의존성 아님)
 
-class MarkerChannelTracker {
+class MarkerStreamTracker {
 public:
     // 시각 비교는 전부 단조 시계로 한다. 프레임에 실린 카메라 UtcTime은 카메라별로
     // 오차가 있고(main.cpp의 delta_ms 주석 참고) NTP 보정으로 뒤로 튈 수도 있어서,
     // "유예 시간이 지났는가" 같은 경과시간 판단에 쓰면 안 된다.
     using Clock = std::chrono::steady_clock;
 
-    // marker_id     : 추적할 지게차 마커 ID (설정의 forklift_detection.marker_id)
+    // marker_id     : 이 인스턴스가 담당하는 지게차의 marker ID
     // confirm_frames: 후보 확정에 필요한 연속 검출 프레임 수 (1 이상)
     // lost_grace    : 액티브 카메라가 마커를 놓쳐도 유지해주는 시간
-    MarkerChannelTracker(int marker_id, int confirm_frames, std::chrono::milliseconds lost_grace);
+    MarkerStreamTracker(int marker_id, int confirm_frames, std::chrono::milliseconds lost_grace);
 
-    // ArUco 프레임 한 장 반영. 액티브 채널이 실제로 바뀌었을 때만 새 채널을 돌려준다.
-    // frame.channel이 유효하지 않으면(파서 규약상 1 이상) 무시하고 nullopt.
-    std::optional<int> onArucoFrame(const ArucoFrame& frame);
+    // ArUco 프레임 한 장 반영. 액티브 stream이 실제로 바뀌었을 때만 새 stream_id를 돌려준다.
+    // stream_id가 비어 있으면 무시하고 nullopt.
+    std::optional<std::string> onArucoFrame(const ArucoFrame& frame);
 
     // 위와 같되 "지금 시각"을 주입한다. 테스트가 lost_grace 경과를 실제로 기다리지
     // 않고 검증할 수 있게 분리했다(실시간 sleep이 들어간 테스트는 느리고 불안정하다).
-    std::optional<int> onArucoFrame(const ArucoFrame& frame, Clock::time_point now);
+    std::optional<std::string> onArucoFrame(const ArucoFrame& frame, Clock::time_point now);
 
     // 프레임 타입에 의존하지 않는 하위 API. 위 두 함수가 이걸로 귀결된다.
-    // channel     : 이 프레임을 보낸 카메라 채널 (1 이상)
+    // stream_id   : 전역 stream 식별자
     // marker_seen : 이번 프레임에 추적 대상 마커가 보였는지
-    std::optional<int> update(int channel, bool marker_seen, Clock::time_point now);
+    std::optional<std::string> update(const std::string& stream_id, bool marker_seen,
+                                      Clock::time_point now);
 
-    // 현재 액티브 채널. 아직 아무 카메라도 확정되지 않았으면 nullopt.
-    std::optional<int> activeChannel() const;
+    // 현재 액티브 stream. 아직 아무 stream도 확정되지 않았으면 nullopt.
+    std::optional<std::string> activeStream() const;
 
-    // 채널별 연속 검출 수 (디버깅·테스트용). 모르는 채널이면 0.
-    int streakOf(int channel) const;
+    // stream별 연속 검출 수 (디버깅·테스트용). 모르는 stream이면 0.
+    int streakOf(const std::string& stream_id) const;
 
     // 모든 상태 초기화 (액티브 해제 + streak 리셋).
     // DangerJudgmentEngine::resetHysteresis()와 같은 성격의 탈출구다.
@@ -87,19 +88,19 @@ public:
     std::chrono::milliseconds lostGrace() const { return lost_grace_; }
 
 private:
-    struct ChannelState {
+    struct StreamState {
         int streak = 0;                 // 연속 검출 프레임 수 (미검출 프레임에서 0으로 리셋)
         Clock::time_point last_seen{};  // 마커가 마지막으로 보인 시각 (한 번도 없으면 epoch)
         bool ever_seen = false;
     };
 
-    bool isConfirmed(const ChannelState& s) const { return s.streak >= confirm_frames_; }
+    bool isConfirmed(const StreamState& s) const { return s.streak >= confirm_frames_; }
 
     const int marker_id_;
     const int confirm_frames_;
     const std::chrono::milliseconds lost_grace_;
 
     mutable std::mutex mtx_;
-    std::map<int, ChannelState> channels_;
-    std::optional<int> active_;
+    std::map<std::string, StreamState> streams_;
+    std::optional<std::string> active_;
 };

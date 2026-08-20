@@ -23,8 +23,8 @@
 class NetworkSensorReader : public ISensorReader {
 public:
     // receiver: 호출부가 소유한다(이 어댑터보다 오래 살아야 함).
-    // terminal_id: 캐시에서 조회할 단말 식별자. 단일 지게차 데모라 생성 시점에 고정하며,
-    //              여러 단말을 동시에 다뤄야 하면 이 클래스를 단말별로 하나씩 만들면 된다.
+    // terminal_id: K개 단말 중 이 어댑터가 읽을 단말 식별자. 중앙 서버는 단말마다
+    //              이 어댑터를 하나씩 생성해 센서 캐시를 섞지 않는다.
     NetworkSensorReader(risk_transport::SensorUplinkReceiver& receiver, std::string terminal_id,
                         int stale_timeout_ms = risk_transport::SensorUplinkReceiver::kDefaultStaleTimeoutMs);
 

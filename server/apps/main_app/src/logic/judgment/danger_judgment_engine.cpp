@@ -30,6 +30,7 @@
 
 DangerJudgmentEngine::DangerJudgmentEngine(
     const forklift::config::DangerJudgmentConfig& config,
+    double collision_radius_mm,
     std::chrono::milliseconds dead_reckoning_release_grace)
     : caution_threshold_mm(config.caution_threshold_mm),
       danger_threshold_mm(config.danger_threshold_mm),
@@ -37,7 +38,7 @@ DangerJudgmentEngine::DangerJudgmentEngine(
       emergency_release_margin_mm(config.emergency_release_margin_mm),
       tof_caution_mm(config.tof_caution_mm),
       tof_danger_mm(config.tof_danger_mm),
-      forklift_collision_radius_mm(config.forklift_collision_radius_mm),
+      forklift_collision_radius_mm(collision_radius_mm),
       impact_accel_threshold_g(config.impact_accel_threshold_g),
       dead_reckoning_release_grace_ms(dead_reckoning_release_grace) {}
 

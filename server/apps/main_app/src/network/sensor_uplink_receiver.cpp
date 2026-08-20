@@ -17,6 +17,7 @@
 
 #include <iostream>
 #include <cstdlib>
+#include <unistd.h>
 #include <mosquitto.h>
 
 namespace risk_transport {
@@ -144,9 +145,13 @@ void mosqLibRelease() {
 
 } // namespace
 
-SensorUplinkReceiver::SensorUplinkReceiver(std::string broker_host, int broker_port,
+SensorUplinkReceiver::SensorUplinkReceiver(std::vector<std::string> configured_terminal_ids,
+                                            std::string broker_host, int broker_port,
                                             MqttTlsOptions tls)
-    : broker_host_(std::move(broker_host)), broker_port_(broker_port), tls_(std::move(tls)) {
+    : broker_host_(std::move(broker_host)),
+      broker_port_(broker_port),
+      tls_(std::move(tls)),
+      configured_terminal_ids_(configured_terminal_ids.begin(), configured_terminal_ids.end()) {
     mosqLibAcquire();
 }
 
@@ -206,6 +211,10 @@ void SensorUplinkReceiver::logParseFailure(const std::string& why, const std::st
     }
 }
 
+bool SensorUplinkReceiver::isConfiguredTerminal(const std::string& terminal_id) const {
+    return configured_terminal_ids_.find(terminal_id) != configured_terminal_ids_.end();
+}
+
 void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
     if (!msg || !msg->topic) return;
     const std::string topic(msg->topic);
@@ -213,6 +222,10 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
     std::string terminal_id;
     if (!extractTerminalIdFromTopic(topic, terminal_id)) {
         logParseFailure("토픽 형식이 forklift/sensor/<terminal_id>가 아님", topic, "");
+        return;
+    }
+    if (!isConfiguredTerminal(terminal_id)) {
+        logParseFailure("안전 설정에 등록되지 않은 terminal_id", topic, "");
         return;
     }
 
@@ -238,7 +251,8 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
 void SensorUplinkReceiver::start() {
     if (running_.exchange(true)) return;
 
-    mosq_ = mosquitto_new(/*id=*/nullptr, /*clean_session=*/true, this);
+    const std::string client_id = "forklift-server-sensor-" + std::to_string(::getpid());
+    mosq_ = mosquitto_new(client_id.c_str(), /*clean_session=*/true, this);
     if (!mosq_) {
         std::cerr << "[SensorUplinkReceiver] mosquitto_new() 실패\n";
         running_ = false;

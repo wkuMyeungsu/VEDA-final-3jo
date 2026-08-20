@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <optional>
 #include <string>
@@ -27,22 +28,21 @@ public:
     };
 
     SafetyFramePipeline(const config::SafetyServerConfig& config,
-                        const std::string& terminal_id,
+                        const config::ForkliftDevice& device,
                         ISensorReader& sensors);
 
-    // 설정된 지게차 marker_id가 연속 검출돼 활성 채널이 바뀐 순간에만 채널 번호를 반환한다.
-    std::optional<int> processArucoFrame(const ArucoFrame& frame);
+    // 설정된 지게차 marker_id가 연속 검출돼 활성 stream이 바뀐 순간에만
+    // 새 stream_id를 반환한다.
     std::optional<std::string> processArucoStreamFrame(const ArucoFrame& frame);
 
-    // 최근 ArUco와 현재 사람 검출을 같은 채널 H로 변환한 뒤 최근접 선택과 위험 판정을 수행한다.
+    // 최근 ArUco와 현재 사람 검출을 같은 stream의 H로 변환한 뒤 최근접 선택과
+    // 단말별 위험 판정을 수행한다.
     ObjectFrameOutput processObjectFrame(const MetadataFrame& frame, double timestamp_s);
 
-    int activeCameraId() const { return judgment_pipeline_.activeCameraId(); }
+    const std::string& activeCameraId() const { return active_camera_id_; }
+    int activeChannel() const { return active_channel_; }
     const std::optional<std::string>& activeStreamId() const { return active_stream_; }
-    int markerId() const { return marker_tracker_.markerId(); }
-    const std::map<int, std::string>& homographyLoadErrors() const {
-        return homography_.loadErrors();
-    }
+    int markerId() const { return marker_id_; }
     const std::map<std::string, std::string>& homographyStreamLoadErrors() const {
         return homography_.streamLoadErrors();
     }
@@ -51,10 +51,10 @@ private:
     int marker_id_;
     std::optional<ArucoFrame> last_aruco_;
     HomographyTransformer homography_;
-    MarkerChannelTracker marker_tracker_;
-    std::map<std::string, int> stream_streaks_;
+    MarkerStreamTracker marker_tracker_;
     std::optional<std::string> active_stream_;
-    std::chrono::steady_clock::time_point active_stream_last_seen_{};
+    std::string active_camera_id_;
+    int active_channel_ = -1;
     CrossCameraTracker cross_camera_tracker_;
     JudgmentPipeline judgment_pipeline_;
 };

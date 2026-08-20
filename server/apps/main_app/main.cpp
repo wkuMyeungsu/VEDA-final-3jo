@@ -41,6 +41,14 @@ std::atomic<bool> stop_requested{false};
 
 void onSignal(int) { stop_requested = true; }
 
+std::vector<std::string> configuredTerminalIds(
+    const std::vector<forklift::config::ForkliftDevice>& devices) {
+    std::vector<std::string> ids;
+    ids.reserve(devices.size());
+    for (const auto& device : devices) ids.push_back(device.terminal_id);
+    return ids;
+}
+
 // 한 worker가 만든 완성 프레임을 중앙 처리 루프로 넘길 때 사용하는 이벤트다.
 struct MetadataEvent {
     enum class Type { Object, Aruco } type;
@@ -61,20 +69,15 @@ struct TerminalContext {
 
     TerminalContext(forklift::config::SafetyServerConfig config,
                     forklift::config::ForkliftDevice forklift,
-                    risk_transport::SensorUplinkReceiver& receiver,
-                    bool manage_server_status)
+                    risk_transport::SensorUplinkReceiver& receiver)
         : device(std::move(forklift)),
           stub_sensor(config.sensor.stub_tof_distance_mm),
           sensor_reader(receiver, device.terminal_id, config.sensor.stale_timeout_ms),
-          pipeline([&] {
-              config.forklift_detection.marker_id = device.marker_id;
-              config.danger_judgment.forklift_collision_radius_mm = device.collision_radius_mm;
-              return config;
-          }(), device.terminal_id, sensor_reader),
+          pipeline(config, device, sensor_reader),
           publisher(device.terminal_id, config.network.mqtt_host, config.network.mqtt_port,
                     risk_transport::MqttTlsOptions{config.network.tls_enabled, config.network.ca_cert_path,
                                                    config.network.client_cert_path, config.network.client_key_path},
-                    manage_server_status),
+                    risk_transport::ResultPublisherRole::RiskResult),
           dispatcher([this](const std::string& json) { publisher.publish(json); },
                      std::chrono::milliseconds(config.network.result_heartbeat_ms)) {}
 };
@@ -84,8 +87,11 @@ class CentralServer {
 public:
     explicit CentralServer(forklift::config::SafetyServerConfig config)
         : config_(std::move(config)),
-          sensor_receiver_(config_.network.mqtt_host, config_.network.mqtt_port,
+          sensor_receiver_(configuredTerminalIds(config_.forklifts),
+                           config_.network.mqtt_host, config_.network.mqtt_port,
                            tlsOptions()),
+          server_status_("SERVER", config_.network.mqtt_host, config_.network.mqtt_port,
+                         tlsOptions(), risk_transport::ResultPublisherRole::ServerStatus),
           assignment_publisher_(config_.network.mqtt_host, config_.network.mqtt_port,
                                 tlsOptions()),
           event_logger_(config_.output_storage.event_db),
@@ -142,6 +148,7 @@ private:
 
     forklift::config::SafetyServerConfig config_;
     risk_transport::SensorUplinkReceiver sensor_receiver_;
+    risk_transport::ResultPublisher server_status_;
     risk_transport::AssignmentPublisher assignment_publisher_;
     risk_log::EventLogger event_logger_;
     risk_log::LatencyLogger latency_logger_;
@@ -158,7 +165,7 @@ private:
 
 std::unique_ptr<TerminalContext> CentralServer::makeTerminal(
     const forklift::config::ForkliftDevice& device) {
-    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_, terminals_.empty());
+    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_);
 }
 
 void CentralServer::process(const MetadataEvent& event) {
@@ -167,9 +174,6 @@ void CentralServer::process(const MetadataEvent& event) {
             object_logger_.logFrame(event.object);
         }
         for (auto& terminal : terminals_) {
-            if (!terminal->pipeline.activeStreamId() ||
-                *terminal->pipeline.activeStreamId() != event.object.stream_id)
-                continue;
             const double now_s = std::chrono::duration<double>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             auto output = terminal->pipeline.processObjectFrame(event.object, now_s);
@@ -384,6 +388,7 @@ CentralServer::~CentralServer() { stop(); }
 
 void CentralServer::start() {
     sensor_receiver_.start();
+    server_status_.start();
     assignment_publisher_.start();
     event_logger_.start();
     if (config_.output_storage.enable_raw_csv_logging) {
@@ -422,6 +427,7 @@ void CentralServer::stop() {
     for (auto& terminal : terminals_) terminal->dispatcher.stop();
     for (auto& terminal : terminals_) terminal->publisher.stop();
     assignment_publisher_.stop();
+    server_status_.stop();
     sensor_receiver_.stop();
     event_logger_.stop();
     if (config_.output_storage.enable_raw_csv_logging) {

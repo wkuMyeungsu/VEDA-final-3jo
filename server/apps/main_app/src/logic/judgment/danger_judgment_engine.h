@@ -72,10 +72,8 @@ struct CameraInput {
     WorldPoint forklift;                   // 지게차 world 좌표 (forklift_localized=false면 stale/무의미)
     WorldPoint person;                     // 사람 world 좌표 (person_detected=false면 stale/무의미)
 
-    // camera_id 표기 방식: nearest_person_selector.cpp의 int를 cameraIdToString()으로
-    // "CAM_01" 포맷 변환 (judgment_pipeline.cpp/h 참고).
-    // [TODO] 현재 이 값을 채워주는 통합 지점이 아직 없다(각 파일이 독립 main으로 동작 중).
-    //        값을 임의로 만들지 않고 빈 문자열로 둔다.
+    // camera_id는 camera_list.json의 물리 CCTV 식별자를 상류에서 그대로 전달한다.
+    // 숫자 채널을 camera_id 문자열로 변환하거나 임의의 카메라를 생성하지 않는다.
     std::string camera_id;
 
     // [TODO] zone 매핑 미확정(김진석) — 값 확정 전까지 항상 null
@@ -133,6 +131,7 @@ class DangerJudgmentEngine {
 public:
     explicit DangerJudgmentEngine(
         const forklift::config::DangerJudgmentConfig& config,
+        double forklift_collision_radius_mm,
         std::chrono::milliseconds dead_reckoning_release_grace);
 
     // 한 프레임 처리: 카메라 입력 + 센서 입력 -> 최종 판정

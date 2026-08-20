@@ -101,7 +101,7 @@ void runCases(const DangerJudgmentEngine& engine, const std::vector<Case>& cases
 // SensorInput 인자 순서:  imu_ok, tof_ok, tof_distance_mm, imu_accel_g, is_dead_reckoning
 
 forklift::config::DangerJudgmentConfig testJudgmentConfig() {
-    return {3000.0, 1500.0, 400.0, 100.0, 1000.0, 500.0, 2.0, 0.0};
+    return {3000.0, 1500.0, 400.0, 100.0, 1000.0, 500.0, 2.0};
 }
 
 // 카메라 기준으로 확실히 SAFE인 좌표쌍(거리 약 14142mm) - 카메라 축을 중립화할 때 사용.
@@ -111,7 +111,7 @@ const WorldPoint kFarB{10000.0, 10000.0};
 // ── 테스트 1: 경계값 ────────────────────────────────────────
 // 각 임계값의 바로 아래 / 정확히 / 바로 위 3점에서 판정이 갈리는 위치를 확인한다.
 void testBoundaryValues() {
-    DangerJudgmentEngine engine(testJudgmentConfig(), std::chrono::milliseconds(500));
+    DangerJudgmentEngine engine(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
 
     std::cout << "[테스트 1] 임계값 경계값 - 판정이 갈리는 지점 확인\n";
 
@@ -208,7 +208,7 @@ void testBoundaryValues() {
 // 여러 조건이 동시에 걸렸을 때 상위 조건이 이기는지, 그 보정이 final_risk에도
 // 맞게 반영되는지 함께 본다.
 void testPriorityMatrix() {
-    DangerJudgmentEngine engine(testJudgmentConfig(), std::chrono::milliseconds(500));
+    DangerJudgmentEngine engine(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
 
     std::cout << "\n[테스트 2] 우선순위 충돌 매트릭스 (충돌 > 센서고장 > DR > 미확인근접)\n";
 
@@ -264,14 +264,14 @@ void testEmergencyTierVsImpact() {
     // [주의] 케이스마다 엔진을 새로 만든다. EMERGENCY 히스테리시스가 프레임 간 상태를
     //        남기므로 한 엔진을 공유하면 앞 케이스의 래치가 뒤 케이스 기대값을 흔든다.
     {
-        DangerJudgmentEngine engine(testJudgmentConfig(), std::chrono::milliseconds(500));
+        DangerJudgmentEngine engine(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
         runCase(engine, {"카메라 300mm (충돌 없음)",
                          CameraInput{true, true, kNearA, kNearB, "", ""},
                          SensorInput{true, true, 5000.0, 0.1, false},
                          ExceptionState::NONE,             RiskLevel::EMERGENCY});
     }
     {
-        DangerJudgmentEngine engine(testJudgmentConfig(), std::chrono::milliseconds(500));
+        DangerJudgmentEngine engine(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
         runCase(engine, {"카메라 300mm + 충돌2.1g",
                          CameraInput{true, true, kNearA, kNearB, "", ""},
                          SensorInput{true, true, 5000.0, 2.1, false},
@@ -279,7 +279,7 @@ void testEmergencyTierVsImpact() {
                          ExceptionState::EMERGENCY_IMPACT, RiskLevel::EMERGENCY});
     }
     {
-        DangerJudgmentEngine engine(testJudgmentConfig(), std::chrono::milliseconds(500));
+        DangerJudgmentEngine engine(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
         runCase(engine, {"카메라 원거리 + 충돌2.1g (기존 동작)",
                          CameraInput{true, true, kFarA, kFarB, "", ""},
                          SensorInput{true, true, 5000.0, 2.1, false},
@@ -287,7 +287,7 @@ void testEmergencyTierVsImpact() {
                          ExceptionState::EMERGENCY_IMPACT, RiskLevel::DANGER});
     }
     {
-        DangerJudgmentEngine engine(testJudgmentConfig(), std::chrono::milliseconds(500));
+        DangerJudgmentEngine engine(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
         runCase(engine, {"카메라 300mm + ToF고장",
                          CameraInput{true, true, kNearA, kNearB, "", ""},
                          SensorInput{true, false, 0.0, 0.1, false},
@@ -301,18 +301,16 @@ void testCollisionRadiusContract() {
     const CameraInput camera{true, true, {0.0, 0.0}, {1600.0, 0.0}, "", ""};
     const SensorInput sensor{true, true, 5000.0, 0.1, false};
 
-    auto zero_radius = testJudgmentConfig();
-    zero_radius.forklift_collision_radius_mm = 0.0;
-    DangerJudgmentEngine centerDistanceEngine(zero_radius, std::chrono::milliseconds(500));
+    const auto zero_radius = testJudgmentConfig();
+    DangerJudgmentEngine centerDistanceEngine(zero_radius, 0.0, std::chrono::milliseconds(500));
     const auto center = centerDistanceEngine.evaluate(camera, sensor);
     const bool center_ok = center.camera_risk == RiskLevel::CAUTION && center.distance_mm == 1600.0;
     if (!center_ok) ++failures;
     std::cout << (center_ok ? "  [OK]   " : "  [FAIL] ")
               << "반경 0mm이면 1600mm 중심점 거리를 그대로 CAUTION으로 판정\n";
 
-    auto adjusted_radius = testJudgmentConfig();
-    adjusted_radius.forklift_collision_radius_mm = 200.0;
-    DangerJudgmentEngine adjustedEngine(adjusted_radius, std::chrono::milliseconds(500));
+    const auto adjusted_radius = testJudgmentConfig();
+    DangerJudgmentEngine adjustedEngine(adjusted_radius, 200.0, std::chrono::milliseconds(500));
     const auto adjusted = adjustedEngine.evaluate(camera, sensor);
     const bool adjusted_ok = adjusted.camera_risk == RiskLevel::DANGER &&
                              adjusted.distance_mm == 1600.0;

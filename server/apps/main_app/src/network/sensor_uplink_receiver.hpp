@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <cstddef>
 #include <map>
+#include <set>
+#include <vector>
 
 #include "network/mqtt_tls_options.hpp"
 
@@ -36,12 +38,13 @@ struct mosquitto_message;
 //   덮어쓴다. QoS 1/2의 재전송/중복제거 비용을 들일 이유가 없다.
 //
 // terminal_id는 이제 payload가 아니라 토픽에서 온다(payload 스키마 자체는 기존 TCP
-// 버전과 동일 - 파싱 로직을 그대로 재사용하기 위해 일부러 안 건드렸다).
+// 버전과 동일 - 파싱 로직을 그대로 재사용하기 위해 일부러 안 건드렸다). 단, 토픽의
+// terminal_id도 safety config에 등록된 목록에 있어야 하며 미등록 ID는 캐시에 넣지 않는다.
 //
 // [수신 경로] 서버가 이 값을 어디로 넣을지(명수님 이벤트 큐 vs 최신값 캐시)는 "최신값
 // 캐시" 쪽으로 확정됐다. 수신 콜백이 단말별 최신 스냅샷을 갱신해두고, 판정 루프가
 // 아무 때나 getLatest(terminal_id)로 꺼내 쓰는 구조. 여러 단말이 같은 브로커에 붙을 수
-// 있어 캐시는 terminal_id별로 따로 둔다(단일 지게차 데모에서는 사실상 항상 1건).
+// 있어 캐시는 terminal_id별로 따로 둔다. 단말 수가 늘어도 서로의 최신값을 섞지 않는다.
 //
 // 프로젝트에 링크되는 JSON 라이브러리가 없어(third_party/nlohmann은 server_config
 // 내부 전용) CameraAssignmentServer와 같은 방식의 문자열 검색 기반 최소 파서를 쓴다.
@@ -90,7 +93,10 @@ public:
     // tls: 기본값 MqttTlsOptions{}(enabled=false) - 평문 연결 그대로 유지. enabled=true면
     //      start()가 mosquitto_connect_async() 전에 mosquitto_tls_set()을 건다
     //      (ResultPublisher와 같은 규약).
-    explicit SensorUplinkReceiver(std::string broker_host = kDefaultBrokerHost,
+    // configured_terminal_ids: safety config에 등록된 K개 terminal_id 목록.
+    // MQTT 토픽으로 전달된 ID가 이 목록에 없으면 캐시에 넣지 않고 거부한다.
+    explicit SensorUplinkReceiver(std::vector<std::string> configured_terminal_ids,
+                                  std::string broker_host = kDefaultBrokerHost,
                                   int broker_port = kDefaultBrokerPort,
                                   MqttTlsOptions tls = {});
     ~SensorUplinkReceiver();
@@ -131,7 +137,7 @@ public:
     // 정상 파싱해 캐시에 반영한 누적 건수(전체 단말 합산).
     std::size_t receivedCount() const { return received_.load(); }
 
-    // 파싱 실패로 버린 누적 메시지 수(깨진 JSON / 필드 누락 / 토픽 형식 오류).
+    // 거부한 누적 메시지 수(깨진 JSON / 필드 누락 / 토픽 형식 오류 / 미등록 terminal_id).
     std::size_t parseFailureCount() const { return parse_failures_.load(); }
 
 private:
@@ -143,10 +149,12 @@ private:
     void onDisconnect(int rc);
     void onMessage(const mosquitto_message* msg);
     void logParseFailure(const std::string& why, const std::string& topic, const std::string& payload);
+    bool isConfiguredTerminal(const std::string& terminal_id) const;
 
     std::string broker_host_;
     int         broker_port_;
     MqttTlsOptions tls_;
+    const std::set<std::string> configured_terminal_ids_;
 
     mosquitto* mosq_ = nullptr;
 

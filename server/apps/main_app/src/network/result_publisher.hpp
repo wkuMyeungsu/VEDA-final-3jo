@@ -41,6 +41,11 @@
 
 namespace risk_transport {
 
+enum class ResultPublisherRole {
+    RiskResult,   // forklift/risk/<terminal_id>
+    ServerStatus, // forklift/status/server (one publisher per server process)
+};
+
 // 브로커와의 링크 상태.
 // MQTT로 바뀌면서 LISTENING(단말 접속 대기)은 의미가 없어져 CONNECTING(브로커 연결
 // 시도 중 / 백오프 재연결 대기 중)으로 대체했다.
@@ -92,13 +97,14 @@ public:
                              std::string broker_host = "localhost",
                              uint16_t broker_port = 1883,
                              MqttTlsOptions tls = {},
-                             bool manage_server_status = true)
+                             ResultPublisherRole role = ResultPublisherRole::RiskResult)
         : terminal_id_(std::move(terminal_id)),
           broker_host_(std::move(broker_host)),
           broker_port_(broker_port),
           tls_(std::move(tls)),
-          manage_server_status_(manage_server_status),
-          topic_(std::string(kRiskTopicPrefix) + terminal_id_) {}
+          manage_server_status_(role == ResultPublisherRole::ServerStatus),
+          topic_(manage_server_status_ ? std::string(kStatusTopic)
+                                       : std::string(kRiskTopicPrefix) + terminal_id_) {}
 
     ~ResultPublisher() { stop(); }
 

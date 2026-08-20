@@ -60,8 +60,8 @@ int main() {
     SensorCollectorReader reader(collector);
 
     const forklift::config::DangerJudgmentConfig judgment_config{
-        3000.0, 1500.0, 400.0, 100.0, 1000.0, 500.0, 2.0, 0.0};
-    DangerJudgmentEngine engine(judgment_config, std::chrono::milliseconds(500));
+        3000.0, 1500.0, 400.0, 100.0, 1000.0, 500.0, 2.0};
+    DangerJudgmentEngine engine(judgment_config, 0.0, std::chrono::milliseconds(500));
 
     // 센서 하드웨어 경로에 집중하기 위한 안전 거리 CameraInput 고정값이다.
     // CameraInput 인자 순서: forklift_localized, person_detected, forklift,

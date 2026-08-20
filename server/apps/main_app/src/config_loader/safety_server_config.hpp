@@ -20,17 +20,10 @@ struct DangerJudgmentConfig {
     double tof_caution_mm{};
     double tof_danger_mm{};
     double impact_accel_threshold_g{};
-    double forklift_collision_radius_mm{};
 };
 
-struct ForkliftDetectionConfig { int marker_id{}; };
-
 struct HomographyConfig {
-    // 구버전 테스트와 호환하기 위한 채널별 H 목록이다.
-    std::map<int, std::string> files;
-    int image_width_px{};
-    int image_height_px{};
-    // 새 운영 경로에서 사용하는 전역 stream_id별 H 목록이다.
+    // 모든 카메라의 모든 채널은 전역 stream_id로 식별한다.
     std::map<std::string, std::string> stream_files;
     std::map<std::string, std::pair<int, int>> stream_image_sizes;
 };
@@ -99,7 +92,6 @@ struct OutputStorageConfig {
 
 struct SafetyServerConfig {
     DangerJudgmentConfig danger_judgment;
-    ForkliftDetectionConfig forklift_detection;
     HomographyConfig homography;
     HandoverConfig handover;
     TrackingConfig tracking;
@@ -108,8 +100,7 @@ struct SafetyServerConfig {
     StreamConfig stream;
     std::string source_path;
 
-    // 새 다중 카메라·다중 TERM 운영 경로에서 사용하는 목록이다.
-    // 위의 구버전 필드는 기존 단위 테스트와 H 변환 모듈 호환을 위해 남겨 두었다.
+    // 카메라 N대 × 스트림 M채널 × 단말 K대 운영 모델의 유일한 입력 목록이다.
     std::vector<CameraStreamConfig> streams;
     std::vector<ForkliftDevice> forklifts;
     OutputStorageConfig output_storage;
@@ -127,9 +118,6 @@ private:
 };
 
 std::string toString(SafetyServerConfigError::Code code);
-SafetyServerConfig loadSafetyServerConfig(const std::string& path);
-// 상대 H 경로는 실행 디렉터리가 아니라 공통 설정 파일의 디렉터리를 기준으로 한다.
-std::string resolveConfigRelativePath(const SafetyServerConfig& config, const std::string& path);
 
 // main 전용 정책 설정과 server/config 공통 카메라 설정을 읽고,
 // 서로 연결되는 값까지 한 번에 검증한다.

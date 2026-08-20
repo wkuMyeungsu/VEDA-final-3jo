@@ -12,7 +12,6 @@
 
 #include "logic/judgment/judgment_pipeline.h"
 
-#include <cstdio>
 #include <iostream>
 #include <string>
 
@@ -61,15 +60,24 @@ SensorInput StubSensorReader::read() {
 // ============================================================
 
 JudgmentPipeline::JudgmentPipeline(
-    int active_camera_id, const std::string& terminal_id, ISensorReader& sensors,
+    const std::string& terminal_id, ISensorReader& sensors,
     const forklift::config::DangerJudgmentConfig& judgment_config,
+    double collision_radius_mm,
     std::chrono::milliseconds dead_reckoning_release_grace)
-    : active_camera_id_(active_camera_id), terminal_id_(terminal_id), sensors_(&sensors),
-      engine_(judgment_config, dead_reckoning_release_grace) {}
+    : terminal_id_(terminal_id), sensors_(&sensors),
+      engine_(judgment_config, collision_radius_mm, dead_reckoning_release_grace) {}
 
-void JudgmentPipeline::setActiveCameraId(int camera_id) {
-    if (camera_id == active_camera_id_) return;
+void JudgmentPipeline::setActiveStream(const std::string& stream_id,
+                                       const std::string& camera_id,
+                                       int channel) {
+    if (stream_id == active_stream_id_) {
+        active_camera_id_ = camera_id;
+        active_channel_ = channel;
+        return;
+    }
+    active_stream_id_ = stream_id;
     active_camera_id_ = camera_id;
+    active_channel_ = channel;
     engine_.resetHysteresis();
 }
 
@@ -96,11 +104,9 @@ CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
     // 거리의 단일 출처를 엔진 쪽에 두고 값이 두 군데서 갈라지는 걸 막는다.
 
     // ── 식별 정보 ────────────────────────────────────────────
-    // 이 파이프라인 인스턴스가 담당하는 카메라가 곧 판정 대상 카메라이므로
-    // nearest.camera_id가 아니라 활성 카메라 id를 쓴다. 사람 미검출(found=false,
-    // camera_id=-1)일 때도 "어느 카메라에서 안 보였는지"가 하류에 남는다.
-    // 둘이 어긋나는 경우(핸드오버 의심)는 isCameraIdMismatch()로 따로 알린다.
-    cam.camera_id = cameraIdToString(active_camera_id_);
+    // 이 파이프라인 인스턴스가 담당하는 스트림의 실제 camera_id를 사용한다.
+    // 사람이 미검출이어도 현재 판정 컨텍스트의 물리 카메라 식별자는 유지한다.
+    cam.camera_id = active_camera_id_;
 
     // [TODO] zone 매핑 미확정(김진석) — camera_id -> zone 룩업이 정해지면 여기서 채운다.
     //        확정 전까지는 빈 문자열로 둬서 하류 JSON에 null로 나가게 한다.
@@ -110,9 +116,9 @@ CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
 }
 
 bool JudgmentPipeline::isCameraIdMismatch(const NearestPersonResult& nearest) const {
-    // 사람이 없으면 비교 대상이 없다. 활성 카메라가 미확정(음수)일 때도 판단하지 않는다.
-    if (!nearest.found || active_camera_id_ < 0) return false;
-    return nearest.camera_id != active_camera_id_;
+    // 사람이 없거나 활성 스트림이 아직 정해지지 않았으면 비교 대상이 없다.
+    if (!nearest.found || active_stream_id_.empty()) return false;
+    return nearest.stream_id != active_stream_id_;
 }
 
 PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
@@ -138,20 +144,4 @@ PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
     out.camera_id_mismatch  = isCameraIdMismatch(nearest);
 
     return out;
-}
-
-// ============================================================
-// 3. 출력 헬퍼
-// ============================================================
-
-std::string cameraIdToString(int camera_id) {
-    if (camera_id < 0) return "";   // 미확정/무효 -> 하류 JSON에서 null (toJsonOrNull 규칙)
-    // 단말(Qt) 인터페이스 규약 및 cameras.json의 키 포맷("CAM_01" 등)에 맞춘다.
-    // 채널은 aruco_metadata_parser.cpp에서 1 미만을 거부하므로(1-based) 오프셋 보정은 필요 없다.
-    // [주의] 이 변경 전까지 SQLite events 테이블의 camera_id 컬럼에는 "1", "2" 같은 이전 포맷이
-    //        쌓여 있다. 기존 행은 마이그레이션하지 않았으므로, 이 시점 이후로 적재되는 행만
-    //        "CAM_01" 포맷이고 과거 행과 포맷이 다르다(조회 시 유의).
-    char buf[8];
-    std::snprintf(buf, sizeof(buf), "CAM_%02d", camera_id);
-    return std::string(buf);
 }

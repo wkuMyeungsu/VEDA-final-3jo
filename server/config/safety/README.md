@@ -76,5 +76,9 @@ homography/CAM_02/homography_result_cam02_ch01_mm.json
 - 카메라 전환: `forklift/assignment/TERM_N` (QoS 1, retain)
 - 서버 상태: `forklift/status/server`
 
+센서 토픽의 `TERM_N`은 `forklift_device_config.json`에 등록된 `terminal_id`여야 한다.
+서버는 설정에 등록된 K개 단말에 대해서만 pipeline·센서 reader·위험 결과 publisher를
+생성하며, 설정에 없는 terminal_id의 센서 메시지는 캐시에 저장하지 않고 거부한다.
+
 assignment는 `type`, `terminal_id`, `stream_id`, `camera_id`, `channel`, `utc_time`을
 포함한다. TCP 9001 카메라 할당 서버는 사용하지 않는다.

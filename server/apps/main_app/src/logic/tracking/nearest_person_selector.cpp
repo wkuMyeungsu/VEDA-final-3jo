@@ -40,7 +40,9 @@ NearestPersonResult selectNearestPerson(const WorldPoint& forklift,
         if (d < result.distance_mm) {
             result.found      = true;
             result.track_id   = t.track_id;
-            result.camera_id  = t.camera_id;  // 선택된 트랙의 값을 그대로 통과시킴 (판정 로직과 무관)
+            result.stream_id  = t.stream_id;
+            result.camera_id  = t.camera_id;
+            result.channel    = t.channel;
             result.position   = t.last_world;
             result.distance_mm = d;
         }

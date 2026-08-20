@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "input/onvif_metadata_parser.hpp"            // BoundingBox
@@ -23,7 +24,9 @@
 
 // 한 프레임에서 들어온 검출 결과 (아직 track_id 없음)
 struct Detection {
-    int         camera_id;
+    std::string stream_id;
+    std::string camera_id;
+    int         channel = -1;
     BoundingBox bbox;    // 자기 카메라 픽셀 좌표 (ONVIF BoundingBox 그대로)
     WorldPoint  world;   // world 좌표 (카메라가 달라도 비교 가능)
     double      timestamp_s;
