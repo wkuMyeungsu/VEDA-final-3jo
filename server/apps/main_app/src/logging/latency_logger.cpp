@@ -99,7 +99,10 @@ bool LatencyLogger::openFile() {
                              std::filesystem::file_size(csv_path_, ec) == 0;
 
     file_.open(csv_path_, std::ios::out | std::ios::app);
-    if (!file_.is_open()) return false;
+    if (!file_.is_open()) {
+        LOG_WARN("DEBUG", "지연 시간 측정 CSV 파일을 열 수 없음 - " + csv_path_);
+        return false;
+    }
 
     if (need_header) {
         file_ << LatencyStamps::csvHeader() << '\n';
