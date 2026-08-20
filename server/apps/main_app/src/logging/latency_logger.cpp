@@ -5,6 +5,7 @@
 // 인터페이스와 설계 근거는 LatencyLogger.h 주석 참고.
 
 #include "logging/latency_logger.hpp"
+#include "logging/logger.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -31,7 +32,7 @@ bool LatencyLogger::start() {
 
     running_.store(true);
     worker_ = std::thread(&LatencyLogger::run, this);
-    std::cerr << "[LatencyLogger] 지연 로그 시작 - " << csv_path_ << "\n";
+    LOG_INFO("DEBUG", "지연 시간 측정 로그 시작 - " + csv_path_);
     return true;
 #endif
 }

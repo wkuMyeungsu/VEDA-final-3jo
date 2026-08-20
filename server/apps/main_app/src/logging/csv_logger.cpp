@@ -1,5 +1,6 @@
 // csv_logger.cpp
 #include "logging/csv_logger.hpp"
+#include "logging/logger.hpp"
 #include <chrono>
 #include <iostream>
 
@@ -9,7 +10,7 @@ CsvLogger::CsvLogger(const std::string& filePath) {
 
     file_.open(filePath, std::ios::app);
     if (!file_.is_open()) {
-        std::cerr << "[경고] CSV 파일을 열 수 없음: " << filePath << "\n";
+        LOG_WARN("DEBUG", "객체 검출 CSV 파일을 열 수 없음 - " + filePath);
         return;
     }
 
@@ -18,6 +19,7 @@ CsvLogger::CsvLogger(const std::string& filePath) {
                  "bbox_left,bbox_top,bbox_right,bbox_bottom,"
                  "ground_x,ground_y,stream_id,camera_id,channel\n";
     }
+    LOG_INFO("DEBUG", "객체 검출 원시 로그 시작 - " + filePath);
 }
 
 CsvLogger::~CsvLogger() {

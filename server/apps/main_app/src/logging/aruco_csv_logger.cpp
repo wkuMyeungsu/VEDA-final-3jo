@@ -1,5 +1,6 @@
 // aruco_csv_logger.cpp
 #include "logging/aruco_csv_logger.hpp"
+#include "logging/logger.hpp"
 #include <chrono>
 #include <iostream>
 
@@ -9,7 +10,7 @@ ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath) {
 
     file_.open(filePath, std::ios::app);
     if (!file_.is_open()) {
-        std::cerr << "[경고] CSV 파일을 열 수 없음: " << filePath << "\n";
+        LOG_WARN("DEBUG", "마커 검출 CSV 파일을 열 수 없음 - " + filePath);
         return;
     }
 
@@ -17,6 +18,7 @@ ArucoCsvLogger::ArucoCsvLogger(const std::string& filePath) {
         file_ << "camera_utc,server_received_utc,delta_ms,channel,marker_id,stream_id,camera_id,"
                  "x0,y0,x1,y1,x2,y2,x3,y3\n";
     }
+    LOG_INFO("DEBUG", "마커 검출 원시 로그 시작 - " + filePath);
 }
 
 ArucoCsvLogger::~ArucoCsvLogger() {
