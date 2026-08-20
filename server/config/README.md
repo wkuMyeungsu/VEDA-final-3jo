@@ -1,6 +1,6 @@
-# 공통 카메라 설정
+# 공통 장비·카메라 설정
 
-`server/config`는 안전 서버와 호모그래피 앱이 함께 읽는 공용 카메라 영역이다.
+`server/config`는 안전 서버와 호모그래피 앱이 함께 읽는 공용 카메라·단말 식별 영역이다.
 앱별 정책과 호모그래피 결과는 `safety/`, `homography/`로 분리한다.
 호모그래피 결과는 같은 `homography/` 루트 아래 카메라별 디렉터리에 둔다.
 
@@ -10,6 +10,8 @@
   카메라 ID나 설치 주소는 넣지 않는다.
 - `camera_list.json`: 설치된 CCTV 목록, `camera_id ↔ model` 매핑, 연결 정보,
   채널별 RTSP 주소와 공통 H 파일 경로를 기록한다.
+- `forklift_device_config.json`: 등록된 단말의 `terminal_id`, ArUco marker,
+  지게차 충돌 반경을 기록한다.
 - `homography/<camera_id>/...`: 호모그래피 앱이 산출하고 main이 그대로 읽는
   최종 `H_pixel_to_world` 파일이다.
 

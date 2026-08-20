@@ -6,7 +6,7 @@
 forklift_safety_server [--config-dir PATH] [--common-config-dir PATH]
 ```
 
-`PATH`를 생략하면 `server/config/safety`를 찾는다. 공통 카메라 설정은
+`PATH`를 생략하면 `server/config/safety`를 찾는다. 공통 카메라·단말 식별 설정은
 `server/config`에서 읽으며, 다른 위치에 둘 때는 `--common-config-dir PATH`를 함께 지정한다.
 운영 설정은 장비마다 달라지므로 Git에는 샘플만 남기고 실제 값은 별도 파일로 둔다.
 
@@ -14,7 +14,7 @@ forklift_safety_server [--config-dir PATH] [--common-config-dir PATH]
 
 - `server/config/camera_model.json`: 카메라 모델별 채널 수
 - `server/config/camera_list.json`: CCTV 목록, RTSP 주소, 채널별 H 파일과 해상도
-- `forklift_device_config.json`: TERM, ArUco marker, 지게차 충돌 반경
+- `server/config/forklift_device_config.json`: TERM, ArUco marker, 지게차 충돌 반경
 - `danger_judgment_config.json`: 모든 TERM이 공유하는 위험 임계값과 단위
 - `system_config.json`: MQTT, 추적, 핸드오버, 센서, 스트림, 저장 경로
 
@@ -76,7 +76,8 @@ homography/CAM_02/homography_result_cam02_ch01_mm.json
 - 카메라 전환: `forklift/assignment/TERM_N` (QoS 1, retain)
 - 서버 상태: `forklift/status/server`
 
-센서 토픽의 `TERM_N`은 `forklift_device_config.json`에 등록된 `terminal_id`여야 한다.
+센서 토픽의 `TERM_N`은 `server/config/forklift_device_config.json`에 등록된
+`terminal_id`여야 한다.
 서버는 설정에 등록된 K개 단말에 대해서만 pipeline·센서 reader·위험 결과 publisher를
 생성하며, 설정에 없는 terminal_id의 센서 메시지는 캐시에 저장하지 않고 거부한다.
 

@@ -15,7 +15,8 @@ server/
 │   ├── safety/                      # 안전 서버 정책 설정
 │   ├── homography/                  # 정책 설정 + 카메라별 최종 H 결과
 │   ├── camera_model.json
-│   └── camera_list.json
+│   ├── camera_list.json
+│   └── forklift_device_config.json
 ├── deploy/systemd/
 ├── third_party/
 ├── build/                           # 로컬 생성물
@@ -40,7 +41,7 @@ cmake -S server -B server/build
 cmake --build server/build -j2
 ```
 
-기본 설정은 `server/config/safety`에서 읽고, CCTV 목록·모델·H 결과는
+기본 설정은 `server/config/safety`에서 읽고, CCTV 목록·모델·H 결과·단말 식별 설정은
 `server/config`에서 읽는다. 다른 위치를 사용할 때는 다음처럼 명시한다.
 
 ```sh

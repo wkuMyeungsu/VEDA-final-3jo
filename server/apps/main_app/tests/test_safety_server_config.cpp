@@ -89,12 +89,16 @@ int main() {
         std::filesystem::copy_file(multi_dir / "homography/CAM_02" / name,
                                    split_common / "homography/CAM_02" / name,
                                    std::filesystem::copy_options::overwrite_existing);
-    for (const char* name : {"forklift_device_config.json", "danger_judgment_config.json", "system_config.json"})
+    std::filesystem::copy_file(multi_dir / "forklift_device_config.json",
+                               split_common / "forklift_device_config.json",
+                               std::filesystem::copy_options::overwrite_existing);
+    for (const char* name : {"danger_judgment_config.json", "system_config.json"})
         std::filesystem::copy_file(multi_dir / name, split_app / name,
                                    std::filesystem::copy_options::overwrite_existing);
     try {
         const auto split = loadMultiCameraServerConfig(split_app.string(), split_common.string());
-        check(split.streams.size() == 5, "공통 camera_list와 main 전용 설정을 분리해 읽음");
+        check(split.streams.size() == 5 && split.forklifts.size() == 2,
+              "공통 camera·단말 설정과 main 전용 정책을 분리해 읽음");
     } catch (const std::exception& error) {
         check(false, error.what());
     }
