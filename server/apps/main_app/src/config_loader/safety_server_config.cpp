@@ -128,13 +128,13 @@ std::string resolveCommonConfigDirectory(const std::string& config_dir) {
 
 SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir,
                                                    const std::string& common_config_dir) {
-    // 위험·센서·MQTT 정책은 config/safety에 두고, 카메라 목록·모델과 H는
+    // 위험·센서·MQTT 정책은 config/safety에 두고, 카메라·단말 목록과 H는
     // 두 앱이 함께 쓰는 server/config에서 읽는다.
     const std::filesystem::path dir(config_dir);
     const std::filesystem::path common_dir(common_config_dir.empty() ? config_dir : common_config_dir);
     const std::filesystem::path camera_path = common_dir / "camera_list.json";
     const std::filesystem::path model_path = common_dir / "camera_model.json";
-    const std::filesystem::path device_path = dir / "forklift_device_config.json";
+    const std::filesystem::path device_path = common_dir / "forklift_device_config.json";
     const std::filesystem::path danger_path = dir / "danger_judgment_config.json";
     const std::filesystem::path system_path = dir / "system_config.json";
 

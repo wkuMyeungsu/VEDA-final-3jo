@@ -1,6 +1,7 @@
 /build/
 /var/
 config/homography/CAM_*/
+/config/forklift_device_config.json
 **/build/
 *.db
 *.db-shm
