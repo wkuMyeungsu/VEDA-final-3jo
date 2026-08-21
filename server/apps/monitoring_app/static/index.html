@@ -76,7 +76,7 @@
         const runtimeNode=document.getElementById('runtime-status');
         if(snapshot){
           setState('runtime-status',snapshot.state);
-          runtimeNode.append(document.createTextNode(` · 처리 큐 버림 ${snapshot.queue?.dropped??'?'}건`));
+          runtimeNode.append(document.createTextNode(` · 대기열에서 버린 메시지 ${snapshot.queue?.dropped??'?'}건`));
         }else{
           runtimeNode.textContent='기록 없음';
           runtimeNode.className='status-value';
