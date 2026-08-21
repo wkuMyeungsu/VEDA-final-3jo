@@ -83,7 +83,7 @@
       <span class="legend-item"><span class="status-dot good" aria-hidden="true"></span>정상</span>
       <span class="legend-item"><span class="status-dot standby" aria-hidden="true"></span>대기</span>
       <span class="legend-item"><span class="status-dot problem" aria-hidden="true"></span>문제</span>
-      <span class="legend-item"><span class="status-dot unknown" aria-hidden="true"></span>확인 필요</span>
+      <span class="legend-item"><span class="status-dot unknown" aria-hidden="true"></span>주의·확인 필요</span>
     </div>
     <div class="status-grid">
       <article class="status-card"><header><h3>안전 서버</h3><span id="safety-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><p id="safety-detail" class="status-detail">확인 중</p></article>
@@ -122,6 +122,7 @@
     const numberFormat = new Intl.NumberFormat('ko-KR');
     const riskLabels = Object.freeze({SAFE:'안전',CAUTION:'주의',DANGER:'위험',EMERGENCY:'비상'});
     const exceptionLabels = Object.freeze({NONE:'없음',SENSOR_FAULT:'센서 이상',DEAD_RECKONING:'위치 추정',EMERGENCY_IMPACT:'충격 감지',UNCONFIRMED_PROXIMITY:'미확인 근접'});
+    const localizationLabels = Object.freeze({LOCALIZED:'위치 확인',MARKER_NOT_DETECTED:'마커 미검출',HOMOGRAPHY_UNAVAILABLE:'좌표 변환 불가',WAITING_FOR_ARUCO:'ArUco 입력 대기'});
 
     const setText=(id,value)=>{document.getElementById(id).textContent=value};
     setText('refresh-note',`안전 서버와 단말별 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신`);
@@ -156,6 +157,8 @@
     const riskLabel=(value)=>riskLabels[value]||'판정 대기';
     const riskClass=(value)=>({SAFE:'risk-safe',CAUTION:'risk-caution',DANGER:'risk-danger',EMERGENCY:'risk-emergency'}[value]||'risk-unknown');
     const exceptionLabel=(value)=>exceptionLabels[value]||'확인 필요';
+    const localizationLabel=(value)=>localizationLabels[value]||'위치 진단 확인 필요';
+    const localizationClass=(value)=>({LOCALIZED:'risk-safe',MARKER_NOT_DETECTED:'risk-caution',HOMOGRAPHY_UNAVAILABLE:'risk-danger',WAITING_FOR_ARUCO:'risk-unknown'}[value]||'risk-unknown');
     const runtimeAgeMs=(checkedUtc)=>{
       if(!checkedUtc)return Number.POSITIVE_INFINITY;
       const checked=Date.parse(checkedUtc);
@@ -193,7 +196,7 @@
         const outputHealthy=terminal.risk_link==='connected'&&Number(terminal.risk_send_failures||0)===0&&Number(terminal.risk_queue_dropped||0)===0;
         const hasRisk=risk.has_result===true;
         const hasException=hasRisk&&risk.exception&&risk.exception!=='NONE';
-        const cardKind=!sensor.has_sample||!hasRisk?'unknown':sensorHealthy&&outputHealthy&&!hasException?'good':'problem';
+        const cardKind=(!sensorBypassed&&!sensor.has_sample)||!hasRisk?'unknown':sensorHealthy&&outputHealthy&&!hasException?'good':'problem';
         const card=document.createElement('article');
         card.className='terminal-card';
         const header=document.createElement('header');
@@ -204,7 +207,7 @@
         const dot=document.createElement('span');
         dot.className=`status-dot ${cardKind}`;
         dot.setAttribute('aria-hidden','true');
-        const stateText=!sensor.has_sample?'센서 수신 없음':!hasRisk?'판정 대기':hasException?`예외 · ${exceptionLabel(risk.exception)}`:sensorHealthy&&outputHealthy?'운영 정상':'확인 필요';
+        const stateText=sensorBypassed?'센서 제외 테스트':!sensor.has_sample?'센서 수신 없음':!hasRisk?'판정 대기':hasException?`예외 · ${exceptionLabel(risk.exception)}`:sensorHealthy&&outputHealthy?'운영 정상':'확인 필요';
         state.append(dot,document.createTextNode(stateText));
         header.append(title,state);
         const fields=document.createElement('div');
@@ -222,6 +225,24 @@
         if(risk.camera_id)riskDetails.push(`${risk.camera_id}${Number.isFinite(Number(risk.channel))?` · ${risk.channel}번 채널`:''}`);
         if(!riskDetails.length)riskDetails.push(risk.has_result===true?'판정 근거 확인 중':'아직 실제 판정 없음');
         addTerminalField(fields,'현재 판정',riskLabel(currentRisk),riskDetails.join(' · '),`risk-badge ${riskClass(currentRisk)}`);
+
+        const localization=terminal.localization||{};
+        const localizationStatus=localization.status||'WAITING_FOR_ARUCO';
+        const localizationDetails=[];
+        if(Number.isFinite(Number(localization.configured_marker_id)))
+          localizationDetails.push(`설정 ID ${formatNumber(localization.configured_marker_id)}`);
+        if(localization.last_observed_marker_ids?.length)
+          localizationDetails.push(`최근 관측 ID ${localization.last_observed_marker_ids.join(', ')}`);
+        else if(localizationStatus!=='LOCALIZED')
+          localizationDetails.push('이번 실행에서 관측된 마커 없음');
+        if(localization.last_observed_markers_stream_id)
+          localizationDetails.push(localization.last_observed_markers_stream_id);
+        if(localization.last_target_marker_seen_utc)
+          localizationDetails.push(`설정 ID 마지막 검출 ${formatTimestamp(localization.last_target_marker_seen_utc)}`);
+        else if(localizationStatus==='MARKER_NOT_DETECTED')
+          localizationDetails.push('설정 ID는 이번 실행에서 검출되지 않음');
+        addTerminalField(fields,'지게차 위치',localizationLabel(localizationStatus),
+          localizationDetails.join(' · ')||'진단 정보 없음',`risk-badge ${localizationClass(localizationStatus)}`);
 
         const lastChange=risk.last_change_utc||events.last_change_utc;
         addTerminalField(fields,'최근 전이',lastChange?formatTimestamp(lastChange):'기록 없음',
@@ -271,8 +292,13 @@
         const snapshotAge=runtimeAgeMs(snapshot?.checked_utc);
         const runtimeFresh=Boolean(snapshot)&&snapshotAge<=RUNTIME_STATUS_MAX_AGE_SECONDS*MILLISECONDS_PER_SECOND;
         const infrastructureOk=safetyState==='active'&&mqttReachable===true&&runtimeFresh;
+        const localizationProblem=(snapshot?.terminals||[]).some((terminal)=>{
+          const status=terminal.localization?.status;
+          return status&&status!=='LOCALIZED';
+        });
 
-        if(infrastructureOk)setOverall('good','정상','서버 heartbeat와 MQTT 연결이 정상입니다.');
+        if(infrastructureOk&&!localizationProblem)setOverall('good','정상','서버 heartbeat와 MQTT 연결이 정상입니다.');
+        else if(infrastructureOk&&localizationProblem)setOverall('unknown','주의','서버는 실행 중이나 단말 위치 진단을 확인하세요.');
         else if(safetyState==='unknown'||typeof mqttReachable!=='boolean'||!snapshot)setOverall('unknown','확인 필요','서버 공통 상태를 확인하세요.');
         else setOverall('problem','문제','서버 heartbeat, 안전 서버 또는 MQTT를 확인하세요.');
 

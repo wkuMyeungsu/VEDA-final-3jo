@@ -19,10 +19,70 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
                             config.tracking.track_timeout_ms / 1000.0),
       judgment_pipeline_(device.terminal_id, sensors, config.danger_judgment,
                          device.collision_radius_mm, config.handover.lostGrace(),
-                         ignore_sensor_input) {}
+                         ignore_sensor_input) {
+    localization_status_.configured_marker_id = marker_id_;
+}
+
+void SafetyFramePipeline::recordArucoObservation(const ArucoFrame& frame) {
+    std::lock_guard<std::mutex> lock(localization_mutex_);
+    localization_status_.configured_marker_id = marker_id_;
+    localization_status_.last_aruco_frame_utc =
+        frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+    localization_status_.last_aruco_frame_stream_id = frame.stream_id;
+    localization_status_.last_aruco_frame_channel = frame.channel;
+
+    bool target_marker_seen = false;
+    for (const auto& marker : frame.markers) {
+        if (marker.id == marker_id_) target_marker_seen = true;
+    }
+    if (target_marker_seen) {
+        localization_status_.last_target_marker_seen_utc =
+            frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+        localization_status_.last_target_marker_stream_id = frame.stream_id;
+        localization_status_.last_target_marker_channel = frame.channel;
+    }
+    if (!frame.markers.empty()) {
+        localization_status_.last_observed_markers_utc =
+            frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+        localization_status_.last_observed_markers_stream_id = frame.stream_id;
+        localization_status_.last_observed_markers_channel = frame.channel;
+        localization_status_.last_observed_marker_ids.clear();
+        localization_status_.last_observed_marker_ids.reserve(frame.markers.size());
+        for (const auto& marker : frame.markers)
+            localization_status_.last_observed_marker_ids.push_back(marker.id);
+    }
+}
+
+void SafetyFramePipeline::updateLocalizationResult(bool localized,
+                                                    bool marker_found,
+                                                    bool homography_available) {
+    std::lock_guard<std::mutex> lock(localization_mutex_);
+    localization_status_.configured_marker_id = marker_id_;
+    localization_status_.localized = localized;
+    localization_status_.active_stream_id = active_stream_.value_or("");
+    localization_status_.active_camera_id = active_camera_id_;
+    localization_status_.active_channel = active_channel_;
+    if (localized) {
+        localization_status_.status = "LOCALIZED";
+    } else if (!marker_found) {
+        localization_status_.status = localization_status_.last_aruco_frame_utc.empty()
+                                          ? "WAITING_FOR_ARUCO"
+                                          : "MARKER_NOT_DETECTED";
+    } else if (!homography_available) {
+        localization_status_.status = "HOMOGRAPHY_UNAVAILABLE";
+    } else {
+        localization_status_.status = "HOMOGRAPHY_UNAVAILABLE";
+    }
+}
+
+SafetyFramePipeline::LocalizationStatus SafetyFramePipeline::localizationStatus() const {
+    std::lock_guard<std::mutex> lock(localization_mutex_);
+    return localization_status_;
+}
 
 std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const ArucoFrame& frame) {
     if (frame.stream_id.empty() || frame.camera_id.empty() || frame.channel < 1) return std::nullopt;
+    recordArucoObservation(frame);
     const auto changed = marker_tracker_.onArucoFrame(frame);
     const auto active = marker_tracker_.activeStream();
     if (!active) return std::nullopt;
@@ -39,6 +99,12 @@ std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const Ar
     active_channel_ = frame.channel;
     judgment_pipeline_.setActiveStream(frame.stream_id, frame.camera_id, frame.channel);
     last_aruco_ = frame;
+    {
+        std::lock_guard<std::mutex> lock(localization_mutex_);
+        localization_status_.active_stream_id = active_stream_.value_or("");
+        localization_status_.active_camera_id = active_camera_id_;
+        localization_status_.active_channel = active_channel_;
+    }
     return active_stream_;
 }
 
@@ -54,9 +120,13 @@ SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
     }
 
     std::optional<WorldPoint> forklift_world;
+    bool marker_found = false;
+    bool homography_available = false;
     if (last_aruco_) {
         for (const auto& marker : last_aruco_->markers) {
             if (marker.id != marker_id_) continue;
+            marker_found = true;
+            homography_available = homography_.hasStream(last_aruco_->stream_id);
             common::PixelPoint center;
             for (const auto& corner : marker.corners) {
                 center.x += corner.x;
@@ -71,6 +141,7 @@ SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
 
     output.forklift_localized = forklift_world.has_value();
     output.forklift_world = forklift_world.value_or(WorldPoint{});
+    updateLocalizationResult(output.forklift_localized, marker_found, homography_available);
 
     std::vector<Detection> detections;
     for (const auto& object : frame.objects) {

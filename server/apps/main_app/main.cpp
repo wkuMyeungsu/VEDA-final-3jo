@@ -91,6 +91,23 @@ std::string jsonString(const std::string& value) {
     return escaped;
 }
 
+std::string markerIdList(const std::vector<int>& marker_ids) {
+    if (marker_ids.empty()) return "없음";
+    std::ostringstream output;
+    for (std::size_t index = 0; index < marker_ids.size(); ++index) {
+        if (index) output << ',';
+        output << marker_ids[index];
+    }
+    return output.str();
+}
+
+const char* localizationLogLabel(const std::string& status) {
+    if (status == "LOCALIZED") return "지게차 위치 확인";
+    if (status == "MARKER_NOT_DETECTED") return "지게차 기준 마커 미검출";
+    if (status == "HOMOGRAPHY_UNAVAILABLE") return "지게차 좌표 변환 불가";
+    return "ArUco 입력 대기";
+}
+
 const char* linkStateName(risk_transport::LinkState state) {
     switch (state) {
         case risk_transport::LinkState::CONNECTED: return "connected";
@@ -158,6 +175,7 @@ struct TerminalContext {
     forklift::logic::SafetyFramePipeline pipeline;
     risk_transport::ResultPublisher publisher;
     risk_transport::ResultDispatcher dispatcher;
+    std::string last_localization_status;
 
     TerminalContext(forklift::config::SafetyServerConfig config,
                     forklift::config::ForkliftDevice forklift,
@@ -272,6 +290,26 @@ void CentralServer::process(const MetadataEvent& event) {
             const double now_s = std::chrono::duration<double>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             auto output = terminal->pipeline.processObjectFrame(event.object, now_s);
+            const auto localization = terminal->pipeline.localizationStatus();
+            if (localization.status != terminal->last_localization_status) {
+                const std::string stream = localization.last_aruco_frame_stream_id.empty()
+                                               ? "없음"
+                                               : localization.last_aruco_frame_stream_id;
+                const std::string target_seen = localization.last_target_marker_seen_utc.empty()
+                                                    ? "이번 실행에서 없음"
+                                                    : localization.last_target_marker_seen_utc;
+                const std::string message =
+                    "[" + terminal->device.terminal_id + "] " + localizationLogLabel(localization.status) +
+                    " (설정 ID: " + std::to_string(localization.configured_marker_id) +
+                    ", 최근 ArUco 스트림: " + stream +
+                    ", 최근 관측 ID: " + markerIdList(localization.last_observed_marker_ids) +
+                    ", 설정 ID 마지막 검출: " + target_seen + ")";
+                if (localization.status == "LOCALIZED")
+                    LOG_INFO("CCTV", message);
+                else
+                    LOG_WARN("CCTV", message);
+                terminal->last_localization_status = localization.status;
+            }
             terminal->dispatcher.submit(output.judgment.result);
         }
         return;
@@ -327,6 +365,7 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
         const auto sensor = sensor_receiver_.terminalStatus(
             terminal.device.terminal_id, config_.sensor.stale_timeout_ms);
         const auto risk = terminal.dispatcher.runtimeSnapshot();
+        const auto localization = terminal.pipeline.localizationStatus();
         if (index) json << ',';
         json << "{\"terminal_id\": " << jsonString(terminal.device.terminal_id)
              << ", \"risk_link\": " << jsonString(linkStateName(terminal.publisher.state()))
@@ -367,6 +406,53 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
         if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
         else json << "null";
         json << "}"
+             << ", " << "\"localization\": {\"status\": "
+             << jsonString(localization.status)
+             << ", \"configured_marker_id\": " << localization.configured_marker_id
+             << ", \"localized\": " << (localization.localized ? "true" : "false")
+             << ", \"active_stream_id\": ";
+        if (!localization.active_stream_id.empty()) json << jsonString(localization.active_stream_id);
+        else json << "null";
+        json << ", \"active_camera_id\": ";
+        if (!localization.active_camera_id.empty()) json << jsonString(localization.active_camera_id);
+        else json << "null";
+        json << ", \"active_channel\": ";
+        if (localization.active_channel >= 1) json << localization.active_channel;
+        else json << "null";
+        json << ", \"last_aruco_frame_utc\": ";
+        if (!localization.last_aruco_frame_utc.empty()) json << jsonString(localization.last_aruco_frame_utc);
+        else json << "null";
+        json << ", \"last_aruco_frame_stream_id\": ";
+        if (!localization.last_aruco_frame_stream_id.empty()) json << jsonString(localization.last_aruco_frame_stream_id);
+        else json << "null";
+        json << ", \"last_aruco_frame_channel\": ";
+        if (localization.last_aruco_frame_channel >= 1) json << localization.last_aruco_frame_channel;
+        else json << "null";
+        json << ", \"last_target_marker_seen_utc\": ";
+        if (!localization.last_target_marker_seen_utc.empty()) json << jsonString(localization.last_target_marker_seen_utc);
+        else json << "null";
+        json << ", \"last_target_marker_stream_id\": ";
+        if (!localization.last_target_marker_stream_id.empty()) json << jsonString(localization.last_target_marker_stream_id);
+        else json << "null";
+        json << ", \"last_target_marker_channel\": ";
+        if (localization.last_target_marker_channel >= 1) json << localization.last_target_marker_channel;
+        else json << "null";
+        json << ", \"last_observed_markers_utc\": ";
+        if (!localization.last_observed_markers_utc.empty()) json << jsonString(localization.last_observed_markers_utc);
+        else json << "null";
+        json << ", \"last_observed_markers_stream_id\": ";
+        if (!localization.last_observed_markers_stream_id.empty()) json << jsonString(localization.last_observed_markers_stream_id);
+        else json << "null";
+        json << ", \"last_observed_markers_channel\": ";
+        if (localization.last_observed_markers_channel >= 1) json << localization.last_observed_markers_channel;
+        else json << "null";
+        json << ", \"last_observed_marker_ids\": [";
+        for (std::size_t marker_index = 0;
+             marker_index < localization.last_observed_marker_ids.size(); ++marker_index) {
+            if (marker_index) json << ',';
+            json << localization.last_observed_marker_ids[marker_index];
+        }
+        json << "]}"
              << ", \"events\": {\"state_changes\": " << terminal.dispatcher.changeSendCount()
              << ", \"last_change_utc\": ";
         if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
