@@ -3,6 +3,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -107,6 +108,7 @@ public:
         bool has_previous_state = false;
         int  prev_risk = kNoPreviousRisk;
         JudgmentResult previous;
+        JudgmentResult current;
         {
             std::lock_guard<std::mutex> lk(mtx_);
             // last_is_idle_(기동 시 프라이밍 값)이면 내용이 같더라도 "변화"로 친다.
@@ -122,7 +124,25 @@ public:
                 has_previous_state = true;
                 prev_risk = static_cast<int>(last_.final_risk);
             }
-            last_    = r;
+            current = r;
+            current.server_run_id = forklift::logging::Logger::instance().runId();
+            if (changed) {
+                // 외부에서 이미 decision_id를 제공하는 통합 시험도 허용하되, 일반
+                // 서버 경로에서는 한 프로세스 run_id + 단조 sequence로 생성한다.
+                current.decision_id = r.decision_id.empty()
+                    ? makeDecisionId(++decision_seq_)
+                    : r.decision_id;
+                current.publish_seq = 0;
+                current.send_reason.clear();
+            } else if (has_last_) {
+                // 거리·센서 age가 바뀌어도 sameState()가 false가 아니면 같은 decision을
+                // heartbeat로 갱신한다. ID를 새로 만들면 수신 노드가 상태 전이로 오해한다.
+                current.decision_id = last_.decision_id;
+                current.server_run_id = last_.server_run_id;
+                current.publish_seq = 0;
+                current.send_reason.clear();
+            }
+            last_    = current;
             has_last_ = true;
             last_is_idle_ = false;
             if (changed) next_heartbeat_ = Clock::now() + period_;   // 변화 시 타이머 리셋
@@ -133,15 +153,20 @@ public:
 
         // t2_send: 실제 전송(sink_) 직전. 하트비트 재전송 경로(run())는 이 계측 대상이
         // 아니다(위 latency_sink_ 주석 참고) - 여기 submit()의 "변화 시 즉시 전송" 경로에서만 찍는다.
-        LatencyStamps stamps = r.latency;
+        LatencyStamps stamps = current.latency;
         stamps.t2_send = LatencyStamps::Clock::now();
+        stamps.decision_id = current.decision_id;
+
+        JudgmentResult outbound = current;
+        outbound.send_reason = "change";
+        outbound.publish_seq = ++publish_seq_;
 
         // 전송이 먼저다. 이벤트 로그가 느려지더라도(디스크 등) 단말로 나가는 시각이
         // 밀리지 않게 순서를 고정한다. event_sink_/latency_sink_ 자체도 큐잉만 하고 즉시 반환한다.
-        logSend("변화", r);
-        sink_(toJson(r));
-        if (event_sink_) event_sink_(r, prev_risk);
-        if (alert_sink_ && has_previous_state) alert_sink_(previous, r);
+        logSend("변화", outbound);
+        sink_(toJson(outbound));
+        if (event_sink_) event_sink_(current, prev_risk);
+        if (alert_sink_ && has_previous_state) alert_sink_(previous, current);
         if (latency_sink_) latency_sink_(stamps);
         cv_.notify_one();   // 하트비트 스레드가 리셋된 시각 기준으로 다시 자도록 깨운다
     }
@@ -195,10 +220,12 @@ public:
     //
     // 이미 실제 판정이 한 건이라도 들어와 있으면 아무 일도 하지 않는다(덮어쓰기 금지).
     void primeIdle(const JudgmentResult& idle = idleResult()) {
+        JudgmentResult primed = idle;
+        primed.server_run_id = forklift::logging::Logger::instance().runId();
         {
             std::lock_guard<std::mutex> lk(mtx_);
             if (has_last_) return;
-            last_         = idle;
+            last_         = primed;
             has_last_     = true;
             last_is_idle_ = true;
             next_heartbeat_ = Clock::now() + period_;
@@ -244,6 +271,10 @@ public:
     static bool sendLogEnabled() { return send_log_enabled_; }
 
 private:
+    static std::string makeDecisionId(std::uint64_t sequence) {
+        return forklift::logging::Logger::instance().runId() + "-d" + std::to_string(sequence);
+    }
+
     // 환경변수 파싱. 아래 send_log_enabled_의 초기화식으로 딱 한 번만 불린다.
     static bool readSendLogEnv() {
         const char* v = std::getenv(kSendLogEnvVar);
@@ -337,8 +368,11 @@ private:
 
             lk.unlock();
             ++heartbeat_sends_;
-            logSend("하트비트", snapshot);
-            sink_(toJson(snapshot));
+            JudgmentResult outbound = snapshot;
+            outbound.send_reason = "heartbeat";
+            outbound.publish_seq = ++publish_seq_;
+            logSend("하트비트", outbound);
+            sink_(toJson(outbound));
             lk.lock();
         }
     }
@@ -363,6 +397,11 @@ private:
 
     std::atomic<std::size_t> change_sends_{0};
     std::atomic<std::size_t> heartbeat_sends_{0};
+
+    // decision_seq_는 한 dispatcher(=terminal) 안에서 상태 변화마다 증가하고,
+    // publish_seq_는 heartbeat를 포함한 실제 MQTT sink 호출마다 증가한다.
+    std::uint64_t decision_seq_ = 0;
+    std::atomic<std::uint64_t> publish_seq_{0};
 
     // 송신 로그 줄의 일련번호. 두 경로(변화/하트비트)가 같은 카운터를 쓰므로
     // 로그만 보고도 실제 전송 순서를 복원할 수 있다.

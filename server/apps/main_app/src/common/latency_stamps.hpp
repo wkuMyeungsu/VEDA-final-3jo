@@ -42,6 +42,7 @@ struct LatencyStamps {
     Clock::time_point t0_ingest{};    // 센서/메타데이터가 서버에 들어온 시각
     Clock::time_point t1_judge_in{};  // 판정 연산 시작 시각
     Clock::time_point t2_send{};      // 전송 직전 시각
+    std::string decision_id;          // 상태 변화 판정과 지연 행을 조인하는 키
 
     static double toMs(Clock::duration d) {
         return std::chrono::duration<double, std::milli>(d).count();
@@ -55,13 +56,13 @@ struct LatencyStamps {
     double serverTotalMs() const { return toMs(t2_send - t0_ingest); }
 
     static std::string csvHeader() {
-        return "queue_wait_ms,judge_ms,server_total_ms";
+        return "decision_id,queue_wait_ms,judge_ms,server_total_ms";
     }
 
     std::string toCsvRow() const {
-        char buf[96];
+        char buf[128];
         std::snprintf(buf, sizeof(buf), "%.3f,%.3f,%.3f",
                      queueWaitMs(), judgeMs(), serverTotalMs());
-        return buf;
+        return decision_id + "," + std::string(buf);
     }
 };

@@ -36,7 +36,8 @@ std::string escape(const std::string& value) {
 
 AssignmentPublisher::AssignmentPublisher(std::string broker_host, uint16_t broker_port,
                                          MqttTlsOptions tls)
-    : broker_host_(std::move(broker_host)), broker_port_(broker_port), tls_(std::move(tls)) {}
+    : broker_host_(std::move(broker_host)), broker_port_(broker_port), tls_(std::move(tls)),
+      server_run_id_(forklift::logging::Logger::instance().runId()) {}
 
 AssignmentPublisher::~AssignmentPublisher() { stop(); }
 
@@ -47,14 +48,26 @@ std::string AssignmentPublisher::topicFor(const std::string& terminal_id) {
 std::string AssignmentPublisher::makePayload(const std::string& terminal_id,
                                              const std::string& stream_id,
                                              const std::string& camera_id, int channel,
-                                             const std::string& utc_time) {
+                                             const std::string& utc_time,
+                                             const std::string& assignment_id,
+                                             std::uint64_t revision,
+                                             const std::string& server_run_id) {
     std::ostringstream json;
     json << "{\"type\":\"camera_assignment\","
          << "\"terminal_id\":\"" << escape(terminal_id) << "\","
          << "\"stream_id\":\"" << escape(stream_id) << "\","
          << "\"camera_id\":\"" << escape(camera_id) << "\","
          << "\"channel\":" << channel << ","
-         << "\"utc_time\":\"" << escape(utc_time) << "\"}";
+         << "\"utc_time\":\"" << escape(utc_time) << "\"";
+    if (!assignment_id.empty())
+        json << ",\"assignment_id\":\"" << escape(assignment_id) << "\"";
+    if (revision > 0)
+        json << ",\"revision\":" << revision;
+    if (!server_run_id.empty())
+        json << ",\"server_run_id\":\"" << escape(server_run_id) << "\"";
+    if (!assignment_id.empty() || revision > 0 || !server_run_id.empty())
+        json << ",\"schema_version\":1";
+    json << "}";
     return json.str();
 }
 
@@ -79,8 +92,11 @@ void AssignmentPublisher::publish(const std::string& terminal_id, const std::str
     queue_.erase(std::remove_if(queue_.begin(), queue_.end(), [&](const Message& message) {
         return message.topic == topicFor(terminal_id);
     }), queue_.end());
+    const std::uint64_t revision = ++revision_;
+    const std::string assignment_id = server_run_id_ + "-a" + std::to_string(revision);
     queue_.push_back({topicFor(terminal_id), makePayload(terminal_id, stream_id, camera_id,
-                                                         channel, utc_time)});
+                                                         channel, utc_time, assignment_id,
+                                                         revision, server_run_id_)});
     cv_.notify_one();
 }
 
@@ -95,6 +111,7 @@ bool AssignmentPublisher::connect() {
     }
     mosquitto_connect_callback_set(mosq_, &AssignmentPublisher::onConnect);
     mosquitto_disconnect_callback_set(mosq_, &AssignmentPublisher::onDisconnect);
+    mosquitto_publish_callback_set(mosq_, &AssignmentPublisher::onPublish);
     if (tls_.enabled) {
         const int tls_rc = mosquitto_tls_set(mosq_, tls_.ca_cert_path.c_str(), nullptr,
                                              tls_.client_cert_path.c_str(),
@@ -149,6 +166,22 @@ void AssignmentPublisher::onDisconnect(struct mosquitto*, void* user, int rc) {
     }
 }
 
+void AssignmentPublisher::onPublish(struct mosquitto*, void* user, int mid) {
+    auto* self = static_cast<AssignmentPublisher*>(user);
+    std::string topic;
+    {
+        std::lock_guard<std::mutex> lock(self->mutex_);
+        const auto it = self->pending_publish_topics_.find(mid);
+        if (it != self->pending_publish_topics_.end()) {
+            topic = it->second;
+            self->pending_publish_topics_.erase(it);
+        }
+        ++self->publish_acks_;
+    }
+    LOG_INFO("HANDOVER", "assignment PUBACK 수신 (mid=" + std::to_string(mid) +
+                              (topic.empty() ? std::string() : ", 토픽: " + topic) + ")");
+}
+
 void AssignmentPublisher::run() {
     while (running_) {
         Message message;
@@ -162,9 +195,22 @@ void AssignmentPublisher::run() {
             message = std::move(queue_.front());
             queue_.pop_front();
         }
-        mosquitto_publish(mosq_, nullptr, message.topic.c_str(),
-                          static_cast<int>(message.payload.size()), message.payload.data(),
-                          kQos, kRetain);
+        int mid = 0;
+        const int rc = mosquitto_publish(mosq_, &mid, message.topic.c_str(),
+                                         static_cast<int>(message.payload.size()), message.payload.data(),
+                                         kQos, kRetain);
+        if (rc != MOSQ_ERR_SUCCESS) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++publish_failures_;
+            LOG_WARN("HANDOVER", "assignment publish 실패 (토픽: " + message.topic +
+                                   ", 사유: " + std::string(mosquitto_strerror(rc)) +
+                                   ", 누적: " + std::to_string(publish_failures_) + ")");
+        } else {
+            std::lock_guard<std::mutex> lock(mutex_);
+            pending_publish_topics_[mid] = message.topic;
+            LOG_DEBUG("HANDOVER", "assignment publish queued (mid=" + std::to_string(mid) +
+                                    ", 토픽: " + message.topic + ")");
+        }
     }
 }
 

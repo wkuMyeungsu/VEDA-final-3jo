@@ -12,6 +12,7 @@ Raspberry Pi without installing paho-mqtt or relying on mosquitto_pub.
 
 import argparse
 import json
+import os
 import random
 import socket
 import sys
@@ -131,8 +132,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def make_sample(camera_id, tof_mm):
+def make_sample(camera_id, tof_mm, producer_run_id, sequence):
     return {
+        "schema_version": 1,
+        "message_id": "%s-m%d" % (producer_run_id, sequence),
+        "producer_run_id": producer_run_id,
+        "sequence": sequence,
         "camera_id": camera_id,
         "tof_ok": True,
         "tof_distance_mm": tof_mm,
@@ -165,6 +170,7 @@ def run(args):
     started = time.monotonic()
     last_io = started
     sent = 0
+    producer_run_id = "%s-p%d" % (time.strftime("%Y%m%dT%H%M%S", time.gmtime()), os.getpid())
     try:
         while True:
             if args.disconnect_after is not None and time.monotonic() - started >= args.disconnect_after:
@@ -179,7 +185,7 @@ def run(args):
                 else:
                     distances[terminal_id] = next_distance(distances[terminal_id])
                     payload = json.dumps(
-                        make_sample(args.camera_id, distances[terminal_id]),
+                        make_sample(args.camera_id, distances[terminal_id], producer_run_id, sent),
                         separators=(",", ":"),
                     ).encode("utf-8")
 

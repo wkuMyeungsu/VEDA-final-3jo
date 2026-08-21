@@ -78,11 +78,17 @@ std::string topicFor(const std::string& terminal_id) {
 }
 
 // 문서 스키마 그대로의 센서 payload 한 건.
-std::string makeSamplePayload(const std::string& camera_id, int tof_mm, int64_t ts_ms) {
-    return std::string("{\"camera_id\": \"") + camera_id + "\", \"tof_ok\": true, "
+std::string makeSamplePayload(const std::string& camera_id, int tof_mm, int64_t ts_ms,
+                              bool with_context = false) {
+    std::string payload = std::string("{\"camera_id\": \"") + camera_id + "\", \"tof_ok\": true, "
            "\"tof_distance_mm\": " + std::to_string(tof_mm) + ", \"imu_ok\": true, "
            "\"imu_accel_x_g\": 0.02, \"imu_accel_y_g\": -0.01, \"imu_accel_z_g\": 1.01, "
-           "\"ts_ms\": " + std::to_string(ts_ms) + "}";
+           "\"ts_ms\": " + std::to_string(ts_ms);
+    if (with_context) {
+        payload += ", \"schema_version\": 1, \"message_id\": \"sensor-run-1-m7\","
+                   " \"producer_run_id\": \"sensor-run-1\", \"sequence\": 7";
+    }
+    return payload + "}";
 }
 
 // 테스트 전용 MQTT 발행기. SensorUplinkReceiver는 구독만 하므로, 검증용 메시지를
@@ -194,7 +200,7 @@ void testReceivesLatestSample() {
 
     TestPublisher pub;
     const int64_t kTs = 1754380800123LL;
-    check(pub.publish(topic, makeSamplePayload("cam0", 420, kTs)), "센서 메시지 1건 발행");
+    check(pub.publish(topic, makeSamplePayload("cam0", 420, kTs, true)), "센서 메시지 1건 발행");
     check(waitForReceived(rx, 1, 3000),
           "수신 카운터 1 (실제: " + std::to_string(rx.receivedCount()) + ")");
 
@@ -212,6 +218,11 @@ void testReceivesLatestSample() {
         check(nearlyEqual(s.imu_accel_z_g, 1.01), "imu_accel_z_g == 1.01");
         check(s.ts_ms == kTs, "ts_ms == " + std::to_string(kTs) +
               " (실제: " + std::to_string(s.ts_ms) + ")");
+        check(s.schema_version == 1, "schema_version == 1");
+        check(s.message_id == "sensor-run-1-m7", "message_id가 센서 샘플에 보존됨");
+        check(s.producer_run_id == "sensor-run-1", "producer_run_id가 센서 샘플에 보존됨");
+        check(s.sequence == 7, "sequence가 센서 샘플에 보존됨");
+        check(s.payload_bytes > 0, "수신 payload 바이트 수가 계측됨");
         check(s.received_at.time_since_epoch().count() != 0,
               "received_at(서버 수신 시각)이 채워짐");
     }

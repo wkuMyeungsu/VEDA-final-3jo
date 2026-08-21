@@ -21,6 +21,10 @@ add_executable(test_metadata_timing test_metadata_timing.cpp)
 target_include_directories(test_metadata_timing PRIVATE ${SERVER_SRC_DIR})
 add_test(NAME metadata_timing_test COMMAND test_metadata_timing)
 
+add_executable(test_bounded_queue test_bounded_queue.cpp)
+target_include_directories(test_bounded_queue PRIVATE ${SERVER_SRC_DIR})
+add_test(NAME bounded_queue_test COMMAND test_bounded_queue)
+
 add_executable(test_judgment_engine test_exception_trigger.cpp)
 target_link_libraries(test_judgment_engine PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_engine_test COMMAND test_judgment_engine)
@@ -84,6 +88,7 @@ set_tests_properties(
     metadata_router_test
     aruco_metadata_parser_test
     metadata_timing_test
+    bounded_queue_test
     judgment_engine_test
     judgment_pipeline_test
     assignment_publisher_test

@@ -4,6 +4,7 @@
 #include "network/network_sensor_reader.hpp"
 
 #include <cmath>
+#include <chrono>
 
 using risk_transport::SensorUplinkReceiver;
 using risk_transport::SensorUplinkSample;
@@ -17,6 +18,14 @@ SensorInput NetworkSensorReader::read() {
 
     SensorUplinkSample sample;
     const bool got = receiver_->getLatest(terminal_id_, sample);
+    if (got) {
+        sen.sensor_message_id = sample.message_id;
+        sen.sensor_producer_run_id = sample.producer_run_id;
+        sen.sensor_sequence = sample.sequence;
+        sen.sensor_ts_ms = sample.ts_ms;
+        sen.sensor_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - sample.received_at).count();
+    }
     if (!got || receiver_->isStale(terminal_id_, stale_timeout_ms_)) {
         // 한 번도 못 받았거나 마지막 수신이 오래됨 -> fail-safe로 SENSOR_FAULT 유도.
         sen.imu_ok = false;

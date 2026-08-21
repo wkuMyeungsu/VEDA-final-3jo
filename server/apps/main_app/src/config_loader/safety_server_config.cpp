@@ -302,6 +302,11 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                                    std::to_string(configured_channels.size()) + "개 채널로 시작");
         }
     }
+    // 일부 채널 제외는 허용하지만, CCTV 입력이 하나도 없는 상태를 정상 서버로
+    // 광고해서는 안 된다. 이 경우 systemd가 실패를 감지하고 운영자가 확인하게 한다.
+    if (c.streams.empty()) {
+        schema(camera_path.string(), "유효한 호모그래피가 있는 활성 CCTV 스트림이 없음");
+    }
     const auto& fl = devices.at("forklifts");
     if (!fl.is_array() || fl.empty()) schema(device_path.string(), "forklifts는 비어 있지 않은 배열이어야 함");
     std::map<std::string,bool> terminals; std::map<int,bool> markers;
@@ -351,6 +356,8 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     const auto& stream = object(system, "stream", system_path.string());
     c.stream.rtsp_latency_ms = value<int>(stream, "stream", "rtsp_latency_ms", system_path.string());
     c.stream.appsink_max_buffers = value<int>(stream, "stream", "appsink_max_buffers", system_path.string());
+    // 이전 운영 설정과의 호환성을 위해 새 큐 상한은 생략 시 안전한 기본값을 쓴다.
+    c.stream.metadata_queue_capacity = stream.value("metadata_queue_capacity", 256);
     c.stream.eos_force_timeout_s = value<int>(stream, "stream", "eos_force_timeout_s", system_path.string());
     c.stream.connect_timeout_s = value<int>(stream, "stream", "connect_timeout_s", system_path.string());
     c.stream.max_retries = value<int>(stream, "stream", "max_retries", system_path.string());
@@ -359,7 +366,8 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
         !std::isfinite(c.tracking.iou_threshold) || c.tracking.iou_threshold < 0 || c.tracking.iou_threshold > 1 ||
         !std::isfinite(c.tracking.world_distance_threshold_mm) || c.tracking.world_distance_threshold_mm <= 0 ||
         c.tracking.max_missed_frames < 0 || c.sensor.stale_timeout_ms < 1 || c.stream.rtsp_latency_ms < 0 ||
-        c.stream.appsink_max_buffers < 1 || c.stream.eos_force_timeout_s < 1 || c.stream.connect_timeout_s < 1 ||
+        c.stream.appsink_max_buffers < 1 || c.stream.metadata_queue_capacity < 1 ||
+        c.stream.metadata_queue_capacity > 100000 || c.stream.eos_force_timeout_s < 1 || c.stream.connect_timeout_s < 1 ||
         c.stream.max_retries < 1 || c.stream.retry_delay_s < 0 || !std::isfinite(c.sensor.stub_tof_distance_mm) ||
         c.sensor.stub_tof_distance_mm < 0)
         schema(system_path.string(), "handover/tracking/sensor/stream 설정 범위 오류");
@@ -373,11 +381,33 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     if (out.contains("enable_raw_csv_logging") && out.at("enable_raw_csv_logging").is_boolean()) {
         c.output_storage.enable_raw_csv_logging = out.at("enable_raw_csv_logging").get<bool>();
     }
+    if (out.contains("server_log") && !out.at("server_log").is_string())
+        schema(system_path.string(), "output_storage.server_log는 문자열이어야 함");
+    if (out.contains("runtime_status") && !out.at("runtime_status").is_string())
+        schema(system_path.string(), "output_storage.runtime_status는 문자열이어야 함");
     c.output_storage.object_csv = (storage_dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
     c.output_storage.aruco_csv = (storage_dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
     c.output_storage.event_db = (storage_dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();
     c.output_storage.latency_csv = (storage_dir / value<std::string>(out,"output_storage","latency_csv",system_path.string())).lexically_normal().string();
-    for (const auto* p : {&c.output_storage.object_csv,&c.output_storage.aruco_csv,&c.output_storage.event_db,&c.output_storage.latency_csv})
+    const std::string configured_server_log = out.value("server_log", std::string{});
+    const std::filesystem::path server_log_path = configured_server_log.empty()
+        // 기존 운영 배치의 server.log는 event_db 상위 디렉터리에 있었다. 키를
+        // 생략한 설정은 그 위치를 유지해 설치된 파일을 갑자기 옮기지 않는다.
+        ? (std::filesystem::path(c.output_storage.event_db).parent_path() / "server.log")
+        : std::filesystem::path(configured_server_log);
+    c.output_storage.server_log = (server_log_path.is_absolute()
+        ? server_log_path
+        : (storage_dir / server_log_path)).lexically_normal().string();
+    const std::string configured_runtime_status = out.value("runtime_status", std::string{});
+    const std::filesystem::path runtime_status_path = configured_runtime_status.empty()
+        ? (storage_dir / "runtime/runtime-status.json")
+        : std::filesystem::path(configured_runtime_status);
+    c.output_storage.runtime_status = (runtime_status_path.is_absolute()
+        ? runtime_status_path
+        : (storage_dir / runtime_status_path)).lexically_normal().string();
+    for (const auto* p : {&c.output_storage.server_log,&c.output_storage.runtime_status,
+                          &c.output_storage.object_csv,
+                          &c.output_storage.aruco_csv,&c.output_storage.event_db,&c.output_storage.latency_csv})
         if (p->empty()) schema(system_path.string(), "출력 경로가 비어 있음");
     return c;
 }

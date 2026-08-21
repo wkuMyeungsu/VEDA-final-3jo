@@ -18,6 +18,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 
 #include "common/types.hpp"
@@ -90,6 +91,14 @@ struct SensorInput {
     double tof_distance_mm{};
     double imu_accel_g{};
     bool   is_dead_reckoning = false;
+
+    // 센서 업링크 관측 context. 판정에는 영향을 주지 않고, 어떤 입력 샘플이 이
+    // 결과의 근거였는지 사후 조인하는 데만 사용한다. 로컬/스텁 리더는 빈 값으로 둔다.
+    std::string sensor_message_id;
+    std::string sensor_producer_run_id;
+    std::int64_t sensor_sequence = -1;
+    std::int64_t sensor_ts_ms = 0;
+    std::int64_t sensor_age_ms = -1;
 };
 
 // 한 프레임의 판정 결과
@@ -121,6 +130,18 @@ struct JudgmentResult {
     // 맨 끝에 추가한 이유: 기존 aggregate 초기화(JudgmentResult r{};)와 필드 순서를
     // 건드리지 않기 위해서다. JSON 직렬화(toJson) 스키마에는 포함하지 않는다(하류 계약 밖).
     LatencyStamps  latency;
+
+    // 분산 관측 context. 기존 위험 필드와 독립적인 optional 확장이다. 비어 있으면
+    // 구형 입력/직접 호출이며, 채워진 경우 SQLite·MQTT risk payload에서 조인 키로 쓴다.
+    std::string decision_id;
+    std::string server_run_id;
+    std::uint64_t publish_seq = 0;
+    std::string send_reason;
+    std::string sensor_message_id;
+    std::string sensor_producer_run_id;
+    std::int64_t sensor_sequence = -1;
+    std::int64_t sensor_ts_ms = 0;
+    std::int64_t sensor_age_ms = -1;
 };
 
 // ============================================================

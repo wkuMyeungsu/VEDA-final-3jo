@@ -233,7 +233,7 @@ private:
             ++self->connected_;
             LOG_INFO(self->logTag(), self->logTarget() + " 송신 연결 완료 (" + self->broker_host_ + ":" +
                                       std::to_string(self->broker_port_) + ", 토픽: " + self->topic_ + ")");
-            if (self->manage_server_status_) self->publishStatus(kOnlinePayload);
+            if (self->manage_server_status_) self->publishStatus("online");
             self->setState(LinkState::CONNECTED);
         } else {
             LOG_WARN(self->logTag(), self->logTarget() + " 송신 브로커 연결 거부 (사유: " +
@@ -273,9 +273,14 @@ private:
 
         // LWT는 반드시 connect 전에 걸어야 CONNECT 패킷에 실려 브로커에 등록된다.
         if (manage_server_status_) {
-            mosquitto_will_set(mosq_, kStatusTopic,
-                               static_cast<int>(std::strlen(kOfflinePayload)), kOfflinePayload,
-                               kQos, kRetain);
+            const std::string will_payload = makeStatusPayload("offline", status_seq_.load() + 1);
+            const int will_rc = mosquitto_will_set(mosq_, kStatusTopic,
+                                                   static_cast<int>(will_payload.size()),
+                                                   will_payload.c_str(), kQos, kRetain);
+            if (will_rc != MOSQ_ERR_SUCCESS) {
+                LOG_WARN("SERVER", "서버 상태 LWT 설정 실패 (사유: " +
+                                    std::string(mosquitto_strerror(will_rc)) + ")");
+            }
         }
         mosquitto_reconnect_delay_set(mosq_, kReconnectDelayMinSec, kReconnectDelayMaxSec,
                                       /*reconnect_exponential_backoff=*/true);
@@ -338,7 +343,7 @@ private:
         // DISCONNECT보다 먼저 큐에 넣어야 한다 - out 패킷은 FIFO로 나가므로 이 순서면
         // PUBLISH가 먼저 전송되고, 아래 loop_stop(force=false)이 네트워크 스레드가
         // 다 비우고 끝날 때까지 기다린다.
-        if (manage_server_status_) publishStatus(kOfflinePayload);
+        if (manage_server_status_) publishStatus("offline");
         mosquitto_disconnect(mosq_);
         mosquitto_loop_stop(mosq_, /*force=*/true);   // 네트워크 스레드 즉시 종료
         mosquitto_destroy(mosq_);
@@ -351,15 +356,27 @@ private:
     // 같은 retain 슬롯을 서로 덮어쓰며 일관되게 유지된다.
     // [주의] on_connect 콜백(네트워크 스레드)에서 불린다 - mosquitto_publish는 스레드
     //        안전하고 콜백 안에서의 호출도 허용된다.
-    void publishStatus(const char* payload) {
+    static std::string makeStatusPayload(const char* state, std::uint64_t sequence) {
+        std::ostringstream json;
+        json << "{\"state\":\"" << state << "\""
+             << ",\"server_run_id\":\"" << forklift::logging::Logger::instance().runId() << "\""
+             << ",\"status_seq\":" << sequence
+             << ",\"schema_version\":1}";
+        return json.str();
+    }
+
+    void publishStatus(const char* state) {
         if (mosq_ == nullptr) return;
+        const std::uint64_t sequence = ++status_seq_;
+        const std::string payload = makeStatusPayload(state, sequence);
         int rc = mosquitto_publish(mosq_, /*mid=*/nullptr, kStatusTopic,
-                                   static_cast<int>(std::strlen(payload)), payload,
+                                   static_cast<int>(payload.size()), payload.c_str(),
                                    kQos, kRetain);
         if (rc != MOSQ_ERR_SUCCESS) {
             // 실패해도 판정 결과 송신은 계속한다. 다음 재연결 때 다시 시도된다.
             LOG_WARN("SERVER", "서버 상태 송신 실패 (토픽: " + std::string(kStatusTopic) +
-                                ", 사유: " + mosquitto_strerror(rc) + ")");
+                                ", state: " + state + ", 사유: " +
+                                std::string(mosquitto_strerror(rc)) + ")");
         }
     }
 
@@ -447,6 +464,7 @@ private:
     std::atomic<std::size_t> dropped_overflow_{0};
     std::atomic<std::size_t> send_failures_{0};
     std::atomic<std::size_t> connected_{0};
+    std::atomic<std::uint64_t> status_seq_{0};
 
     // 드랍 로그 rate limit 상태 (publish() 안에서만 접근하므로 mtx_로 보호됨).
     // 첫 1건은 즉시 찍고, 그 뒤로는 마지막 로그 이후 drop_log_interval_건이

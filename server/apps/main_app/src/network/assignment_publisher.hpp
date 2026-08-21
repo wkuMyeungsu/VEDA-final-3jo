@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -40,7 +41,10 @@ public:
     static std::string makePayload(const std::string& terminal_id,
                                    const std::string& stream_id,
                                    const std::string& camera_id, int channel,
-                                   const std::string& utc_time);
+                                   const std::string& utc_time,
+                                   const std::string& assignment_id = {},
+                                   std::uint64_t revision = 0,
+                                   const std::string& server_run_id = {});
 
 private:
     struct Message {
@@ -50,6 +54,7 @@ private:
 
     static void onConnect(struct mosquitto*, void*, int);
     static void onDisconnect(struct mosquitto*, void*, int);
+    static void onPublish(struct mosquitto*, void*, int);
     void run();
     bool connect();
     void disconnect();
@@ -64,6 +69,11 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::deque<Message> queue_;
+    std::string server_run_id_;
+    std::uint64_t revision_ = 0;
+    std::map<int, std::string> pending_publish_topics_;
+    std::size_t publish_failures_ = 0;
+    std::size_t publish_acks_ = 0;
 };
 
 }  // namespace risk_transport
