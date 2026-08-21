@@ -348,8 +348,8 @@
                 <thead>
                   <tr>
                     <th>항목</th><th>활성채널</th><th>검출횟수</th>
-                    <th>슬롯대기(ms)</th><th>왜곡보정(ms)</th><th>마커검출(ms)</th><th>전체소요(ms)</th>
-                    <th>경합손실(ms)</th><th>경합비율(%)</th><th>평균 탈락후보</th>
+                    <th>슬롯대기(μs)</th><th>왜곡보정(μs)</th><th>마커검출(μs)</th><th>전체소요(μs)</th>
+                    <th>경합손실(μs)</th><th>경합비율(%)</th><th>평균 탈락후보</th>
                   </tr>
                 </thead>
                 <tbody id="cmp_summary_tbody"></tbody>
@@ -369,10 +369,10 @@
                 <tr>
                   <th>채널</th>
                   <th>검출 횟수</th>
-                  <th>② 슬롯대기 (CPU경합)</th>
-                  <th>③ 왜곡보정 연산</th>
-                  <th>④ 마커검출 연산</th>
-                  <th>⑥ 전체 소요시간</th>
+                  <th>② 슬롯대기 (μs) · CPU경합</th>
+                  <th>③ 왜곡보정 연산 (μs)</th>
+                  <th>④ 마커검출 연산 (μs)</th>
+                  <th>⑥ 전체 소요시간 (μs)</th>
                   <th>탈락후보(평균)</th>
                 </tr>
               </thead>
@@ -651,7 +651,7 @@
 
     function formatStatCell(stat) {
       if (!stat || stat.detectionCount === 0) return '—';
-      return `<b>${stat.avg} ms</b> <span class="muted" style="font-size:11px;">(p95: ${stat.p95} ms)</span>`;
+      return `<b>${stat.avg.toLocaleString()} μs</b> <span class="muted" style="font-size:11px;">(p95: ${stat.p95.toLocaleString()} μs)</span>`;
     }
 
     function startLatencyMeasure() {
@@ -691,14 +691,14 @@
             // last_detect가 이전에 기록한 값과 다를 때만 "새 검출"로 보고 값 추가.
             if (c.last_detect && latencyLastDetect[ch] !== c.last_detect) {
               latencyLastDetect[ch] = c.last_detect;
-              const slot_ms = Math.round(((c.slot_wait_us != null ? c.slot_wait_us : 0) / 1000) * 10) / 10;
-              const undist_ms = Math.round(((c.undistort_us != null ? c.undistort_us : 0) / 1000) * 10) / 10;
-              const det_ms = Math.round(((c.detect_us != null ? c.detect_us : 0) / 1000) * 10) / 10;
-              const tot_ms = Math.round(((c.total_us != null ? c.total_us : (c.latency_ms ? c.latency_ms * 1000 : 0)) / 1000) * 10) / 10;
-              addDetection(latencyStatsSlot, ch, slot_ms);
-              addDetection(latencyStatsUndist, ch, undist_ms);
-              addDetection(latencyStatsDetect, ch, det_ms);
-              addDetection(latencyStatsTotal, ch, tot_ms);
+              const slot_us = c.slot_wait_us != null ? c.slot_wait_us : 0;
+              const undist_us = c.undistort_us != null ? c.undistort_us : 0;
+              const det_us = c.detect_us != null ? c.detect_us : 0;
+              const tot_us = c.total_us != null ? c.total_us : (c.latency_ms ? c.latency_ms * 1000 : 0);
+              addDetection(latencyStatsSlot, ch, slot_us);
+              addDetection(latencyStatsUndist, ch, undist_us);
+              addDetection(latencyStatsDetect, ch, det_us);
+              addDetection(latencyStatsTotal, ch, tot_us);
               if (typeof c.rejected_count === 'number') addDetection(latencyStatsRejected, ch, c.rejected_count);
             }
           }
@@ -728,10 +728,10 @@
     function computeStatsFrom(store, ch) {
       if (!store || !store[ch]) return null;
       const s = store[ch];
-      if (!s || s.detectionCount === 0) return null;
+      if (s.detectionCount === 0) return null;
       const sorted = s.values.slice().sort((a, b) => a - b);
-      const avg = Math.round((s.sum / s.detectionCount) * 10) / 10;
-      const p95 = Math.round(percentile(sorted, 0.95) * 10) / 10;
+      const avg = Math.round(s.sum / s.detectionCount);
+      const p95 = Math.round(percentile(sorted, 0.95));
       return { detectionCount: s.detectionCount, min: s.min, max: s.max, avg, p95 };
     }
 
@@ -779,24 +779,24 @@
         rows.push({
           channel: ch,
           detectionCount: tt.detectionCount,
-          slot_avg_ms: sl ? sl.avg : 0,
-          slot_p95_ms: sl ? sl.p95 : 0,
-          slot_max_ms: sl ? sl.max : 0,
-          undist_avg_ms: un ? un.avg : 0,
-          undist_p95_ms: un ? un.p95 : 0,
-          undist_max_ms: un ? un.max : 0,
-          detect_avg_ms: dt ? dt.avg : 0,
-          detect_p95_ms: dt ? dt.p95 : 0,
-          detect_max_ms: dt ? dt.max : 0,
-          total_avg_ms: tt ? tt.avg : 0,
-          total_p95_ms: tt ? tt.p95 : 0,
-          total_max_ms: tt ? tt.max : 0,
+          slot_avg_us: sl ? sl.avg : 0,
+          slot_p95_us: sl ? sl.p95 : 0,
+          slot_max_us: sl ? sl.max : 0,
+          undist_avg_us: un ? un.avg : 0,
+          undist_p95_us: un ? un.p95 : 0,
+          undist_max_us: un ? un.max : 0,
+          detect_avg_us: dt ? dt.avg : 0,
+          detect_p95_us: dt ? dt.p95 : 0,
+          detect_max_us: dt ? dt.max : 0,
+          total_avg_us: tt ? tt.avg : 0,
+          total_p95_us: tt ? tt.p95 : 0,
+          total_max_us: tt ? tt.max : 0,
           rejected_avg: rj ? rj.avg : 0
         });
       }
       if (rows.length === 0) { alert('측정된 데이터가 없습니다.'); return; }
-      downloadCsvGeneric('latency_stat_breakdown',
-        ['channel', 'detectionCount', 'slot_avg_ms', 'slot_p95_ms', 'slot_max_ms', 'undist_avg_ms', 'undist_p95_ms', 'undist_max_ms', 'detect_avg_ms', 'detect_p95_ms', 'detect_max_ms', 'total_avg_ms', 'total_p95_ms', 'total_max_ms', 'rejected_avg'],
+      downloadCsvGeneric('latency_stat_breakdown_us',
+        ['channel', 'detectionCount', 'slot_avg_us', 'slot_p95_us', 'slot_max_us', 'undist_avg_us', 'undist_p95_us', 'undist_max_us', 'detect_avg_us', 'detect_p95_us', 'detect_max_us', 'total_avg_us', 'total_p95_us', 'total_max_us', 'rejected_avg'],
         rows);
     }
 
@@ -999,10 +999,10 @@
             cmpRoundDetail.push({
               slot: slot.label, round, channel: ch,
               detectionCount: tt ? tt.detectionCount : 0,
-              slot_avg: sl ? sl.avg : '', slot_p95: sl ? sl.p95 : '',
-              undist_avg: un ? un.avg : '', undist_p95: un ? un.p95 : '',
-              detect_avg: dt ? dt.avg : '', detect_p95: dt ? dt.p95 : '',
-              total_avg: tt ? tt.avg : '', total_p95: tt ? tt.p95 : '',
+              slot_avg_us: sl ? sl.avg : '', slot_p95_us: sl ? sl.p95 : '',
+              undist_avg_us: un ? un.avg : '', undist_p95_us: un ? un.p95 : '',
+              detect_avg_us: dt ? dt.avg : '', detect_p95_us: dt ? dt.p95 : '',
+              total_avg_us: tt ? tt.avg : '', total_p95_us: tt ? tt.p95 : '',
               rejected_avg: rj ? rj.avg : ''
             });
           }
@@ -1033,11 +1033,11 @@
           label: slot.label,
           channels: slot.channels.join('+'),
           totalDetectionCount,
-          avgSlot: totalDetectionCount > 0 ? Math.round((sumSlotWeighted / totalDetectionCount) * 10) / 10 : 0,
-          avgUndist: totalDetectionCount > 0 ? Math.round((sumUndistWeighted / totalDetectionCount) * 10) / 10 : 0,
-          avgDetect: totalDetectionCount > 0 ? Math.round((sumDetectWeighted / totalDetectionCount) * 10) / 10 : 0,
-          avgTotal: totalDetectionCount > 0 ? Math.round((sumTotalWeighted / totalDetectionCount) * 10) / 10 : 0,
-          avgLoss: perChannel.length > 0 ? Math.round((perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) * 10) / 10 : 0,
+          avgSlot_us: totalDetectionCount > 0 ? Math.round(sumSlotWeighted / totalDetectionCount) : 0,
+          avgUndist_us: totalDetectionCount > 0 ? Math.round(sumUndistWeighted / totalDetectionCount) : 0,
+          avgDetect_us: totalDetectionCount > 0 ? Math.round(sumDetectWeighted / totalDetectionCount) : 0,
+          avgTotal_us: totalDetectionCount > 0 ? Math.round(sumTotalWeighted / totalDetectionCount) : 0,
+          avgLoss_us: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) : 0,
           avgRatio: perChannel.length > 0 ? Math.round((perChannel.reduce((a, p) => a + p.ratio, 0) / perChannel.length) * 10) / 10 : 0,
           avgRejected: totalDetectionCount > 0 ? Math.round(sumRejectedWeighted / totalDetectionCount) : 0
         });
@@ -1075,8 +1075,8 @@
       for (const r of cmpSlotResults) {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalDetectionCount}</td>` +
-          `<td>${r.avgSlot}</td><td>${r.avgUndist}</td><td>${r.avgDetect}</td><td>${r.avgTotal}</td>` +
-          `<td>${r.avgLoss}</td><td>${r.avgRatio}%</td><td>${r.avgRejected}</td>`;
+          `<td>${r.avgSlot_us.toLocaleString()}</td><td>${r.avgUndist_us.toLocaleString()}</td><td>${r.avgDetect_us.toLocaleString()}</td><td>${r.avgTotal_us.toLocaleString()}</td>` +
+          `<td>${r.avgLoss_us.toLocaleString()}</td><td>${r.avgRatio}%</td><td>${r.avgRejected}</td>`;
         tbody.appendChild(tr);
       }
       document.getElementById('cmp_summary_wrap').style.display = cmpSlotResults.length ? 'block' : 'none';
@@ -1109,12 +1109,12 @@
     }
 
     function downloadCompareSummaryCsv() {
-      downloadCsvGeneric('compare_summary',
-        ['label', 'channels', 'totalDetectionCount', 'avgSlot', 'avgUndist', 'avgDetect', 'avgTotal', 'avgLoss', 'avgRatio', 'avgRejected'], cmpSlotResults);
+      downloadCsvGeneric('compare_summary_us',
+        ['label', 'channels', 'totalDetectionCount', 'avgSlot_us', 'avgUndist_us', 'avgDetect_us', 'avgTotal_us', 'avgLoss_us', 'avgRatio', 'avgRejected'], cmpSlotResults);
     }
     function downloadCompareDetailCsv() {
-      downloadCsvGeneric('compare_detail',
-        ['slot', 'round', 'channel', 'detectionCount', 'slot_avg', 'slot_p95', 'undist_avg', 'undist_p95', 'detect_avg', 'detect_p95', 'total_avg', 'total_p95', 'rejected_avg'],
+      downloadCsvGeneric('compare_detail_us',
+        ['slot', 'round', 'channel', 'detectionCount', 'slot_avg_us', 'slot_p95_us', 'undist_avg_us', 'undist_p95_us', 'detect_avg_us', 'detect_p95_us', 'total_avg_us', 'total_p95_us', 'rejected_avg'],
         cmpRoundDetail);
     }
     // ========================================================================
