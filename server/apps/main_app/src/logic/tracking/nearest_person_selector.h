@@ -71,9 +71,14 @@ struct NearestPersonResult {
 double euclideanDistance(const WorldPoint& a, const WorldPoint& b);
 
 // 지게차 world 좌표 기준, tracks 중 가장 가까운 사람 1명을 찾는다.
-// missed_frames > 0인 트랙(이번 프레임에 실제로 검출 안 된 트랙)은 후보에서 제외한다.
+//
+// freshness_sec 이내에 관측된 트랙만 후보로 삼는다. 프레임 수(missed_frames)로 거르면
+// 채널마다 프레임이 따로 도착하는 구조에서 다른 채널의 사람이 매 프레임 배제되어
+// 다중 카메라 융합이 무력화된다(2026-08-21 실기기 결함).
 NearestPersonResult selectNearestPerson(const WorldPoint& forklift,
-                                        const std::vector<Track>& tracks);
+                                        const std::vector<Track>& tracks,
+                                        double now_s,
+                                        double freshness_sec);
 
 // ============================================================
 // 3. 출력 헬퍼

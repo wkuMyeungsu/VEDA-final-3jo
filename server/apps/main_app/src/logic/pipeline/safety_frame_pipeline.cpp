@@ -12,9 +12,10 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
       homography_(config),
       marker_tracker_(device.marker_id, config.handover.confirm_frames,
                       config.handover.lostGrace()),
+      track_freshness_sec_(config.tracking.track_freshness_ms / 1000.0),
       cross_camera_tracker_(config.tracking.iou_threshold,
                             config.tracking.world_distance_threshold_mm,
-                            config.tracking.max_missed_frames),
+                            config.tracking.track_timeout_ms / 1000.0),
       judgment_pipeline_(device.terminal_id, sensors, config.danger_judgment,
                          device.collision_radius_mm, config.handover.lostGrace()) {}
 
@@ -89,7 +90,8 @@ SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
 
     if (output.forklift_localized) {
         const auto tracks = cross_camera_tracker_.update(detections, timestamp_s);
-        output.nearest = selectNearestPerson(output.forklift_world, tracks);
+        output.nearest = selectNearestPerson(output.forklift_world, tracks,
+                                             timestamp_s, track_freshness_sec_);
     }
 
     output.judgment = judgment_pipeline_.processFrame(

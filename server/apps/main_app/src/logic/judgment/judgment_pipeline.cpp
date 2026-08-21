@@ -93,8 +93,8 @@ CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
     cam.forklift           = forklift;
 
     // ── 사람 좌표: 최근접 선택 결과 1명 ────────────────────────
-    // selector가 이미 missed_frames>0인 트랙을 후보에서 뺐으므로,
-    // found=false는 "이번 프레임에 유효하게 검출된 사람이 없음"과 같은 의미다.
+    // selector가 이미 freshness_sec를 초과한 오래된 트랙을 후보에서 뺐으므로,
+    // found=false는 "최근 freshness_sec 이내에 유효하게 검출된 사람이 없음"과 같은 의미다.
     // -> CameraInput.person_detected에 그대로 대응된다.
     cam.person_detected = nearest.found;
     cam.person          = nearest.found ? nearest.position : WorldPoint{};
