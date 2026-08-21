@@ -410,6 +410,13 @@ void testCachePerTerminal() {
     check(rx.receivedCount() == 2,
           "수신 카운터는 전체 단말 합산 2 (실제: " + std::to_string(rx.receivedCount()) + ")");
 
+    const auto status_a = rx.terminalStatus(termA, 3000);
+    const auto status_b = rx.terminalStatus(termB, 3000);
+    check(status_a.has_sample && !status_a.stale && status_a.received == 1 && status_a.parse_failures == 0,
+          "단말 A 상태가 최신 수신·정상으로 분리됨");
+    check(status_b.has_sample && !status_b.stale && status_b.received == 1 && status_b.parse_failures == 0,
+          "단말 B 상태가 최신 수신·정상으로 분리됨");
+
     rx.stop();
 }
 

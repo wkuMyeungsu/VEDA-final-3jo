@@ -60,6 +60,15 @@ public:
     using Sink  = std::function<void(const std::string&)>;
     using Clock = std::chrono::steady_clock;
 
+    // 단말별 운영 상태 화면에 제공할 마지막 판정 스냅샷.
+    // primeIdle()만 실행된 기동 직후에는 has_real_result가 false다.
+    struct RuntimeSnapshot {
+        bool has_result = false;
+        bool has_real_result = false;
+        JudgmentResult result{};
+        std::string last_change_utc;
+    };
+
     // 상태 변화가 실제로 일어났을 때만 호출되는 콜백.
     // prev_risk_level: 직전 상태의 risk_level. 최초 이벤트에는 kNoPreviousRisk(-1)가 들어온다
     //                  (EventLogger::kNoPreviousRisk와 같은 값이며 DB에는 NULL로 저장된다).
@@ -145,6 +154,7 @@ public:
             last_    = current;
             has_last_ = true;
             last_is_idle_ = false;
+            if (changed) last_change_utc_ = nowIso8601Ms();
             if (changed) next_heartbeat_ = Clock::now() + period_;   // 변화 시 타이머 리셋
         }
         if (!changed) return;
@@ -238,6 +248,19 @@ public:
     bool hasResult() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return has_last_;
+    }
+
+    // 마지막 판정 결과와 마지막 상태 전이 시각을 원자적으로 복사한다.
+    // runtime snapshot 작성 중 판정 루프가 결과를 갱신해도 필드가 서로 다른 판정을
+    // 가리키지 않도록 dispatcher mutex 안에서 한 번에 읽는다.
+    RuntimeSnapshot runtimeSnapshot() const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        RuntimeSnapshot snapshot;
+        snapshot.has_result = has_last_;
+        snapshot.has_real_result = has_last_ && !last_is_idle_;
+        if (has_last_) snapshot.result = last_;
+        snapshot.last_change_utc = last_change_utc_;
+        return snapshot;
     }
 
     // 상태 변화로 즉시 나간 누적 건수
@@ -390,6 +413,7 @@ private:
     // last_가 primeIdle()이 넣은 자리표시 값인지(= 아직 진짜 판정이 없음).
     // 첫 submit()에서 false가 되며, 그 전까지 이벤트 로그의 "직전 상태" 취급을 막는다.
     bool last_is_idle_ = false;
+    std::string last_change_utc_;
     Clock::time_point next_heartbeat_{};
 
     std::atomic<bool> running_{false};

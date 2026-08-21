@@ -227,10 +227,15 @@ void SensorUplinkReceiver::onDisconnect(int rc) {
 }
 
 void SensorUplinkReceiver::logParseFailure(const std::string& why, const std::string& topic,
-                                            const std::string& payload) {
+                                            const std::string& payload,
+                                            const std::string& terminal_id) {
     // 카운터는 매번 정확히 증가시키고 로그만 rate limit한다. 단말이 깨진 메시지를 계속
     // 흘리면 건건이 찍는 순간 mosquitto 콜백 스레드를 붙잡는다.
     const std::size_t total = ++parse_failures_;
+    if (!terminal_id.empty()) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        ++parse_failures_by_terminal_[terminal_id];
+    }
     if (total == 1) {
         LOG_WARN("SENSOR", "센서 데이터 형식 오류 (사유: " + why + ", 토픽: " + topic +
                              ", 수신 계속, 누적: " + std::to_string(total) + ")");
@@ -258,6 +263,8 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
         return;
     }
     if (!isConfiguredTerminal(terminal_id)) {
+        // 등록되지 않은 ID는 단말별 상태 집계 대상이 아니다. 임의의 토픽으로
+        // parse_failures_by_terminal_가 무한히 커지지 않도록 전체 카운터에만 반영한다.
         logParseFailure("안전 설정에 등록되지 않은 terminal_id", topic, "");
         return;
     }
@@ -269,7 +276,7 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
     std::string why;
     if (!parseSample(payload, sample, why)) {
         // 깨진 메시지 하나 때문에 구독을 끊거나 죽으면 안 된다 - 그 메시지만 버리고 계속 받는다.
-        logParseFailure(why, topic, payload);
+        logParseFailure(why, topic, payload, terminal_id);
         return;
     }
 
@@ -278,6 +285,7 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         latest_by_terminal_[terminal_id] = sample;
+        ++received_by_terminal_[terminal_id];
     }
     ++received_;
 }
@@ -368,6 +376,28 @@ bool SensorUplinkReceiver::isStale(const std::string& terminal_id, int timeout_m
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                              std::chrono::steady_clock::now() - it->second.received_at).count();
     return elapsed > timeout_ms;
+}
+
+TerminalSensorStatus SensorUplinkReceiver::terminalStatus(
+    const std::string& terminal_id, int timeout_ms) const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    TerminalSensorStatus status;
+
+    const auto received_it = received_by_terminal_.find(terminal_id);
+    if (received_it != received_by_terminal_.end()) status.received = received_it->second;
+    const auto parse_it = parse_failures_by_terminal_.find(terminal_id);
+    if (parse_it != parse_failures_by_terminal_.end()) status.parse_failures = parse_it->second;
+
+    const auto sample_it = latest_by_terminal_.find(terminal_id);
+    if (sample_it == latest_by_terminal_.end()) return status;
+
+    status.has_sample = true;
+    status.age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - sample_it->second.received_at)
+                        .count();
+    if (status.age_ms < 0) status.age_ms = 0;
+    status.stale = status.age_ms > timeout_ms;
+    return status;
 }
 
 } // namespace risk_transport
