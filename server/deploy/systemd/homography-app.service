@@ -1,20 +1,22 @@
 [Unit]
-Description=Homography App
+Description=Forklift Safety Homography App (On Demand)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=veda3
-WorkingDirectory=/home/veda3/01_Workspace/server/apps/homography_app/web
+WorkingDirectory=/home/veda3/forklift-safety-server/server/apps/homography_app/web
+Environment=ADMIN_GUI_HOST=0.0.0.0
 Environment=HOMOGRAPHY_APP_PORT=8001
-Environment=HOMOGRAPHY_CONFIG_DIR=/home/veda3/01_Workspace/server/config/homography
-Environment=HOMOGRAPHY_TOOL=/home/veda3/01_Workspace/server/apps/homography_app/processing/build/homography_tool
-Environment=SERVER_COMMON_CONFIG_DIR=/home/veda3/01_Workspace/server/config
-Environment=SAFETY_SERVER_HOMOGRAPHY_DIR=/home/veda3/01_Workspace/server/config/homography
-ExecStart=/usr/bin/python3 /home/veda3/01_Workspace/server/apps/homography_app/web/server.py
-Restart=on-failure
-RestartSec=3
+Environment=HOMOGRAPHY_CONFIG_DIR=/etc/forklift_safety/homography
+Environment=HOMOGRAPHY_TOOL=/usr/local/bin/homography_tool
+Environment=SERVER_COMMON_CONFIG_DIR=/etc/forklift_safety
+Environment=SAFETY_SERVER_HOMOGRAPHY_DIR=/etc/forklift_safety/homography
+ExecStart=/usr/bin/python3 /home/veda3/forklift-safety-server/server/apps/homography_app/web/server.py
+# Calibration is an operator-invoked maintenance task. Leave failures visible
+# instead of automatically reopening the unauthenticated maintenance UI.
+Restart=no
 NoNewPrivileges=true
 PrivateTmp=true
 
