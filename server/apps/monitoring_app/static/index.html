@@ -49,12 +49,16 @@
     .terminal-field>span{color:#667085;font-size:.78rem}
     .terminal-field strong{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .terminal-field small{grid-column:2;color:#667085;font-size:.75rem;line-height:1.4;margin-top:.12rem}
-    .people-field{align-items:start}
-    .people-list{grid-column:2;display:grid;gap:.45rem;margin-top:.15rem}
+    .people-groups{display:grid;gap:.8rem}
+    .people-group{border:1px solid #dfe3e8;border-radius:10px;background:#fcfcfd;overflow:hidden}
+    .people-group header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.8rem 1rem;border-bottom:1px solid #eaecf0}
+    .people-group h3{font-size:.9rem}
+    .people-group-meta{color:#667085;font-size:.75rem;text-align:right}
+    .people-list{display:grid;gap:.45rem;padding:.8rem 1rem}
     .person-row{display:grid;gap:.15rem;padding:.5rem .6rem;border:1px solid #eaecf0;border-radius:7px;background:#fff}
     .person-row strong{font-size:.78rem;white-space:normal;overflow:visible}
     .person-row small{grid-column:auto;margin:0;font-size:.72rem}
-    .people-empty{color:#667085;font-size:.76rem}
+    .people-empty{padding:.25rem .1rem;color:#667085;font-size:.8rem}
     .risk-badge{display:inline-block;padding:.16rem .45rem;border-radius:999px;font-size:.76rem;font-weight:750}
     .risk-safe{color:#067647;background:#ecfdf3}
     .risk-caution{color:#b54708;background:#fffaeb}
@@ -107,6 +111,11 @@
   <section class="panel">
     <div class="section-heading"><h2>단말별 운영 상태</h2><span id="terminal-summary" class="section-meta">확인 중</span></div>
     <div id="terminal-cards" class="terminal-cards">확인 중</div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading"><h2>사람 검출</h2><span id="people-summary" class="section-meta">확인 중</span></div>
+    <div id="people-detections" class="people-groups">확인 중</div>
   </section>
 
   <section class="panel">
@@ -178,6 +187,24 @@
       field.append(labelNode,valueNode,detailNode);
       parent.append(field);
     };
+    const appendPersonRow=(parent,person)=>{
+      const row=document.createElement('div');
+      row.className='person-row';
+      const trackId=Number.isFinite(Number(person.track_id))?`사람 #${person.track_id}`:'사람 ID 확인 필요';
+      const source=[person.camera_id||person.stream_id,Number.isFinite(Number(person.channel))?`${person.channel}번 채널`:null]
+        .filter(Boolean).join(' · ');
+      const title=document.createElement('strong');
+      title.textContent=source?`${trackId} · ${source}`:trackId;
+      const position=person.position||{};
+      const distance=Number.isFinite(Number(person.distance_mm))
+        ? `거리 ${formatNumber(person.distance_mm)}mm`
+        : '거리 확인 불가';
+      const detail=document.createElement('small');
+      detail.textContent=`위치 ${formatNumber(position.x_mm)} / ${formatNumber(position.y_mm)}mm · ${distance} · ${formatAgeMs(person.age_ms)}`;
+      if(person.observed_utc)row.title=`마지막 검출 ${formatTimestamp(person.observed_utc)}`;
+      row.append(title,detail);
+      parent.append(row);
+    };
     const renderTerminalCards=(terminals,sensorMode='network')=>{
       const root=document.getElementById('terminal-cards');
       root.replaceChildren();
@@ -244,48 +271,6 @@
         addTerminalField(fields,'지게차 위치',localizationLabel(localizationStatus),
           localizationDetails.join(' · ')||'진단 정보 없음',`risk-badge ${localizationClass(localizationStatus)}`);
 
-        const people=terminal.people||{};
-        const peopleTracks=Array.isArray(people.tracks)?people.tracks:[];
-        const peopleField=document.createElement('div');
-        peopleField.className='terminal-field people-field';
-        const peopleLabel=document.createElement('span');
-        peopleLabel.textContent='사람 검출';
-        const peopleCount=document.createElement('strong');
-        peopleCount.textContent=`${formatNumber(people.count??peopleTracks.length)}명`;
-        const peopleList=document.createElement('div');
-        peopleList.className='people-list';
-        if(!peopleTracks.length){
-          const empty=document.createElement('span');
-          empty.className='people-empty';
-          empty.textContent='현재 검출된 사람 없음';
-          peopleList.append(empty);
-        }else{
-          peopleTracks.forEach((person)=>{
-            const row=document.createElement('div');
-            row.className='person-row';
-            const trackId=Number.isFinite(Number(person.track_id))?`사람 #${person.track_id}`:'사람 ID 확인 필요';
-            const source=[person.camera_id,Number.isFinite(Number(person.channel))?`${person.channel}번 채널`:null]
-              .filter(Boolean).join(' · ');
-            const title=document.createElement('strong');
-            title.textContent=source?`${trackId} · ${source}`:trackId;
-            const position=person.position||{};
-            const distance=Number.isFinite(Number(person.distance_mm))
-              ? `거리 ${formatNumber(person.distance_mm)}mm`
-              : '거리 확인 불가';
-            const detail=document.createElement('small');
-            detail.textContent=`위치 ${formatNumber(position.x_mm)} / ${formatNumber(position.y_mm)}mm · ${distance} · ${formatAgeMs(person.age_ms)}`;
-            if(person.observed_utc)row.title=`마지막 검출 ${formatTimestamp(person.observed_utc)}`;
-            row.append(title,detail);
-            peopleList.append(row);
-          });
-        }
-        const peopleMeta=document.createElement('small');
-        peopleMeta.textContent=people.last_update_age_ms!=null
-          ? `마지막 사람 프레임 ${formatAgeMs(people.last_update_age_ms)}`
-          : '사람 검출 프레임 없음';
-        peopleField.append(peopleLabel,peopleCount,peopleList,peopleMeta);
-        fields.append(peopleField);
-
         const lastChange=risk.last_change_utc||events.last_change_utc;
         addTerminalField(fields,'최근 전이',lastChange?formatTimestamp(lastChange):'기록 없음',
           `상태 전이 ${formatNumber(events.state_changes??terminal.change_sends)}건`);
@@ -309,6 +294,45 @@
       }).length;
       setText('terminal-summary',`${healthyCount}/${terminals.length}대 운영 정상`);
     };
+    const renderPeopleSection=(terminals)=>{
+      const root=document.getElementById('people-detections');
+      root.replaceChildren();
+      let totalPeople=0;
+      let activeTerminalCount=0;
+      terminals.forEach((terminal)=>{
+        const people=terminal.people||{};
+        const tracks=Array.isArray(people.tracks)?people.tracks:[];
+        if(!tracks.length)return;
+        activeTerminalCount+=1;
+        totalPeople+=tracks.length;
+        const group=document.createElement('article');
+        group.className='people-group';
+        const header=document.createElement('header');
+        const title=document.createElement('h3');
+        title.textContent=terminal.terminal_id||'알 수 없는 단말';
+        const meta=document.createElement('span');
+        meta.className='people-group-meta';
+        meta.textContent=`${formatNumber(people.count??tracks.length)}명 · 마지막 프레임 ${formatAgeMs(people.last_update_age_ms)}`;
+        header.append(title,meta);
+        const list=document.createElement('div');
+        list.className='people-list';
+        tracks.forEach((person)=>appendPersonRow(list,person));
+        group.append(header,list);
+        root.append(group);
+      });
+      if(!terminals.length){
+        root.textContent='등록된 단말이 없습니다.';
+        setText('people-summary','등록된 단말 없음');
+      }else if(totalPeople===0){
+        const empty=document.createElement('p');
+        empty.className='people-empty';
+        empty.textContent='현재 검출된 사람이 없습니다.';
+        root.append(empty);
+        setText('people-summary','현재 0명 검출');
+      }else{
+        setText('people-summary',`${formatNumber(totalPeople)}명 검출 · ${formatNumber(activeTerminalCount)}개 단말`);
+      }
+    };
     const setUnknownState=()=>{
       setOverall('unknown','확인 필요','상태를 확인할 수 없습니다.');
       setIndicator('safety-indicator','unknown','안전 서버 상태 확인 필요');
@@ -319,6 +343,8 @@
       setIndicator('sensor-indicator','unknown','센서 진단 확인 필요');
       setText('terminal-cards','실행 정보 없음');
       setText('terminal-summary','실행 정보 없음');
+      setText('people-detections','실행 정보 없음');
+      setText('people-summary','실행 정보 없음');
     };
 
     async function refresh(){
@@ -396,6 +422,7 @@
           setText('events-written',formatNumber(storage.events_written));
           setText('storage-detail',`쓰기 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber((Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0))}건`);
           renderTerminalCards(snapshot.terminals||[],snapshot.sensor_mode||'network');
+          renderPeopleSection(snapshot.terminals||[]);
         }else{
           setText('server-run-id','실행 정보 없음');
           setText('runtime-state','—');
@@ -409,6 +436,8 @@
           setText('storage-detail','실행 정보 없음');
           setText('terminal-cards','실행 정보 없음');
           setText('terminal-summary','실행 정보 없음');
+          setText('people-detections','실행 정보 없음');
+          setText('people-summary','실행 정보 없음');
           ['runtime-indicator','sensor-indicator','queue-indicator','storage-indicator'].forEach((id)=>setIndicator(id,'unknown','실행 정보 확인 필요'));
         }
 
