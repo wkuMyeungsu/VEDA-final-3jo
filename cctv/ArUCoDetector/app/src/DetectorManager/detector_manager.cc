@@ -385,6 +385,12 @@ void DetectorManager::HandleGetStatus(OpenAppSerializable* oas) {
     obj.AddMember("rejected_count", st.rejected_count, alloc);
     obj.AddMember("latency_ms", st.latency_ms, alloc);
     obj.AddMember("cpu_latency_ms", st.cpu_latency_ms, alloc);
+    obj.AddMember("frame_get_us", st.frame_get_us, alloc);
+    obj.AddMember("slot_wait_us", st.slot_wait_us, alloc);
+    obj.AddMember("undistort_us", st.undistort_us, alloc);
+    obj.AddMember("detect_us", st.detect_us, alloc);
+    obj.AddMember("send_us", st.send_us, alloc);
+    obj.AddMember("total_us", st.total_us, alloc);
     obj.AddMember("last_detect", st.last_detect, alloc);
     obj.AddMember("last_error", st.last_error, alloc);
     obj.AddMember("calibration", st.calibration, alloc);

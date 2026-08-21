@@ -46,6 +46,14 @@ class ChannelWorker {
             bool undistort_enabled = false;  // 설정(채널별 왜곡보정 토글)이 켜져 있는가
             bool undistort_applied = false;  // 마지막 폴링에서 실제로 왜곡보정이 적용됐는가
                                               // (calibration && undistort_enabled && 해상도 일치 모두 만족해야 true)
+
+            // 마이크로초(μs) 단위 세부 6개 연산 구간 계측 (KAN-78)
+            int frame_get_us = 0;   // 1) raw 프레임 인출 및 메모리 복사 소요시간
+            int slot_wait_us = 0;   // 2) DetectionSlotLimiter 획득 대기 시간 (채널 간 CPU 경합)
+            int undistort_us = 0;   // 3) TryUndistort 렌즈 왜곡 보정 연산 시간
+            int detect_us = 0;      // 4) OpenCV detectMarkers 마커 검출 연산 시간
+            int send_us = 0;        // 5) MetadataXmlBuilder XML 생성 및 MetadataManager 송신 시간
+            int total_us = 0;       // 6) 1회 파이프라인 전체 벽시계 시간
         };
 
         // channel          : 담당 채널 번호(1~4)

@@ -158,9 +158,10 @@ void ChannelWorker::RunOnce()
     auto t0 = std::chrono::steady_clock::now();
     long long cpu0 = ThreadCpuTimeMs();
 
-    // 1) raw 저장소에서 이 채널의 최신 프레임(grayscale)을 가져온다. 아직 프레임이 없으면 빈 Mat.
-    //    (BGR로 안 부풀림 — 이후 파이프라인(undistort)이 gray를 그대로 다룬다.)
+    // 1) raw 저장소에서 이 채널의 최신 프레임(grayscale)을 가져온다. (frame_get)
+    auto t_get0 = std::chrono::steady_clock::now();
     cv::Mat gray = raw_store_->Get(channel_);
+    auto t_get1 = std::chrono::steady_clock::now();
     if (gray.empty())
     {
         // 이번 폴은 스킵(전송 안 함). 상태에 에러만 남긴다.
@@ -169,25 +170,47 @@ void ChannelWorker::RunOnce()
         return;
     }
 
-    bool undistorted; // 실제 보정 적용 여부 (calib 유효 + 토글 on + 해상도 일치를 모두 만족해야 true) -> status_.undistort_applied로 노출
+    bool undistorted = false; // 실제 보정 적용 여부 (calib 유효 + 토글 on + 해상도 일치를 모두 만족해야 true) -> status_.undistort_applied로 노출
     cv::Mat corrected;
     DetectionResult result;
 
+    // 2) 슬롯 대기 (slot_wait: 다른 채널이 검출 중이면 여기서 대기)
+    auto t_slot0 = std::chrono::steady_clock::now();
     slot_limiter_->Acquire();
-    corrected = TryUndistort(gray, calib_, undistort_, undistorted);    // 2) (옵션) 왜곡보정. undistort_가 false이거나 캘리브레이션 무효/해상도 불일치면 원본 그대로.
-    result = detector_.Detect(corrected);                               // 3) ArUco 검출 (detector_는 자기 상태를 안 바꾸는 const 연산)
+    auto t_slot1 = std::chrono::steady_clock::now();
+
+    // 3) 왜곡보정 (undistort)
+    auto t_undist0 = std::chrono::steady_clock::now();
+    corrected = TryUndistort(gray, calib_, undistort_, undistorted);    // undistort_가 false이거나 캘리브레이션 무효/해상도 불일치면 원본 그대로.
+    auto t_undist1 = std::chrono::steady_clock::now();
+
+    // 4) ArUco 검출 (detect)
+    auto t_det0 = std::chrono::steady_clock::now();
+    result = detector_.Detect(corrected);                               // detector_는 자기 상태를 안 바꾸는 const 연산
+    auto t_det1 = std::chrono::steady_clock::now();
+
     slot_limiter_->Release();
 
-    // 4) 결과 전송. 검출 0개여도 매 폴링마다 보낸다(서버가 "마커 사라짐"도 알아야 하므로).
-    //    send_는 DetectorManager::SendMetadata를 감싼 콜백 → 내부는 SendNoReplyEvent(논블로킹).
+    // 5) 결과 전송 (send: XML 빌드 및 논블로킹 송신)
+    auto t_send0 = std::chrono::steady_clock::now();
     send_(channel_, result.ids, result.corners);
+    auto t_send1 = std::chrono::steady_clock::now();
+
     auto t1 = std::chrono::steady_clock::now();
     long long cpu1 = ThreadCpuTimeMs();
-    // t1-t0 = 시계 틱 단위 duration → ms로 변환 → .count()로 정수 추출
+
+    // t1-t0 = 시계 틱 단위 duration → ms 및 μs로 변환
     int latency = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
     int cpu_latency = static_cast<int>(cpu1 - cpu0);
 
-    // 5) 상태 갱신. GET /status가 읽는 데이터라 status_mtx_로 보호.
+    int get_us = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(t_get1 - t_get0).count());
+    int slot_us = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(t_slot1 - t_slot0).count());
+    int undist_us = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(t_undist1 - t_undist0).count());
+    int det_us = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(t_det1 - t_det0).count());
+    int send_us = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(t_send1 - t_send0).count());
+    int tot_us = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
+
+    // 6) 상태 갱신. GET /status가 읽는 데이터라 status_mtx_로 보호.
     {
         std::lock_guard<std::mutex> lk(status_mtx_);
         status_.marker_count = static_cast<int>(result.ids.size());
@@ -195,6 +218,12 @@ void ChannelWorker::RunOnce()
         status_.rejected_count = result.rejected_count;
         status_.latency_ms = latency;
         status_.cpu_latency_ms = cpu_latency;
+        status_.frame_get_us = get_us;
+        status_.slot_wait_us = slot_us;
+        status_.undistort_us = undist_us;
+        status_.detect_us = det_us;
+        status_.send_us = send_us;
+        status_.total_us = tot_us;
         status_.last_detect = NowIso8601(); // 이번 검출 완료 시각 기록
         status_.last_error.clear();         // 성공했으니 이전 에러 기록 제거
         status_.undistort_applied = undistorted; // 이번 폴링에서 실제로 보정이 적용됐는지
