@@ -25,7 +25,6 @@ module packet_parser #(
     output reg        clear_error_req,
 
     /*
-    /*
      * SELF_TEST 요청
      */
     output reg  [1:0] self_test_mode,
