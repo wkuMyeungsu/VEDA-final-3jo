@@ -290,6 +290,19 @@
       setText('resource-summary',value.host?.state==='ok'?'전체 시스템 측정 정상':'측정 확인 필요');
     };
     const renderOperationalSummary=(snapshot)=>{
+      if(!snapshot){
+        setIndicator('decision-indicator','unknown','판정 상태 확인 필요');
+        setText('decision-state','확인 필요');
+        setText('decision-detail','판정 상태를 확인할 수 없습니다.');
+        setIndicator('risk-output-indicator','unknown','위험 알림 상태 확인 필요');
+        setText('risk-output-state','확인 필요');
+        setText('risk-output-detail','위험 알림 상태를 확인할 수 없습니다.');
+        setIndicator('event-storage-indicator','unknown','이벤트 DB 상태 확인 필요');
+        setText('event-storage-state','확인 필요');
+        setText('event-storage-detail','이벤트 DB 상태를 확인할 수 없습니다.');
+        setText('decision-summary','확인 필요');
+        return;
+      }
       const value=snapshot||{};
       const terminals=Array.isArray(value.terminals)?value.terminals:[];
       const sensorBypassed=value.sensor_mode==='disabled';
@@ -511,6 +524,14 @@
       setIndicator('queue-indicator','unknown','메타데이터 처리 상태 확인 필요');
       setIndicator('storage-indicator','unknown','이벤트 DB 상태 확인 필요');
       setIndicator('sensor-indicator','unknown','센서 입력 상태 확인 필요');
+      setText('runtime-state','확인 필요');
+      setText('runtime-detail','서버 상태 보고를 확인할 수 없습니다.');
+      setText('queue-state','확인 필요');
+      setText('queue-detail','메타데이터 처리 상태를 확인할 수 없습니다.');
+      setText('storage-state','확인 필요');
+      setText('storage-detail','이벤트 DB 상태를 확인할 수 없습니다.');
+      setText('sensor-state','확인 필요');
+      setText('sensor-detail','센서 입력 상태를 확인할 수 없습니다.');
       setText('decision-state','확인 필요');
       setText('decision-detail','판정 상태를 확인할 수 없습니다.');
       setIndicator('decision-indicator','unknown','판정 상태 확인 필요');
@@ -623,7 +644,7 @@
           setText('queue-detail','실행 정보 없음');
           setText('storage-state','—');
           setText('storage-detail','실행 정보 없음');
-          renderOperationalSummary({});
+          renderOperationalSummary(null);
           setText('terminal-cards','실행 정보 없음');
           setText('terminal-summary','실행 정보 없음');
           setText('people-detections','실행 정보 없음');
