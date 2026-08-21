@@ -362,56 +362,51 @@
           </div>
           <!-- [TEST-ONLY] 비교 테스트 끝 -->
 
-          <!-- 구간별 지연 통계 표 (KAN-78) -->
+          <!-- 구간별 지연 통계 표 (KAN-78, KAN-79) -->
           <div class="table-wrap" style="overflow-x: auto;">
-            <table style="min-width: 840px;">
+            <table style="min-width: 760px;">
               <thead>
                 <tr>
-                  <th rowspan="2">채널</th><th rowspan="2">검출 횟수</th>
-                  <th colspan="3">② 슬롯대기 (ms) · CPU경합</th>
-                  <th colspan="3">③ 왜곡보정 (ms) · 렌즈보정</th>
-                  <th colspan="3">④ 마커검출 (ms) · OpenCV</th>
-                  <th colspan="3">⑥ 1회총소요 (ms) · Wall</th>
-                  <th rowspan="2">탈락후보<br>(평균)</th>
-                </tr>
-                <tr>
-                  <th>평균</th><th>p95</th><th>최대</th>
-                  <th>평균</th><th>p95</th><th>최대</th>
-                  <th>평균</th><th>p95</th><th>최대</th>
-                  <th>평균</th><th>p95</th><th>최대</th>
+                  <th>채널</th>
+                  <th>검출 횟수</th>
+                  <th>② 슬롯대기 (CPU경합)</th>
+                  <th>③ 왜곡보정 연산</th>
+                  <th>④ 마커검출 연산</th>
+                  <th>⑥ 전체 소요시간</th>
+                  <th>탈락후보(평균)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>1</td><td id="lat_detectionCount_1">—</td>
-                  <td id="lat_slot_avg_1">—</td><td id="lat_slot_p95_1">—</td><td id="lat_slot_max_1">—</td>
-                  <td id="lat_undist_avg_1">—</td><td id="lat_undist_p95_1">—</td><td id="lat_undist_max_1">—</td>
-                  <td id="lat_det_avg_1">—</td><td id="lat_det_p95_1">—</td><td id="lat_det_max_1">—</td>
-                  <td id="lat_tot_avg_1">—</td><td id="lat_tot_p95_1">—</td><td id="lat_tot_max_1">—</td>
+                  <td id="lat_slot_cell_1">—</td>
+                  <td id="lat_undist_cell_1">—</td>
+                  <td id="lat_det_cell_1">—</td>
+                  <td id="lat_tot_cell_1">—</td>
                   <td id="lat_rejected_avg_1">—</td>
                 </tr>
                 <tr>
                   <td>2</td><td id="lat_detectionCount_2">—</td>
-                  <td id="lat_slot_avg_2">—</td><td id="lat_slot_p95_2">—</td><td id="lat_slot_max_2">—</td>
-                  <td id="lat_undist_avg_2">—</td><td id="lat_undist_p95_2">—</td><td id="lat_undist_max_2">—</td>
-                  <td id="lat_det_avg_2">—</td><td id="lat_det_p95_2">—</td><td id="lat_det_max_2">—</td>
-                  <td id="lat_tot_avg_2">—</td><td id="lat_tot_p95_2">—</td><td id="lat_tot_max_2">—</td>
+                  <td id="lat_slot_cell_2">—</td>
+                  <td id="lat_undist_cell_2">—</td>
+                  <td id="lat_det_cell_2">—</td>
+                  <td id="lat_tot_cell_2">—</td>
                   <td id="lat_rejected_avg_2">—</td>
                 </tr>
                 <tr>
                   <td>3</td><td id="lat_detectionCount_3">—</td>
-                  <td id="lat_slot_avg_3">—</td><td id="lat_slot_p95_3">—</td><td id="lat_slot_max_3">—</td>
-                  <td id="lat_undist_avg_3">—</td><td id="lat_undist_p95_3">—</td><td id="lat_undist_max_3">—</td>
-                  <td id="lat_det_avg_3">—</td><td id="lat_det_p95_3">—</td><td id="lat_det_max_3">—</td>
-                  <td id="lat_tot_avg_3">—</td><td id="lat_tot_p95_3">—</td><td id="lat_tot_max_3">—</td>
+                  <td id="lat_slot_cell_3">—</td>
+                  <td id="lat_undist_cell_3">—</td>
+                  <td id="lat_det_cell_3">—</td>
+                  <td id="lat_tot_cell_3">—</td>
                   <td id="lat_rejected_avg_3">—</td>
                 </tr>
                 <tr>
                   <td>4</td><td id="lat_detectionCount_4">—</td>
-                  <td id="lat_slot_avg_4">—</td><td id="lat_slot_p95_4">—</td><td id="lat_slot_max_4">—</td>
-                  <td id="lat_undist_avg_4">—</td><td id="lat_undist_p95_4">—</td><td id="lat_undist_max_4">—</td>
-                  <td id="lat_det_avg_4">—</td><td id="lat_det_p95_4">—</td><td id="lat_det_max_4">—</td>
-                  <td id="lat_tot_avg_4">—</td><td id="lat_tot_p95_4">—</td><td id="lat_tot_max_4">—</td>
+                  <td id="lat_slot_cell_4">—</td>
+                  <td id="lat_undist_cell_4">—</td>
+                  <td id="lat_det_cell_4">—</td>
+                  <td id="lat_tot_cell_4">—</td>
                   <td id="lat_rejected_avg_4">—</td>
                 </tr>
               </tbody>
@@ -419,7 +414,7 @@
           </div>
           <p class="muted" style="margin-top: 10px;">
             1초마다 갱신 · [측정 종료] 시 마지막 값에서 고정.
-            <b>p95</b> = 상위 95% 지연 한계선(실제 안전 보장 지연), <b>탈락후보</b> = 사전과 안 맞아 버려진 후보 수(장면 복잡도).
+            <b>평균 (p95 한계선)</b> 형태 표기 · 최대값/최소값 전체 데이터는 [CSV 다운로드]로 확인 가능합니다.
           </p>
         </section>
 
@@ -715,6 +710,11 @@
       return s;
     }
 
+    function formatStatCell(stat) {
+      if (!stat || stat.detectionCount === 0) return '—';
+      return `<b>${stat.avg} ms</b> <span class="muted" style="font-size:11px;">(p95: ${stat.p95} ms)</span>`;
+    }
+
     function startLatencyMeasure() {
       latencyMeasuring = true;
       latencyStartTime = Date.now();
@@ -729,18 +729,10 @@
       document.getElementById('latency_csv_btn').disabled = true;
       for (let ch = 1; ch <= 4; ch++) {
         setCellText('lat_detectionCount_' + ch, '—');
-        setCellText('lat_slot_avg_' + ch, '—');
-        setCellText('lat_slot_p95_' + ch, '—');
-        setCellText('lat_slot_max_' + ch, '—');
-        setCellText('lat_undist_avg_' + ch, '—');
-        setCellText('lat_undist_p95_' + ch, '—');
-        setCellText('lat_undist_max_' + ch, '—');
-        setCellText('lat_det_avg_' + ch, '—');
-        setCellText('lat_det_p95_' + ch, '—');
-        setCellText('lat_det_max_' + ch, '—');
-        setCellText('lat_tot_avg_' + ch, '—');
-        setCellText('lat_tot_p95_' + ch, '—');
-        setCellText('lat_tot_max_' + ch, '—');
+        setCellHtml('lat_slot_cell_' + ch, '—');
+        setCellHtml('lat_undist_cell_' + ch, '—');
+        setCellHtml('lat_det_cell_' + ch, '—');
+        setCellHtml('lat_tot_cell_' + ch, '—');
         setCellText('lat_rejected_avg_' + ch, '—');
       }
       pollForNewDetection();
@@ -814,22 +806,10 @@
         const rj = computeStatsFrom(latencyStatsRejected, ch);
 
         setCellText('lat_detectionCount_' + ch, tt ? tt.detectionCount : 0);
-        setCellText('lat_slot_avg_' + ch, sl ? sl.avg : '—');
-        setCellText('lat_slot_p95_' + ch, sl ? sl.p95 : '—');
-        setCellText('lat_slot_max_' + ch, sl ? sl.max : '—');
-
-        setCellText('lat_undist_avg_' + ch, un ? un.avg : '—');
-        setCellText('lat_undist_p95_' + ch, un ? un.p95 : '—');
-        setCellText('lat_undist_max_' + ch, un ? un.max : '—');
-
-        setCellText('lat_det_avg_' + ch, dt ? dt.avg : '—');
-        setCellText('lat_det_p95_' + ch, dt ? dt.p95 : '—');
-        setCellText('lat_det_max_' + ch, dt ? dt.max : '—');
-
-        setCellText('lat_tot_avg_' + ch, tt ? tt.avg : '—');
-        setCellText('lat_tot_p95_' + ch, tt ? tt.p95 : '—');
-        setCellText('lat_tot_max_' + ch, tt ? tt.max : '—');
-
+        setCellHtml('lat_slot_cell_' + ch, formatStatCell(sl));
+        setCellHtml('lat_undist_cell_' + ch, formatStatCell(un));
+        setCellHtml('lat_det_cell_' + ch, formatStatCell(dt));
+        setCellHtml('lat_tot_cell_' + ch, formatStatCell(tt));
         setCellText('lat_rejected_avg_' + ch, rj ? rj.avg : '—');
       }
     }
