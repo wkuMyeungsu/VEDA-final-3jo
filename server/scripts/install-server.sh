@@ -9,6 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+UNIT_DIR="${SERVER_ROOT}/deploy/systemd"
 MQTT_CERT_SOURCE="${MQTT_CERT_SOURCE:-/home/veda3/forklift-safety-mqtt/central-server}"
 
 reset_stale_cmake_build() {
@@ -61,6 +62,18 @@ cp -a "${SERVER_ROOT}/config/." /etc/forklift_safety/
 chown -R root:root /etc/forklift_safety
 find /etc/forklift_safety -type d -exec chmod 0755 {} +
 find /etc/forklift_safety -type f -exec chmod 0644 {} +
+# camera_list.json에는 CCTV 자격증명이 들어갈 수 있다. 호모그래피 앱이
+# 온디맨드 실행 중 원자적으로 갱신할 수 있도록 실행 사용자만 읽고 쓰게 한다.
+if [ -f /etc/forklift_safety/camera_list.json ]; then
+    chown veda3:veda3 /etc/forklift_safety/camera_list.json
+    chmod 0600 /etc/forklift_safety/camera_list.json
+fi
+# 최종 보정 결과는 호모그래피 앱이 같은 디렉터리에서 임시 파일을 만든 뒤
+# rename해야 하므로 결과 루트의 쓰기 권한을 실행 사용자에게 준다.
+if [ -d /etc/forklift_safety/homography ]; then
+    chown -R veda3:veda3 /etc/forklift_safety/homography
+    find /etc/forklift_safety/homography -type d -exec chmod 0750 {} +
+fi
 install -o veda3 -g veda3 -m 0644 "${MQTT_CERT_SOURCE}/ca.crt" \
     /etc/forklift_safety/certs/ca.crt
 install -o veda3 -g veda3 -m 0644 "${MQTT_CERT_SOURCE}/client-server.crt" \
@@ -76,24 +89,30 @@ install -o root -g root -m 0755 \
 install -o root -g root -m 0755 \
     "${SERVER_ROOT}/build/apps/main_app/event_log_viewer" \
     /usr/local/bin/event_log_viewer
+install -o root -g root -m 0755 \
+    "${SERVER_ROOT}/apps/homography_app/processing/build/homography_tool" \
+    /usr/local/bin/homography_tool
 
 echo "=== [5/7] systemd 유닛 설치 ==="
-install -o root -g root -m 0644 "${SCRIPT_DIR}/forklift_safety_server.service" \
+install -o root -g root -m 0644 "${UNIT_DIR}/forklift_safety_server.service" \
     /etc/systemd/system/forklift_safety_server.service
-install -o root -g root -m 0644 "${SCRIPT_DIR}/homography-app.service" \
+install -o root -g root -m 0644 "${UNIT_DIR}/homography-app.service" \
     /etc/systemd/system/homography-app.service
-install -o root -g root -m 0644 "${SCRIPT_DIR}/monitoring-app.service" \
+install -o root -g root -m 0644 "${UNIT_DIR}/monitoring-app.service" \
     /etc/systemd/system/monitoring-app.service
 systemctl daemon-reload
 
 echo "=== [6/7] 기존 운영 콘솔 교체 ==="
 systemctl disable --now server-ops.service 2>/dev/null || true
+systemctl disable --now server-monitoring.service 2>/dev/null || true
 systemctl disable --now homography-app.service 2>/dev/null || true
 systemctl enable mosquitto.service
 systemctl enable monitoring-app.service forklift_safety_server.service
 
 echo "=== [7/7] 서비스 기동 ==="
-systemctl restart mosquitto.service
+# 이 설치 스크립트는 Mosquitto 설정을 변경하지 않는다. 이미 실행 중인 브로커를
+# 재시작해 단말 연결을 끊지 말고, 중지 상태일 때만 기동한다.
+systemctl start mosquitto.service
 systemctl restart monitoring-app.service
 systemctl restart forklift_safety_server.service
 systemctl --no-pager --full status mosquitto.service monitoring-app.service \

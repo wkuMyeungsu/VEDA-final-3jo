@@ -13,6 +13,8 @@ RestartSec=2
 User=veda3
 LimitNOFILE=65536
 Environment=GIO_USE_PROXY_RESOLVER=dummy
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
