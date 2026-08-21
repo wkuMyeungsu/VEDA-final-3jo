@@ -6,7 +6,16 @@
 //Device: GW1NSR-4C
 //Created Time: Wed 07 15 11:57:53 2026
 
+// 2026-08-19: PCB(FPGA_control.kicad_pcb) J4 커넥터 실측 결과에 맞춰
+// 핀 재배정. Tang Nano 4K는 좌/우 두 헤더로 나뉘는데 J4는 오른쪽
+// 헤더 하나뿐이라, 원래 왼쪽 헤더 핀(27/28/29/30)에 배정돼 있던
+// led[1]/fwd_cutoff_relay_en/manual_reset_n/buzzer_out는 J4로는
+// 물리적으로 닿을 수 없는 핀들이었음. J4 각 패드가 실제로 물린
+// 칩 핀(Sipeed 공식 핀아웃 기준, PCB에 estop_n=14/uart_rx_i=40이
+// 이미 정확히 일치하는 것으로 정렬 검증됨)으로 아래와 같이 수정.
 IO_LOC "led[1]" 10;
+// 주의: 물리핀10 = Gowin MODE1(설정모드 선택 겸용 핀, PnR 리포트에
+// PIN_NAME=MODE1로 명시됨). LED0가 계속 켜져있던 원인일 가능성 높음.
 IO_PORT "led[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 IO_LOC "led[0]" 39;
 IO_PORT "led[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
@@ -21,9 +30,26 @@ IO_PORT "manual_reset_n" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
 IO_LOC "estop_n" 14;
 IO_PORT "estop_n" IO_TYPE=LVCMOS18 PULL_MODE=UP BANK_VCCIO=1.8;
 IO_LOC "buzzer_out" 46;
-IO_PORT "buzzer_out" IO_TYPE=LVCMOS33;
+IO_PORT "buzzer_out" IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
 IO_LOC "uart_tx_o" 41;
-IO_PORT "uart_tx_o" IO_TYPE=LVCMOS33;
+IO_PORT "uart_tx_o" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
 
 IO_LOC "fwd_cutoff_relay_en" 42;
 IO_PORT "fwd_cutoff_relay_en" IO_TYPE=LVCMOS33 BANK_VCCIO=3.3;
+
+// SN74LS47N BCD 입력(A/B/C/D).
+// 원래 41/42/44번 핀이었으나 uart_tx_o/fwd_cutoff_relay_en/
+// manual_reset_n이 PCB 실배선을 따라 그 핀들로 옮겨오면서 충돌해서,
+// 새 점퍼선으로 J4의 미사용 오른쪽 헤더 자리(35/34/32/31, 물리적으로
+// J4 19~22번 패드와 동일한 헤더)로 재배정함. 이 뱅크는 2.5V라 74LS47
+// VIH_min(약 2.0V) 대비 여유가 약 0.5V로, 원래 의도했던 3.3V 뱅크
+// (여유 약 1.3V)보다 줄어든다 - 노이즈 여유가 빠듯한 편이니 배선을
+// 짧게 유지할 것.
+IO_LOC "warning_state_bcd[0]" 35;
+IO_PORT "warning_state_bcd[0]" IO_TYPE=LVCMOS25 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=2.5;
+IO_LOC "warning_state_bcd[1]" 34;
+IO_PORT "warning_state_bcd[1]" IO_TYPE=LVCMOS25 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=2.5;
+IO_LOC "warning_state_bcd[2]" 32;
+IO_PORT "warning_state_bcd[2]" IO_TYPE=LVCMOS25 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=2.5;
+IO_LOC "warning_state_bcd[3]" 31;
+IO_PORT "warning_state_bcd[3]" IO_TYPE=LVCMOS25 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=2.5;

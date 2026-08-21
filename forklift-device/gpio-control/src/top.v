@@ -24,7 +24,19 @@ module top #(
      * -> NC 접점 붙음 -> 전진 정상 동작 (기계적 기본값이므로
      * FPGA가 죽어도 이 방향은 하드웨어가 스스로 보장한다).
      */
-    output wire       fwd_cutoff_relay_en
+    output wire       fwd_cutoff_relay_en,
+
+    /*
+     * SN74LS47N(BCD-to-7세그먼트 디코더/드라이버) 입력으로 나가는
+     * warning_state 그대로(0..5, 표 0장 참고). LED/부저와 별개인
+     * 세 번째 물리 표시 채널 - 정확히 어느 상태인지 숫자로 바로
+     * 읽을 수 있어서 현장 진단/데모에 유용하다. LT/RBI는 보드에서
+     * VCC로 직결(항상 정상 디코드, 0도 항상 표시), BI/RBO는 미사용
+     * - FPGA 핀은 A/B/C/D 4개만 쓴다. self-test 여부와 무관하게
+     * 항상 실제 warning_state를 그대로 반영한다(LED처럼 self-test
+     * 패턴으로 안 가려짐 - 숫자 표시는 항상 진짜 상태).
+     */
+    output wire [3:0] warning_state_bcd
 );
 
     /*
@@ -257,6 +269,13 @@ module top #(
         .estop_active  (estop_active),
         .warning_state (warning_state)
     );
+
+    /*
+     * warning_state(0..5)를 그대로 BCD 자릿수로 얹는다 - 3비트 값이
+     * 항상 0..5 범위(0장 표)라 자리올림/변환 로직 없이 zero-extend만
+     * 하면 유효한 BCD 한 자리가 된다.
+     */
+    assign warning_state_bcd = {1'b0, warning_state};
 
     led_pattern #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ)

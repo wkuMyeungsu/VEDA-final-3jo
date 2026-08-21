@@ -90,11 +90,15 @@ module tb_cutoff;
         #(BIT_NS*300);
         $display("fwd_cutoff_relay_en = %b (기대값 1, 여전히 래치)", fwd_cutoff_relay_en);
 
+        $display("==== 3b) warning_latch 2000ms 하강 홀드다운이 끝날 때까지 대기 (effective_risk가 실제로 SAFE가 되어야 cutoff_trigger가 풀림) ====");
+        #(2_050_000_000);
+        $display("fwd_cutoff_relay_en = %b (기대값 1, effective_risk는 SAFE가 됐지만 manual reset 전이라 여전히 래치)", fwd_cutoff_relay_en);
+
         $display("==== 4) manual_reset 버튼 눌러서 해제 ====");
         manual_reset_n = 0;
-        #(1_000_000); // 20ms 디바운스 + 여유
+        #(25_000_000); // 20ms 디바운스 + 여유
         manual_reset_n = 1;
-        #(1_000_000);
+        #(25_000_000);
         $display("fwd_cutoff_relay_en = %b (기대값 0, 해제됨)", fwd_cutoff_relay_en);
 
         $display("==== 5) SET_RISK(3)로 다시 CRITICAL 만들고, comm_error는 cutoff에 영향 없어야 함 ====");
@@ -112,7 +116,7 @@ module tb_cutoff;
     end
 
     initial begin
-        #900_000_000;
+        #3_500_000_000;
         $display("TIMEOUT");
         $finish;
     end
