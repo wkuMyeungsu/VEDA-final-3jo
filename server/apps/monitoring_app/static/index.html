@@ -8,7 +8,11 @@
     body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#20252b;background:#f6f7f9}
     section{background:#fff;border:1px solid #dfe3e8;border-radius:10px;padding:1.2rem;margin:1rem 0}
     dl{display:grid;grid-template-columns:180px 1fr;gap:.7rem;margin:0}dt{font-weight:650}dd{margin:0}
-    .active,.online{color:#18733b}.inactive,.failed,.offline{color:#b42318}.unknown{color:#806000}
+    .status-value{display:inline-flex;align-items:center;gap:.45rem;font-weight:650}
+    .status-dot{display:inline-block;width:.72rem;height:.72rem;border-radius:50%;background:#98a2b3;box-shadow:0 0 0 3px rgba(152,162,179,.18)}
+    .status-value.active,.status-value.online{color:#18733b}.status-value.active .status-dot,.status-value.online .status-dot{background:#12b76a;box-shadow:0 0 0 3px rgba(18,183,106,.18)}
+    .status-value.inactive,.status-value.failed,.status-value.offline{color:#b42318}.status-value.inactive .status-dot,.status-value.failed .status-dot,.status-value.offline .status-dot{background:#f04438;box-shadow:0 0 0 3px rgba(240,68,56,.18)}
+    .status-value.unknown{color:#806000}.status-value.unknown .status-dot{background:#fdb022;box-shadow:0 0 0 3px rgba(253,176,34,.18)}
     a{display:inline-block;padding:.7rem 1rem;background:#216eaa;color:#fff;border-radius:5px;text-decoration:none}
     pre{margin:0;max-height:24rem;overflow:auto;padding:.8rem;border-radius:6px;background:#1b1f24;color:#e6edf3;white-space:pre-wrap;word-break:break-word;font:0.82rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
   </style>
@@ -33,15 +37,20 @@
     const MILLISECONDS_PER_SECOND = 1000;
     const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
     const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
-    const STATUS_SYMBOLS = Object.freeze({active:'O',online:'O',inactive:'X',offline:'X',failed:'X',unknown:'?'});
-    const STATUS_LABELS = Object.freeze({active:'활성',online:'연결됨',inactive:'비활성',offline:'연결 끊김',failed:'실패',unknown:'확인 불가'});
+    const STATUS_LABELS = Object.freeze({active:'활성',online:'정상',inactive:'비활성',offline:'연결 끊김',failed:'실패',unknown:'확인 불가'});
     document.getElementById('refresh-note').textContent =
       `읽기 전용 운영 상태입니다. ${REFRESH_INTERVAL_SECONDS}초마다 갱신됩니다.`;
     const setState=(id,value)=>{
       const node=document.getElementById(id);
       const state=String(value||'unknown').toLowerCase();
-      node.textContent=STATUS_SYMBOLS[state]||'?';
-      node.className=state;
+      const dot=document.createElement('span');
+      dot.className='status-dot';
+      dot.setAttribute('aria-hidden','true');
+      const label=document.createElement('span');
+      label.className='status-label';
+      label.textContent=STATUS_LABELS[state]||'확인 불가';
+      node.replaceChildren(dot,label);
+      node.className=`status-value ${state}`;
       node.title=STATUS_LABELS[state]||'확인 불가';
       node.setAttribute('aria-label',STATUS_LABELS[state]||'확인 불가');
     };
@@ -67,13 +76,27 @@
           ? recentLines.join('\n')
           : '기록 없음';
         const snapshot=value.runtime_status&&value.runtime_status.snapshot;
-        document.getElementById('runtime-status').textContent=snapshot
-          ? `${STATUS_SYMBOLS[String(snapshot.state||'unknown').toLowerCase()]||'?'} ${STATUS_LABELS[String(snapshot.state||'unknown').toLowerCase()]||'확인 불가'} · 처리 큐 버림 ${snapshot.queue?.dropped??'?'}건`
-          : '기록 없음';
+        const runtimeNode=document.getElementById('runtime-status');
+        if(snapshot){
+          setState('runtime-status',snapshot.state);
+          runtimeNode.append(document.createTextNode(` · 처리 큐 버림 ${snapshot.queue?.dropped??'?'}건`));
+        }else{
+          runtimeNode.textContent='기록 없음';
+          runtimeNode.className='status-value';
+          runtimeNode.removeAttribute('title');
+          runtimeNode.removeAttribute('aria-label');
+        }
         const checkedNode=document.getElementById('checked');
         checkedNode.textContent=formatTimestamp(value.checked_utc);
         checkedNode.title=value.checked_utc||'';
-      }catch(error){setState('safety','unknown');setState('mqtt','unknown');setState('homography-state','unknown');document.getElementById('runtime-status').textContent='확인 실패';document.getElementById('server-logs').textContent='확인 실패'}
+      }catch(error){
+        setState('safety','unknown');
+        setState('mqtt','unknown');
+        setState('homography-state','unknown');
+        setState('runtime-status','unknown');
+        document.getElementById('runtime-status').append(document.createTextNode(' · 확인 실패'));
+        document.getElementById('server-logs').textContent='확인 실패';
+      }
     }
     document.getElementById('homography').href='http://'+location.hostname+':8001';
     refresh();window.setInterval(refresh,REFRESH_INTERVAL_MS);
