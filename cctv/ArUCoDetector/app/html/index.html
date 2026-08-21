@@ -417,55 +417,6 @@
             <b>평균 (p95 한계선)</b> 형태 표기 · 최대값/최소값 전체 데이터는 [CSV 다운로드]로 확인 가능합니다.
           </p>
         </section>
-
-        <!-- [TEST-ONLY] 파이프라인 6구간 μs 실시간 상세 분해 (KAN-78) -->
-        <section style="margin-top: 16px;">
-          <h2>파이프라인 6구간 마이크로초(μs) 실시간 분해 <span class="muted" style="font-weight:400;">(KAN-78)</span></h2>
-          <p class="muted" style="margin: -4px 0 12px;">
-            각 채널의 1회 폴링 파이프라인을 6개 연산 구간으로 분해하여 μs(마이크로초) 단위로 실시간 계측합니다.
-          </p>
-          <div class="table-wrap" style="overflow-x: auto;">
-            <table style="min-width: 760px;">
-              <thead>
-                <tr>
-                  <th>채널</th>
-                  <th>① 프레임인출 (get)</th>
-                  <th>② 슬롯대기 (slot)</th>
-                  <th>③ 왜곡보정 (undist)</th>
-                  <th>④ 마커검출 (detect)</th>
-                  <th>⑤ 메타전송 (send)</th>
-                  <th>⑥ 전체소요 (total)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>1</td>
-                  <td id="us_get_1">—</td><td id="us_slot_1">—</td><td id="us_undist_1">—</td>
-                  <td id="us_detect_1">—</td><td id="us_send_1">—</td><td id="us_total_1">—</td>
-                </tr>
-                <tr>
-                  <td>2</td>
-                  <td id="us_get_2">—</td><td id="us_slot_2">—</td><td id="us_undist_2">—</td>
-                  <td id="us_detect_2">—</td><td id="us_send_2">—</td><td id="us_total_2">—</td>
-                </tr>
-                <tr>
-                  <td>3</td>
-                  <td id="us_get_3">—</td><td id="us_slot_3">—</td><td id="us_undist_3">—</td>
-                  <td id="us_detect_3">—</td><td id="us_send_3">—</td><td id="us_total_3">—</td>
-                </tr>
-                <tr>
-                  <td>4</td>
-                  <td id="us_get_4">—</td><td id="us_slot_4">—</td><td id="us_undist_4">—</td>
-                  <td id="us_detect_4">—</td><td id="us_send_4">—</td><td id="us_total_4">—</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="muted" style="margin-top: 8px;">
-            단위: μs (1ms = 1,000μs) · 2초마다 자동 갱신.
-            <b>슬롯대기</b>가 높으면 채널 간 경합 병목, <b>왜곡보정/마커검출</b>이 높으면 연산 알고리즘 병목입니다.
-          </p>
-        </section>
       </div>
       <!-- ===================== [TEST-ONLY] 지연 측정 끝 ===================== -->
 
@@ -612,13 +563,6 @@
             setCellHtml('us_main_detect_' + ch, '—');
             setCellHtml('us_main_send_' + ch, '—');
             setCellHtml('us_main_total_' + ch, '—');
-
-            setCellText('us_get_' + ch, '—');
-            setCellText('us_slot_' + ch, '—');
-            setCellText('us_undist_' + ch, '—');
-            setCellText('us_detect_' + ch, '—');
-            setCellText('us_send_' + ch, '—');
-            setCellText('us_total_' + ch, '—');
           }
           if (Array.isArray(d.channels)) {
             for (const c of d.channels) {
@@ -641,14 +585,6 @@
               setCellHtml('us_main_detect_' + ch, formatUsCell(c.detect_us));
               setCellHtml('us_main_send_' + ch, formatUsCell(c.send_us));
               setCellHtml('us_main_total_' + ch, formatUsCell(c.total_us));
-
-              // 테스트 탭 6구간 μs 분해 테이블 업데이트
-              setCellHtml('us_get_' + ch, formatUsCell(c.frame_get_us));
-              setCellHtml('us_slot_' + ch, formatUsCell(c.slot_wait_us));
-              setCellHtml('us_undist_' + ch, c.undistort_applied ? formatUsCell(c.undistort_us) : '<span class="muted">미적용 (0 μs)</span>');
-              setCellHtml('us_detect_' + ch, formatUsCell(c.detect_us));
-              setCellHtml('us_send_' + ch, formatUsCell(c.send_us));
-              setCellHtml('us_total_' + ch, formatUsCell(c.total_us));
             }
           }
         })
