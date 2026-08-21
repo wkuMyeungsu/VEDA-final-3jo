@@ -50,7 +50,7 @@
     .resource-card{border:1px solid #eaecf0;border-radius:9px;padding:1rem;background:#fcfcfd}
     .resource-card header{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
     .resource-card h3{font-size:.9rem}
-    .resource-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem;margin-top:.8rem}
+    .resource-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-top:.8rem}
     .resource-value{display:flex;align-items:baseline;gap:.35rem}
     .resource-value strong{font-size:1.45rem;letter-spacing:-.04em}
     .resource-value span{color:#667085;font-size:.8rem}
@@ -125,7 +125,7 @@
     <section class="panel">
       <div class="section-heading"><h2>라즈베리파이 자원 사용량</h2><span id="resource-summary" class="section-meta">측정 중</span></div>
       <div class="resource-grid">
-        <article class="resource-card"><header><h3>전체 시스템</h3><span id="resource-host-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><div class="resource-values"><div class="resource-value"><strong id="resource-host-cpu">—</strong><span>CPU</span></div><div class="resource-value"><strong id="resource-host-memory">—</strong><span>메모리 사용량</span></div></div><p id="resource-host-detail" class="resource-detail">라즈베리파이 전체 기준 · 측정 준비 중</p></article>
+        <article class="resource-card"><header><h3>전체 시스템</h3><span id="resource-host-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><div class="resource-values"><div class="resource-value"><strong id="resource-host-cpu">—</strong><span>CPU</span></div><div class="resource-value"><strong id="resource-host-memory">—</strong><span>메모리 사용량</span></div><div class="resource-value"><strong id="resource-host-temperature">—</strong><span>온도</span></div></div><p id="resource-host-detail" class="resource-detail">라즈베리파이 전체 기준 · 측정 준비 중</p></article>
       </div>
     </section>
   </section>
@@ -254,6 +254,7 @@
     };
     const formatPercent=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 중':`${Number(value).toFixed(1)}%`;
     const formatMemoryMb=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 중':`${Number(value).toFixed(1)}MB`;
+    const formatTemperature=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 불가':`${Number(value).toFixed(1)}°C`;
     const renderHostResource=(resource)=>{
       const value=resource||{};
       const state=value.state||'unavailable';
@@ -261,10 +262,13 @@
       setIndicator('resource-host-indicator',kind,state==='ok'?'호스트 자원 측정 정상':'호스트 자원 측정 확인 필요');
       setText('resource-host-cpu',formatPercent(value.cpu_percent));
       setText('resource-host-memory',formatMemoryMb(value.memory_used_mb));
+      setText('resource-host-temperature',formatTemperature(value.temperature_c));
       const details=[];
       if(value.memory_percent!==null&&value.memory_percent!==undefined)details.push(`메모리 ${Number(value.memory_percent).toFixed(1)}% 사용`);
       if(value.memory_total_mb!==null&&value.memory_total_mb!==undefined)details.push(`전체 ${formatMemoryMb(value.memory_total_mb)}`);
       if(value.memory_available_mb!==null&&value.memory_available_mb!==undefined)details.push(`사용 가능 ${formatMemoryMb(value.memory_available_mb)}`);
+      if(value.temperature_c!==null&&value.temperature_c!==undefined)details.push(`온도 ${formatTemperature(value.temperature_c)}`);
+      else details.push('온도 센서 측정 불가');
       if(value.sampled_utc)details.push(`측정 ${formatAgeMs(runtimeAgeMs(value.sampled_utc))}`);
       if(state==='unavailable')details.push('호스트 procfs 정보를 읽을 수 없음');
       else if(value.cpu_percent===null||value.cpu_percent===undefined)details.push('CPU 기준값 수집 중');

@@ -26,6 +26,7 @@ DEFAULT_RECENT_LOG_LINES = 50
 MAX_LOG_TAIL_BYTES = 64 * 1024
 RUNTIME_STATUS_MAX_AGE_SECONDS = 3
 PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
+THERMAL_ROOT = Path(os.environ.get("SERVER_MONITORING_THERMAL_ROOT", "/sys/class/thermal"))
 _RESOURCE_SAMPLE_LOCK = threading.Lock()
 _HOST_CPU_SAMPLE = None
 
@@ -119,6 +120,35 @@ def _read_host_memory():
     return total_kb, available_kb
 
 
+def _read_host_temperature():
+    """Read a CPU/SoC thermal zone temperature in degrees Celsius."""
+    try:
+        zones = sorted(THERMAL_ROOT.glob("thermal_zone*/temp"))
+    except OSError:
+        zones = []
+    preferred = []
+    fallback = []
+    for temp_path in zones:
+        zone_dir = temp_path.parent
+        try:
+            zone_type = (zone_dir / "type").read_text(encoding="utf-8").strip().lower()
+        except OSError:
+            zone_type = ""
+        if any(token in zone_type for token in ("cpu", "soc", "bcm", "pkg")):
+            preferred.append((temp_path, zone_type))
+        else:
+            fallback.append((temp_path, zone_type))
+    for temp_path, zone_type in preferred + fallback:
+        try:
+            raw_value = float(temp_path.read_text(encoding="utf-8").strip())
+        except (OSError, TypeError, ValueError):
+            continue
+        value = raw_value / 1000.0 if abs(raw_value) > 200 else raw_value
+        if -20.0 <= value <= 150.0:
+            return round(value, 1), zone_type or temp_path.parent.name
+    return None, None
+
+
 def host_resource(sampled_at=None, sampled_utc=None):
     """Return whole-Raspberry-Pi CPU and memory usage from procfs."""
     global _HOST_CPU_SAMPLE
@@ -139,12 +169,15 @@ def host_resource(sampled_at=None, sampled_utc=None):
             "memory_available_kb": None,
             "memory_available_mb": None,
             "memory_percent": None,
+            "temperature_c": None,
+            "temperature_source": None,
             "sampled_utc": timestamp,
         }
 
     total_ticks, idle_ticks = cpu_ticks
     total_kb, available_kb = memory
     used_kb = total_kb - available_kb
+    temperature_c, temperature_source = _read_host_temperature()
     cpu_percent = None
     with _RESOURCE_SAMPLE_LOCK:
         previous = _HOST_CPU_SAMPLE
@@ -168,6 +201,8 @@ def host_resource(sampled_at=None, sampled_utc=None):
         "memory_available_kb": available_kb,
         "memory_available_mb": round(available_kb / 1024, 1),
         "memory_percent": round(used_kb / total_kb * 100.0, 1),
+        "temperature_c": temperature_c,
+        "temperature_source": temperature_source,
         "sampled_utc": timestamp,
     }
 

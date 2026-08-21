@@ -63,6 +63,8 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn("단말별 신선도 확인", page)
         self.assertIn("resource-host-cpu", page)
         self.assertIn("resource-host-memory", page)
+        self.assertIn("resource-host-temperature", page)
+        self.assertIn("formatTemperature", page)
         self.assertIn("전체 프로세스 포함", page)
         self.assertIn("renderResources", page)
         self.assertNotIn("센서 수신 누적</h3>", page)
@@ -129,12 +131,20 @@ class MonitoringStatusTests(unittest.TestCase):
                 "MemTotal:       4096000 kB\nMemAvailable:   2048000 kB\n",
                 encoding="utf-8",
             )
+            thermal_root = pathlib.Path(directory) / "thermal"
+            thermal_zone = thermal_root / "thermal_zone0"
+            thermal_zone.mkdir(parents=True)
+            (thermal_zone / "type").write_text("cpu-thermal\n", encoding="utf-8")
+            (thermal_zone / "temp").write_text("45678\n", encoding="utf-8")
             with mock.patch.object(SERVER, "PROC_ROOT", proc_root), \
+                 mock.patch.object(SERVER, "THERMAL_ROOT", thermal_root), \
                  mock.patch.object(SERVER, "_HOST_CPU_SAMPLE", None):
                 first = SERVER.host_resource(sampled_at=10.0, sampled_utc="t1")
                 self.assertIsNone(first["cpu_percent"])
                 self.assertEqual(first["memory_used_mb"], 2000.0)
                 self.assertEqual(first["memory_percent"], 50.0)
+                self.assertEqual(first["temperature_c"], 45.7)
+                self.assertEqual(first["temperature_source"], "cpu-thermal")
 
                 (proc_root / "stat").write_text("cpu 150 0 150 750 100 0 0 0\n", encoding="utf-8")
                 second = SERVER.host_resource(sampled_at=11.0, sampled_utc="t2")
