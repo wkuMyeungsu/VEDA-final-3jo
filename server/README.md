@@ -511,10 +511,12 @@ SERVER_COMMON_CONFIG_DIR=server/config \
 
 ```sh
 SERVER_MONITORING_PORT=8000 \
+SERVER_MONITORING_REFRESH_INTERVAL_SECONDS=1 \
   python3 server/apps/monitoring_app/server.py
 ```
 
 - 기본 주소: `http://127.0.0.1:8000`
+- `SERVER_MONITORING_REFRESH_INTERVAL_SECONDS`: 화면 갱신 주기(초), 기본값 `1`
 - `/api/status`: 중앙 서버·MQTT·호모그래피·최근 로그 시각의 읽기 전용 상태
 - `/health/live`: 모니터링 앱 자체 liveness
 

@@ -12,9 +12,9 @@
     a{display:inline-block;padding:.7rem 1rem;background:#216eaa;color:#fff;border-radius:5px;text-decoration:none}
   </style>
 </head>
-<body>
+<body data-refresh-interval-seconds="__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__">
   <h1>Server Operations Console</h1>
-  <p>읽기 전용 운영 상태입니다. 1초마다 갱신됩니다.</p>
+  <p id="refresh-note">읽기 전용 운영 상태입니다.</p>
   <section>
     <h2>Runtime</h2>
     <dl>
@@ -28,6 +28,11 @@
   </section>
   <section><h2>Maintenance tool</h2><a id="homography" href="#">Open Homography App</a></section>
   <script>
+    const MILLISECONDS_PER_SECOND = 1000;
+    const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
+    const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
+    document.getElementById('refresh-note').textContent =
+      `읽기 전용 운영 상태입니다. ${REFRESH_INTERVAL_SECONDS}초마다 갱신됩니다.`;
     const setState=(id,value)=>{const node=document.getElementById(id);node.textContent=value;node.className=String(value).toLowerCase()};
     async function refresh(){
       try{
@@ -45,7 +50,7 @@
       }catch(error){setState('safety','unknown');setState('mqtt','unknown');setState('homography-state','unknown');document.getElementById('runtime-status').textContent='확인 실패'}
     }
     document.getElementById('homography').href='http://'+location.hostname+':8001';
-    refresh();setInterval(refresh,1000);
+    refresh();window.setInterval(refresh,REFRESH_INTERVAL_MS);
   </script>
 </body>
 </html>

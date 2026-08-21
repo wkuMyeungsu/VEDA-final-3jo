@@ -19,6 +19,28 @@ SERVER_LOG = Path(os.environ.get(
     "SERVER_MONITORING_LOG", "/var/log/forklift_safety/storage/server.log"))
 RUNTIME_STATUS = Path(os.environ.get(
     "SERVER_MONITORING_STATUS", "/var/log/forklift_safety/runtime/runtime-status.json"))
+DEFAULT_REFRESH_INTERVAL_SECONDS = 1
+
+
+def refresh_interval_seconds():
+    """Return the positive UI polling interval configured for this service."""
+    raw_value = os.environ.get("SERVER_MONITORING_REFRESH_INTERVAL_SECONDS")
+    if raw_value is None:
+        return DEFAULT_REFRESH_INTERVAL_SECONDS
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return DEFAULT_REFRESH_INTERVAL_SECONDS
+    return value if value > 0 else DEFAULT_REFRESH_INTERVAL_SECONDS
+
+
+def render_index():
+    """Render the static console with the service's polling configuration."""
+    template = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    return template.replace(
+        "__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__",
+        str(refresh_interval_seconds()),
+    )
 
 
 def service_state(unit):
@@ -129,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         if path in ("/", "/index.html"):
-            self.send_body((ROOT / "static" / "index.html").read_bytes(), "text/html; charset=utf-8")
+            self.send_body(render_index(), "text/html; charset=utf-8")
             return
         self.send_error(404)
 

@@ -5,12 +5,49 @@ from unittest import mock
 
 
 SERVER_PATH = pathlib.Path(__file__).resolve().parents[1] / "server.py"
+STATIC_PATH = pathlib.Path(__file__).resolve().parents[1] / "static" / "index.html"
 SPEC = importlib.util.spec_from_file_location("monitoring_server", SERVER_PATH)
 SERVER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SERVER)
 
 
 class MonitoringStatusTests(unittest.TestCase):
+    def test_refresh_interval_has_one_named_source(self):
+        page = STATIC_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);",
+            page,
+        )
+        self.assertIn(
+            'data-refresh-interval-seconds="__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__"',
+            page,
+        )
+        self.assertIn(
+            "const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;",
+            page,
+        )
+        self.assertIn(
+            "`읽기 전용 운영 상태입니다. ${REFRESH_INTERVAL_SECONDS}초마다 갱신됩니다.`;",
+            page,
+        )
+        self.assertIn("window.setInterval(refresh,REFRESH_INTERVAL_MS);", page)
+        self.assertNotIn("setInterval(refresh,1000)", page)
+
+    @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "2"})
+    def test_index_uses_configured_refresh_interval(self):
+        page = SERVER.render_index()
+
+        self.assertIn('data-refresh-interval-seconds="2"', page)
+        self.assertIn("${REFRESH_INTERVAL_SECONDS}초마다", page)
+
+    @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "invalid"})
+    def test_invalid_refresh_interval_uses_safe_default(self):
+        self.assertEqual(
+            SERVER.refresh_interval_seconds(),
+            SERVER.DEFAULT_REFRESH_INTERVAL_SECONDS,
+        )
+
     def test_successful_requests_are_quiet(self):
         handler = object.__new__(SERVER.Handler)
         with mock.patch.object(SERVER.BaseHTTPRequestHandler, "log_message") as parent:
