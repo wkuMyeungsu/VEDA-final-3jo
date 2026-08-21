@@ -708,6 +708,8 @@
 
     // 검출값 1개를 지정된 스토어의 채널 통계에 반영.
     function addDetection(store, ch, ms) {
+      if (!store) return;
+      if (!store[ch]) store[ch] = { values: [], detectionCount: 0, sum: 0, min: Infinity, max: -Infinity };
       const s = store[ch];
       s.values.push(ms);
       s.detectionCount++;
@@ -717,12 +719,14 @@
     }
 
     function percentile(sortedArr, p) {
+      if (!sortedArr || sortedArr.length === 0) return 0;
       const idx = Math.min(sortedArr.length - 1, Math.ceil(sortedArr.length * p) - 1);
       return sortedArr[Math.max(0, idx)];
     }
 
     // 지정된 스토어에서 채널의 통계 계산 (평균 및 p95 소수점 1자리)
     function computeStatsFrom(store, ch) {
+      if (!store || !store[ch]) return null;
       const s = store[ch];
       if (!s || s.detectionCount === 0) return null;
       const sorted = s.values.slice().sort((a, b) => a - b);
@@ -881,8 +885,10 @@
 
     // ---- 라운드 1회 실행 (기존 수동 측정과 동일한 전역 상태를 재사용) ----
     function runCompareRound(round, totalRounds, durationSec, label) {
-      latencyStatsWall = makeEmptyStatStore();
-      latencyStatsCpu = makeEmptyStatStore();
+      latencyStatsSlot = makeEmptyStatStore();
+      latencyStatsUndist = makeEmptyStatStore();
+      latencyStatsDetect = makeEmptyStatStore();
+      latencyStatsTotal = makeEmptyStatStore();
       latencyStatsRejected = makeEmptyStatStore();
       latencyLastDetect = {};
       latencyMeasuring = true;
