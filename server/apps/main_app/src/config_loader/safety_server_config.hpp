@@ -58,6 +58,7 @@ struct NetworkConfig {
 struct StreamConfig {
     int rtsp_latency_ms{};
     int appsink_max_buffers{};
+    int metadata_queue_capacity{256};
     int eos_force_timeout_s{};
     int connect_timeout_s{};
     int max_retries{};
@@ -84,6 +85,8 @@ struct ForkliftDevice {
 
 struct OutputStorageConfig {
     bool enable_raw_csv_logging = false; // 객체/ArUco 원시 CSV 로깅 활성화 여부 (디버깅 전용, 기본 false)
+    std::string server_log;         // 운영 text log (비어 있으면 event_db 상위 디렉터리의 server.log)
+    std::string runtime_status;     // 모니터링용 원자적 상태 snapshot
     std::string object_csv;         // 객체 메타데이터 CSV
     std::string aruco_csv;          // ArUco 메타데이터 CSV
     std::string event_db;           // 위험 상태 변화 SQLite

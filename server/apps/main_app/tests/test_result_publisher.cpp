@@ -111,6 +111,9 @@ void testLoggerFormatAndDebugGate() {
           "일반 운영 기본 모드에서 DEBUG 로그는 출력하지 않음");
     check(normalLogs.str().find("] [INFO] [TEST] 운영 로그") != std::string::npos,
           "로그가 [시간] [LEVEL] [TAG] 포맷으로 출력됨");
+    check(!logger.runId().empty() &&
+              normalLogs.str().find("[run_id=" + logger.runId() + "]") != std::string::npos,
+          "모든 운영 로그에 프로세스 run_id가 포함됨");
 
     logger.setDebugEnabled(true);
     std::ostringstream debugLogs;

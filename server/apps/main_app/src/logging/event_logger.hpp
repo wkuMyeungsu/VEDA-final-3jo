@@ -30,6 +30,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <mutex>
 #include <string>
@@ -125,6 +126,12 @@ private:
         int         previous_risk_level = kNoPreviousRisk;  // 음수 -> NULL
         std::string exception_state;
         double      distance_mm = -1.0;    // 음수 -> NULL (toJson의 sentinel 규칙과 동일)
+        std::string decision_id;
+        std::string sensor_message_id;
+        std::string sensor_producer_run_id;
+        std::int64_t sensor_sequence = -1;
+        std::int64_t sensor_ts_ms = 0;
+        std::int64_t sensor_age_ms = -1;
     };
 
     bool openDatabase();
@@ -140,6 +147,7 @@ private:
     // distance_mm 컬럼을 추가한다. 기존 컬럼은 사후 분석 호환을 위해 삭제하지 않는다.
     bool ensureDistanceMmColumn();
     bool ensureSourceColumns();
+    bool ensureObservabilityColumns();
 
     void run();
     void writeBatch(const std::vector<Row>& rows);

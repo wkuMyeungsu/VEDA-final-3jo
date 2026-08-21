@@ -143,6 +143,49 @@ void testAlertHookOnlyRunsOnStateTransition() {
           "ALERT 훅이 SAFE↔DANGER 전이를 순서대로 전달");
 }
 
+void testDispatcherAddsCorrelationContext() {
+    std::cout << "\n[분산 관측 상관 키]\n";
+    std::vector<std::string> payloads;
+    risk_transport::ResultDispatcher dispatcher(
+        [&](const std::string& payload) { payloads.push_back(payload); },
+        std::chrono::hours(1));
+
+    JudgmentResult safe = risk_transport::ResultDispatcher::idleResult();
+    safe.terminal_id = kTerminal;
+    dispatcher.submit(safe);
+    dispatcher.submit(safe);  // 동일 상태는 즉시 재발행하지 않음
+
+    JudgmentResult danger = safe;
+    danger.final_risk = RiskLevel::DANGER;
+    dispatcher.submit(danger);
+
+    check(payloads.size() == 2, "상태 변화 2건만 즉시 발행");
+    if (payloads.size() == 2) {
+        const auto& first = payloads[0];
+        const auto& second = payloads[1];
+        check(first.find("\"server_run_id\":\"") != std::string::npos,
+              "risk payload에 server_run_id가 포함됨");
+        check(first.find("\"decision_id\":\"") != std::string::npos,
+              "risk payload에 decision_id가 포함됨");
+        check(first.find("\"publish_seq\":1") != std::string::npos &&
+                  first.find("\"send_reason\":\"change\"") != std::string::npos,
+              "첫 발행에 publish_seq=1과 change 사유가 포함됨");
+        const auto first_marker = first.find("\"decision_id\":\"");
+        const auto second_marker = second.find("\"decision_id\":\"");
+        const auto first_decision_begin = first_marker == std::string::npos ? first_marker : first_marker + 15;
+        const auto first_decision_end = first.find('"', first_decision_begin);
+        const auto second_decision_begin = second_marker == std::string::npos ? second_marker : second_marker + 15;
+        const auto second_decision_end = second.find('"', second_decision_begin);
+        check(first_marker != std::string::npos && second_marker != std::string::npos &&
+                  first_decision_end > first_decision_begin && second_decision_end > second_decision_begin &&
+                  first.substr(first_decision_begin, first_decision_end - first_decision_begin) !=
+                      second.substr(second_decision_begin, second_decision_end - second_decision_begin),
+              "위험 상태 전이마다 decision_id가 새로 발급됨");
+        check(second.find("\"publish_seq\":2") != std::string::npos,
+              "두 번째 발행의 publish_seq가 증가함");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -150,5 +193,6 @@ int main() {
     testRiskAndJson();
     testDeviceRadiusAndHandover();
     testAlertHookOnlyRunsOnStateTransition();
+    testDispatcherAddsCorrelationContext();
     return failures == 0 ? 0 : 1;
 }

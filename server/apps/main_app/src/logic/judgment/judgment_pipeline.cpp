@@ -138,6 +138,11 @@ PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
     const auto t1 = LatencyStamps::Clock::now();
     out.result              = engine_.evaluate(cam, sen);
     out.result.terminal_id  = terminal_id_;
+    out.result.sensor_message_id = sen.sensor_message_id;
+    out.result.sensor_producer_run_id = sen.sensor_producer_run_id;
+    out.result.sensor_sequence = sen.sensor_sequence;
+    out.result.sensor_ts_ms = sen.sensor_ts_ms;
+    out.result.sensor_age_ms = sen.sensor_age_ms;
     out.result.latency.t0_ingest   = t0;
     out.result.latency.t1_judge_in = t1;
 

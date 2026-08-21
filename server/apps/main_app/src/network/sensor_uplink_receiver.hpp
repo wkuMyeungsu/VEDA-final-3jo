@@ -69,6 +69,15 @@ struct SensorUplinkSample {
                                         // 서버 시계와 동기화돼 있다는 보장이 없어서
                                         // 신선도 판단에는 쓰지 않는다(아래 received_at 사용).
 
+    // 분산 검증용 선택 필드. 기존 단말은 이 필드를 보내지 않아도 된다.
+    // 값이 없으면 서버는 센서값 자체는 계속 사용하되, 해당 구간을 "구형 payload"로
+    // 분류한다. 새 단말이 보내면 센서 수신 -> 판정 -> risk payload를 조인할 수 있다.
+    int         schema_version = 0;
+    std::string message_id;
+    std::string producer_run_id;
+    int64_t     sequence = -1;
+    std::size_t payload_bytes = 0;
+
     // 서버가 이 메시지를 실제로 파싱한 시각. steady_clock이라 시스템 시각이 조정돼도
     // 경과 시간 계산이 뒤로 가지 않는다 -> isStale() 판단의 유일한 기준.
     std::chrono::steady_clock::time_point received_at{};

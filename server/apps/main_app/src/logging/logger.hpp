@@ -11,6 +11,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 
 namespace forklift::logging {
 
@@ -27,6 +28,11 @@ public:
         static Logger instance_;
         return instance_;
     }
+
+    // 프로세스 기동을 구분하는 식별자다. 여러 서버 실행본과 systemd journal을
+    // 시간만으로 합치면 재시작·NTP 보정 구간을 구분하기 어려우므로 PID와 UTC 기동
+    // 시각을 함께 사용한다. 한 프로세스 안에서는 절대 변하지 않는다.
+    const std::string& runId() const { return run_id_; }
 
     // 설정 파일을 읽는 동안 발생한 로그도 최종 server.log에 남겨야 한다.
     // 로그 파일 경로는 설정 로드가 끝난 뒤에야 확정되므로, 그 전까지는
@@ -65,14 +71,14 @@ public:
                             now.time_since_epoch()) % 1000;
 
         std::tm tm_buf{};
-        localtime_r(&now_time_t, &tm_buf);
+        gmtime_r(&now_time_t, &tm_buf);
 
         std::ostringstream ss;
-        ss << "[" << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S")
-           << "." << std::setfill('0') << std::setw(3) << ms.count() << "] "
+        ss << "[" << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%S")
+           << "." << std::setfill('0') << std::setw(3) << ms.count() << "Z] "
            << "[" << levelToString(level) << "] "
            << "[" << tag << "] "
-           << message << "\n";
+           << message << " [run_id=" << run_id_ << "]\n";
 
         const std::string log_line = ss.str();
 
@@ -99,7 +105,7 @@ public:
     }
 
 private:
-    Logger() = default;
+    Logger() : run_id_(makeRunId()) {}
     ~Logger() {
         if (file_stream_.is_open()) {
             file_stream_.close();
@@ -116,11 +122,27 @@ private:
         }
     }
 
+    static std::string makeRunId() {
+        const auto now = std::chrono::system_clock::now();
+        const auto now_time_t = std::chrono::system_clock::to_time_t(now);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now.time_since_epoch()) % 1000;
+        std::tm tm_buf{};
+        gmtime_r(&now_time_t, &tm_buf);
+
+        std::ostringstream ss;
+        ss << std::put_time(&tm_buf, "%Y%m%dT%H%M%S")
+           << "." << std::setfill('0') << std::setw(3) << ms.count()
+           << "Z-p" << static_cast<long long>(::getpid());
+        return ss.str();
+    }
+
     static constexpr std::size_t kPendingLineLimit = 256;
     std::mutex mutex_;
     std::ofstream file_stream_;
     std::deque<std::string> pending_lines_;
     std::atomic<bool> debug_enabled_{false};
+    const std::string run_id_;
 };
 
 }  // namespace forklift::logging

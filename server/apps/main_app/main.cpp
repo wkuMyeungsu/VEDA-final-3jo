@@ -3,20 +3,21 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <csignal>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "common/bounded_queue.hpp"
 #include "common/metadata_timing.hpp"
 #include "config_loader/safety_server_config.hpp"
 #include "input/aruco_metadata_parser.hpp"
@@ -68,6 +69,30 @@ std::string alertContext(const JudgmentResult& result) {
         context += stream;
     }
     return context.empty() ? std::string() : " (" + context + ")";
+}
+
+std::string jsonString(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size() + 2);
+    escaped.push_back('"');
+    for (const char c : value) {
+        if (c == '\\' || c == '"') escaped.push_back('\\');
+        if (c == '\n') { escaped += "\\n"; continue; }
+        if (c == '\r') { escaped += "\\r"; continue; }
+        if (c == '\t') { escaped += "\\t"; continue; }
+        escaped.push_back(c);
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+const char* linkStateName(risk_transport::LinkState state) {
+    switch (state) {
+        case risk_transport::LinkState::CONNECTED: return "connected";
+        case risk_transport::LinkState::CONNECTING: return "connecting";
+        case risk_transport::LinkState::DISCONNECTED: return "disconnected";
+    }
+    return "unknown";
 }
 
 void logAlertTransition(const JudgmentResult& previous, const JudgmentResult& current,
@@ -162,7 +187,8 @@ public:
           object_logger_(config_.output_storage.object_csv,
                          config_.output_storage.enable_raw_csv_logging),
           aruco_logger_(config_.output_storage.aruco_csv,
-                        config_.output_storage.enable_raw_csv_logging) {
+                        config_.output_storage.enable_raw_csv_logging),
+          events_(static_cast<std::size_t>(config_.stream.metadata_queue_capacity)) {
         for (const auto& device : config_.forklifts)
             terminals_.push_back(makeTerminal(device));
     }
@@ -176,11 +202,12 @@ public:
     // worker callback은 여기서 큐에만 넣는다. 여러 GStreamer 스레드가 동시에
     // 들어와도 판정 객체를 직접 건드리지 않으므로 TERM 상태가 서로 섞이지 않는다.
     void enqueue(MetadataEvent event) {
-        {
-            std::lock_guard<std::mutex> lock(event_mutex_);
-            events_.push(std::move(event));
+        const auto result = events_.push(std::move(event));
+        if (result.dropped_oldest &&
+            (result.dropped_total == 1 || result.dropped_total % 100 == 0)) {
+            LOG_WARN("SERVER", "메타데이터 처리 대기열 초과 (오래된 프레임 건너뜀, 누적: " +
+                                   std::to_string(result.dropped_total) + ")");
         }
-        event_cv_.notify_one();
     }
 
     const forklift::config::SafetyServerConfig& config() const { return config_; }
@@ -195,18 +222,14 @@ private:
     }
 
     void processLoop() {
-        for (;;) {
-            MetadataEvent event;
-            {
-                std::unique_lock<std::mutex> lock(event_mutex_);
-                event_cv_.wait(lock, [this] { return !running_ || !events_.empty(); });
-                if (!running_ && events_.empty()) break;
-                event = std::move(events_.front());
-                events_.pop();
-            }
+        MetadataEvent event;
+        while (events_.waitPop(event, running_)) {
             process(event);
         }
     }
+
+    void statusLoop();
+    void writeRuntimeStatus(const std::string& state);
 
     // 중앙 큐에서 꺼낸 프레임을 객체/ArUco로 나누고, 각 TERM에 독립적으로 전달한다.
     void process(const MetadataEvent& event);
@@ -221,11 +244,10 @@ private:
     ArucoCsvLogger aruco_logger_;
     std::vector<std::unique_ptr<TerminalContext>> terminals_;
     std::vector<std::unique_ptr<StreamWorker>> workers_;
-    std::queue<MetadataEvent> events_;
-    std::mutex event_mutex_;
-    std::condition_variable event_cv_;
+    forklift::common::BoundedQueue<MetadataEvent> events_;
     std::atomic<bool> running_{false};
     std::thread process_thread_;
+    std::thread status_thread_;
 };
 
 std::unique_ptr<TerminalContext> CentralServer::makeTerminal(
@@ -260,6 +282,79 @@ void CentralServer::process(const MetadataEvent& event) {
     }
 }
 
+void CentralServer::writeRuntimeStatus(const std::string& state) {
+    const std::filesystem::path status_path = config_.output_storage.runtime_status;
+    if (status_path.empty()) return;
+
+    std::error_code error;
+    const auto parent = status_path.parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, error);
+    if (error) {
+        LOG_WARN("STORAGE", "runtime 상태 디렉터리 생성 실패 (경로: " + parent.string() +
+                             ", 사유: " + error.message() + ")");
+        return;
+    }
+
+    std::ostringstream json;
+    json << "{\n"
+         << "  \"schema_version\": 1,\n"
+         << "  \"state\": " << jsonString(state) << ",\n"
+         << "  \"server_run_id\": " << jsonString(forklift::logging::Logger::instance().runId()) << ",\n"
+         << "  \"checked_utc\": " << jsonString(nowIso8601Ms()) << ",\n"
+         << "  \"queue\": {\"depth\": " << events_.size()
+         << ", \"capacity\": " << config_.stream.metadata_queue_capacity
+         << ", \"dropped\": " << events_.droppedTotal() << "},\n"
+         << "  \"sensor\": {\"connected\": " << (sensor_receiver_.isConnected() ? "true" : "false")
+         << ", \"received\": " << sensor_receiver_.receivedCount()
+         << ", \"parse_failures\": " << sensor_receiver_.parseFailureCount() << "},\n"
+         << "  \"storage\": {\"events_written\": " << event_logger_.writtenCount()
+         << ", \"events_dropped\": " << event_logger_.droppedCount()
+         << ", \"events_write_failures\": " << event_logger_.writeFailureCount()
+         << ", \"latency_written\": " << latency_logger_.writtenCount()
+         << ", \"latency_dropped\": " << latency_logger_.droppedCount() << "},\n"
+         << "  \"terminals\": [";
+    for (std::size_t index = 0; index < terminals_.size(); ++index) {
+        const auto& terminal = *terminals_[index];
+        if (index) json << ',';
+        json << "{\"terminal_id\": " << jsonString(terminal.device.terminal_id)
+             << ", \"risk_link\": " << jsonString(linkStateName(terminal.publisher.state()))
+             << ", \"risk_connect_count\": " << terminal.publisher.connectedCount()
+             << ", \"risk_queue_dropped\": " << terminal.publisher.droppedCount()
+             << ", \"risk_send_failures\": " << terminal.publisher.sendFailureCount()
+             << ", \"change_sends\": " << terminal.dispatcher.changeSendCount()
+             << ", \"heartbeat_sends\": " << terminal.dispatcher.heartbeatSendCount() << "}";
+    }
+    json << "]\n}\n";
+
+    const std::filesystem::path temporary = status_path.string() + ".tmp";
+    {
+        std::ofstream file(temporary, std::ios::out | std::ios::trunc);
+        if (!file.is_open()) {
+            LOG_WARN("STORAGE", "runtime 상태 파일 열기 실패 (경로: " + temporary.string() + ")");
+            return;
+        }
+        file << json.str();
+        file.flush();
+        if (!file.good()) {
+            LOG_WARN("STORAGE", "runtime 상태 파일 쓰기 실패 (경로: " + temporary.string() + ")");
+            return;
+        }
+    }
+    std::filesystem::rename(temporary, status_path, error);
+    if (error) {
+        LOG_WARN("STORAGE", "runtime 상태 snapshot 교체 실패 (경로: " + status_path.string() +
+                             ", 사유: " + error.message() + ")");
+    }
+}
+
+void CentralServer::statusLoop() {
+    while (running_) {
+        for (int tick = 0; tick < 10 && running_; ++tick)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (running_) writeRuntimeStatus("online");
+    }
+}
+
 struct CentralServer::StreamWorker {
     CentralServer& server;
     forklift::config::CameraStreamConfig stream;
@@ -268,6 +363,7 @@ struct CentralServer::StreamWorker {
     OnvifMetadataReassembler reassembler;
     std::atomic<bool> running{false};
     std::thread thread;
+    std::mutex pipeline_mutex;
     GstElement* pipeline = nullptr;
 
     StreamWorker(CentralServer& owner, forklift::config::CameraStreamConfig setting)
@@ -280,7 +376,19 @@ struct CentralServer::StreamWorker {
     }
     void stop() {
         if (!running.exchange(false)) return;
-        if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);
+        // pipeline은 worker 스레드가 교체·해제한다. 종료 스레드는 잠금 안에서
+        // 참조를 하나 확보한 뒤 상태만 내려 use-after-free 경쟁을 피한다.
+        GstElement* active_pipeline = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(pipeline_mutex);
+            if (pipeline) {
+                active_pipeline = GST_ELEMENT(gst_object_ref(pipeline));
+            }
+        }
+        if (active_pipeline) {
+            gst_element_set_state(active_pipeline, GST_STATE_NULL);
+            gst_object_unref(active_pipeline);
+        }
         if (thread.joinable()) thread.join();
     }
 
@@ -370,7 +478,10 @@ struct CentralServer::StreamWorker {
                 retry();
                 continue;
             }
-            pipeline = graph;
+            {
+                std::lock_guard<std::mutex> lock(pipeline_mutex);
+                pipeline = graph;
+            }
             GstElement* sink = gst_bin_get_by_name(GST_BIN(graph), "metadata");
             GstAppSinkCallbacks callbacks{};
             callbacks.new_sample = &StreamWorker::onSample;
@@ -443,9 +554,12 @@ struct CentralServer::StreamWorker {
                 if (retry_needed) break;
             }
             gst_object_unref(bus);
+            {
+                std::lock_guard<std::mutex> lock(pipeline_mutex);
+                if (pipeline == graph) pipeline = nullptr;
+            }
             gst_element_set_state(graph, GST_STATE_NULL);
             gst_object_unref(graph);
-            pipeline = nullptr;
             if (!retry_needed || stop_requested) break;
             if (failures >= max_retries) {
                 LOG_ERROR("CCTV", stream.stream_id + " 제외 (사유: 재연결 " +
@@ -493,7 +607,9 @@ void CentralServer::start() {
         terminal->dispatcher.start();
     }
     running_ = true;
+    writeRuntimeStatus("online");
     process_thread_ = std::thread(&CentralServer::processLoop, this);
+    status_thread_ = std::thread(&CentralServer::statusLoop, this);
 }
 
 void CentralServer::startWorkers() {
@@ -511,8 +627,10 @@ void CentralServer::startWorkers() {
 void CentralServer::stop() {
     if (!running_.exchange(false)) return;
     for (auto& worker : workers_) worker->stop();
-    event_cv_.notify_all();
+    events_.notifyAll();
     if (process_thread_.joinable()) process_thread_.join();
+    if (status_thread_.joinable()) status_thread_.join();
+    writeRuntimeStatus("offline");
     for (auto& terminal : terminals_) terminal->dispatcher.stop();
     for (auto& terminal : terminals_) terminal->publisher.stop();
     assignment_publisher_.stop();
@@ -571,10 +689,10 @@ int main(int argc, char* argv[]) {
         config.output_storage.enable_raw_csv_logging ||
         risk_transport::ResultDispatcher::sendLogEnabled());
 
-    const auto storage_parent = std::filesystem::path(config.output_storage.event_db).parent_path();
+    const auto storage_parent = std::filesystem::path(config.output_storage.server_log).parent_path();
     if (!storage_parent.empty()) {
         std::filesystem::create_directories(storage_parent);
-        const auto server_log_path = (storage_parent / "server.log").string();
+        const auto server_log_path = config.output_storage.server_log;
         if (!forklift::logging::Logger::instance().setLogFile(server_log_path)) {
             LOG_WARN("STORAGE", "서버 로그 파일 열기 실패 (경로: " + server_log_path +
                                   " -> 콘솔 출력 유지)");
@@ -582,7 +700,9 @@ int main(int argc, char* argv[]) {
     }
 
     for (const auto* path : {&config.output_storage.object_csv, &config.output_storage.aruco_csv,
-                             &config.output_storage.event_db, &config.output_storage.latency_csv}) {
+                             &config.output_storage.event_db, &config.output_storage.latency_csv,
+                             &config.output_storage.server_log,
+                             &config.output_storage.runtime_status}) {
         const auto parent = std::filesystem::path(*path).parent_path();
         if (!parent.empty()) std::filesystem::create_directories(parent);
     }

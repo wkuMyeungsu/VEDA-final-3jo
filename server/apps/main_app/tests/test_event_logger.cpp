@@ -27,6 +27,7 @@
 #include <sqlite3.h>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
@@ -75,6 +76,12 @@ struct EventRow {
     std::string exception_state;
     bool        distance_null = false;
     double      distance_mm = 0.0;
+    bool        decision_id_null = false;
+    std::string decision_id;
+    bool        sensor_message_id_null = false;
+    std::string sensor_message_id;
+    bool        sensor_age_null = false;
+    std::int64_t sensor_age_ms = -1;
 };
 
 // id 오름차순(= 삽입 순서)으로 전부 읽는다.
@@ -88,7 +95,8 @@ std::vector<EventRow> readAll(const std::string& db_path) {
     sqlite3_busy_timeout(db, 3000);
 
     const char* sql =
-        "SELECT utc_time, camera_id, risk_level, previous_risk_level, exception_state, distance_mm"
+        "SELECT utc_time, camera_id, risk_level, previous_risk_level, exception_state, distance_mm,"
+        " decision_id, sensor_message_id, sensor_age_ms"
         " FROM events ORDER BY id ASC";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -114,6 +122,15 @@ std::vector<EventRow> readAll(const std::string& db_path) {
 
         r.distance_null = sqlite3_column_type(stmt, 5) == SQLITE_NULL;
         if (!r.distance_null) r.distance_mm = sqlite3_column_double(stmt, 5);
+
+        r.decision_id_null = sqlite3_column_type(stmt, 6) == SQLITE_NULL;
+        if (!r.decision_id_null)
+            r.decision_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+        r.sensor_message_id_null = sqlite3_column_type(stmt, 7) == SQLITE_NULL;
+        if (!r.sensor_message_id_null)
+            r.sensor_message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        r.sensor_age_null = sqlite3_column_type(stmt, 8) == SQLITE_NULL;
+        if (!r.sensor_age_null) r.sensor_age_ms = sqlite3_column_int64(stmt, 8);
 
         rows.push_back(std::move(r));
     }
@@ -209,7 +226,13 @@ void testCreatesDbAndSchema() {
         "risk_level:INTEGER:NOT_NULL;"
         "previous_risk_level:INTEGER;"
         "exception_state:TEXT:NOT_NULL;"
-        "distance_mm:REAL;";
+        "distance_mm:REAL;"
+        "decision_id:TEXT;"
+        "sensor_message_id:TEXT;"
+        "sensor_producer_run_id:TEXT;"
+        "sensor_sequence:INTEGER;"
+        "sensor_ts_ms:INTEGER;"
+        "sensor_age_ms:INTEGER;";
     const std::string actual = readSchema(db);
     check(actual == expected, "스키마가 확정 스펙과 일치");
     if (actual != expected) {
@@ -232,7 +255,11 @@ void testLogWritesValuesAndNulls() {
     if (!logger.start()) { check(false, "start() 성공"); return; }
 
     // (1) 전부 값이 있는 경우
-    logger.log(makeResult(RiskLevel::CAUTION, ExceptionState::NONE, 2750.0, "cam_01"), 0);
+    auto correlated = makeResult(RiskLevel::CAUTION, ExceptionState::NONE, 2750.0, "cam_01");
+    correlated.decision_id = "server-run-d1";
+    correlated.sensor_message_id = "sensor-run-m7";
+    correlated.sensor_age_ms = 12;
+    logger.log(correlated, 0);
     // (2) 최초 이벤트 - previous_risk_level 없음
     logger.log(makeResult(RiskLevel::DANGER, ExceptionState::SENSOR_FAULT, 1250.0, "cam_02"),
                risk_log::EventLogger::kNoPreviousRisk);
@@ -258,6 +285,11 @@ void testLogWritesValuesAndNulls() {
         check(rows[0].exception_state == "NONE", "1행: exception_state=NONE");
         check(!rows[0].distance_null && rows[0].distance_mm == 2750.0,
               "1행: distance_mm=2750");
+        check(!rows[0].decision_id_null && rows[0].decision_id == "server-run-d1",
+              "1행: decision_id가 보존됨");
+        check(!rows[0].sensor_message_id_null && rows[0].sensor_message_id == "sensor-run-m7" &&
+                  !rows[0].sensor_age_null && rows[0].sensor_age_ms == 12,
+              "1행: sensor message와 age가 보존됨");
 
         check(rows[1].risk_level == 2 && rows[1].prev_null,
               "2행: 최초 이벤트라 previous_risk_level이 NULL");

@@ -38,13 +38,20 @@ constexpr const char* kCreateTableSql =
     "  risk_level INTEGER NOT NULL,"
     "  previous_risk_level INTEGER,"
     "  exception_state TEXT NOT NULL,"
-    "  distance_mm REAL"
+    "  distance_mm REAL,"
+    "  decision_id TEXT,"
+    "  sensor_message_id TEXT,"
+    "  sensor_producer_run_id TEXT,"
+    "  sensor_sequence INTEGER,"
+    "  sensor_ts_ms INTEGER,"
+    "  sensor_age_ms INTEGER"
     ")";
 
 constexpr const char* kInsertSql =
     "INSERT INTO events"
-    " (utc_time, camera_id, stream_id, channel, terminal_id, risk_level, previous_risk_level, exception_state, distance_mm)"
-    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    " (utc_time, camera_id, stream_id, channel, terminal_id, risk_level, previous_risk_level, exception_state, distance_mm,"
+    " decision_id, sensor_message_id, sensor_producer_run_id, sensor_sequence, sensor_ts_ms, sensor_age_ms)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 } // namespace
 
@@ -64,6 +71,7 @@ bool EventLogger::start() {
     if (!ensureTerminalIdColumn())    { closeDatabase(); return false; }
     if (!ensureDistanceMmColumn())    { closeDatabase(); return false; }
     if (!ensureSourceColumns())       { closeDatabase(); return false; }
+    if (!ensureObservabilityColumns()) { closeDatabase(); return false; }
     if (!prepareStatement())          { closeDatabase(); return false; }
 
     running_.store(true);
@@ -94,6 +102,12 @@ void EventLogger::log(const JudgmentResult& r, int previous_risk_level) {
     row.previous_risk_level = previous_risk_level;
     row.exception_state     = toString(r.exception);
     row.distance_mm          = r.distance_mm;
+    row.decision_id          = r.decision_id;
+    row.sensor_message_id    = r.sensor_message_id;
+    row.sensor_producer_run_id = r.sensor_producer_run_id;
+    row.sensor_sequence      = r.sensor_sequence;
+    row.sensor_ts_ms         = r.sensor_ts_ms;
+    row.sensor_age_ms        = r.sensor_age_ms;
 
     {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -235,6 +249,42 @@ bool EventLogger::ensureSourceColumns() {
     return true;
 }
 
+bool EventLogger::ensureObservabilityColumns() {
+    sqlite3_stmt* statement = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &statement, nullptr) != SQLITE_OK) {
+        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
+        return false;
+    }
+    std::vector<std::string> missing;
+    const std::vector<std::string> columns{
+        "decision_id", "sensor_message_id", "sensor_producer_run_id",
+        "sensor_sequence", "sensor_ts_ms", "sensor_age_ms"};
+    std::vector<bool> found(columns.size(), false);
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char* name = sqlite3_column_text(statement, 1);
+        if (!name) continue;
+        const std::string current(reinterpret_cast<const char*>(name));
+        for (std::size_t index = 0; index < columns.size(); ++index)
+            found[index] = found[index] || current == columns[index];
+    }
+    sqlite3_finalize(statement);
+
+    const std::vector<std::pair<std::string, std::string>> definitions{
+        {"decision_id", "TEXT"},
+        {"sensor_message_id", "TEXT"},
+        {"sensor_producer_run_id", "TEXT"},
+        {"sensor_sequence", "INTEGER"},
+        {"sensor_ts_ms", "INTEGER"},
+        {"sensor_age_ms", "INTEGER"}};
+    for (std::size_t index = 0; index < definitions.size(); ++index) {
+        if (found[index]) continue;
+        const std::string sql = "ALTER TABLE events ADD COLUMN " + definitions[index].first +
+                                " " + definitions[index].second;
+        if (!exec(sql.c_str())) return false;
+    }
+    return true;
+}
+
 bool EventLogger::prepareStatement() {
     // 매 INSERT마다 SQL을 파싱하지 않도록 한 번만 준비해서 재사용한다.
     if (sqlite3_prepare_v2(db_, kInsertSql, -1, &stmt_, nullptr) != SQLITE_OK) {
@@ -370,6 +420,19 @@ bool EventLogger::insertRow(const Row& row) {
     } else {
         sqlite3_bind_double(stmt_, 9, row.distance_mm);
     }
+
+    if (row.decision_id.empty()) sqlite3_bind_null(stmt_, 10);
+    else sqlite3_bind_text(stmt_, 10, row.decision_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (row.sensor_message_id.empty()) sqlite3_bind_null(stmt_, 11);
+    else sqlite3_bind_text(stmt_, 11, row.sensor_message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (row.sensor_producer_run_id.empty()) sqlite3_bind_null(stmt_, 12);
+    else sqlite3_bind_text(stmt_, 12, row.sensor_producer_run_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (row.sensor_sequence < 0) sqlite3_bind_null(stmt_, 13);
+    else sqlite3_bind_int64(stmt_, 13, row.sensor_sequence);
+    if (row.sensor_ts_ms <= 0) sqlite3_bind_null(stmt_, 14);
+    else sqlite3_bind_int64(stmt_, 14, row.sensor_ts_ms);
+    if (row.sensor_age_ms < 0) sqlite3_bind_null(stmt_, 15);
+    else sqlite3_bind_int64(stmt_, 15, row.sensor_age_ms);
 
     if (sqlite3_step(stmt_) != SQLITE_DONE) {
         setError(std::string("INSERT 실패: ") + sqlite3_errmsg(db_));

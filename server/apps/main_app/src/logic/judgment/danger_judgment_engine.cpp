@@ -274,7 +274,37 @@ std::string toJson(const JudgmentResult& r) {
     // 항상 0(Safe)으로 떨어져 위험 경보가 통째로 유실된다.
     // enum 값이 곧 위험도 순서라 static_cast<int>가 그대로 계약 값이 된다.
     os << ','
-       << "\"risk_level\":" << static_cast<int>(r.final_risk)
+       << "\"risk_level\":" << static_cast<int>(r.final_risk);
+    // 분산 관측용 확장 필드는 구형 단말이 모르는 키를 무시할 수 있도록 optional로
+    // 붙인다. 기존 7개 필드의 의미·순서·타입은 그대로 유지한다.
+    if (!r.server_run_id.empty()) {
+        os << ",\"server_run_id\":\"" << r.server_run_id << "\"";
+    }
+    if (!r.decision_id.empty()) {
+        os << ",\"decision_id\":\"" << r.decision_id << "\"";
+    }
+    if (r.publish_seq > 0) {
+        os << ",\"publish_seq\":" << r.publish_seq;
+    }
+    if (!r.send_reason.empty()) {
+        os << ",\"send_reason\":\"" << r.send_reason << "\"";
+    }
+    if (!r.sensor_message_id.empty()) {
+        os << ",\"sensor_message_id\":\"" << r.sensor_message_id << "\"";
+    }
+    if (!r.sensor_producer_run_id.empty()) {
+        os << ",\"sensor_producer_run_id\":\"" << r.sensor_producer_run_id << "\"";
+    }
+    if (r.sensor_sequence >= 0) {
+        os << ",\"sensor_sequence\":" << r.sensor_sequence;
+    }
+    if (r.sensor_ts_ms > 0) {
+        os << ",\"sensor_ts_ms\":" << r.sensor_ts_ms;
+    }
+    if (r.sensor_age_ms >= 0) {
+        os << ",\"sensor_age_ms\":" << r.sensor_age_ms;
+    }
+    os << ",\"schema_version\":1"
        << '}';
     return os.str();
 }

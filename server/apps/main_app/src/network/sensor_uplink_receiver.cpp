@@ -79,6 +79,10 @@ bool extractInt64(const std::string& json, const std::string& key, int64_t& out)
     return true;
 }
 
+bool hasKey(const std::string& json, const std::string& key) {
+    return findValueStart(json, key) != std::string::npos;
+}
+
 // 센서 메시지 파싱. 스키마의 7개 필드(camera_id/tof_ok/tof_distance_mm/imu_ok/
 // imu_accel_x_g/imu_accel_y_g/imu_accel_z_g/ts_ms - 8개)를 전부 요구하고, 하나라도
 // 없거나 형식이 어긋나면 why에 이유를 담아 false. 일부 필드만 채운 반쪽 스냅샷을
@@ -105,6 +109,33 @@ bool parseSample(const std::string& payload, SensorUplinkSample& out, std::strin
     if (!extractDouble(payload, "imu_accel_y_g", s.imu_accel_y_g))  { why = "imu_accel_y_g 누락/형식오류";   return false; }
     if (!extractDouble(payload, "imu_accel_z_g", s.imu_accel_z_g))  { why = "imu_accel_z_g 누락/형식오류";   return false; }
     if (!extractInt64(payload, "ts_ms", s.ts_ms))                   { why = "ts_ms 누락/형식오류";           return false; }
+
+    // 아래 필드는 backward-compatible 확장이다. 필드가 없으면 구형 단말로 간주하고
+    // 기본값을 유지하지만, 필드가 있는데 형식이 틀리면 조용히 조합하지 않고 거부한다.
+    if (hasKey(payload, "schema_version")) {
+        int64_t schema_version = 0;
+        if (!extractInt64(payload, "schema_version", schema_version) ||
+            schema_version < 0 || schema_version > 1000) {
+            why = "schema_version 형식오류";
+            return false;
+        }
+        s.schema_version = static_cast<int>(schema_version);
+    }
+    if (hasKey(payload, "message_id") && !extractString(payload, "message_id", s.message_id)) {
+        why = "message_id 형식오류";
+        return false;
+    }
+    if (hasKey(payload, "producer_run_id") &&
+        !extractString(payload, "producer_run_id", s.producer_run_id)) {
+        why = "producer_run_id 형식오류";
+        return false;
+    }
+    const char* sequence_key = hasKey(payload, "sequence") ? "sequence" :
+                               (hasKey(payload, "seq") ? "seq" : nullptr);
+    if (sequence_key && !extractInt64(payload, sequence_key, s.sequence)) {
+        why = "sequence 형식오류";
+        return false;
+    }
 
     out = s;
     return true;
@@ -243,6 +274,7 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
     }
 
     sample.received_at = std::chrono::steady_clock::now();
+    sample.payload_bytes = payload.size();
     {
         std::lock_guard<std::mutex> lk(mtx_);
         latest_by_terminal_[terminal_id] = sample;
