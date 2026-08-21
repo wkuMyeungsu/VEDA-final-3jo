@@ -625,12 +625,12 @@
               setCellHtml('us_main_total_' + ch, formatUsCell(c.total_us));
 
               // 테스트 탭 6구간 μs 분해 테이블 업데이트
-              setCellText('us_get_' + ch, c.frame_get_us != null ? c.frame_get_us.toLocaleString() + ' μs' : '—');
-              setCellText('us_slot_' + ch, c.slot_wait_us != null ? c.slot_wait_us.toLocaleString() + ' μs' : '—');
-              setCellText('us_undist_' + ch, c.undistort_us != null ? c.undistort_us.toLocaleString() + ' μs' : '—');
-              setCellText('us_detect_' + ch, c.detect_us != null ? c.detect_us.toLocaleString() + ' μs' : '—');
-              setCellText('us_send_' + ch, c.send_us != null ? c.send_us.toLocaleString() + ' μs' : '—');
-              setCellText('us_total_' + ch, c.total_us != null ? c.total_us.toLocaleString() + ' μs' : '—');
+              setCellHtml('us_get_' + ch, formatUsCell(c.frame_get_us));
+              setCellHtml('us_slot_' + ch, formatUsCell(c.slot_wait_us));
+              setCellHtml('us_undist_' + ch, c.undistort_applied ? formatUsCell(c.undistort_us) : '<span class="muted">미적용 (0 μs)</span>');
+              setCellHtml('us_detect_' + ch, formatUsCell(c.detect_us));
+              setCellHtml('us_send_' + ch, formatUsCell(c.send_us));
+              setCellHtml('us_total_' + ch, formatUsCell(c.total_us));
             }
           }
         })
