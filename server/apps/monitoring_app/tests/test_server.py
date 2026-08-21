@@ -36,13 +36,14 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
-        for label in ("서버 운영 콘솔", "안전 서버", "호모그래피 앱", "최근 서버 로그", "유지보수 도구"):
+        for label in ("서버 운영 콘솔", "안전 서버", "호모그래피 앱", "센서 수신 누적", "최근 서버 로그", "유지보수 도구"):
             self.assertIn(label, page)
         self.assertIn(".status-value.good .status-dot", page)
         self.assertIn(".status-value.problem .status-dot", page)
         self.assertIn("dot.className=`status-dot ${kind}`", page)
         self.assertIn("node.replaceChildren(dot)", page)
         self.assertIn("대기열에서 버린 메시지", page)
+        self.assertIn("현재 실행 이후 정상 메시지", page)
         self.assertNotIn("status-label", page)
         self.assertNotIn("active:'O'", page)
         self.assertNotIn("inactive:'X'", page)
