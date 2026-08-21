@@ -505,9 +505,12 @@
       document.querySelectorAll('.sub-panel').forEach(p => p.classList.toggle('active', p.id === id));
       document.querySelectorAll('.side-group[data-parent="' + top + '"] .side-tab')
         .forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
-      // 상태 모니터링 탭에 있을 때만 /status 주기 폴링
-      if (top === 'main' && sub === 'status') startStatusPolling();
-      else stopStatusPolling();
+      // 상태 모니터링 탭 및 테스트(지연 측정) 탭에서 /status 및 /logs 주기 폴링 활성화
+      if ((top === 'main' && sub === 'status') || (top === 'test' && sub === 'latency')) {
+        startStatusPolling();
+      } else {
+        stopStatusPolling();
+      }
     }
 
     // ---- 상태 모니터링: GET /status 주기 폴링 ----
