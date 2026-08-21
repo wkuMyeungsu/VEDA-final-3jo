@@ -211,16 +211,17 @@ void DetectorManager::SendMetadata(int channel, const std::vector<int>& ids, con
   SendNoReplyEvent(target, static_cast<int32_t>(IMetadataManager::EEventType::eRequestRawMetadata), 0, req);
 
   // 상태 모니터링 UI(GET /logs)에 채널별 검출 결과 및 마커 ID 목록 노출
-  std::string ids_str = "[]";
+  std::string log_line = GetCurrentTimeToString() + " [ch" + std::to_string(channel) + "] markers=" + std::to_string(ids.size());
   if (!ids.empty()) {
-    ids_str = "[";
+    std::string ids_str = "[";
     for (size_t i = 0; i < ids.size(); ++i) {
       if (i > 0) ids_str += ", ";
       ids_str += std::to_string(ids[i]);
     }
     ids_str += "]";
+    log_line += " IDs=" + ids_str;
   }
-  AppendLog(GetCurrentTimeToString() + " [ch" + std::to_string(channel) + "] markers=" + std::to_string(ids.size()) + " IDs=" + ids_str);
+  AppendLog(log_line);
 }
 
 void DetectorManager::ProcessMetadata(Event* event) {
