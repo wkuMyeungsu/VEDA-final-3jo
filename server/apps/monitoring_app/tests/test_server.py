@@ -36,7 +36,7 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
-        for label in ("서버 운영 콘솔", "운영 요약", "단말 상태", "검출 현황", "시스템·로그", "안전 서버", "운영 판단", "판정 처리", "위험 알림", "이벤트 저장", "시스템 세부 진단", "메타데이터 처리", "이벤트 DB", "센서 입력", "라즈베리파이 자원 사용량", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
+        for label in ("서버 운영 콘솔", "운영 요약", "단말 상태", "검출 현황", "시스템·로그", "안전 서버", "MQTT TLS", "서버 실행 시간", "운영 판단", "판정 처리", "위험 알림", "이벤트 저장", "시스템 세부 진단", "메타데이터 처리", "이벤트 DB", "센서 입력", "라즈베리파이 자원 사용량", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
             self.assertIn(label, page)
         for tab_id in ("tab-overview", "tab-terminals", "tab-detection", "tab-system"):
             self.assertIn(f'id="{tab_id}"', page)
@@ -48,6 +48,10 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn("node.replaceChildren(dot)", page)
         self.assertIn("손실", page)
         self.assertIn("RUNTIME_STATUS_MAX_AGE_SECONDS", page)
+        self.assertIn("server_started_utc", page)
+        self.assertIn("formatDuration", page)
+        self.assertIn("renderServerUptime", page)
+        self.assertIn('id="server-uptime-detail"', page)
         self.assertIn("terminal.sensor", page)
         self.assertIn("terminal.risk", page)
         self.assertIn("terminal.localization", page)

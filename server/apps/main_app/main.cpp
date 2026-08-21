@@ -213,7 +213,8 @@ public:
                          config_.output_storage.enable_raw_csv_logging),
           aruco_logger_(config_.output_storage.aruco_csv,
                         config_.output_storage.enable_raw_csv_logging),
-          events_(static_cast<std::size_t>(config_.stream.metadata_queue_capacity)) {
+          events_(static_cast<std::size_t>(config_.stream.metadata_queue_capacity)),
+          server_started_utc_(nowIso8601Ms()) {
         for (const auto& device : config_.forklifts)
             terminals_.push_back(makeTerminal(device));
     }
@@ -271,6 +272,7 @@ private:
     std::vector<std::unique_ptr<TerminalContext>> terminals_;
     std::vector<std::unique_ptr<StreamWorker>> workers_;
     forklift::common::BoundedQueue<MetadataEvent> events_;
+    const std::string server_started_utc_;
     std::atomic<bool> running_{false};
     std::thread process_thread_;
     std::thread status_thread_;
@@ -345,10 +347,11 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
 
     std::ostringstream json;
     json << "{\n"
-         << "  \"schema_version\": 1,\n"
+         << "  \"schema_version\": 2,\n"
          << "  \"state\": " << jsonString(state) << ",\n"
          << "  \"sensor_mode\": " << jsonString(forklift::runtime::sensorModeName(sensor_mode_)) << ",\n"
          << "  \"server_run_id\": " << jsonString(forklift::logging::Logger::instance().runId()) << ",\n"
+         << "  \"server_started_utc\": " << jsonString(server_started_utc_) << ",\n"
          << "  \"checked_utc\": " << jsonString(nowIso8601Ms()) << ",\n"
          << "  \"queue\": {\"depth\": " << events_.size()
          << ", \"capacity\": " << config_.stream.metadata_queue_capacity

@@ -119,6 +119,7 @@
       <div class="status-grid">
         <article class="status-card"><header><h3>안전 서버</h3><span id="safety-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><p id="safety-detail" class="status-detail">확인 중</p></article>
         <article class="status-card"><header><h3>MQTT TLS</h3><span id="mqtt-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><p id="mqtt-detail" class="status-detail">확인 중</p></article>
+        <article class="status-card"><header><h3>서버 실행 시간</h3><span id="server-uptime-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><p id="server-uptime-detail" class="status-detail">확인 중</p></article>
       </div>
     </section>
 
@@ -236,6 +237,46 @@
       if(!Number.isFinite(age)||age<0)return '수신 기록 없음';
       if(age<MILLISECONDS_PER_SECOND)return `${Math.max(0,Math.round(age))}ms 전`;
       return `${(age/MILLISECONDS_PER_SECOND).toFixed(1)}초 전`;
+    };
+    const formatDuration=(value)=>{
+      const milliseconds=Number(value);
+      if(!Number.isFinite(milliseconds)||milliseconds<0)return '확인 불가';
+      let seconds=Math.floor(milliseconds/MILLISECONDS_PER_SECOND);
+      const days=Math.floor(seconds/86400);
+      seconds%=86400;
+      const hours=Math.floor(seconds/3600);
+      seconds%=3600;
+      const minutes=Math.floor(seconds/60);
+      seconds%=60;
+      const parts=[];
+      if(days)parts.push(`${days}일`);
+      if(hours||days)parts.push(`${hours}시간`);
+      if(minutes||hours||days)parts.push(`${minutes}분`);
+      parts.push(`${seconds}초`);
+      return parts.join(' ');
+    };
+    const serverUptimeMs=(startedUtc)=>{
+      if(!startedUtc)return null;
+      const started=Date.parse(startedUtc);
+      if(!Number.isFinite(started))return null;
+      return Math.max(0,Date.now()-started);
+    };
+    const renderServerUptime=(snapshot,runtimeFresh,safetyState)=>{
+      const uptime=serverUptimeMs(snapshot?.server_started_utc);
+      const running=Boolean(snapshot)&&snapshot.state==='online'&&runtimeFresh&&safetyState==='active';
+      if(running&&uptime!==null){
+        setIndicator('server-uptime-indicator','good','서버 실행 중');
+        setText('server-uptime-detail',`${formatDuration(uptime)} · 시작 ${formatTimestamp(snapshot.server_started_utc)}`);
+      }else if(snapshot?.state==='offline'){
+        setIndicator('server-uptime-indicator','standby','서버 중지됨');
+        setText('server-uptime-detail',`중지됨 · 마지막 시작 ${formatTimestamp(snapshot.server_started_utc)}`);
+      }else if(uptime!==null){
+        setIndicator('server-uptime-indicator','unknown','서버 실행 시간 확인 필요');
+        setText('server-uptime-detail',`확인 필요 · 시작 ${formatTimestamp(snapshot.server_started_utc)}`);
+      }else{
+        setIndicator('server-uptime-indicator','unknown','서버 시작 시각 확인 필요');
+        setText('server-uptime-detail','서버 시작 시각을 확인할 수 없습니다.');
+      }
     };
     const riskLabel=(value)=>riskLabels[value]||'판정 대기';
     const riskClass=(value)=>({SAFE:'risk-safe',CAUTION:'risk-caution',DANGER:'risk-danger',EMERGENCY:'risk-emergency'}[value]||'risk-unknown');
@@ -520,6 +561,7 @@
       setOverall('unknown','확인 필요','상태를 확인할 수 없습니다.');
       setIndicator('safety-indicator','unknown','안전 서버 상태 확인 필요');
       setIndicator('mqtt-indicator','unknown','MQTT 연결 상태 확인 필요');
+      setIndicator('server-uptime-indicator','unknown','서버 실행 시간 확인 필요');
       setIndicator('runtime-indicator','unknown','서버 상태 갱신 확인 필요');
       setIndicator('queue-indicator','unknown','메타데이터 처리 상태 확인 필요');
       setIndicator('storage-indicator','unknown','이벤트 DB 상태 확인 필요');
@@ -559,6 +601,7 @@
         const snapshot=value.runtime_status?.snapshot;
         const snapshotAge=runtimeAgeMs(snapshot?.checked_utc);
         const runtimeFresh=Boolean(snapshot)&&snapshotAge<=RUNTIME_STATUS_MAX_AGE_SECONDS*MILLISECONDS_PER_SECOND;
+        renderServerUptime(snapshot,runtimeFresh,safetyState);
         const infrastructureOk=safetyState==='active'&&mqttReachable===true&&runtimeFresh;
         const sensorBypassed=snapshot?.sensor_mode==='disabled';
         const localizationProblem=(snapshot?.terminals||[]).some((terminal)=>{
