@@ -152,6 +152,55 @@
             <b>탈락 후보수</b>=사각형처럼 보였지만 사전과 안 맞아 버려진 후보 개수 — 마커 유무와 무관하게 이 값이 크면
             장면이 복잡(컨투어 많음)해 CPU지연이 늘어난다는 신호입니다.
           </p>
+
+          <div style="margin-top: 14px; border-top: 1px dashed #e5e7eb; padding-top: 10px;">
+            <button type="button" id="us_toggle_btn" onclick="toggleUsDetail()" style="background:#f8fafc; color:#475569; border:1px solid #cbd5e1; font-size:12px; padding:5px 12px; cursor:pointer; border-radius:6px;">
+              ▼ 6구간 μs 정밀 소요시간 세부보기
+            </button>
+            <div id="us_detail_box" style="display:none; margin-top:10px; background:#fafafa; border:1px solid #e2e8f0; border-radius:6px; padding:12px;">
+              <h3 style="font-size:13px; margin:0 0 8px; color:#334155;">파이프라인 6구간 마이크로초(μs) 실시간 상세 분해 <span class="muted" style="font-weight:400;">(KAN-78)</span></h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>채널</th>
+                      <th>① 프레임인출 (get)</th>
+                      <th>② 슬롯대기 (slot)</th>
+                      <th>③ 왜곡보정 (undist)</th>
+                      <th>④ 마커검출 (detect)</th>
+                      <th>⑤ 메타전송 (send)</th>
+                      <th>⑥ 전체소요 (total)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>1</td>
+                      <td id="us_main_get_1">—</td><td id="us_main_slot_1">—</td><td id="us_main_undist_1">—</td>
+                      <td id="us_main_detect_1">—</td><td id="us_main_send_1">—</td><td id="us_main_total_1">—</td>
+                    </tr>
+                    <tr>
+                      <td>2</td>
+                      <td id="us_main_get_2">—</td><td id="us_main_slot_2">—</td><td id="us_main_undist_2">—</td>
+                      <td id="us_main_detect_2">—</td><td id="us_main_send_2">—</td><td id="us_main_total_2">—</td>
+                    </tr>
+                    <tr>
+                      <td>3</td>
+                      <td id="us_main_get_3">—</td><td id="us_main_slot_3">—</td><td id="us_main_undist_3">—</td>
+                      <td id="us_main_detect_3">—</td><td id="us_main_send_3">—</td><td id="us_main_total_3">—</td>
+                    </tr>
+                    <tr>
+                      <td>4</td>
+                      <td id="us_main_get_4">—</td><td id="us_main_slot_4">—</td><td id="us_main_undist_4">—</td>
+                      <td id="us_main_detect_4">—</td><td id="us_main_send_4">—</td><td id="us_main_total_4">—</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted" style="margin: 8px 0 0; font-size:11px;">
+                ms (μs) 동시 표기 · <b>슬롯대기</b>=채널 간 CPU 경합 대기, <b>왜곡보정/마커검출</b>=순수 연산 부하
+              </p>
+            </div>
+          </div>
         </section>
 
         <section>
@@ -469,6 +518,36 @@
       if (el) el.textContent = (v === undefined || v === null || v === '') ? '—' : v;
     }
 
+    function setCellHtml(id, html) {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = (html === undefined || html === null || html === '') ? '—' : html;
+    }
+
+    function formatUsCell(us) {
+      if (us == null || us === undefined) return '—';
+      const ms = (us / 1000).toFixed(1);
+      return `<b>${ms} ms</b> <span class="muted" style="font-size:11px;">(${us.toLocaleString()} μs)</span>`;
+    }
+
+    function toggleUsDetail() {
+      const box = document.getElementById('us_detail_box');
+      const btn = document.getElementById('us_toggle_btn');
+      if (!box || !btn) return;
+      if (box.style.display === 'none') {
+        box.style.display = 'block';
+        btn.textContent = '▲ 6구간 μs 정밀 소요시간 접기';
+        btn.style.background = '#eff6ff';
+        btn.style.borderColor = '#bfdbfe';
+        btn.style.color = '#2563eb';
+      } else {
+        box.style.display = 'none';
+        btn.textContent = '▼ 6구간 μs 정밀 소요시간 세부보기';
+        btn.style.background = '#f8fafc';
+        btn.style.borderColor = '#cbd5e1';
+        btn.style.color = '#475569';
+      }
+    }
+
     // ms → "1h 2m 3s"
     function formatUptime(ms) {
       const s = Math.floor(ms / 1000);
@@ -509,6 +588,13 @@
             setCellText('ch_lastdetect_' + ch, '—');
             setCellText('ch_calib_' + ch, '—');
 
+            setCellHtml('us_main_get_' + ch, '—');
+            setCellHtml('us_main_slot_' + ch, '—');
+            setCellHtml('us_main_undist_' + ch, '—');
+            setCellHtml('us_main_detect_' + ch, '—');
+            setCellHtml('us_main_send_' + ch, '—');
+            setCellHtml('us_main_total_' + ch, '—');
+
             setCellText('us_get_' + ch, '—');
             setCellText('us_slot_' + ch, '—');
             setCellText('us_undist_' + ch, '—');
@@ -530,6 +616,15 @@
               setCellText('ch_lastdetect_' + ch, c.last_detect ? formatTime(c.last_detect) : '—');
               setCellText('ch_calib_' + ch, formatUndistortStatus(c));
 
+              // 메인 상태모니터링 6구간 μs 세부보기 테이블 업데이트
+              setCellHtml('us_main_get_' + ch, formatUsCell(c.frame_get_us));
+              setCellHtml('us_main_slot_' + ch, formatUsCell(c.slot_wait_us));
+              setCellHtml('us_main_undist_' + ch, c.undistort_applied ? formatUsCell(c.undistort_us) : '<span class="muted">미적용 (0 μs)</span>');
+              setCellHtml('us_main_detect_' + ch, formatUsCell(c.detect_us));
+              setCellHtml('us_main_send_' + ch, formatUsCell(c.send_us));
+              setCellHtml('us_main_total_' + ch, formatUsCell(c.total_us));
+
+              // 테스트 탭 6구간 μs 분해 테이블 업데이트
               setCellText('us_get_' + ch, c.frame_get_us != null ? c.frame_get_us.toLocaleString() + ' μs' : '—');
               setCellText('us_slot_' + ch, c.slot_wait_us != null ? c.slot_wait_us.toLocaleString() + ' μs' : '—');
               setCellText('us_undist_' + ch, c.undistort_us != null ? c.undistort_us.toLocaleString() + ' μs' : '—');
