@@ -43,6 +43,7 @@ CAM_02 + channel 1  -> CAM_02_CH_01
 - 모델이 정한 채널 수와 실제 채널 목록 불일치
 - RTSP 주소, H 파일, 인증서 파일 누락
 - H의 단위가 mm가 아니거나 3×3 행렬·해상도가 잘못됨
+- 유효한 H를 가진 활성 CCTV 스트림이 0개
 - 거리 임계값 순서, 포트, 추적·스트림 정책 범위 오류
 
 H 파일의 상대 경로와 저장 경로는 설정 디렉터리를 기준으로 해석한다. 모든 월드 좌표와
@@ -67,7 +68,15 @@ homography/CAM_02/homography_result_cam02_ch01_mm.json
 `camera_list.json`에서는 위 상대경로를 채널별로 참조하고, 서버가 이를
 `CAM_01_CH_03`, `CAM_02_CH_01` 같은 `stream_id`로 자동 연결한다.
 
-실행 중 생성되는 DB·CSV는 설정 폴더와 분리된 `server/var/main_app/storage`에 저장한다.
+실행 중 생성되는 DB·CSV·runtime text log는 설정 폴더와 분리된
+`server/var/main_app/storage`에 저장한다. `output_storage.server_log`를 지정하면
+`event_db`와 별도 runtime 경로를 쓸 수 있고, 키를 생략한 기존 설정은 기존
+`event_db` 상위의 `server.log`로 fallback한다.
+`output_storage.runtime_status`는 모니터링이 읽는 JSON snapshot 경로이며, 생략 시
+`runtime/runtime-status.json`을 사용한다. snapshot은 임시 파일을 쓴 뒤 rename하여
+모니터링이 반쪽짜리 JSON을 읽지 않게 한다.
+메타데이터 처리 큐는 `stream.metadata_queue_capacity`(기본 256)로 제한하며,
+초과 시 오래된 프레임부터 버려 최신 판정의 지연과 메모리 증가를 제한한다.
 
 ## MQTT
 
@@ -82,7 +91,9 @@ homography/CAM_02/homography_result_cam02_ch01_mm.json
 생성하며, 설정에 없는 terminal_id의 센서 메시지는 캐시에 저장하지 않고 거부한다.
 
 assignment는 `type`, `terminal_id`, `stream_id`, `camera_id`, `channel`, `utc_time`을
-포함한다. TCP 9001 카메라 할당 서버는 사용하지 않는다.
+포함하고, 새 서버는 `assignment_id`, `revision`, `server_run_id`를 optional로 추가한다.
+센서 payload도 기존 필드 외에 `schema_version`, `message_id`, `producer_run_id`,
+`sequence`를 optional로 보낼 수 있다. TCP 9001 카메라 할당 서버는 사용하지 않는다.
 
 운영 MQTT는 mTLS listener `8883`을 사용한다. `system_config.json`의
 `tls_enabled`를 켜고 CA·중앙 서버용 client 인증서·개인키 경로를 설정해야 한다.

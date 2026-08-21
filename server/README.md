@@ -12,9 +12,9 @@
 - 브로커: 기본 `127.0.0.1:1883` Mosquitto, 설정으로 외부 브로커와 TLS 사용 가능
 - 결과: `forklift/risk/<terminal_id>`, `forklift/assignment/<terminal_id>`,
   `forklift/status/server`
-- 로그: 표준 `server.log`, 위험 상태 SQLite, 선택형 원시 CSV 3종
-- 웹 앱: 호모그래피 UI/API `:8001`, 모니터링 placeholder `:8000`
-- 검증: 기본 CTest 14개, 외부 브로커 통합 테스트는 별도 활성화
+- 로그: UTC `server.log`, 원자적 runtime 상태 snapshot, 위험 상태 SQLite, 선택형 원시 CSV 3종
+- 웹 앱: 호모그래피 UI/API `:8001`, 읽기 전용 모니터링 API `:8000`
+- 검증: 기본 CTest 16개, 외부 브로커 통합 테스트는 별도 활성화
 
 ## 구조
 
@@ -58,9 +58,8 @@
     │   └── forklift_device_config.json    # 실제 단말 목록·marker 정보
     ├── scripts/
     │   ├── run_server.sh                  # server 디렉터리 내부 실행 스크립트
-    │   ├── deploy.sh                      # main server 배포
-    │   └── forklift_safety_server.service # main server systemd 유닛
-    ├── deploy/systemd/                    # 웹 앱 systemd 유닛
+    │   └── deploy.sh                      # 세 앱 통합 배포
+    ├── deploy/systemd/                    # 세 앱의 단일 systemd 유닛 원본
     ├── build/                             # CMake 빌드 산출물
     ├── var/main_app/storage/              # 로컬 실행 데이터
     └── third_party/
@@ -139,7 +138,8 @@ heartbeat로 최신 결과를 다시 발행한다. `distance_mm`만 변한 경�
 
 ### 목록
 
-- `server.log`: 모든 운영 text log의 파일 기록
+- `server.log`: 모든 운영 text log의 파일 기록(기동별 `run_id` 포함)
+- `runtime/runtime-status.json`: 모니터링용 queue·센서·저장·단말별 counter snapshot
 - 콘솔 출력: 일반·경고는 stdout, 오류는 stderr
 - `events.db`: 위험 상태 변화만 저장하는 SQLite DB
 - `detections.csv`: 원시 객체 메타데이터 CSV, debug 전용
@@ -159,26 +159,30 @@ heartbeat로 최신 결과를 다시 발행한다. `distance_mm`만 변한 경�
 기본 파일 이름은 다음과 같다.
 
 ```text
-server.log
+runtime/server.log
+runtime/runtime-status.json
 events.db
 detections.csv
 aruco_markers.csv
 latency.csv
 ```
 
-`server.log`는 `output_storage.event_db`의 상위 storage 디렉터리를 기준으로
-자동 생성된다. 설정 로드 중 발생한 로그도 파일 경로가 확정된 뒤 flush된다.
+`output_storage.server_log`가 지정되면 그 경로를 사용하고, 기존 설정처럼 해당 키가
+없으면 `event_db`가 있는 디렉터리의 `server.log`로 fallback한다. 따라서 기존 운영
+설정을 교체하지 않아도 된다. 설정 로드 중 발생한 로그도 파일 경로가 확정된 뒤 flush된다.
 
 ### 형식
 
 ```text
-[2026-08-20 12:38:24.581] [WARN] [CCTV] CAM_01_CH_03 카메라 연결 끊김 (사유: 네트워크 오류 -> 재연결 2/10)
+[2026-08-21T02:38:24.581Z] [WARN] [CCTV] CAM_01_CH_03 카메라 연결 끊김 (사유: 네트워크 오류 -> 재연결 2/10) [run_id=20260821T023800.004Z-p1234]
 ```
 
-- 시간: 로컬 서버 시각, 밀리초 단위
+- 시간: UTC ISO-8601 시각, 밀리초 단위
 - 수준: `DEBUG`, `INFO`, `WARN`, `ERROR`
 - 태그: 처리 영역
 - 메시지: 단말·카메라·stream_id를 포함한 한국어 운영 메시지
+- `run_id`: 서버 프로세스 기동을 구분하는 UTC 기동시각+PID. 재시작한 서버의 로그를
+  같은 파일/journal에서 분리할 때 사용
 - `DEBUG`: 일반 운영에서는 끄고 원시 CSV 또는 송신 진단을 켠 경우에만 출력
 
 ### 흐름별 예시
@@ -235,9 +239,12 @@ CCTV 연결·복구:
 
 ### 저장 형식
 
-`events.db`에는 heartbeat가 아니라 위험 상태 변화만 저장한다. 주요 컬럼은
+`events.db`에는 heartbeat가 아니라 위험 상태 변화만 저장한다. 주요 판정 컬럼은
 `utc_time`, `camera_id`, `stream_id`, `channel`, `terminal_id`, `risk_level`,
-`previous_risk_level`, `exception_state`, `distance_mm`이다.
+`previous_risk_level`, `exception_state`, `distance_mm`이고, 통합 검증을 위해
+`decision_id`, `sensor_message_id`, `sensor_producer_run_id`, `sensor_sequence`,
+`sensor_ts_ms`, `sensor_age_ms`를 선택적으로 함께 저장한다. 기존 DB는 기동 시 누락
+컬럼을 `ALTER TABLE`로 보강한다.
 
 debug CSV의 기본 컬럼은 다음과 같다.
 
@@ -245,7 +252,14 @@ debug CSV의 기본 컬럼은 다음과 같다.
   `stream_id`, `camera_id`, `channel`
 - `aruco_markers.csv`: 수신 시각, 지연, channel, marker ID, `stream_id`,
   `camera_id`, 네 꼭짓점 좌표
-- `latency.csv`: `queue_wait_ms`, `judge_ms`, `server_total_ms`
+- `latency.csv`: `decision_id`, `queue_wait_ms`, `judge_ms`, `server_total_ms`
+
+risk payload에는 기존 필드 외에 `server_run_id`, `decision_id`, `publish_seq`,
+`send_reason`, 센서 message context가 optional로 들어간다. 구형 Qt 수신기는 모르는
+JSON 키를 무시하므로 기존 위험 필드의 의미는 바뀌지 않는다. assignment는
+`assignment_id`/`revision`/`server_run_id`를 포함하고 QoS 1 PUBACK과 publish 실패를
+`HANDOVER` 로그로 남긴다. 서버 상태 retained payload도 `server_run_id`와 `status_seq`를
+포함한다.
 
 ## 네트워크
 
@@ -454,9 +468,9 @@ cmake --build server/build -j2
   --common-config-dir server/config
 ```
 
-`run_server.sh`는 브로커를 확인하고, 중복 실행 방지를 위해 기존 배포 바이너리와
-systemd 서비스를 정리한 뒤 서버를 실행한다. 이미 운영 중인 인스턴스가 있는
-환경에서는 이 동작을 확인한 후 사용한다.
+`run_server.sh`는 브로커를 확인하고 로컬 바이너리를 실행한다. 운영 systemd 서비스나
+배포 바이너리가 이미 실행 중이면 기본적으로 종료 코드 3으로 중단한다. 운영 인스턴스를
+명시적으로 로컬 실행으로 교체할 때만 `./run_server.sh --takeover`를 사용한다.
 
 ### 진단
 
@@ -501,14 +515,15 @@ SERVER_MONITORING_PORT=8000 \
 ```
 
 - 기본 주소: `http://127.0.0.1:8000`
-- `/api/status`: 서비스 상태 placeholder JSON
+- `/api/status`: 중앙 서버·MQTT·호모그래피·최근 로그 시각의 읽기 전용 상태
+- `/health/live`: 모니터링 앱 자체 liveness
 
 ## 검증
 
 ### 목록
 
-- 기본 CTest: 14개
-- unit: 12개
+- 기본 CTest: 16개
+- unit: 14개
 - fixture 기반 integration: 2개
 - 외부 MQTT integration: 별도 옵션
 - 실제 CCTV·단말이 필요한 운영 E2E: 미등록
@@ -573,9 +588,12 @@ cd /home/pms/20_server_workspace
 - main server 빌드
 - `/usr/local/bin/forklift_safety_server` 설치
 - `/usr/local/bin/event_log_viewer` 설치
+- `/usr/local/bin/homography_tool` 설치
 - `server/config/`를 `/etc/forklift_safety/`로 복사
 - 로그 디렉터리 `/var/log/forklift_safety/` 생성
-- `forklift_safety_server.service` 등록·활성화
+- 세 systemd 유닛을 `server/deploy/systemd/`에서 등록
+- Mosquitto·중앙 서버·모니터링 앱 활성화
+- 호모그래피 앱 중지·비활성화
 
 main server systemd 실행 경로는 다음과 같다.
 
@@ -585,9 +603,18 @@ main server systemd 실행 경로는 다음과 같다.
   --common-config-dir /etc/forklift_safety
 ```
 
-호모그래피·모니터링 유닛은 `server/deploy/systemd/`에 있지만 사용자·작업 디렉터리·
-실행 경로가 설치 환경에 따라 달라질 수 있다. 활성화 전에 각 unit의
-`User`, `WorkingDirectory`, `ExecStart`, 환경변수를 확인한다.
+서비스 수명 주기는 다음과 같이 분리한다.
+
+- `forklift_safety_server.service`: 상시 실행, 비정상 종료 시 자동 복구
+- `monitoring-app.service`: 상시 실행, 중앙 서버가 내려가도 독립적으로 상태 제공
+- `homography-app.service`: 온디맨드 유지보수 도구, 부팅 자동 실행과 자동 재시작 안 함
+
+호모그래피 작업을 시작하고 끝낼 때는 다음 명령을 사용한다.
+
+```sh
+sudo systemctl start homography-app.service
+sudo systemctl stop homography-app.service
+```
 
 ### 상태 확인
 
@@ -595,7 +622,7 @@ main server systemd 실행 경로는 다음과 같다.
 sudo systemctl status mosquitto --no-pager
 sudo systemctl status forklift_safety_server --no-pager
 sudo systemctl status homography-app.service --no-pager
-sudo systemctl status server-monitoring.service --no-pager
+sudo systemctl status monitoring-app.service --no-pager
 ```
 
 서버 기동 직후 다음 항목을 순서대로 확인한다.
