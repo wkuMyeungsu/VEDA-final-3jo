@@ -25,6 +25,13 @@ add_executable(test_bounded_queue test_bounded_queue.cpp)
 target_include_directories(test_bounded_queue PRIVATE ${SERVER_SRC_DIR})
 add_test(NAME bounded_queue_test COMMAND test_bounded_queue)
 
+add_executable(test_server_command_line_options
+    test_server_command_line_options.cpp
+    ${SERVER_SRC_DIR}/runtime/server_command_line_options.cpp
+)
+target_include_directories(test_server_command_line_options PRIVATE ${SERVER_SRC_DIR})
+add_test(NAME server_command_line_options_test COMMAND test_server_command_line_options)
+
 add_executable(test_judgment_engine test_exception_trigger.cpp)
 target_link_libraries(test_judgment_engine PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_engine_test COMMAND test_judgment_engine)
@@ -89,6 +96,7 @@ set_tests_properties(
     aruco_metadata_parser_test
     metadata_timing_test
     bounded_queue_test
+    server_command_line_options_test
     judgment_engine_test
     judgment_pipeline_test
     assignment_publisher_test
