@@ -26,14 +26,8 @@ DEFAULT_RECENT_LOG_LINES = 50
 MAX_LOG_TAIL_BYTES = 64 * 1024
 RUNTIME_STATUS_MAX_AGE_SECONDS = 3
 PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
-try:
-    CPU_TICKS_PER_SECOND = os.sysconf("SC_CLK_TCK")
-except (AttributeError, OSError, ValueError):
-    CPU_TICKS_PER_SECOND = 100
 _RESOURCE_SAMPLE_LOCK = threading.Lock()
-_RESOURCE_SAMPLES = {}
-_SERVICE_PID_CACHE = {}
-_SERVICE_PID_CACHE_TTL_SECONDS = 2
+_HOST_CPU_SAMPLE = None
 
 
 def refresh_interval_seconds():
@@ -81,136 +75,109 @@ def tcp_reachable(host, port):
         return False
 
 
-def service_main_pid(unit):
-    """Return a systemd unit's main PID without invoking a shell."""
-    now = time.monotonic()
-    cached = _SERVICE_PID_CACHE.get(unit)
-    if cached and now - cached["checked_at"] < _SERVICE_PID_CACHE_TTL_SECONDS:
-        return cached["pid"]
+def _read_host_cpu_ticks():
+    """Read aggregate CPU counters from the host procfs."""
     try:
-        result = subprocess.run(
-            [SYSTEMCTL, "show", unit, "--property=MainPID", "--value"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        pid = None
-    else:
-        try:
-            value = int(result.stdout.strip())
-        except (TypeError, ValueError):
-            value = 0
-        pid = value if value > 0 else None
-    _SERVICE_PID_CACHE[unit] = {"checked_at": now, "pid": pid}
-    return pid
-
-
-def _read_process_stat(pid):
-    """Read process CPU ticks and start time from procfs."""
-    try:
-        value = (PROC_ROOT / str(pid) / "stat").read_text(encoding="utf-8")
-    except OSError:
-        return None
-    closing_paren = value.rfind(")")
-    if closing_paren < 0:
-        return None
-    fields = value[closing_paren + 2 :].split()
-    # fields[0] is procfs field 3 (state); utime/stime are fields 14/15,
-    # starttime is field 22.
-    if len(fields) <= 19:
-        return None
-    try:
-        cpu_ticks = int(fields[11]) + int(fields[12])
-        starttime_ticks = int(fields[19])
-    except (TypeError, ValueError):
-        return None
-    return cpu_ticks, starttime_ticks
-
-
-def _read_process_rss_kb(pid):
-    try:
-        lines = (PROC_ROOT / str(pid) / "status").read_text(encoding="utf-8").splitlines()
+        lines = (PROC_ROOT / "stat").read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
     for line in lines:
-        if not line.startswith("VmRSS:"):
+        if not line.startswith("cpu "):
             continue
-        parts = line.split()
         try:
-            return int(parts[1])
-        except (IndexError, TypeError, ValueError):
+            values = [int(value) for value in line.split()[1:]]
+        except (TypeError, ValueError):
             return None
+        if len(values) < 5:
+            return None
+        total_ticks = sum(values)
+        idle_ticks = values[3] + values[4]
+        return total_ticks, idle_ticks
     return None
 
 
-def process_resource(pid, sampled_at=None, sampled_utc=None):
-    """Return bounded CPU/RSS metrics for one process using procfs."""
-    if not pid or pid <= 0:
-        return {
-            "state": "inactive",
-            "pid": None,
-            "cpu_percent": None,
-            "memory_rss_kb": None,
-            "memory_rss_mb": None,
-            "sampled_utc": sampled_utc,
-        }
-    stat = _read_process_stat(pid)
-    rss_kb = _read_process_rss_kb(pid)
-    if stat is None or rss_kb is None:
+def _read_host_memory():
+    """Read host memory totals and availability from procfs."""
+    try:
+        lines = (PROC_ROOT / "meminfo").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    values = {}
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].endswith(":"):
+            continue
+        try:
+            values[parts[0][:-1]] = int(parts[1])
+        except (TypeError, ValueError):
+            continue
+    total_kb = values.get("MemTotal")
+    available_kb = values.get("MemAvailable")
+    if total_kb is None or available_kb is None or total_kb <= 0:
+        return None
+    available_kb = max(0, min(total_kb, available_kb))
+    return total_kb, available_kb
+
+
+def host_resource(sampled_at=None, sampled_utc=None):
+    """Return whole-Raspberry-Pi CPU and memory usage from procfs."""
+    global _HOST_CPU_SAMPLE
+    now = sampled_at if sampled_at is not None else time.monotonic()
+    timestamp = sampled_utc or datetime.now(timezone.utc).isoformat()
+    cpu_ticks = _read_host_cpu_ticks()
+    memory = _read_host_memory()
+    if cpu_ticks is None or memory is None:
         with _RESOURCE_SAMPLE_LOCK:
-            _RESOURCE_SAMPLES.pop(pid, None)
+            _HOST_CPU_SAMPLE = None
         return {
             "state": "unavailable",
-            "pid": pid,
             "cpu_percent": None,
-            "memory_rss_kb": None,
-            "memory_rss_mb": None,
-            "sampled_utc": sampled_utc,
+            "memory_used_kb": None,
+            "memory_used_mb": None,
+            "memory_total_kb": None,
+            "memory_total_mb": None,
+            "memory_available_kb": None,
+            "memory_available_mb": None,
+            "memory_percent": None,
+            "sampled_utc": timestamp,
         }
 
-    now = sampled_at if sampled_at is not None else time.monotonic()
-    cpu_ticks, starttime_ticks = stat
+    total_ticks, idle_ticks = cpu_ticks
+    total_kb, available_kb = memory
+    used_kb = total_kb - available_kb
     cpu_percent = None
     with _RESOURCE_SAMPLE_LOCK:
-        previous = _RESOURCE_SAMPLES.get(pid)
-        _RESOURCE_SAMPLES[pid] = {
+        previous = _HOST_CPU_SAMPLE
+        _HOST_CPU_SAMPLE = {
             "sampled_at": now,
-            "cpu_ticks": cpu_ticks,
-            "starttime_ticks": starttime_ticks,
+            "total_ticks": total_ticks,
+            "idle_ticks": idle_ticks,
         }
-        if previous and previous["starttime_ticks"] == starttime_ticks:
-            elapsed = now - previous["sampled_at"]
-            if elapsed > 0 and CPU_TICKS_PER_SECOND > 0:
-                cpu_percent = max(
-                    0.0,
-                    (cpu_ticks - previous["cpu_ticks"])
-                    / CPU_TICKS_PER_SECOND
-                    / elapsed
-                    * 100.0,
-                )
+        if previous:
+            total_delta = total_ticks - previous["total_ticks"]
+            idle_delta = idle_ticks - previous["idle_ticks"]
+            if total_delta > 0:
+                cpu_percent = max(0.0, min(100.0, (total_delta - idle_delta) / total_delta * 100.0))
     return {
         "state": "ok",
-        "pid": pid,
         "cpu_percent": round(cpu_percent, 1) if cpu_percent is not None else None,
-        "memory_rss_kb": rss_kb,
-        "memory_rss_mb": round(rss_kb / 1024, 1),
-        "sampled_utc": sampled_utc,
+        "memory_used_kb": used_kb,
+        "memory_used_mb": round(used_kb / 1024, 1),
+        "memory_total_kb": total_kb,
+        "memory_total_mb": round(total_kb / 1024, 1),
+        "memory_available_kb": available_kb,
+        "memory_available_mb": round(available_kb / 1024, 1),
+        "memory_percent": round(used_kb / total_kb * 100.0, 1),
+        "sampled_utc": timestamp,
     }
 
 
-def resource_snapshot(safety_state):
-    """Collect lightweight metrics for the server's core application processes."""
-    sampled_at = time.monotonic()
+def resource_snapshot(_safety_state=None):
+    """Collect lightweight CPU and memory metrics for the whole host."""
     sampled_utc = datetime.now(timezone.utc).isoformat()
-    safety_pid = service_main_pid("forklift_safety_server.service") if safety_state == "active" else None
-    homography_pid = service_main_pid("homography-app.service")
     return {
         "checked_utc": sampled_utc,
-        "safety_server": process_resource(safety_pid, sampled_at, sampled_utc),
-        "monitoring_app": process_resource(os.getpid(), sampled_at, sampled_utc),
-        "homography_app": process_resource(homography_pid, sampled_at, sampled_utc),
+        "host": host_resource(sampled_utc=sampled_utc),
     }
 
 

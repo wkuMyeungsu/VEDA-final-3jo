@@ -36,7 +36,7 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
-        for label in ("서버 운영 콘솔", "안전 서버", "공통 운영 상태", "핵심 앱 자원 사용량", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
+        for label in ("서버 운영 콘솔", "안전 서버", "공통 운영 상태", "라즈베리파이 자원 사용량", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
             self.assertIn(label, page)
         self.assertIn(".status-value.good .status-dot", page)
         self.assertIn(".status-value.problem .status-dot", page)
@@ -57,9 +57,9 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn("sensorBypassed?'센서 제외 테스트'", page)
         self.assertIn("events.state_changes", page)
         self.assertIn("단말별 신선도 확인", page)
-        self.assertIn("resource-safety-cpu", page)
-        self.assertIn("resource-monitoring-memory", page)
-        self.assertIn("resource-homography-indicator", page)
+        self.assertIn("resource-host-cpu", page)
+        self.assertIn("resource-host-memory", page)
+        self.assertIn("전체 프로세스 포함", page)
         self.assertIn("renderResources", page)
         self.assertNotIn("센서 수신 누적</h3>", page)
         self.assertNotIn("연결 단말</h3>", page)
@@ -117,47 +117,33 @@ class MonitoringStatusTests(unittest.TestCase):
             handler.log_message('%s %s %s', 'GET /missing', '404', '-')
         parent.assert_called_once_with('%s %s %s', 'GET /missing', '404', '-')
 
-    def test_process_resource_reads_cpu_and_rss_from_procfs(self):
+    def test_host_resource_reads_cpu_and_memory_from_procfs(self):
         with tempfile.TemporaryDirectory() as directory:
             proc_root = pathlib.Path(directory)
-            pid = 424242
-            process_dir = proc_root / str(pid)
-            process_dir.mkdir()
-            fields = ["S"] + ["0"] * 19
-            fields[11] = "100"
-            fields[12] = "50"
-            fields[19] = "777"
-            (process_dir / "stat").write_text(
-                f"{pid} (monitoring app) " + " ".join(fields),
+            (proc_root / "stat").write_text("cpu 100 0 100 700 100 0 0 0\n", encoding="utf-8")
+            (proc_root / "meminfo").write_text(
+                "MemTotal:       4096000 kB\nMemAvailable:   2048000 kB\n",
                 encoding="utf-8",
             )
-            (process_dir / "status").write_text("Name:\tmonitoring\nVmRSS:\t2048 kB\n", encoding="utf-8")
             with mock.patch.object(SERVER, "PROC_ROOT", proc_root), \
-                 mock.patch.object(SERVER, "CPU_TICKS_PER_SECOND", 100):
-                first = SERVER.process_resource(pid, sampled_at=10.0, sampled_utc="t1")
+                 mock.patch.object(SERVER, "_HOST_CPU_SAMPLE", None):
+                first = SERVER.host_resource(sampled_at=10.0, sampled_utc="t1")
                 self.assertIsNone(first["cpu_percent"])
-                self.assertEqual(first["memory_rss_mb"], 2.0)
+                self.assertEqual(first["memory_used_mb"], 2000.0)
+                self.assertEqual(first["memory_percent"], 50.0)
 
-                fields[11] = "120"
-                fields[12] = "60"
-                (process_dir / "stat").write_text(
-                    f"{pid} (monitoring app) " + " ".join(fields),
-                    encoding="utf-8",
-                )
-                second = SERVER.process_resource(pid, sampled_at=11.0, sampled_utc="t2")
-                self.assertEqual(second["cpu_percent"], 30.0)
-                self.assertEqual(second["pid"], pid)
+                (proc_root / "stat").write_text("cpu 150 0 150 750 100 0 0 0\n", encoding="utf-8")
+                second = SERVER.host_resource(sampled_at=11.0, sampled_utc="t2")
+                self.assertEqual(second["cpu_percent"], 66.7)
+                self.assertEqual(second["memory_total_mb"], 4000.0)
 
-    def test_resource_snapshot_collects_core_application_processes(self):
-        sample = {"state": "ok", "pid": 1, "cpu_percent": 1.0, "memory_rss_mb": 2.0}
-        with mock.patch.object(SERVER, "service_main_pid", side_effect=[321, None]), \
-             mock.patch.object(SERVER, "process_resource", side_effect=[sample, sample, sample]) as process:
+    def test_resource_snapshot_collects_whole_host(self):
+        sample = {"state": "ok", "cpu_percent": 1.0, "memory_used_mb": 2000.0}
+        with mock.patch.object(SERVER, "host_resource", return_value=sample) as resource:
             value = SERVER.resource_snapshot("active")
         self.assertIn("checked_utc", value)
-        self.assertEqual(value["safety_server"], sample)
-        self.assertEqual(value["monitoring_app"], sample)
-        self.assertEqual(value["homography_app"], sample)
-        self.assertEqual(process.call_count, 3)
+        self.assertEqual(value["host"], sample)
+        resource.assert_called_once()
 
     @mock.patch.object(SERVER, "file_timestamp", return_value="2026-08-21T00:00:00+00:00")
     @mock.patch.object(SERVER, "resource_snapshot", return_value={})
