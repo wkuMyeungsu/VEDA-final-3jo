@@ -175,9 +175,10 @@
       field.append(labelNode,valueNode,detailNode);
       parent.append(field);
     };
-    const renderTerminalCards=(terminals)=>{
+    const renderTerminalCards=(terminals,sensorMode='network')=>{
       const root=document.getElementById('terminal-cards');
       root.replaceChildren();
+      const sensorBypassed=sensorMode==='disabled';
       if(!terminals.length){
         root.textContent='등록된 단말이 없습니다.';
         setText('terminal-summary','등록된 단말 없음');
@@ -188,7 +189,7 @@
         const sensor=terminal.sensor||{};
         const risk=terminal.risk||{};
         const events=terminal.events||{};
-        const sensorHealthy=sensor.has_sample===true&&sensor.stale===false;
+        const sensorHealthy=sensorBypassed||(sensor.has_sample===true&&sensor.stale===false);
         const outputHealthy=terminal.risk_link==='connected'&&Number(terminal.risk_send_failures||0)===0&&Number(terminal.risk_queue_dropped||0)===0;
         const hasRisk=risk.has_result===true;
         const hasException=hasRisk&&risk.exception&&risk.exception!=='NONE';
@@ -209,9 +210,9 @@
         const fields=document.createElement('div');
         fields.className='terminal-fields';
 
-        const sensorState=!sensor.has_sample?'수신 없음':sensor.stale?'지연/끊김':'정상';
+        const sensorState=sensorBypassed?'센서 제외 테스트':!sensor.has_sample?'수신 없음':sensor.stale?'지연/끊김':'정상';
         addTerminalField(fields,'센서',sensorState,
-          `${formatAgeMs(sensor.age_ms)} · 정상 ${formatNumber(sensor.received)}건 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건`,
+          sensorBypassed?'실제 센서 입력을 위험 판정에서 제외':`${formatAgeMs(sensor.age_ms)} · 정상 ${formatNumber(sensor.received)}건 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건`,
           sensorHealthy?'':'risk-caution');
 
         const currentRisk=risk.has_result===true?(risk.state||'UNKNOWN'):'UNKNOWN';
@@ -237,7 +238,7 @@
       const healthyCount=terminals.filter((terminal)=>{
         const sensor=terminal.sensor||{};
         const risk=terminal.risk||{};
-        return sensor.has_sample===true&&sensor.stale===false&&risk.has_result===true
+        return (sensorBypassed||(sensor.has_sample===true&&sensor.stale===false))&&risk.has_result===true
           &&(!risk.exception||risk.exception==='NONE')
           &&terminal.risk_link==='connected'
           &&Number(terminal.risk_send_failures||0)===0
@@ -326,9 +327,10 @@
           setText('runtime-detail',`마지막 갱신 ${formatAgeMs(snapshotAge)} · 기준 ${formatTimestamp(snapshot.checked_utc)}`);
 
           const sensor=snapshot.sensor||{};
-          setIndicator('sensor-indicator',Number(sensor.parse_failures||0)===0?'good':'problem',Number(sensor.parse_failures||0)===0?'전체 파싱 정상':`파싱 실패 ${formatNumber(sensor.parse_failures)}건`);
-          setText('sensor-received',formatNumber(sensor.received));
-          setText('sensor-detail',`전체 단말 합산 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건 · 신선도는 단말별 확인`);
+          const sensorBypassed=snapshot.sensor_mode==='disabled';
+          setIndicator('sensor-indicator',sensorBypassed||Number(sensor.parse_failures||0)===0?'good':'problem',sensorBypassed?'센서 제외 테스트':Number(sensor.parse_failures||0)===0?'전체 파싱 정상':`파싱 실패 ${formatNumber(sensor.parse_failures)}건`);
+          setText('sensor-received',sensorBypassed?'제외':formatNumber(sensor.received));
+          setText('sensor-detail',sensorBypassed?'실제 MQTT 센서 입력을 위험 판정에서 제외함':`전체 단말 합산 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건 · 신선도는 단말별 확인`);
 
           const queue=snapshot.queue||{};
           const queueDropped=Number(queue.dropped)||0;
@@ -342,7 +344,7 @@
           setIndicator('storage-indicator',storageFailures===0?'good':'problem',storageFailures===0?'공통 저장 정상':`공통 저장 문제 ${formatNumber(storageFailures)}건`);
           setText('events-written',formatNumber(storage.events_written));
           setText('storage-detail',`쓰기 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber((Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0))}건`);
-          renderTerminalCards(snapshot.terminals||[]);
+          renderTerminalCards(snapshot.terminals||[],snapshot.sensor_mode||'network');
         }else{
           setText('server-run-id','실행 정보 없음');
           setText('runtime-state','—');

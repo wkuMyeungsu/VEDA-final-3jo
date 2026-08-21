@@ -103,7 +103,10 @@ target_link_libraries(server_network PUBLIC server_judgment Threads::Threads Pkg
 
 # 유일한 서버 실행 진입점. 기존 detection/object_detection/main.cpp을
 # src/main.cpp으로 승격해 수신 계층을 여기서 조립한다.
-add_executable(forklift_safety_server main.cpp)
+add_executable(forklift_safety_server
+    main.cpp
+    src/runtime/server_command_line_options.cpp
+)
 target_include_directories(forklift_safety_server PRIVATE ${SERVER_SRC_DIR})
 target_link_libraries(forklift_safety_server PRIVATE
     server_input

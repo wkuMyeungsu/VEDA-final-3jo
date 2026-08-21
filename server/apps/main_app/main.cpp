@@ -35,6 +35,7 @@
 #include "network/result_dispatcher.hpp"
 #include "network/result_publisher.hpp"
 #include "network/sensor_uplink_receiver.hpp"
+#include "runtime/server_command_line_options.hpp"
 
 namespace {
 
@@ -69,6 +70,10 @@ std::string alertContext(const JudgmentResult& result) {
         context += stream;
     }
     return context.empty() ? std::string() : " (" + context + ")";
+}
+
+const char* sensorModeLogLabel(forklift::runtime::SensorMode mode) {
+    return mode == forklift::runtime::SensorMode::Disabled ? "입력 제외(테스트)" : "네트워크";
 }
 
 std::string jsonString(const std::string& value) {
@@ -149,7 +154,6 @@ struct TerminalContext;
 // TERM 하나의 상태. 마커·센서·판정 히스테리시스·결과 발행기를 TERM별로 분리한다.
 struct TerminalContext {
     forklift::config::ForkliftDevice device;
-    StubSensorReader stub_sensor;
     NetworkSensorReader sensor_reader;
     forklift::logic::SafetyFramePipeline pipeline;
     risk_transport::ResultPublisher publisher;
@@ -157,11 +161,12 @@ struct TerminalContext {
 
     TerminalContext(forklift::config::SafetyServerConfig config,
                     forklift::config::ForkliftDevice forklift,
-                    risk_transport::SensorUplinkReceiver& receiver)
+                    risk_transport::SensorUplinkReceiver& receiver,
+                    forklift::runtime::SensorMode sensor_mode)
         : device(std::move(forklift)),
-          stub_sensor(config.sensor.stub_tof_distance_mm),
           sensor_reader(receiver, device.terminal_id, config.sensor.stale_timeout_ms),
-          pipeline(config, device, sensor_reader),
+          pipeline(config, device, sensor_reader,
+                   sensor_mode == forklift::runtime::SensorMode::Disabled),
           publisher(device.terminal_id, config.network.mqtt_host, config.network.mqtt_port,
                     risk_transport::MqttTlsOptions{config.network.tls_enabled, config.network.ca_cert_path,
                                                    config.network.client_cert_path, config.network.client_key_path},
@@ -173,8 +178,10 @@ struct TerminalContext {
 // 중앙 서버. RTSP worker는 여기로 프레임만 넣고, 위험 판정은 이 클래스의 한 스레드에서만 한다.
 class CentralServer {
 public:
-    explicit CentralServer(forklift::config::SafetyServerConfig config)
+    CentralServer(forklift::config::SafetyServerConfig config,
+                  forklift::runtime::SensorMode sensor_mode)
         : config_(std::move(config)),
+          sensor_mode_(sensor_mode),
           sensor_receiver_(configuredTerminalIds(config_.forklifts),
                            config_.network.mqtt_host, config_.network.mqtt_port,
                            tlsOptions()),
@@ -235,6 +242,7 @@ private:
     void process(const MetadataEvent& event);
 
     forklift::config::SafetyServerConfig config_;
+    forklift::runtime::SensorMode sensor_mode_;
     risk_transport::SensorUplinkReceiver sensor_receiver_;
     risk_transport::ResultPublisher server_status_;
     risk_transport::AssignmentPublisher assignment_publisher_;
@@ -252,7 +260,7 @@ private:
 
 std::unique_ptr<TerminalContext> CentralServer::makeTerminal(
     const forklift::config::ForkliftDevice& device) {
-    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_);
+    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_, sensor_mode_);
 }
 
 void CentralServer::process(const MetadataEvent& event) {
@@ -299,6 +307,7 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
     json << "{\n"
          << "  \"schema_version\": 1,\n"
          << "  \"state\": " << jsonString(state) << ",\n"
+         << "  \"sensor_mode\": " << jsonString(forklift::runtime::sensorModeName(sensor_mode_)) << ",\n"
          << "  \"server_run_id\": " << jsonString(forklift::logging::Logger::instance().runId()) << ",\n"
          << "  \"checked_utc\": " << jsonString(nowIso8601Ms()) << ",\n"
          << "  \"queue\": {\"depth\": " << events_.size()
@@ -620,7 +629,11 @@ struct CentralServer::StreamWorker {
 CentralServer::~CentralServer() { stop(); }
 
 void CentralServer::start() {
-    sensor_receiver_.start();
+    if (sensor_mode_ == forklift::runtime::SensorMode::Disabled) {
+        LOG_WARN("SENSOR", "센서 제외 테스트 모드 활성화 (센서 입력을 위험 판정에서 사용하지 않음)");
+    } else {
+        sensor_receiver_.start();
+    }
     server_status_.start();
     assignment_publisher_.start();
     event_logger_.start();
@@ -675,7 +688,7 @@ void CentralServer::stop() {
     for (auto& terminal : terminals_) terminal->publisher.stop();
     assignment_publisher_.stop();
     server_status_.stop();
-    sensor_receiver_.stop();
+    if (sensor_mode_ != forklift::runtime::SensorMode::Disabled) sensor_receiver_.stop();
     event_logger_.stop();
     if (config_.output_storage.enable_raw_csv_logging) {
         latency_logger_.stop();
@@ -687,31 +700,21 @@ void CentralServer::stop() {
 int main(int argc, char* argv[]) {
     g_setenv("GIO_USE_PROXY_RESOLVER", "dummy", TRUE);
     gst_init(&argc, &argv);
-    std::string config_dir = forklift::config::resolveConfigDirectory();
-    std::string common_config_dir;
-    bool enable_debug_csv_flag = false;
-    for (int index = 1; index < argc; ++index) {
-        const std::string option = argv[index];
-        if (option == "--config-dir" && index + 1 < argc) {
-            config_dir = argv[++index];
-        } else if (option == "--common-config-dir" && index + 1 < argc) {
-            common_config_dir = argv[++index];
-        } else if (option == "--enable-debug-csv" || option == "--debug") {
-            enable_debug_csv_flag = true;
-        } else if (option == "--help" || option == "-h") {
-            std::cout << "사용법: " << argv[0] << " [옵션]\n\n"
-                      << "옵션:\n"
-                      << "  --config-dir PATH         안전 설정 디렉터리 경로 (기본값: 자동 감지)\n"
-                      << "  --common-config-dir PATH  공통 설정 디렉터리 경로 (기본값: 자동 감지)\n"
-                      << "  --debug, --enable-debug-csv 디버그 원시 CSV 로깅 활성화\n"
-                      << "  --help, -h                도움말 출력\n";
-            return 0;
-        } else {
-            std::cerr << "사용법: " << argv[0]
-                      << " [--config-dir PATH] [--common-config-dir PATH] [--debug] [--help]\n";
-            return 1;
-        }
+    auto command_line = forklift::runtime::parseServerCommandLine(
+        argc, argv, forklift::config::resolveConfigDirectory());
+    if (!command_line.ok()) {
+        std::cerr << command_line.error << "\n"
+                  << forklift::runtime::serverCommandLineUsage(argv[0]);
+        return 1;
     }
+    if (command_line.options.show_help) {
+        std::cout << forklift::runtime::serverCommandLineUsage(argv[0]);
+        return 0;
+    }
+
+    auto options = std::move(command_line.options);
+    std::string config_dir = options.config_dir;
+    std::string common_config_dir = options.common_config_dir;
     if (common_config_dir.empty())
         common_config_dir = forklift::config::resolveCommonConfigDirectory(config_dir);
 
@@ -722,7 +725,7 @@ int main(int argc, char* argv[]) {
         LOG_ERROR("CONFIG", std::string("서버 기동 실패 (사유: ") + error.what() + ")");
         return 2;
     }
-    if (enable_debug_csv_flag) {
+    if (options.enable_debug_csv) {
         config.output_storage.enable_raw_csv_logging = true;
     }
     forklift::logging::Logger::instance().setDebugEnabled(
@@ -749,12 +752,13 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
-    CentralServer server(std::move(config));
+    CentralServer server(std::move(config), options.sensor_mode);
     server.start();
     server.startWorkers();
-    LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (CCTV 스트림: " +
+    LOG_INFO("SERVER", "========== 중앙 안전 서버 기동 완료 (CCTV 스트림: " +
                            std::to_string(server.config().streams.size()) + "개, 지게차 단말: " +
-                           std::to_string(server.config().forklifts.size()) + "대)");
+                           std::to_string(server.config().forklifts.size()) + "대, 센서: " +
+                           sensorModeLogLabel(options.sensor_mode) + ") ==========");
     while (!stop_requested) std::this_thread::sleep_for(std::chrono::milliseconds(200));
     LOG_INFO("SERVER", "서버 종료 신호 감지 (안전 종료 진행)");
     server.stop();

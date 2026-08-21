@@ -7,7 +7,8 @@ namespace forklift::logic {
 
 SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& config,
                                          const config::ForkliftDevice& device,
-                                         ISensorReader& sensors)
+                                         ISensorReader& sensors,
+                                         bool ignore_sensor_input)
     : marker_id_(device.marker_id),
       homography_(config),
       marker_tracker_(device.marker_id, config.handover.confirm_frames,
@@ -16,7 +17,8 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
                             config.tracking.world_distance_threshold_mm,
                             config.tracking.max_missed_frames),
       judgment_pipeline_(device.terminal_id, sensors, config.danger_judgment,
-                         device.collision_radius_mm, config.handover.lostGrace()) {}
+                         device.collision_radius_mm, config.handover.lostGrace(),
+                         ignore_sensor_input) {}
 
 std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const ArucoFrame& frame) {
     if (frame.stream_id.empty() || frame.camera_id.empty() || frame.channel < 1) return std::nullopt;

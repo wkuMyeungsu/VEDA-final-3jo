@@ -84,7 +84,8 @@ public:
     JudgmentPipeline(const std::string& terminal_id, ISensorReader& sensors,
                      const forklift::config::DangerJudgmentConfig& judgment_config,
                      double collision_radius_mm,
-                     std::chrono::milliseconds dead_reckoning_release_grace);
+                     std::chrono::milliseconds dead_reckoning_release_grace,
+                     bool ignore_sensor_input = false);
 
     // 한 프레임 처리: 상류 입력 -> CameraInput 매핑 -> SensorInput 읽기 -> evaluate().
     //
@@ -132,5 +133,6 @@ private:
     int                  active_channel_ = -1;
     std::string          terminal_id_;
     ISensorReader*       sensors_;   // non-owning
+    bool                 ignore_sensor_input_ = false;
     DangerJudgmentEngine engine_;
 };
