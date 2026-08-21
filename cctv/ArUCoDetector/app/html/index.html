@@ -348,8 +348,8 @@
                 <thead>
                   <tr>
                     <th>항목</th><th>활성채널</th><th>검출횟수</th>
-                    <th>슬롯대기(μs)</th><th>왜곡보정(μs)</th><th>마커검출(μs)</th><th>전체소요(μs)</th>
-                    <th>경합손실(μs)</th><th>경합비율(%)</th><th>평균 탈락후보</th>
+                    <th>슬롯대기</th><th>왜곡보정</th><th>마커검출</th><th>전체소요</th>
+                    <th>경합손실</th><th>경합비율(%)</th><th>평균 탈락후보</th>
                   </tr>
                 </thead>
                 <tbody id="cmp_summary_tbody"></tbody>
@@ -651,7 +651,9 @@
 
     function formatStatCell(stat) {
       if (!stat || stat.detectionCount === 0) return '—';
-      return `<b>${stat.avg.toLocaleString()} μs</b> <span class="muted" style="font-size:11px;">(p95: ${stat.p95.toLocaleString()} μs)</span>`;
+      const avgMs = (stat.avg / 1000).toFixed(1);
+      const p95Ms = (stat.p95 / 1000).toFixed(1);
+      return `<b>${avgMs} ms</b> <span class="muted" style="font-size:11px;">(${stat.avg.toLocaleString()} μs)</span><div class="muted" style="font-size:11px; margin-top:2px;">p95: <b>${p95Ms} ms</b> (${stat.p95.toLocaleString()} μs)</div>`;
     }
 
     function startLatencyMeasure() {
@@ -779,24 +781,28 @@
         rows.push({
           channel: ch,
           detectionCount: tt.detectionCount,
+          slot_avg_ms: sl ? (sl.avg / 1000).toFixed(2) : 0,
           slot_avg_us: sl ? sl.avg : 0,
+          slot_p95_ms: sl ? (sl.p95 / 1000).toFixed(2) : 0,
           slot_p95_us: sl ? sl.p95 : 0,
-          slot_max_us: sl ? sl.max : 0,
+          undist_avg_ms: un ? (un.avg / 1000).toFixed(2) : 0,
           undist_avg_us: un ? un.avg : 0,
+          undist_p95_ms: un ? (un.p95 / 1000).toFixed(2) : 0,
           undist_p95_us: un ? un.p95 : 0,
-          undist_max_us: un ? un.max : 0,
+          detect_avg_ms: dt ? (dt.avg / 1000).toFixed(2) : 0,
           detect_avg_us: dt ? dt.avg : 0,
+          detect_p95_ms: dt ? (dt.p95 / 1000).toFixed(2) : 0,
           detect_p95_us: dt ? dt.p95 : 0,
-          detect_max_us: dt ? dt.max : 0,
+          total_avg_ms: tt ? (tt.avg / 1000).toFixed(2) : 0,
           total_avg_us: tt ? tt.avg : 0,
+          total_p95_ms: tt ? (tt.p95 / 1000).toFixed(2) : 0,
           total_p95_us: tt ? tt.p95 : 0,
-          total_max_us: tt ? tt.max : 0,
           rejected_avg: rj ? rj.avg : 0
         });
       }
       if (rows.length === 0) { alert('측정된 데이터가 없습니다.'); return; }
-      downloadCsvGeneric('latency_stat_breakdown_us',
-        ['channel', 'detectionCount', 'slot_avg_us', 'slot_p95_us', 'slot_max_us', 'undist_avg_us', 'undist_p95_us', 'undist_max_us', 'detect_avg_us', 'detect_p95_us', 'detect_max_us', 'total_avg_us', 'total_p95_us', 'total_max_us', 'rejected_avg'],
+      downloadCsvGeneric('latency_stat_breakdown',
+        ['channel', 'detectionCount', 'slot_avg_ms', 'slot_avg_us', 'slot_p95_ms', 'slot_p95_us', 'undist_avg_ms', 'undist_avg_us', 'undist_p95_ms', 'undist_p95_us', 'detect_avg_ms', 'detect_avg_us', 'detect_p95_ms', 'detect_p95_us', 'total_avg_ms', 'total_avg_us', 'total_p95_ms', 'total_p95_us', 'rejected_avg'],
         rows);
     }
 
@@ -1073,10 +1079,11 @@
       const tbody = document.getElementById('cmp_summary_tbody');
       tbody.innerHTML = '';
       for (const r of cmpSlotResults) {
+        const fmt = (us) => `<b>${(us / 1000).toFixed(1)} ms</b> <span class="muted" style="font-size:11px;">(${us.toLocaleString()} μs)</span>`;
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalDetectionCount}</td>` +
-          `<td>${r.avgSlot_us.toLocaleString()}</td><td>${r.avgUndist_us.toLocaleString()}</td><td>${r.avgDetect_us.toLocaleString()}</td><td>${r.avgTotal_us.toLocaleString()}</td>` +
-          `<td>${r.avgLoss_us.toLocaleString()}</td><td>${r.avgRatio}%</td><td>${r.avgRejected}</td>`;
+          `<td>${fmt(r.avgSlot_us)}</td><td>${fmt(r.avgUndist_us)}</td><td>${fmt(r.avgDetect_us)}</td><td>${fmt(r.avgTotal_us)}</td>` +
+          `<td>${fmt(r.avgLoss_us)}</td><td>${r.avgRatio}%</td><td>${r.avgRejected}</td>`;
         tbody.appendChild(tr);
       }
       document.getElementById('cmp_summary_wrap').style.display = cmpSlotResults.length ? 'block' : 'none';
