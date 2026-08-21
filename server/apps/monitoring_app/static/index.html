@@ -166,7 +166,7 @@
     </section>
 
     <section class="panel">
-      <div class="section-heading"><h2>최근 서버 로그</h2><span class="log-meta">로그 파일 마지막 기록: <span id="server-log-time">확인 중</span> · 표시 범위: <span id="log-count">최근 50줄</span></span></div>
+      <div class="section-heading"><h2>최근 서버 로그</h2><span class="log-meta">로그 불러온 시각: <span id="server-log-fetched-time">확인 중</span> · 표시 범위: <span id="log-count">최근 50줄</span></span></div>
       <pre id="server-logs">확인 중</pre>
     </section>
   </section>
@@ -584,6 +584,7 @@
       setText('event-storage-detail','이벤트 DB 상태를 확인할 수 없습니다.');
       setIndicator('event-storage-indicator','unknown','이벤트 DB 상태 확인 필요');
       setText('decision-summary','확인 필요');
+      setText('server-log-fetched-time','확인 실패');
       renderResources({});
       setText('terminal-cards','실행 정보 없음');
       setText('terminal-summary','실행 정보 없음');
@@ -638,9 +639,8 @@
         }
 
         const serverLog=value.server_log||{};
-        const serverLogTime=serverLog.modified_utc||'';
-        const serverLogNode=document.getElementById('server-log-time');
-        if(serverLogNode){serverLogNode.textContent=formatTimestamp(serverLogTime);serverLogNode.title=serverLogTime}
+        const serverLogFetchedNode=document.getElementById('server-log-fetched-time');
+        if(serverLogFetchedNode){serverLogFetchedNode.textContent=formatTimestamp(value.checked_utc);serverLogFetchedNode.title=value.checked_utc||''}
         const recentLines=serverLog.recent_lines||[];
         setText('server-logs',recentLines.length?recentLines.join('\n'):'기록 없음');
         setText('log-count',`최근 ${recentLines.length}줄`);
