@@ -349,7 +349,8 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     const auto& tracking = object(system, "tracking", system_path.string());
     c.tracking.iou_threshold = value<double>(tracking, "tracking", "iou_threshold", system_path.string());
     c.tracking.world_distance_threshold_mm = value<double>(tracking, "tracking", "world_distance_threshold_mm", system_path.string());
-    c.tracking.max_missed_frames = value<int>(tracking, "tracking", "max_missed_frames", system_path.string());
+    c.tracking.track_freshness_ms = value<int>(tracking, "tracking", "track_freshness_ms", system_path.string());
+    c.tracking.track_timeout_ms = value<int>(tracking, "tracking", "track_timeout_ms", system_path.string());
     const auto& sensor = object(system, "sensor", system_path.string());
     c.sensor.stub_tof_distance_mm = value<double>(sensor, "sensor", "stub_tof_distance_mm", system_path.string());
     c.sensor.stale_timeout_ms = value<int>(sensor, "sensor", "stale_timeout_ms", system_path.string());
@@ -365,7 +366,9 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     if (c.handover.confirm_frames < 1 || c.handover.lost_grace_ms < 0 ||
         !std::isfinite(c.tracking.iou_threshold) || c.tracking.iou_threshold < 0 || c.tracking.iou_threshold > 1 ||
         !std::isfinite(c.tracking.world_distance_threshold_mm) || c.tracking.world_distance_threshold_mm <= 0 ||
-        c.tracking.max_missed_frames < 0 || c.sensor.stale_timeout_ms < 1 || c.stream.rtsp_latency_ms < 0 ||
+        c.tracking.track_freshness_ms < 1 || c.tracking.track_timeout_ms < 1 ||
+        c.tracking.track_freshness_ms >= c.tracking.track_timeout_ms ||
+        c.sensor.stale_timeout_ms < 1 || c.stream.rtsp_latency_ms < 0 ||
         c.stream.appsink_max_buffers < 1 || c.stream.metadata_queue_capacity < 1 ||
         c.stream.metadata_queue_capacity > 100000 || c.stream.eos_force_timeout_s < 1 || c.stream.connect_timeout_s < 1 ||
         c.stream.max_retries < 1 || c.stream.retry_delay_s < 0 || !std::isfinite(c.sensor.stub_tof_distance_mm) ||

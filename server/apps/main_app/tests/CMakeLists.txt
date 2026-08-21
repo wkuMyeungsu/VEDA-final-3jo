@@ -90,6 +90,10 @@ add_executable(test_marker_stream_tracker test_marker_channel_tracker.cpp)
 target_link_libraries(test_marker_stream_tracker PRIVATE server_tracking)
 add_test(NAME marker_stream_tracker_test COMMAND test_marker_stream_tracker)
 
+add_executable(test_nearest_person_selector test_nearest_person_selector.cpp)
+target_link_libraries(test_nearest_person_selector PRIVATE server_tracking)
+add_test(NAME nearest_person_selector_test COMMAND test_nearest_person_selector)
+
 set_tests_properties(
     onvif_metadata_parser_test
     metadata_router_test
@@ -104,6 +108,7 @@ set_tests_properties(
     safety_server_config_test
     homography_transformer_test
     marker_stream_tracker_test
+    nearest_person_selector_test
     PROPERTIES
         LABELS "unit"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
