@@ -45,7 +45,7 @@
       }catch(error){setState('safety','unknown');setState('mqtt','unknown');setState('homography-state','unknown');document.getElementById('runtime-status').textContent='확인 실패'}
     }
     document.getElementById('homography').href='http://'+location.hostname+':8001';
-    refresh();setInterval(refresh,5000);
+    refresh();setInterval(refresh,1000);
   </script>
 </body>
 </html>
