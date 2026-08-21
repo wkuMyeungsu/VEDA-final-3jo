@@ -4,6 +4,8 @@ import json
 import os
 import socket
 import subprocess
+import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +25,15 @@ DEFAULT_REFRESH_INTERVAL_SECONDS = 1
 DEFAULT_RECENT_LOG_LINES = 50
 MAX_LOG_TAIL_BYTES = 64 * 1024
 RUNTIME_STATUS_MAX_AGE_SECONDS = 3
+PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
+try:
+    CPU_TICKS_PER_SECOND = os.sysconf("SC_CLK_TCK")
+except (AttributeError, OSError, ValueError):
+    CPU_TICKS_PER_SECOND = 100
+_RESOURCE_SAMPLE_LOCK = threading.Lock()
+_RESOURCE_SAMPLES = {}
+_SERVICE_PID_CACHE = {}
+_SERVICE_PID_CACHE_TTL_SECONDS = 2
 
 
 def refresh_interval_seconds():
@@ -68,6 +79,139 @@ def tcp_reachable(host, port):
             return True
     except OSError:
         return False
+
+
+def service_main_pid(unit):
+    """Return a systemd unit's main PID without invoking a shell."""
+    now = time.monotonic()
+    cached = _SERVICE_PID_CACHE.get(unit)
+    if cached and now - cached["checked_at"] < _SERVICE_PID_CACHE_TTL_SECONDS:
+        return cached["pid"]
+    try:
+        result = subprocess.run(
+            [SYSTEMCTL, "show", unit, "--property=MainPID", "--value"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pid = None
+    else:
+        try:
+            value = int(result.stdout.strip())
+        except (TypeError, ValueError):
+            value = 0
+        pid = value if value > 0 else None
+    _SERVICE_PID_CACHE[unit] = {"checked_at": now, "pid": pid}
+    return pid
+
+
+def _read_process_stat(pid):
+    """Read process CPU ticks and start time from procfs."""
+    try:
+        value = (PROC_ROOT / str(pid) / "stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    closing_paren = value.rfind(")")
+    if closing_paren < 0:
+        return None
+    fields = value[closing_paren + 2 :].split()
+    # fields[0] is procfs field 3 (state); utime/stime are fields 14/15,
+    # starttime is field 22.
+    if len(fields) <= 19:
+        return None
+    try:
+        cpu_ticks = int(fields[11]) + int(fields[12])
+        starttime_ticks = int(fields[19])
+    except (TypeError, ValueError):
+        return None
+    return cpu_ticks, starttime_ticks
+
+
+def _read_process_rss_kb(pid):
+    try:
+        lines = (PROC_ROOT / str(pid) / "status").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if not line.startswith("VmRSS:"):
+            continue
+        parts = line.split()
+        try:
+            return int(parts[1])
+        except (IndexError, TypeError, ValueError):
+            return None
+    return None
+
+
+def process_resource(pid, sampled_at=None, sampled_utc=None):
+    """Return bounded CPU/RSS metrics for one process using procfs."""
+    if not pid or pid <= 0:
+        return {
+            "state": "inactive",
+            "pid": None,
+            "cpu_percent": None,
+            "memory_rss_kb": None,
+            "memory_rss_mb": None,
+            "sampled_utc": sampled_utc,
+        }
+    stat = _read_process_stat(pid)
+    rss_kb = _read_process_rss_kb(pid)
+    if stat is None or rss_kb is None:
+        with _RESOURCE_SAMPLE_LOCK:
+            _RESOURCE_SAMPLES.pop(pid, None)
+        return {
+            "state": "unavailable",
+            "pid": pid,
+            "cpu_percent": None,
+            "memory_rss_kb": None,
+            "memory_rss_mb": None,
+            "sampled_utc": sampled_utc,
+        }
+
+    now = sampled_at if sampled_at is not None else time.monotonic()
+    cpu_ticks, starttime_ticks = stat
+    cpu_percent = None
+    with _RESOURCE_SAMPLE_LOCK:
+        previous = _RESOURCE_SAMPLES.get(pid)
+        _RESOURCE_SAMPLES[pid] = {
+            "sampled_at": now,
+            "cpu_ticks": cpu_ticks,
+            "starttime_ticks": starttime_ticks,
+        }
+        if previous and previous["starttime_ticks"] == starttime_ticks:
+            elapsed = now - previous["sampled_at"]
+            if elapsed > 0 and CPU_TICKS_PER_SECOND > 0:
+                cpu_percent = max(
+                    0.0,
+                    (cpu_ticks - previous["cpu_ticks"])
+                    / CPU_TICKS_PER_SECOND
+                    / elapsed
+                    * 100.0,
+                )
+    return {
+        "state": "ok",
+        "pid": pid,
+        "cpu_percent": round(cpu_percent, 1) if cpu_percent is not None else None,
+        "memory_rss_kb": rss_kb,
+        "memory_rss_mb": round(rss_kb / 1024, 1),
+        "sampled_utc": sampled_utc,
+    }
+
+
+def resource_snapshot(safety_state):
+    """Collect lightweight metrics for the server's core application processes."""
+    sampled_at = time.monotonic()
+    sampled_utc = datetime.now(timezone.utc).isoformat()
+    safety_pid = service_main_pid("forklift_safety_server.service") if safety_state == "active" else None
+    homography_pid = service_main_pid("homography-app.service")
+    return {
+        "checked_utc": sampled_utc,
+        "safety_server": process_resource(safety_pid, sampled_at, sampled_utc),
+        "monitoring_app": process_resource(os.getpid(), sampled_at, sampled_utc),
+        "homography_app": process_resource(homography_pid, sampled_at, sampled_utc),
+    }
 
 
 def file_timestamp(path):
@@ -129,11 +273,13 @@ def status_snapshot():
     mqtt_ok = tcp_reachable(MQTT_HOST, MQTT_PORT)
     runtime_status = read_runtime_status(RUNTIME_STATUS)
     runtime_health = runtime_status_health(runtime_status)
+    resources = resource_snapshot(safety_state)
     return {
         "ok": safety_state == "active" and mqtt_ok and runtime_health["fresh"],
         "service": "monitoring-app",
         "monitoring": "online",
         "safety_server": {"state": safety_state},
+        "resources": resources,
         "mqtt": {
             "reachable": mqtt_ok,
             "host": MQTT_HOST,

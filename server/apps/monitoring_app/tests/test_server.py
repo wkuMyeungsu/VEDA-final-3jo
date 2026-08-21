@@ -36,7 +36,7 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
-        for label in ("서버 운영 콘솔", "안전 서버", "공통 운영 상태", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
+        for label in ("서버 운영 콘솔", "안전 서버", "공통 운영 상태", "핵심 앱 자원 사용량", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
             self.assertIn(label, page)
         self.assertIn(".status-value.good .status-dot", page)
         self.assertIn(".status-value.problem .status-dot", page)
@@ -57,13 +57,17 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn("sensorBypassed?'센서 제외 테스트'", page)
         self.assertIn("events.state_changes", page)
         self.assertIn("단말별 신선도 확인", page)
+        self.assertIn("resource-safety-cpu", page)
+        self.assertIn("resource-monitoring-memory", page)
+        self.assertIn("resource-homography-indicator", page)
+        self.assertIn("renderResources", page)
         self.assertNotIn("센서 수신 누적</h3>", page)
         self.assertNotIn("연결 단말</h3>", page)
         self.assertNotIn("status-label", page)
         self.assertNotIn("active:'O'", page)
         self.assertNotIn("inactive:'X'", page)
         self.assertNotIn("peopleField", page)
-        self.assertNotIn("호모그래피 앱", page)
+        self.assertNotIn("호모그래피 앱 열기", page)
         self.assertNotIn("유지보수 도구", page)
         self.assertNotIn("id='homography'", page)
 
@@ -113,7 +117,50 @@ class MonitoringStatusTests(unittest.TestCase):
             handler.log_message('%s %s %s', 'GET /missing', '404', '-')
         parent.assert_called_once_with('%s %s %s', 'GET /missing', '404', '-')
 
+    def test_process_resource_reads_cpu_and_rss_from_procfs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc_root = pathlib.Path(directory)
+            pid = 424242
+            process_dir = proc_root / str(pid)
+            process_dir.mkdir()
+            fields = ["S"] + ["0"] * 19
+            fields[11] = "100"
+            fields[12] = "50"
+            fields[19] = "777"
+            (process_dir / "stat").write_text(
+                f"{pid} (monitoring app) " + " ".join(fields),
+                encoding="utf-8",
+            )
+            (process_dir / "status").write_text("Name:\tmonitoring\nVmRSS:\t2048 kB\n", encoding="utf-8")
+            with mock.patch.object(SERVER, "PROC_ROOT", proc_root), \
+                 mock.patch.object(SERVER, "CPU_TICKS_PER_SECOND", 100):
+                first = SERVER.process_resource(pid, sampled_at=10.0, sampled_utc="t1")
+                self.assertIsNone(first["cpu_percent"])
+                self.assertEqual(first["memory_rss_mb"], 2.0)
+
+                fields[11] = "120"
+                fields[12] = "60"
+                (process_dir / "stat").write_text(
+                    f"{pid} (monitoring app) " + " ".join(fields),
+                    encoding="utf-8",
+                )
+                second = SERVER.process_resource(pid, sampled_at=11.0, sampled_utc="t2")
+                self.assertEqual(second["cpu_percent"], 30.0)
+                self.assertEqual(second["pid"], pid)
+
+    def test_resource_snapshot_collects_core_application_processes(self):
+        sample = {"state": "ok", "pid": 1, "cpu_percent": 1.0, "memory_rss_mb": 2.0}
+        with mock.patch.object(SERVER, "service_main_pid", side_effect=[321, None]), \
+             mock.patch.object(SERVER, "process_resource", side_effect=[sample, sample, sample]) as process:
+            value = SERVER.resource_snapshot("active")
+        self.assertIn("checked_utc", value)
+        self.assertEqual(value["safety_server"], sample)
+        self.assertEqual(value["monitoring_app"], sample)
+        self.assertEqual(value["homography_app"], sample)
+        self.assertEqual(process.call_count, 3)
+
     @mock.patch.object(SERVER, "file_timestamp", return_value="2026-08-21T00:00:00+00:00")
+    @mock.patch.object(SERVER, "resource_snapshot", return_value={})
     @mock.patch.object(SERVER, "tcp_reachable", return_value=True)
     @mock.patch.object(SERVER, "service_state")
     @mock.patch.object(
@@ -124,18 +171,21 @@ class MonitoringStatusTests(unittest.TestCase):
             "checked_utc": SERVER.datetime.now(SERVER.timezone.utc).isoformat(),
         },
     )
-    def test_ready_snapshot(self, _runtime, service_state, _tcp, _timestamp):
+    def test_ready_snapshot(self, _runtime, service_state, _tcp, _resources, _timestamp):
         service_state.return_value = "active"
         value = SERVER.status_snapshot()
         self.assertTrue(value["ok"])
         self.assertEqual(value["safety_server"]["state"], "active")
         self.assertNotIn("homography", value)
         self.assertTrue(value["runtime_status"]["fresh"])
+        self.assertIn("resources", value)
+        self.assertNotIn("homography", value)
 
     @mock.patch.object(SERVER, "file_timestamp", return_value=None)
+    @mock.patch.object(SERVER, "resource_snapshot", return_value={})
     @mock.patch.object(SERVER, "tcp_reachable", return_value=False)
     @mock.patch.object(SERVER, "service_state", return_value="inactive")
-    def test_not_ready_when_dependencies_are_down(self, _service, _tcp, _timestamp):
+    def test_not_ready_when_dependencies_are_down(self, _service, _tcp, _resources, _timestamp):
         value = SERVER.status_snapshot()
         self.assertFalse(value["ok"])
         self.assertFalse(value["mqtt"]["reachable"])
