@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import tempfile
 import unittest
 from unittest import mock
 
@@ -33,6 +34,28 @@ class MonitoringStatusTests(unittest.TestCase):
         )
         self.assertIn("window.setInterval(refresh,REFRESH_INTERVAL_MS);", page)
         self.assertNotIn("setInterval(refresh,1000)", page)
+        self.assertIn('<pre id="server-logs">확인 중</pre>', page)
+        self.assertIn("recentLines.join('\\n')", page)
+
+    def test_recent_logs_returns_only_the_requested_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "server.log"
+            path.write_text(
+                "\n".join(f"line-{index}" for index in range(5)) + "\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                SERVER.read_recent_logs(path, limit=3),
+                ["line-2", "line-3", "line-4"],
+            )
+
+    def test_recent_logs_returns_empty_for_missing_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(
+                SERVER.read_recent_logs(pathlib.Path(directory) / "missing.log"),
+                [],
+            )
 
     @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "2"})
     def test_index_uses_configured_refresh_interval(self):

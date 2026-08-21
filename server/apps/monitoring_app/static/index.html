@@ -10,6 +10,7 @@
     dl{display:grid;grid-template-columns:180px 1fr;gap:.7rem;margin:0}dt{font-weight:650}dd{margin:0}
     .active,.online{color:#18733b}.inactive,.failed,.offline{color:#b42318}.unknown{color:#806000}
     a{display:inline-block;padding:.7rem 1rem;background:#216eaa;color:#fff;border-radius:5px;text-decoration:none}
+    pre{margin:0;max-height:24rem;overflow:auto;padding:.8rem;border-radius:6px;background:#1b1f24;color:#e6edf3;white-space:pre-wrap;word-break:break-word;font:0.82rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
   </style>
 </head>
 <body data-refresh-interval-seconds="__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__">
@@ -26,6 +27,7 @@
       <dt>Last check</dt><dd id="checked">확인 중</dd>
     </dl>
   </section>
+  <section><h2>Recent server logs</h2><pre id="server-logs">확인 중</pre></section>
   <section><h2>Maintenance tool</h2><a id="homography" href="#">Open Homography App</a></section>
   <script>
     const MILLISECONDS_PER_SECOND = 1000;
@@ -42,12 +44,16 @@
         setState('mqtt',value.mqtt.reachable?'online':'offline');
         setState('homography-state',value.homography.state);
         document.getElementById('server-log').textContent=value.server_log.modified_utc||'기록 없음';
+        const recentLines = value.server_log.recent_lines||[];
+        document.getElementById('server-logs').textContent=recentLines.length
+          ? recentLines.join('\n')
+          : '기록 없음';
         const snapshot=value.runtime_status&&value.runtime_status.snapshot;
         document.getElementById('runtime-status').textContent=snapshot
           ? `${snapshot.state||'unknown'} / queue drop ${snapshot.queue?.dropped??'?'}`
           : '기록 없음';
         document.getElementById('checked').textContent=value.checked_utc;
-      }catch(error){setState('safety','unknown');setState('mqtt','unknown');setState('homography-state','unknown');document.getElementById('runtime-status').textContent='확인 실패'}
+      }catch(error){setState('safety','unknown');setState('mqtt','unknown');setState('homography-state','unknown');document.getElementById('runtime-status').textContent='확인 실패';document.getElementById('server-logs').textContent='확인 실패'}
     }
     document.getElementById('homography').href='http://'+location.hostname+':8001';
     refresh();window.setInterval(refresh,REFRESH_INTERVAL_MS);

@@ -20,6 +20,8 @@ SERVER_LOG = Path(os.environ.get(
 RUNTIME_STATUS = Path(os.environ.get(
     "SERVER_MONITORING_STATUS", "/var/log/forklift_safety/runtime/runtime-status.json"))
 DEFAULT_REFRESH_INTERVAL_SECONDS = 1
+DEFAULT_RECENT_LOG_LINES = 50
+MAX_LOG_TAIL_BYTES = 64 * 1024
 
 
 def refresh_interval_seconds():
@@ -84,6 +86,24 @@ def read_runtime_status(path):
     return value if isinstance(value, dict) else None
 
 
+def read_recent_logs(path, limit=DEFAULT_RECENT_LOG_LINES):
+    """Read a bounded tail of the server log without scanning the whole file."""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            end_offset = handle.tell()
+            start_offset = max(0, end_offset - MAX_LOG_TAIL_BYTES)
+            handle.seek(start_offset)
+            content = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+
+    lines = content.splitlines()
+    if start_offset > 0 and lines:
+        lines = lines[1:]
+    return lines[-limit:]
+
+
 def status_snapshot():
     safety_state = service_state("forklift_safety_server.service")
     homography_state = service_state("homography-app.service")
@@ -106,6 +126,7 @@ def status_snapshot():
         "server_log": {
             "path": str(SERVER_LOG),
             "modified_utc": file_timestamp(SERVER_LOG),
+            "recent_lines": read_recent_logs(SERVER_LOG),
         },
         "runtime_status": {
             "path": str(RUNTIME_STATUS),
