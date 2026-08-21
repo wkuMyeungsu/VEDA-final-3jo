@@ -191,7 +191,8 @@
         const sensorHealthy=sensor.has_sample===true&&sensor.stale===false;
         const outputHealthy=terminal.risk_link==='connected'&&Number(terminal.risk_send_failures||0)===0&&Number(terminal.risk_queue_dropped||0)===0;
         const hasRisk=risk.has_result===true;
-        const cardKind=!sensor.has_sample||!hasRisk?'unknown':sensorHealthy&&outputHealthy?'good':'problem';
+        const hasException=hasRisk&&risk.exception&&risk.exception!=='NONE';
+        const cardKind=!sensor.has_sample||!hasRisk?'unknown':sensorHealthy&&outputHealthy&&!hasException?'good':'problem';
         const card=document.createElement('article');
         card.className='terminal-card';
         const header=document.createElement('header');
@@ -202,7 +203,7 @@
         const dot=document.createElement('span');
         dot.className=`status-dot ${cardKind}`;
         dot.setAttribute('aria-hidden','true');
-        const stateText=!sensor.has_sample?'센서 수신 없음':!hasRisk?'판정 대기':sensorHealthy&&outputHealthy?'운영 정상':'확인 필요';
+        const stateText=!sensor.has_sample?'센서 수신 없음':!hasRisk?'판정 대기':hasException?`예외 · ${exceptionLabel(risk.exception)}`:sensorHealthy&&outputHealthy?'운영 정상':'확인 필요';
         state.append(dot,document.createTextNode(stateText));
         header.append(title,state);
         const fields=document.createElement('div');
@@ -237,6 +238,7 @@
         const sensor=terminal.sensor||{};
         const risk=terminal.risk||{};
         return sensor.has_sample===true&&sensor.stale===false&&risk.has_result===true
+          &&(!risk.exception||risk.exception==='NONE')
           &&terminal.risk_link==='connected'
           &&Number(terminal.risk_send_failures||0)===0
           &&Number(terminal.risk_queue_dropped||0)===0;
