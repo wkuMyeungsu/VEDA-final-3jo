@@ -149,7 +149,6 @@ struct TerminalContext;
 // TERM 하나의 상태. 마커·센서·판정 히스테리시스·결과 발행기를 TERM별로 분리한다.
 struct TerminalContext {
     forklift::config::ForkliftDevice device;
-    StubSensorReader stub_sensor;
     NetworkSensorReader sensor_reader;
     forklift::logic::SafetyFramePipeline pipeline;
     risk_transport::ResultPublisher publisher;
@@ -157,11 +156,11 @@ struct TerminalContext {
 
     TerminalContext(forklift::config::SafetyServerConfig config,
                     forklift::config::ForkliftDevice forklift,
-                    risk_transport::SensorUplinkReceiver& receiver)
+                    risk_transport::SensorUplinkReceiver& receiver,
+                    bool ignore_sensor_input)
         : device(std::move(forklift)),
-          stub_sensor(config.sensor.stub_tof_distance_mm),
           sensor_reader(receiver, device.terminal_id, config.sensor.stale_timeout_ms),
-          pipeline(config, device, sensor_reader),
+          pipeline(config, device, sensor_reader, ignore_sensor_input),
           publisher(device.terminal_id, config.network.mqtt_host, config.network.mqtt_port,
                     risk_transport::MqttTlsOptions{config.network.tls_enabled, config.network.ca_cert_path,
                                                    config.network.client_cert_path, config.network.client_key_path},
@@ -173,8 +172,9 @@ struct TerminalContext {
 // 중앙 서버. RTSP worker는 여기로 프레임만 넣고, 위험 판정은 이 클래스의 한 스레드에서만 한다.
 class CentralServer {
 public:
-    explicit CentralServer(forklift::config::SafetyServerConfig config)
+    CentralServer(forklift::config::SafetyServerConfig config, bool ignore_sensor_input)
         : config_(std::move(config)),
+          ignore_sensor_input_(ignore_sensor_input),
           sensor_receiver_(configuredTerminalIds(config_.forklifts),
                            config_.network.mqtt_host, config_.network.mqtt_port,
                            tlsOptions()),
@@ -235,6 +235,7 @@ private:
     void process(const MetadataEvent& event);
 
     forklift::config::SafetyServerConfig config_;
+    bool ignore_sensor_input_;
     risk_transport::SensorUplinkReceiver sensor_receiver_;
     risk_transport::ResultPublisher server_status_;
     risk_transport::AssignmentPublisher assignment_publisher_;
@@ -252,7 +253,7 @@ private:
 
 std::unique_ptr<TerminalContext> CentralServer::makeTerminal(
     const forklift::config::ForkliftDevice& device) {
-    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_);
+    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_, ignore_sensor_input_);
 }
 
 void CentralServer::process(const MetadataEvent& event) {
@@ -299,6 +300,7 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
     json << "{\n"
          << "  \"schema_version\": 1,\n"
          << "  \"state\": " << jsonString(state) << ",\n"
+         << "  \"sensor_mode\": " << jsonString(ignore_sensor_input_ ? "disabled" : "network") << ",\n"
          << "  \"server_run_id\": " << jsonString(forklift::logging::Logger::instance().runId()) << ",\n"
          << "  \"checked_utc\": " << jsonString(nowIso8601Ms()) << ",\n"
          << "  \"queue\": {\"depth\": " << events_.size()
@@ -620,7 +622,11 @@ struct CentralServer::StreamWorker {
 CentralServer::~CentralServer() { stop(); }
 
 void CentralServer::start() {
-    sensor_receiver_.start();
+    if (ignore_sensor_input_) {
+        LOG_WARN("SENSOR", "센서 제외 테스트 모드 활성화 (센서 입력을 위험 판정에서 사용하지 않음)");
+    } else {
+        sensor_receiver_.start();
+    }
     server_status_.start();
     assignment_publisher_.start();
     event_logger_.start();
@@ -675,7 +681,7 @@ void CentralServer::stop() {
     for (auto& terminal : terminals_) terminal->publisher.stop();
     assignment_publisher_.stop();
     server_status_.stop();
-    sensor_receiver_.stop();
+    if (!ignore_sensor_input_) sensor_receiver_.stop();
     event_logger_.stop();
     if (config_.output_storage.enable_raw_csv_logging) {
         latency_logger_.stop();
@@ -690,6 +696,7 @@ int main(int argc, char* argv[]) {
     std::string config_dir = forklift::config::resolveConfigDirectory();
     std::string common_config_dir;
     bool enable_debug_csv_flag = false;
+    bool ignore_sensor_input = false;
     for (int index = 1; index < argc; ++index) {
         const std::string option = argv[index];
         if (option == "--config-dir" && index + 1 < argc) {
@@ -698,17 +705,21 @@ int main(int argc, char* argv[]) {
             common_config_dir = argv[++index];
         } else if (option == "--enable-debug-csv" || option == "--debug") {
             enable_debug_csv_flag = true;
+        } else if (option == "--no-sensor") {
+            ignore_sensor_input = true;
         } else if (option == "--help" || option == "-h") {
             std::cout << "사용법: " << argv[0] << " [옵션]\n\n"
                       << "옵션:\n"
                       << "  --config-dir PATH         안전 설정 디렉터리 경로 (기본값: 자동 감지)\n"
                       << "  --common-config-dir PATH  공통 설정 디렉터리 경로 (기본값: 자동 감지)\n"
                       << "  --debug, --enable-debug-csv 디버그 원시 CSV 로깅 활성화\n"
+                      << "  --no-sensor               센서 입력을 위험 판정에서 제외 (테스트 전용)\n"
                       << "  --help, -h                도움말 출력\n";
             return 0;
         } else {
             std::cerr << "사용법: " << argv[0]
-                      << " [--config-dir PATH] [--common-config-dir PATH] [--debug] [--help]\n";
+                      << " [--config-dir PATH] [--common-config-dir PATH] [--debug]"
+                      << " [--no-sensor] [--help]\n";
             return 1;
         }
     }
@@ -749,7 +760,7 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
-    CentralServer server(std::move(config));
+    CentralServer server(std::move(config), ignore_sensor_input);
     server.start();
     server.startWorkers();
     LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (CCTV 스트림: " +

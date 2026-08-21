@@ -63,9 +63,12 @@ JudgmentPipeline::JudgmentPipeline(
     const std::string& terminal_id, ISensorReader& sensors,
     const forklift::config::DangerJudgmentConfig& judgment_config,
     double collision_radius_mm,
-    std::chrono::milliseconds dead_reckoning_release_grace)
+    std::chrono::milliseconds dead_reckoning_release_grace,
+    bool ignore_sensor_input)
     : terminal_id_(terminal_id), sensors_(&sensors),
-      engine_(judgment_config, collision_radius_mm, dead_reckoning_release_grace) {}
+      ignore_sensor_input_(ignore_sensor_input),
+      engine_(judgment_config, collision_radius_mm, dead_reckoning_release_grace,
+              ignore_sensor_input) {}
 
 void JudgmentPipeline::setActiveStream(const std::string& stream_id,
                                        const std::string& camera_id,
@@ -132,7 +135,10 @@ PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
     PipelineOutput out;
 
     const CameraInput cam = toCameraInput(forklift, forklift_localized, nearest);
-    const SensorInput sen = sensors_->read();
+    SensorInput sen;
+    if (!ignore_sensor_input_) {
+        sen = sensors_->read();
+    }
 
     // t1_judge_in: 판정 연산(engine_.evaluate) 시작 직전.
     const auto t1 = LatencyStamps::Clock::now();

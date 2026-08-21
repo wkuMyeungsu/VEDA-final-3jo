@@ -29,7 +29,8 @@ public:
 
     SafetyFramePipeline(const config::SafetyServerConfig& config,
                         const config::ForkliftDevice& device,
-                        ISensorReader& sensors);
+                        ISensorReader& sensors,
+                        bool ignore_sensor_input = false);
 
     // 설정된 지게차 marker_id가 연속 검출돼 활성 stream이 바뀐 순간에만
     // 새 stream_id를 반환한다.
