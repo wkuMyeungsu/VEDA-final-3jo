@@ -5,98 +5,261 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>서버 운영 콘솔</title>
   <style>
-    body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#20252b;background:#f6f7f9}
-    section{background:#fff;border:1px solid #dfe3e8;border-radius:10px;padding:1.2rem;margin:1rem 0}
-    dl{display:grid;grid-template-columns:180px 1fr;gap:.7rem;margin:0}dt{font-weight:650}dd{margin:0}
-    .status-value{display:inline-flex;align-items:center;gap:.45rem;font-weight:650}
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#20252b;background:#f4f6f8}
+    *{box-sizing:border-box}
+    body{max-width:1100px;margin:0 auto;padding:1.5rem 1rem 3rem}
+    h1,h2,h3,p{margin:0}
+    .topbar{display:flex;justify-content:space-between;gap:1.5rem;align-items:flex-start;margin-bottom:1rem}
+    .eyebrow{color:#667085;font-size:.75rem;font-weight:750;letter-spacing:.08em;margin-bottom:.35rem}
+    h1{font-size:clamp(1.5rem,3vw,2rem);letter-spacing:-.03em}
+    .subtitle{color:#667085;margin-top:.45rem}
+    .overall-status{display:flex;align-items:center;gap:.7rem;min-width:13rem;padding:.8rem 1rem;background:#fff;border:1px solid #dfe3e8;border-radius:10px;box-shadow:0 2px 8px rgba(16,24,40,.04)}
+    .overall-status strong{display:block;font-size:1rem}
+    .overall-status small{display:block;color:#667085;margin-top:.2rem}
+    .panel{background:#fff;border:1px solid #dfe3e8;border-radius:12px;padding:1.2rem;margin:1rem 0;box-shadow:0 2px 8px rgba(16,24,40,.03)}
+    .section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;margin-bottom:.9rem}
+    .section-heading h2{font-size:1.05rem}
+    .section-meta{color:#667085;font-size:.8rem}
+    .status-legend{display:flex;flex-wrap:wrap;gap:.8rem 1.2rem;color:#667085;font-size:.8rem;margin-bottom:1rem}
+    .legend-item{display:inline-flex;align-items:center;gap:.4rem}
+    .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem}
+    .status-card{border:1px solid #eaecf0;border-radius:9px;padding:1rem;background:#fcfcfd}
+    .status-card header,.metric-heading{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+    .status-card h3,.metric-card h3{font-size:.9rem}
+    .status-detail{color:#667085;font-size:.85rem;margin-top:.65rem;min-height:1.3rem}
+    .status-value{display:inline-flex;align-items:center;justify-content:center;width:1.2rem;height:1.2rem}
     .status-dot{display:inline-block;width:.72rem;height:.72rem;border-radius:50%;background:#98a2b3;box-shadow:0 0 0 3px rgba(152,162,179,.18)}
-    .status-value.active,.status-value.online{color:#18733b}.status-value.active .status-dot,.status-value.online .status-dot{background:#12b76a;box-shadow:0 0 0 3px rgba(18,183,106,.18)}
-    .status-value.inactive,.status-value.failed,.status-value.offline{color:#b42318}.status-value.inactive .status-dot,.status-value.failed .status-dot,.status-value.offline .status-dot{background:#f04438;box-shadow:0 0 0 3px rgba(240,68,56,.18)}
-    .status-value.unknown{color:#806000}.status-value.unknown .status-dot{background:#fdb022;box-shadow:0 0 0 3px rgba(253,176,34,.18)}
-    a{display:inline-block;padding:.7rem 1rem;background:#216eaa;color:#fff;border-radius:5px;text-decoration:none}
-    pre{margin:0;max-height:24rem;overflow:auto;padding:.8rem;border-radius:6px;background:#1b1f24;color:#e6edf3;white-space:pre-wrap;word-break:break-word;font:0.82rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
+    .status-dot.good,.status-value.good .status-dot{background:#12b76a;box-shadow:0 0 0 3px rgba(18,183,106,.18)}
+    .status-dot.problem,.status-value.problem .status-dot{background:#f04438;box-shadow:0 0 0 3px rgba(240,68,56,.18)}
+    .status-dot.standby,.status-value.standby .status-dot{background:#98a2b3;box-shadow:0 0 0 3px rgba(152,162,179,.18)}
+    .status-dot.unknown,.status-value.unknown .status-dot{background:#fdb022;box-shadow:0 0 0 3px rgba(253,176,34,.18)}
+    .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem}
+    .metric-card{border:1px solid #eaecf0;border-radius:9px;padding:1rem;background:#fcfcfd;min-height:8rem}
+    .metric-value{display:flex;align-items:baseline;gap:.4rem;margin-top:.75rem}
+    .metric-value strong{font-size:1.55rem;letter-spacing:-.04em}
+    .metric-value span{color:#667085;font-size:.8rem}
+    .metric-detail{color:#667085;font-size:.78rem;line-height:1.45;margin-top:.45rem}
+    .terminal-list{display:grid;gap:.5rem;margin-top:.8rem}
+    .terminal-row{display:flex;align-items:center;gap:.55rem;color:#475467;font-size:.82rem}
+    .terminal-row .status-dot{flex:0 0 auto}
+    .log-meta{color:#667085;font-size:.8rem}
+    pre{margin:0;max-height:26rem;overflow:auto;padding:.9rem;border-radius:8px;background:#1b1f24;color:#e6edf3;white-space:pre-wrap;word-break:break-word;font:.8rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+    .maintenance{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+    .maintenance p{color:#667085;font-size:.85rem;margin-top:.35rem}
+    a{display:inline-block;padding:.7rem 1rem;background:#216eaa;color:#fff;border-radius:6px;text-decoration:none;font-weight:650;white-space:nowrap}
+    @media (max-width:760px){.topbar{display:block}.overall-status{margin-top:1rem}.status-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.maintenance{display:block}.maintenance a{margin-top:.8rem}}
+    @media (max-width:450px){.metric-grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body data-refresh-interval-seconds="__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__">
-  <h1>서버 운영 콘솔</h1>
-  <p id="refresh-note">읽기 전용 운영 상태입니다.</p>
-  <section>
-    <h2>실행 상태</h2>
-    <dl>
-      <dt>안전 서버</dt><dd id="safety">확인 중</dd>
-      <dt>MQTT TLS</dt><dd id="mqtt">확인 중</dd>
-      <dt>호모그래피 앱</dt><dd id="homography-state">확인 중</dd>
-      <dt>서버 로그 마지막 기록</dt><dd id="server-log">확인 중</dd>
-      <dt>런타임 상태</dt><dd id="runtime-status">확인 중</dd>
-      <dt>마지막 확인</dt><dd id="checked">확인 중</dd>
-    </dl>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">FORKLIFT SAFETY</p>
+      <h1>서버 운영 콘솔</h1>
+      <p id="refresh-note" class="subtitle">안전 서버와 노드 통신 상태를 한눈에 확인합니다. · 갱신 주기 확인 중</p>
+    </div>
+    <div class="overall-status">
+      <span id="overall-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span>
+      <span><strong id="overall-label">확인 중</strong><small id="overall-detail">상태를 확인하고 있습니다.</small></span>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="section-heading"><h2>핵심 상태</h2><span class="section-meta">마지막 확인: <span id="checked">확인 중</span></span></div>
+    <div class="status-legend" aria-label="상태 표시 기준">
+      <span class="legend-item"><span class="status-dot good" aria-hidden="true"></span>정상</span>
+      <span class="legend-item"><span class="status-dot standby" aria-hidden="true"></span>대기</span>
+      <span class="legend-item"><span class="status-dot problem" aria-hidden="true"></span>문제</span>
+      <span class="legend-item"><span class="status-dot unknown" aria-hidden="true"></span>확인 필요</span>
+    </div>
+    <div class="status-grid">
+      <article class="status-card"><header><h3>안전 서버</h3><span id="safety-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><p id="safety-detail" class="status-detail">확인 중</p></article>
+      <article class="status-card"><header><h3>MQTT TLS</h3><span id="mqtt-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><p id="mqtt-detail" class="status-detail">확인 중</p></article>
+      <article class="status-card"><header><h3>호모그래피 앱</h3><span id="homography-indicator" class="status-value standby"><span class="status-dot standby"></span></span></header><p id="homography-detail" class="status-detail">필요할 때만 실행</p></article>
+    </div>
   </section>
-  <section><h2>최근 서버 로그</h2><pre id="server-logs">확인 중</pre></section>
-  <section><h2>유지보수 도구</h2><a id="homography" href="#">호모그래피 앱 열기</a></section>
+
+  <section class="panel">
+    <div class="section-heading"><h2>처리 지표</h2><span id="server-run-id" class="section-meta">실행 ID 확인 중</span></div>
+    <div class="metric-grid">
+      <article class="metric-card"><div class="metric-heading"><h3>센서 수신</h3><span id="sensor-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="sensor-received">—</strong><span>건</span></div><p id="sensor-detail" class="metric-detail">연결 상태 확인 중</p></article>
+      <article class="metric-card"><div class="metric-heading"><h3>처리 대기열</h3><span id="queue-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="queue-depth">—</strong><span>/ <span id="queue-capacity">—</span></span></div><p id="queue-detail" class="metric-detail">대기 중 / 최대 용량 · 버린 메시지 확인 중</p></article>
+      <article class="metric-card"><div class="metric-heading"><h3>이벤트 저장</h3><span id="storage-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="events-written">—</strong><span>건 기록</span></div><p id="storage-detail" class="metric-detail">저장 오류 확인 중</p></article>
+      <article class="metric-card"><div class="metric-heading"><h3>연결 단말</h3><span id="terminal-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div id="terminal-metrics" class="terminal-list">확인 중</div></article>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading"><h2>최근 서버 로그</h2><span class="log-meta">최종 기록 <span id="server-log-time">확인 중</span> · <span id="log-count">최근 50줄</span></span></div>
+    <pre id="server-logs">확인 중</pre>
+  </section>
+
+  <section class="panel maintenance"><div><h2>유지보수 도구</h2><p>호모그래피 작업이 필요할 때만 실행합니다.</p></div><a id="homography" href="#">호모그래피 앱 열기</a></section>
+
   <script>
     const MILLISECONDS_PER_SECOND = 1000;
     const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
     const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
-    const STATUS_LABELS = Object.freeze({active:'실행 중',online:'연결됨',inactive:'중지됨',offline:'연결 끊김',failed:'실패',unknown:'확인 불가'});
-    document.getElementById('refresh-note').textContent =
-      `읽기 전용 운영 상태입니다. ${REFRESH_INTERVAL_SECONDS}초마다 갱신됩니다.`;
-    const setState=(id,value)=>{
+    const numberFormat = new Intl.NumberFormat('ko-KR');
+
+    const setText=(id,value)=>{document.getElementById(id).textContent=value};
+    setText('refresh-note',`안전 서버와 노드 통신 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신`);
+    const setIndicator=(id,kind,label)=>{
       const node=document.getElementById(id);
-      const state=String(value||'unknown').toLowerCase();
       const dot=document.createElement('span');
-      dot.className='status-dot';
+      dot.className=`status-dot ${kind}`;
       dot.setAttribute('aria-hidden','true');
       node.replaceChildren(dot);
-      node.className=`status-value ${state}`;
-      node.title=STATUS_LABELS[state]||'확인 불가';
-      node.setAttribute('aria-label',STATUS_LABELS[state]||'확인 불가');
+      node.className=`status-value ${kind}`;
+      node.title=label;
+      node.setAttribute('aria-label',label);
     };
+    const setOverall=(kind,label,detail)=>{
+      setIndicator('overall-indicator',kind,label);
+      setText('overall-label',label);
+      setText('overall-detail',detail);
+    };
+    const formatNumber=(value)=>Number.isFinite(Number(value))?numberFormat.format(Number(value)):'—';
     const formatTimestamp=(value)=>{
       if(!value)return '기록 없음';
       const date=new Date(value);
       if(Number.isNaN(date.getTime()))return value;
       return new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeStyle:'medium',timeZone:'Asia/Seoul'}).format(date);
     };
+    const setUnknownState=()=>{
+      setOverall('unknown','확인 필요','상태를 확인할 수 없습니다.');
+      setIndicator('safety-indicator','unknown','안전 서버 상태 확인 필요');
+      setIndicator('mqtt-indicator','unknown','MQTT 연결 상태 확인 필요');
+      setIndicator('homography-indicator','unknown','호모그래피 앱 상태 확인 필요');
+      setIndicator('sensor-indicator','unknown','센서 상태 확인 필요');
+      setIndicator('queue-indicator','unknown','처리 대기열 상태 확인 필요');
+      setIndicator('storage-indicator','unknown','저장소 상태 확인 필요');
+      setIndicator('terminal-indicator','unknown','단말 상태 확인 필요');
+    };
+
     async function refresh(){
       try{
         const response=await fetch('/api/status',{cache:'no-store'});
         const value=await response.json();
-        setState('safety',value.safety_server.state);
-        setState('mqtt',value.mqtt.reachable?'online':'offline');
-        setState('homography-state',value.homography.state);
-        const serverLogTime=value.server_log.modified_utc||'';
-        const serverLogNode=document.getElementById('server-log');
-        serverLogNode.textContent=formatTimestamp(serverLogTime);
-        serverLogNode.title=serverLogTime;
-        const recentLines = value.server_log.recent_lines||[];
-        document.getElementById('server-logs').textContent=recentLines.length
-          ? recentLines.join('\n')
-          : '기록 없음';
-        const snapshot=value.runtime_status&&value.runtime_status.snapshot;
-        const runtimeNode=document.getElementById('runtime-status');
-        if(snapshot){
-          setState('runtime-status',snapshot.state);
-          runtimeNode.append(document.createTextNode(` · 대기열에서 버린 메시지 ${snapshot.queue?.dropped??'?'}건`));
+        const safetyState=value.safety_server?.state||'unknown';
+        const mqttReachable=value.mqtt?.reachable;
+        const homographyState=value.homography?.state||'unknown';
+        const homographyOnDemand=value.homography?.lifecycle==='on-demand';
+
+        if(value.ok===true)setOverall('good','정상','안전 서버와 MQTT 연결이 정상입니다.');
+        else if(safetyState==='unknown'||typeof mqttReachable!=='boolean')setOverall('unknown','확인 필요','안전 서버 상태를 확인하세요.');
+        else setOverall('problem','문제','안전 서버 또는 MQTT 연결을 확인하세요.');
+
+        if(safetyState==='active'){
+          setIndicator('safety-indicator','good','안전 서버 실행 중');
+          setText('safety-detail','실행 중');
+        }else if(safetyState==='inactive'){
+          setIndicator('safety-indicator','problem','안전 서버 중지됨');
+          setText('safety-detail','중지됨');
         }else{
-          runtimeNode.textContent='기록 없음';
-          runtimeNode.className='status-value';
-          runtimeNode.removeAttribute('title');
-          runtimeNode.removeAttribute('aria-label');
+          setIndicator('safety-indicator','unknown','안전 서버 상태 확인 필요');
+          setText('safety-detail','상태 확인 필요');
         }
+
+        if(mqttReachable===true){
+          setIndicator('mqtt-indicator','good','MQTT 브로커 연결됨');
+          setText('mqtt-detail',`연결됨 · ${value.mqtt.host}:${value.mqtt.port}`);
+        }else if(mqttReachable===false){
+          setIndicator('mqtt-indicator','problem','MQTT 브로커 연결 끊김');
+          setText('mqtt-detail',`연결 끊김 · ${value.mqtt.host}:${value.mqtt.port}`);
+        }else{
+          setIndicator('mqtt-indicator','unknown','MQTT 연결 상태 확인 필요');
+          setText('mqtt-detail','상태 확인 필요');
+        }
+
+        if(homographyState==='active'){
+          setIndicator('homography-indicator','good','호모그래피 앱 실행 중');
+          setText('homography-detail','실행 중');
+        }else if(homographyState==='inactive'&&homographyOnDemand){
+          setIndicator('homography-indicator','standby','호모그래피 앱 대기 중');
+          setText('homography-detail','대기 중 · 필요할 때만 실행');
+        }else if(homographyState==='inactive'){
+          setIndicator('homography-indicator','problem','호모그래피 앱 중지됨');
+          setText('homography-detail','중지됨');
+        }else{
+          setIndicator('homography-indicator','unknown','호모그래피 앱 상태 확인 필요');
+          setText('homography-detail','상태 확인 필요');
+        }
+
+        const serverLog=value.server_log||{};
+        const serverLogTime=serverLog.modified_utc||'';
+        const serverLogNode=document.getElementById('server-log-time');
+        if(serverLogNode){serverLogNode.textContent=formatTimestamp(serverLogTime);serverLogNode.title=serverLogTime}
+        const recentLines=serverLog.recent_lines||[];
+        setText('server-logs',recentLines.length?recentLines.join('\n'):'기록 없음');
+        setText('log-count',`최근 ${recentLines.length}줄`);
+
+        const snapshot=value.runtime_status?.snapshot;
+        if(snapshot){
+          setText('server-run-id',`실행 ID: ${snapshot.server_run_id||'확인 불가'}`);
+          const sensor=snapshot.sensor||{};
+          const sensorConnected=sensor.connected===true;
+          setIndicator('sensor-indicator',sensorConnected?'good':sensor.connected===false?'problem':'unknown',sensorConnected?'센서 연결됨':sensor.connected===false?'센서 연결 끊김':'센서 상태 확인 필요');
+          setText('sensor-received',formatNumber(sensor.received));
+          setText('sensor-detail',`수신 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건`);
+
+          const queue=snapshot.queue||{};
+          const queueDropped=Number(queue.dropped)||0;
+          setIndicator('queue-indicator',queueDropped===0?'good':'problem',queueDropped===0?'대기열 손실 없음':`대기열 손실 ${formatNumber(queueDropped)}건`);
+          setText('queue-depth',formatNumber(queue.depth));
+          setText('queue-capacity',formatNumber(queue.capacity));
+          setText('queue-detail',`현재 / 최대 · 대기열에서 버린 메시지 ${formatNumber(queueDropped)}건`);
+
+          const storage=snapshot.storage||{};
+          const storageFailures=(Number(storage.events_write_failures)||0)+(Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0);
+          setIndicator('storage-indicator',storageFailures===0?'good':'problem',storageFailures===0?'저장 정상':`저장 문제 ${formatNumber(storageFailures)}건`);
+          setText('events-written',formatNumber(storage.events_written));
+          setText('storage-detail',`쓰기 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber((Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0))}건`);
+
+          const terminals=snapshot.terminals||[];
+          const connectedTerminals=terminals.filter((terminal)=>terminal.risk_link==='connected').length;
+          setIndicator('terminal-indicator',terminals.length===0?'unknown':connectedTerminals===terminals.length?'good':'problem',terminals.length===0?'등록 단말 없음':`${connectedTerminals}/${terminals.length}대 연결됨`);
+          const terminalNode=document.getElementById('terminal-metrics');
+          terminalNode.replaceChildren();
+          if(terminals.length===0){terminalNode.textContent='등록된 단말이 없습니다.'}
+          else terminals.forEach((terminal)=>{
+            const row=document.createElement('div');
+            row.className='terminal-row';
+            const dot=document.createElement('span');
+            dot.className=`status-dot ${terminal.risk_link==='connected'?'good':'problem'}`;
+            dot.setAttribute('aria-hidden','true');
+            row.append(dot,document.createTextNode(`${terminal.terminal_id||'알 수 없는 단말'} · 위험 전송 ${terminal.risk_link==='connected'?'연결됨':'끊김'} · 실패 ${formatNumber(terminal.risk_send_failures)}건`));
+            terminalNode.append(row);
+          });
+        }else{
+          setText('server-run-id','실행 정보 없음');
+          setText('sensor-received','—');
+          setText('sensor-detail','실행 정보 없음');
+          setText('queue-depth','—');
+          setText('queue-capacity','—');
+          setText('queue-detail','실행 정보 없음');
+          setText('events-written','—');
+          setText('storage-detail','실행 정보 없음');
+          setText('terminal-metrics','실행 정보 없음');
+          ['sensor-indicator','queue-indicator','storage-indicator','terminal-indicator'].forEach((id)=>setIndicator(id,'unknown','실행 정보 확인 필요'));
+        }
+
         const checkedNode=document.getElementById('checked');
         checkedNode.textContent=formatTimestamp(value.checked_utc);
         checkedNode.title=value.checked_utc||'';
       }catch(error){
-        setState('safety','unknown');
-        setState('mqtt','unknown');
-        setState('homography-state','unknown');
-        setState('runtime-status','unknown');
-        document.getElementById('runtime-status').append(document.createTextNode(' · 확인 실패'));
-        document.getElementById('server-logs').textContent='확인 실패';
+        setUnknownState();
+        setText('safety-detail','확인 실패');
+        setText('mqtt-detail','확인 실패');
+        setText('homography-detail','확인 실패');
+        setText('server-logs','확인 실패');
+        setText('log-count','확인 실패');
       }
     }
+
     document.getElementById('homography').href='http://'+location.hostname+':8001';
-    refresh();window.setInterval(refresh,REFRESH_INTERVAL_MS);
+    refresh();
+    window.setInterval(refresh,REFRESH_INTERVAL_MS);
   </script>
 </body>
 </html>
