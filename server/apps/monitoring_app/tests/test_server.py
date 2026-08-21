@@ -36,7 +36,7 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
-        for label in ("서버 운영 콘솔", "안전 서버", "호모그래피 앱", "공통 운영 상태", "단말별 운영 상태", "최근 서버 로그", "유지보수 도구"):
+        for label in ("서버 운영 콘솔", "안전 서버", "공통 운영 상태", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
             self.assertIn(label, page)
         self.assertIn(".status-value.good .status-dot", page)
         self.assertIn(".status-value.problem .status-dot", page)
@@ -47,6 +47,8 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn("terminal.sensor", page)
         self.assertIn("terminal.risk", page)
         self.assertIn("terminal.localization", page)
+        self.assertIn("terminal.people", page)
+        self.assertIn("peopleTracks.forEach", page)
         self.assertIn("MARKER_NOT_DETECTED:'마커 미검출'", page)
         self.assertIn("지게차 위치", page)
         self.assertIn("설정 ID는 이번 실행에서 검출되지 않음", page)
@@ -58,6 +60,9 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("status-label", page)
         self.assertNotIn("active:'O'", page)
         self.assertNotIn("inactive:'X'", page)
+        self.assertNotIn("호모그래피 앱", page)
+        self.assertNotIn("유지보수 도구", page)
+        self.assertNotIn("id='homography'", page)
 
     def test_recent_logs_returns_only_the_requested_tail(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -117,12 +122,11 @@ class MonitoringStatusTests(unittest.TestCase):
         },
     )
     def test_ready_snapshot(self, _runtime, service_state, _tcp, _timestamp):
-        service_state.side_effect = ["active", "inactive"]
+        service_state.return_value = "active"
         value = SERVER.status_snapshot()
         self.assertTrue(value["ok"])
         self.assertEqual(value["safety_server"]["state"], "active")
-        self.assertEqual(value["homography"]["state"], "inactive")
-        self.assertEqual(value["homography"]["lifecycle"], "on-demand")
+        self.assertNotIn("homography", value)
         self.assertTrue(value["runtime_status"]["fresh"])
 
     @mock.patch.object(SERVER, "file_timestamp", return_value=None)

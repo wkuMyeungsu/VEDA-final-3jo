@@ -273,6 +273,13 @@ int main() {
     const auto otherStreamOutput = pipeline.processObjectFrame(otherStreamObjects, 0.5);
     check(otherStreamOutput.forklift_localized && otherStreamOutput.transformed_people == 1,
           "활성 stream이 아닌 다른 stream의 객체도 H 변환·판정 대상으로 수집");
+    const auto otherStreamPeople = pipeline.peopleStatus(0.5);
+    check(otherStreamPeople.tracks.size() == 1 &&
+              otherStreamPeople.tracks.front().channel == kOtherChannel &&
+              near(otherStreamPeople.tracks.front().position.x, 330.0) &&
+              near(otherStreamPeople.tracks.front().position.y, 120.0) &&
+              otherStreamPeople.tracks.front().observed_utc == "2026-08-13T00:00:00.100Z",
+          "단말별 현재 사람 트랙에 ID·월드 좌표·채널·원본 시각을 보존");
     check(pipeline.localizationStatus().status == "LOCALIZED" &&
               pipeline.localizationStatus().last_target_marker_seen_utc == "2026-08-13T00:00:00.000Z",
           "지게차 위치 확보 시 진단 상태와 대상 마커 마지막 검출 시각을 갱신");
@@ -315,7 +322,8 @@ int main() {
         objects.channel = kChannel;
         check(objects.objects.size() == 2,
               std::string(step.name) + ": ONVIF XML에서 Human bbox 두 개 파싱");
-        const auto output = pipeline.processObjectFrame(objects, timestamp++);
+        const double frameTimestamp = timestamp++;
+        const auto output = pipeline.processObjectFrame(objects, frameTimestamp);
         dispatcher.submit(output.judgment.result);
 
         const auto& result = output.judgment.result;
@@ -329,6 +337,9 @@ int main() {
         if (nearestTrackId < 0) nearestTrackId = output.nearest.track_id;
         check(output.nearest.track_id == nearestTrackId,
               std::string(step.name) + ": 이동 중에도 최근접 사람 track_id 유지");
+        const auto people = pipeline.peopleStatus(frameTimestamp);
+        check(people.tracks.size() == 2 && people.tracks.front().track_id > 0,
+              std::string(step.name) + ": 현재 검출된 두 사람 트랙을 모니터링 상태에 제공");
         check(result.final_risk == step.expected && near(result.distance_mm, step.distance_mm),
               std::string(step.name) + ": 거리 " + std::to_string(step.distance_mm) +
                   "mm → " + toString(step.expected));

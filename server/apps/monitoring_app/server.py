@@ -126,7 +126,6 @@ def read_recent_logs(path, limit=DEFAULT_RECENT_LOG_LINES):
 
 def status_snapshot():
     safety_state = service_state("forklift_safety_server.service")
-    homography_state = service_state("homography-app.service")
     mqtt_ok = tcp_reachable(MQTT_HOST, MQTT_PORT)
     runtime_status = read_runtime_status(RUNTIME_STATUS)
     runtime_health = runtime_status_health(runtime_status)
@@ -135,10 +134,6 @@ def status_snapshot():
         "service": "monitoring-app",
         "monitoring": "online",
         "safety_server": {"state": safety_state},
-        "homography": {
-            "state": homography_state,
-            "lifecycle": "on-demand",
-        },
         "mqtt": {
             "reachable": mqtt_ok,
             "host": MQTT_HOST,

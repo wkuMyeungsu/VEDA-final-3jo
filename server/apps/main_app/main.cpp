@@ -331,6 +331,8 @@ void CentralServer::process(const MetadataEvent& event) {
 void CentralServer::writeRuntimeStatus(const std::string& state) {
     const std::filesystem::path status_path = config_.output_storage.runtime_status;
     if (status_path.empty()) return;
+    const double now_s = std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 
     std::error_code error;
     const auto parent = status_path.parent_path();
@@ -366,6 +368,7 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
             terminal.device.terminal_id, config_.sensor.stale_timeout_ms);
         const auto risk = terminal.dispatcher.runtimeSnapshot();
         const auto localization = terminal.pipeline.localizationStatus();
+        const auto people = terminal.pipeline.peopleStatus(now_s);
         if (index) json << ',';
         json << "{\"terminal_id\": " << jsonString(terminal.device.terminal_id)
              << ", \"risk_link\": " << jsonString(linkStateName(terminal.publisher.state()))
@@ -451,6 +454,49 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
              marker_index < localization.last_observed_marker_ids.size(); ++marker_index) {
             if (marker_index) json << ',';
             json << localization.last_observed_marker_ids[marker_index];
+        }
+        json << "]}"
+             << ", \"people\": {\"count\": " << people.tracks.size()
+             << ", \"last_update_utc\": ";
+        if (!people.last_update_utc.empty()) json << jsonString(people.last_update_utc);
+        else json << "null";
+        json << ", \"last_update_age_ms\": ";
+        if (people.last_update_s >= 0.0) {
+            const double age_ms = (now_s > people.last_update_s)
+                                      ? (now_s - people.last_update_s) * 1000.0
+                                      : 0.0;
+            json << age_ms;
+        } else {
+            json << "null";
+        }
+        json << ", \"tracks\": [";
+        for (std::size_t person_index = 0; person_index < people.tracks.size(); ++person_index) {
+            const auto& person = people.tracks[person_index];
+            if (person_index) json << ',';
+            const double age_ms = (now_s > person.last_seen_s)
+                                      ? (now_s - person.last_seen_s) * 1000.0
+                                      : 0.0;
+            json << "{\"track_id\": " << person.track_id
+                 << ", \"position\": {\"x_mm\": " << person.position.x
+                 << ", \"y_mm\": " << person.position.y << "}"
+                 << ", \"distance_mm\": ";
+            if (person.distance_mm >= 0.0) json << person.distance_mm;
+            else json << "null";
+            json << ", \"stream_id\": ";
+            if (!person.stream_id.empty()) json << jsonString(person.stream_id);
+            else json << "null";
+            json << ", \"camera_id\": ";
+            if (!person.camera_id.empty()) json << jsonString(person.camera_id);
+            else json << "null";
+            json << ", \"channel\": ";
+            if (person.channel >= 1) json << person.channel;
+            else json << "null";
+            json << ", \"age_ms\": " << age_ms
+                 << ", \"missed_frames\": " << person.missed_frames
+                 << ", \"observed_utc\": ";
+            if (!person.observed_utc.empty()) json << jsonString(person.observed_utc);
+            else json << "null";
+            json << "}";
         }
         json << "]}"
              << ", \"events\": {\"state_changes\": " << terminal.dispatcher.changeSendCount()

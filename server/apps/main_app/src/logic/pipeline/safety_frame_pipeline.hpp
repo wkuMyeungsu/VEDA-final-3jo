@@ -45,6 +45,26 @@ public:
         std::vector<int> last_observed_marker_ids;
     };
 
+    // 모니터링에 필요한 현재 사람 트랙의 최소 정보다. 원시 영상이나 매 프레임
+    // bbox를 runtime snapshot에 넣지 않고, 유효한 트랙만 월드 좌표로 제공한다.
+    struct PersonStatus {
+        int track_id = -1;
+        std::string stream_id;
+        std::string camera_id;
+        int channel = -1;
+        WorldPoint position{};
+        double distance_mm = -1.0;
+        double last_seen_s = 0.0;
+        int missed_frames = 0;
+        std::string observed_utc;
+    };
+
+    struct PeopleStatus {
+        std::string last_update_utc;
+        double last_update_s = -1.0;
+        std::vector<PersonStatus> tracks;
+    };
+
     struct ObjectFrameOutput {
         PipelineOutput judgment;
         bool forklift_localized = false;
@@ -74,6 +94,7 @@ public:
         return homography_.streamLoadErrors();
     }
     LocalizationStatus localizationStatus() const;
+    PeopleStatus peopleStatus(double now_s) const;
 
 private:
     void recordArucoObservation(const ArucoFrame& frame);
@@ -89,10 +110,12 @@ private:
     std::string active_camera_id_;
     int active_channel_ = -1;
     double track_freshness_sec_;
+    double people_timeout_sec_;
     CrossCameraTracker cross_camera_tracker_;
     JudgmentPipeline judgment_pipeline_;
     mutable std::mutex localization_mutex_;
     LocalizationStatus localization_status_;
+    PeopleStatus people_status_;
 };
 
 }  // namespace forklift::logic

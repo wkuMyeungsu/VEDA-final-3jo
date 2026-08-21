@@ -1,6 +1,7 @@
 #include "logic/pipeline/safety_frame_pipeline.hpp"
 
 #include <chrono>
+#include <utility>
 #include <vector>
 
 namespace forklift::logic {
@@ -14,6 +15,7 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
       marker_tracker_(device.marker_id, config.handover.confirm_frames,
                       config.handover.lostGrace()),
       track_freshness_sec_(config.tracking.track_freshness_ms / 1000.0),
+      people_timeout_sec_(config.tracking.track_timeout_ms / 1000.0),
       cross_camera_tracker_(config.tracking.iou_threshold,
                             config.tracking.world_distance_threshold_mm,
                             config.tracking.track_timeout_ms / 1000.0),
@@ -78,6 +80,19 @@ void SafetyFramePipeline::updateLocalizationResult(bool localized,
 SafetyFramePipeline::LocalizationStatus SafetyFramePipeline::localizationStatus() const {
     std::lock_guard<std::mutex> lock(localization_mutex_);
     return localization_status_;
+}
+
+SafetyFramePipeline::PeopleStatus SafetyFramePipeline::peopleStatus(double now_s) const {
+    std::lock_guard<std::mutex> lock(localization_mutex_);
+    PeopleStatus result;
+    result.last_update_utc = people_status_.last_update_utc;
+    result.last_update_s = people_status_.last_update_s;
+    result.tracks.reserve(people_status_.tracks.size());
+    for (const auto& track : people_status_.tracks) {
+        if (now_s - track.last_seen_s > people_timeout_sec_) continue;
+        result.tracks.push_back(track);
+    }
+    return result;
 }
 
 std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const ArucoFrame& frame) {
@@ -157,12 +172,40 @@ SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
         detection.bbox = object.bbox;
         detection.world = *world;
         detection.timestamp_s = timestamp_s;
+        detection.observed_utc = frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
         detections.push_back(detection);
     }
     output.transformed_people = detections.size();
 
+    // 사람 트래킹은 지게차 마커가 잠시 사라져도 계속 갱신한다. 위치가 없는
+    // 동안에는 위험 판정에 사용하지 않지만, 모니터링에서는 검출 현황을
+    // 그대로 확인할 수 있어야 한다.
+    const auto tracks = cross_camera_tracker_.update(detections, timestamp_s);
+    PeopleStatus people;
+    people.last_update_utc = frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+    people.last_update_s = timestamp_s;
+    people.tracks.reserve(tracks.size());
+    for (const auto& track : tracks) {
+        PersonStatus person;
+        person.track_id = track.track_id;
+        person.stream_id = track.stream_id;
+        person.camera_id = track.camera_id;
+        person.channel = track.channel;
+        person.position = track.last_world;
+        person.distance_mm = output.forklift_localized
+                                 ? euclideanDistance(output.forklift_world, track.last_world)
+                                 : -1.0;
+        person.last_seen_s = track.last_seen_s;
+        person.missed_frames = track.missed_frames;
+        person.observed_utc = track.observed_utc;
+        people.tracks.push_back(std::move(person));
+    }
+    {
+        std::lock_guard<std::mutex> lock(localization_mutex_);
+        people_status_ = std::move(people);
+    }
+
     if (output.forklift_localized) {
-        const auto tracks = cross_camera_tracker_.update(detections, timestamp_s);
         output.nearest = selectNearestPerson(output.forklift_world, tracks,
                                              timestamp_s, track_freshness_sec_);
     }
