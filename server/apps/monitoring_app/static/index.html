@@ -39,9 +39,22 @@
     .metric-value strong{font-size:1.55rem;letter-spacing:-.04em}
     .metric-value span{color:#667085;font-size:.8rem}
     .metric-detail{color:#667085;font-size:.78rem;line-height:1.45;margin-top:.45rem}
-    .terminal-list{display:grid;gap:.5rem;margin-top:.8rem}
-    .terminal-row{display:flex;align-items:center;gap:.55rem;color:#475467;font-size:.82rem}
-    .terminal-row .status-dot{flex:0 0 auto}
+    .terminal-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.8rem}
+    .terminal-card{border:1px solid #dfe3e8;border-radius:10px;padding:1rem;background:#fcfcfd}
+    .terminal-card header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding-bottom:.8rem;border-bottom:1px solid #eaecf0}
+    .terminal-card h3{font-size:1rem}
+    .terminal-state{display:flex;align-items:center;gap:.45rem;color:#667085;font-size:.78rem}
+    .terminal-fields{display:grid;gap:.7rem;padding-top:.85rem}
+    .terminal-field{display:grid;grid-template-columns:5rem minmax(0,1fr);column-gap:.7rem;align-items:baseline}
+    .terminal-field>span{color:#667085;font-size:.78rem}
+    .terminal-field strong{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .terminal-field small{grid-column:2;color:#667085;font-size:.75rem;line-height:1.4;margin-top:.12rem}
+    .risk-badge{display:inline-block;padding:.16rem .45rem;border-radius:999px;font-size:.76rem;font-weight:750}
+    .risk-safe{color:#067647;background:#ecfdf3}
+    .risk-caution{color:#b54708;background:#fffaeb}
+    .risk-danger{color:#b42318;background:#fef3f2}
+    .risk-emergency{color:#7a271a;background:#fee4e2}
+    .risk-unknown{color:#667085;background:#f2f4f7}
     .log-meta{color:#667085;font-size:.8rem}
     pre{margin:0;max-height:26rem;overflow:auto;padding:.9rem;border-radius:8px;background:#1b1f24;color:#e6edf3;white-space:pre-wrap;word-break:break-word;font:.8rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
     .maintenance{display:flex;align-items:center;justify-content:space-between;gap:1rem}
@@ -80,13 +93,18 @@
   </section>
 
   <section class="panel">
-    <div class="section-heading"><h2>처리 지표</h2><span id="server-run-id" class="section-meta">실행 ID 확인 중</span></div>
+    <div class="section-heading"><h2>공통 운영 상태</h2><span id="server-run-id" class="section-meta">실행 ID 확인 중</span></div>
     <div class="metric-grid">
-      <article class="metric-card"><div class="metric-heading"><h3>센서 수신 누적</h3><span id="sensor-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="sensor-received">—</strong><span>건</span></div><p id="sensor-detail" class="metric-detail">현재 실행 이후 정상 메시지</p></article>
-      <article class="metric-card"><div class="metric-heading"><h3>처리 대기열</h3><span id="queue-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="queue-depth">—</strong><span>/ <span id="queue-capacity">—</span></span></div><p id="queue-detail" class="metric-detail">대기 중 / 최대 용량 · 버린 메시지 확인 중</p></article>
-      <article class="metric-card"><div class="metric-heading"><h3>이벤트 저장</h3><span id="storage-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="events-written">—</strong><span>건 기록</span></div><p id="storage-detail" class="metric-detail">저장 오류 확인 중</p></article>
-      <article class="metric-card"><div class="metric-heading"><h3>연결 단말</h3><span id="terminal-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div id="terminal-metrics" class="terminal-list">확인 중</div></article>
+      <article class="metric-card"><div class="metric-heading"><h3>상태 갱신</h3><span id="runtime-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="runtime-state">—</strong></div><p id="runtime-detail" class="metric-detail">서버 상태 갱신 확인 중</p></article>
+      <article class="metric-card"><div class="metric-heading"><h3>처리 대기열</h3><span id="queue-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="queue-depth">—</strong><span>/ <span id="queue-capacity">—</span></span></div><p id="queue-detail" class="metric-detail">대기 중 / 최대 용량 · 버림 확인 중</p></article>
+      <article class="metric-card"><div class="metric-heading"><h3>공통 저장소</h3><span id="storage-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="events-written">—</strong><span>건 기록</span></div><p id="storage-detail" class="metric-detail">저장 오류 확인 중</p></article>
+      <article class="metric-card"><div class="metric-heading"><h3>센서 전체 진단</h3><span id="sensor-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="sensor-received">—</strong><span>건 누적</span></div><p id="sensor-detail" class="metric-detail">단말별 신선도 확인 중</p></article>
     </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading"><h2>단말별 운영 상태</h2><span id="terminal-summary" class="section-meta">확인 중</span></div>
+    <div id="terminal-cards" class="terminal-cards">확인 중</div>
   </section>
 
   <section class="panel">
@@ -100,10 +118,13 @@
     const MILLISECONDS_PER_SECOND = 1000;
     const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
     const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
+    const RUNTIME_STATUS_MAX_AGE_SECONDS = 3;
     const numberFormat = new Intl.NumberFormat('ko-KR');
+    const riskLabels = Object.freeze({SAFE:'안전',CAUTION:'주의',DANGER:'위험',EMERGENCY:'비상'});
+    const exceptionLabels = Object.freeze({NONE:'없음',SENSOR_FAULT:'센서 이상',DEAD_RECKONING:'위치 추정',EMERGENCY_IMPACT:'충격 감지',UNCONFIRMED_PROXIMITY:'미확인 근접'});
 
     const setText=(id,value)=>{document.getElementById(id).textContent=value};
-    setText('refresh-note',`안전 서버와 노드 통신 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신`);
+    setText('refresh-note',`안전 서버와 단말별 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신`);
     const setIndicator=(id,kind,label)=>{
       const node=document.getElementById(id);
       const dot=document.createElement('span');
@@ -126,15 +147,113 @@
       if(Number.isNaN(date.getTime()))return value;
       return new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeStyle:'medium',timeZone:'Asia/Seoul'}).format(date);
     };
+    const formatAgeMs=(value)=>{
+      const age=Number(value);
+      if(!Number.isFinite(age)||age<0)return '수신 기록 없음';
+      if(age<MILLISECONDS_PER_SECOND)return `${Math.max(0,Math.round(age))}ms 전`;
+      return `${(age/MILLISECONDS_PER_SECOND).toFixed(1)}초 전`;
+    };
+    const riskLabel=(value)=>riskLabels[value]||'판정 대기';
+    const riskClass=(value)=>({SAFE:'risk-safe',CAUTION:'risk-caution',DANGER:'risk-danger',EMERGENCY:'risk-emergency'}[value]||'risk-unknown');
+    const exceptionLabel=(value)=>exceptionLabels[value]||'확인 필요';
+    const runtimeAgeMs=(checkedUtc)=>{
+      if(!checkedUtc)return Number.POSITIVE_INFINITY;
+      const checked=Date.parse(checkedUtc);
+      if(!Number.isFinite(checked))return Number.POSITIVE_INFINITY;
+      return Math.max(0,Date.now()-checked);
+    };
+    const addTerminalField=(parent,label,value,detail,valueClass='')=>{
+      const field=document.createElement('div');
+      field.className='terminal-field';
+      const labelNode=document.createElement('span');
+      labelNode.textContent=label;
+      const valueNode=document.createElement('strong');
+      valueNode.textContent=value;
+      if(valueClass)valueNode.className=valueClass;
+      const detailNode=document.createElement('small');
+      detailNode.textContent=detail;
+      field.append(labelNode,valueNode,detailNode);
+      parent.append(field);
+    };
+    const renderTerminalCards=(terminals)=>{
+      const root=document.getElementById('terminal-cards');
+      root.replaceChildren();
+      if(!terminals.length){
+        root.textContent='등록된 단말이 없습니다.';
+        setText('terminal-summary','등록된 단말 없음');
+        return;
+      }
+      terminals.forEach((terminal)=>{
+        const terminalId=terminal.terminal_id||'알 수 없는 단말';
+        const sensor=terminal.sensor||{};
+        const risk=terminal.risk||{};
+        const events=terminal.events||{};
+        const sensorHealthy=sensor.has_sample===true&&sensor.stale===false;
+        const outputHealthy=terminal.risk_link==='connected'&&Number(terminal.risk_send_failures||0)===0&&Number(terminal.risk_queue_dropped||0)===0;
+        const hasRisk=risk.has_result===true;
+        const cardKind=!sensor.has_sample||!hasRisk?'unknown':sensorHealthy&&outputHealthy?'good':'problem';
+        const card=document.createElement('article');
+        card.className='terminal-card';
+        const header=document.createElement('header');
+        const title=document.createElement('h3');
+        title.textContent=terminalId;
+        const state=document.createElement('span');
+        state.className='terminal-state';
+        const dot=document.createElement('span');
+        dot.className=`status-dot ${cardKind}`;
+        dot.setAttribute('aria-hidden','true');
+        const stateText=!sensor.has_sample?'센서 수신 없음':!hasRisk?'판정 대기':sensorHealthy&&outputHealthy?'운영 정상':'확인 필요';
+        state.append(dot,document.createTextNode(stateText));
+        header.append(title,state);
+        const fields=document.createElement('div');
+        fields.className='terminal-fields';
+
+        const sensorState=!sensor.has_sample?'수신 없음':sensor.stale?'지연/끊김':'정상';
+        addTerminalField(fields,'센서',sensorState,
+          `${formatAgeMs(sensor.age_ms)} · 정상 ${formatNumber(sensor.received)}건 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건`,
+          sensorHealthy?'':'risk-caution');
+
+        const currentRisk=risk.has_result===true?(risk.state||'UNKNOWN'):'UNKNOWN';
+        const riskDetails=[];
+        if(Number.isFinite(Number(risk.distance_mm)))riskDetails.push(`거리 ${formatNumber(risk.distance_mm)}mm`);
+        if(risk.exception&&risk.exception!=='NONE')riskDetails.push(`예외 ${exceptionLabel(risk.exception)}`);
+        if(risk.camera_id)riskDetails.push(`${risk.camera_id}${Number.isFinite(Number(risk.channel))?` · ${risk.channel}번 채널`:''}`);
+        if(!riskDetails.length)riskDetails.push(risk.has_result===true?'판정 근거 확인 중':'아직 실제 판정 없음');
+        addTerminalField(fields,'현재 판정',riskLabel(currentRisk),riskDetails.join(' · '),`risk-badge ${riskClass(currentRisk)}`);
+
+        const lastChange=risk.last_change_utc||events.last_change_utc;
+        addTerminalField(fields,'최근 전이',lastChange?formatTimestamp(lastChange):'기록 없음',
+          `상태 전이 ${formatNumber(events.state_changes??terminal.change_sends)}건`);
+
+        const outputState=terminal.risk_link==='connected'?'연결됨':terminal.risk_link==='connecting'?'연결 중':'끊김';
+        addTerminalField(fields,'위험 송신',outputState,
+          `실패 ${formatNumber(terminal.risk_send_failures)}건 · 하트비트 ${formatNumber(terminal.heartbeat_sends)}건`,
+          outputHealthy?'':'risk-caution');
+
+        card.append(header,fields);
+        root.append(card);
+      });
+      const healthyCount=terminals.filter((terminal)=>{
+        const sensor=terminal.sensor||{};
+        const risk=terminal.risk||{};
+        return sensor.has_sample===true&&sensor.stale===false&&risk.has_result===true
+          &&terminal.risk_link==='connected'
+          &&Number(terminal.risk_send_failures||0)===0
+          &&Number(terminal.risk_queue_dropped||0)===0;
+      }).length;
+      setText('terminal-summary',`${healthyCount}/${terminals.length}대 운영 정상`);
+    };
     const setUnknownState=()=>{
       setOverall('unknown','확인 필요','상태를 확인할 수 없습니다.');
       setIndicator('safety-indicator','unknown','안전 서버 상태 확인 필요');
       setIndicator('mqtt-indicator','unknown','MQTT 연결 상태 확인 필요');
       setIndicator('homography-indicator','unknown','호모그래피 앱 상태 확인 필요');
-      setIndicator('sensor-indicator','unknown','센서 상태 확인 필요');
+      setIndicator('runtime-indicator','unknown','서버 상태 갱신 확인 필요');
       setIndicator('queue-indicator','unknown','처리 대기열 상태 확인 필요');
       setIndicator('storage-indicator','unknown','저장소 상태 확인 필요');
-      setIndicator('terminal-indicator','unknown','단말 상태 확인 필요');
+      setIndicator('sensor-indicator','unknown','센서 진단 확인 필요');
+      setText('terminal-cards','실행 정보 없음');
+      setText('terminal-summary','실행 정보 없음');
     };
 
     async function refresh(){
@@ -145,10 +264,14 @@
         const mqttReachable=value.mqtt?.reachable;
         const homographyState=value.homography?.state||'unknown';
         const homographyOnDemand=value.homography?.lifecycle==='on-demand';
+        const snapshot=value.runtime_status?.snapshot;
+        const snapshotAge=runtimeAgeMs(snapshot?.checked_utc);
+        const runtimeFresh=Boolean(snapshot)&&snapshotAge<=RUNTIME_STATUS_MAX_AGE_SECONDS*MILLISECONDS_PER_SECOND;
+        const infrastructureOk=safetyState==='active'&&mqttReachable===true&&runtimeFresh;
 
-        if(value.ok===true)setOverall('good','정상','안전 서버와 MQTT 연결이 정상입니다.');
-        else if(safetyState==='unknown'||typeof mqttReachable!=='boolean')setOverall('unknown','확인 필요','안전 서버 상태를 확인하세요.');
-        else setOverall('problem','문제','안전 서버 또는 MQTT 연결을 확인하세요.');
+        if(infrastructureOk)setOverall('good','정상','서버 heartbeat와 MQTT 연결이 정상입니다.');
+        else if(safetyState==='unknown'||typeof mqttReachable!=='boolean'||!snapshot)setOverall('unknown','확인 필요','서버 공통 상태를 확인하세요.');
+        else setOverall('problem','문제','서버 heartbeat, 안전 서버 또는 MQTT를 확인하세요.');
 
         if(safetyState==='active'){
           setIndicator('safety-indicator','good','안전 서버 실행 중');
@@ -194,14 +317,16 @@
         setText('server-logs',recentLines.length?recentLines.join('\n'):'기록 없음');
         setText('log-count',`최근 ${recentLines.length}줄`);
 
-        const snapshot=value.runtime_status?.snapshot;
         if(snapshot){
           setText('server-run-id',`실행 ID: ${snapshot.server_run_id||'확인 불가'}`);
+          setIndicator('runtime-indicator',runtimeFresh?'good':'problem',runtimeFresh?'서버 상태 갱신 정상':'서버 상태 갱신 지연');
+          setText('runtime-state',runtimeFresh?'정상':'지연');
+          setText('runtime-detail',`마지막 갱신 ${formatAgeMs(snapshotAge)} · 기준 ${formatTimestamp(snapshot.checked_utc)}`);
+
           const sensor=snapshot.sensor||{};
-          const sensorConnected=sensor.connected===true;
-          setIndicator('sensor-indicator',sensorConnected?'good':sensor.connected===false?'problem':'unknown',sensorConnected?'센서 연결됨':sensor.connected===false?'센서 연결 끊김':'센서 상태 확인 필요');
+          setIndicator('sensor-indicator',Number(sensor.parse_failures||0)===0?'good':'problem',Number(sensor.parse_failures||0)===0?'전체 파싱 정상':`파싱 실패 ${formatNumber(sensor.parse_failures)}건`);
           setText('sensor-received',formatNumber(sensor.received));
-          setText('sensor-detail',`현재 실행 이후 정상 메시지 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건`);
+          setText('sensor-detail',`전체 단말 합산 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건 · 신선도는 단말별 확인`);
 
           const queue=snapshot.queue||{};
           const queueDropped=Number(queue.dropped)||0;
@@ -212,27 +337,14 @@
 
           const storage=snapshot.storage||{};
           const storageFailures=(Number(storage.events_write_failures)||0)+(Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0);
-          setIndicator('storage-indicator',storageFailures===0?'good':'problem',storageFailures===0?'저장 정상':`저장 문제 ${formatNumber(storageFailures)}건`);
+          setIndicator('storage-indicator',storageFailures===0?'good':'problem',storageFailures===0?'공통 저장 정상':`공통 저장 문제 ${formatNumber(storageFailures)}건`);
           setText('events-written',formatNumber(storage.events_written));
           setText('storage-detail',`쓰기 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber((Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0))}건`);
-
-          const terminals=snapshot.terminals||[];
-          const connectedTerminals=terminals.filter((terminal)=>terminal.risk_link==='connected').length;
-          setIndicator('terminal-indicator',terminals.length===0?'unknown':connectedTerminals===terminals.length?'good':'problem',terminals.length===0?'등록 단말 없음':`${connectedTerminals}/${terminals.length}대 연결됨`);
-          const terminalNode=document.getElementById('terminal-metrics');
-          terminalNode.replaceChildren();
-          if(terminals.length===0){terminalNode.textContent='등록된 단말이 없습니다.'}
-          else terminals.forEach((terminal)=>{
-            const row=document.createElement('div');
-            row.className='terminal-row';
-            const dot=document.createElement('span');
-            dot.className=`status-dot ${terminal.risk_link==='connected'?'good':'problem'}`;
-            dot.setAttribute('aria-hidden','true');
-            row.append(dot,document.createTextNode(`${terminal.terminal_id||'알 수 없는 단말'} · 위험 전송 ${terminal.risk_link==='connected'?'연결됨':'끊김'} · 실패 ${formatNumber(terminal.risk_send_failures)}건`));
-            terminalNode.append(row);
-          });
+          renderTerminalCards(snapshot.terminals||[]);
         }else{
           setText('server-run-id','실행 정보 없음');
+          setText('runtime-state','—');
+          setText('runtime-detail','실행 정보 없음');
           setText('sensor-received','—');
           setText('sensor-detail','실행 정보 없음');
           setText('queue-depth','—');
@@ -240,8 +352,9 @@
           setText('queue-detail','실행 정보 없음');
           setText('events-written','—');
           setText('storage-detail','실행 정보 없음');
-          setText('terminal-metrics','실행 정보 없음');
-          ['sensor-indicator','queue-indicator','storage-indicator','terminal-indicator'].forEach((id)=>setIndicator(id,'unknown','실행 정보 확인 필요'));
+          setText('terminal-cards','실행 정보 없음');
+          setText('terminal-summary','실행 정보 없음');
+          ['runtime-indicator','sensor-indicator','queue-indicator','storage-indicator'].forEach((id)=>setIndicator(id,'unknown','실행 정보 확인 필요'));
         }
 
         const checkedNode=document.getElementById('checked');

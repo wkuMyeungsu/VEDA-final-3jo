@@ -22,6 +22,7 @@ RUNTIME_STATUS = Path(os.environ.get(
 DEFAULT_REFRESH_INTERVAL_SECONDS = 1
 DEFAULT_RECENT_LOG_LINES = 50
 MAX_LOG_TAIL_BYTES = 64 * 1024
+RUNTIME_STATUS_MAX_AGE_SECONDS = 3
 
 
 def refresh_interval_seconds():
@@ -86,6 +87,25 @@ def read_runtime_status(path):
     return value if isinstance(value, dict) else None
 
 
+def runtime_status_health(snapshot, now=None):
+    """Return whether the safety server's structured heartbeat is fresh."""
+    if not isinstance(snapshot, dict) or snapshot.get("state") != "online":
+        return {"fresh": False, "age_ms": None}
+    checked_value = snapshot.get("checked_utc")
+    if not checked_value:
+        return {"fresh": False, "age_ms": None}
+    try:
+        checked = datetime.fromisoformat(checked_value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return {"fresh": False, "age_ms": None}
+    current = now or datetime.now(timezone.utc)
+    age_ms = max(0, int((current - checked).total_seconds() * 1000))
+    return {
+        "fresh": age_ms <= RUNTIME_STATUS_MAX_AGE_SECONDS * 1000,
+        "age_ms": age_ms,
+    }
+
+
 def read_recent_logs(path, limit=DEFAULT_RECENT_LOG_LINES):
     """Read a bounded tail of the server log without scanning the whole file."""
     try:
@@ -109,8 +129,9 @@ def status_snapshot():
     homography_state = service_state("homography-app.service")
     mqtt_ok = tcp_reachable(MQTT_HOST, MQTT_PORT)
     runtime_status = read_runtime_status(RUNTIME_STATUS)
+    runtime_health = runtime_status_health(runtime_status)
     return {
-        "ok": safety_state == "active" and mqtt_ok,
+        "ok": safety_state == "active" and mqtt_ok and runtime_health["fresh"],
         "service": "monitoring-app",
         "monitoring": "online",
         "safety_server": {"state": safety_state},
@@ -131,6 +152,8 @@ def status_snapshot():
         "runtime_status": {
             "path": str(RUNTIME_STATUS),
             "modified_utc": file_timestamp(RUNTIME_STATUS),
+            "fresh": runtime_health["fresh"],
+            "age_ms": runtime_health["age_ms"],
             "snapshot": runtime_status,
         },
         "checked_utc": datetime.now(timezone.utc).isoformat(),

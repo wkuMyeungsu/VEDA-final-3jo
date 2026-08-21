@@ -29,21 +29,27 @@ class MonitoringStatusTests(unittest.TestCase):
             page,
         )
         self.assertIn(
-            "안전 서버와 노드 통신 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신",
+            "안전 서버와 단말별 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신",
             page,
         )
         self.assertIn("window.setInterval(refresh,REFRESH_INTERVAL_MS);", page)
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
-        for label in ("서버 운영 콘솔", "안전 서버", "호모그래피 앱", "센서 수신 누적", "최근 서버 로그", "유지보수 도구"):
+        for label in ("서버 운영 콘솔", "안전 서버", "호모그래피 앱", "공통 운영 상태", "단말별 운영 상태", "최근 서버 로그", "유지보수 도구"):
             self.assertIn(label, page)
         self.assertIn(".status-value.good .status-dot", page)
         self.assertIn(".status-value.problem .status-dot", page)
         self.assertIn("dot.className=`status-dot ${kind}`", page)
         self.assertIn("node.replaceChildren(dot)", page)
         self.assertIn("대기열에서 버린 메시지", page)
-        self.assertIn("현재 실행 이후 정상 메시지", page)
+        self.assertIn("RUNTIME_STATUS_MAX_AGE_SECONDS", page)
+        self.assertIn("terminal.sensor", page)
+        self.assertIn("terminal.risk", page)
+        self.assertIn("events.state_changes", page)
+        self.assertIn("단말별 신선도 확인", page)
+        self.assertNotIn("센서 수신 누적</h3>", page)
+        self.assertNotIn("연결 단말</h3>", page)
         self.assertNotIn("status-label", page)
         self.assertNotIn("active:'O'", page)
         self.assertNotIn("inactive:'X'", page)
@@ -97,13 +103,22 @@ class MonitoringStatusTests(unittest.TestCase):
     @mock.patch.object(SERVER, "file_timestamp", return_value="2026-08-21T00:00:00+00:00")
     @mock.patch.object(SERVER, "tcp_reachable", return_value=True)
     @mock.patch.object(SERVER, "service_state")
-    def test_ready_snapshot(self, service_state, _tcp, _timestamp):
+    @mock.patch.object(
+        SERVER,
+        "read_runtime_status",
+        return_value={
+            "state": "online",
+            "checked_utc": SERVER.datetime.now(SERVER.timezone.utc).isoformat(),
+        },
+    )
+    def test_ready_snapshot(self, _runtime, service_state, _tcp, _timestamp):
         service_state.side_effect = ["active", "inactive"]
         value = SERVER.status_snapshot()
         self.assertTrue(value["ok"])
         self.assertEqual(value["safety_server"]["state"], "active")
         self.assertEqual(value["homography"]["state"], "inactive")
         self.assertEqual(value["homography"]["lifecycle"], "on-demand")
+        self.assertTrue(value["runtime_status"]["fresh"])
 
     @mock.patch.object(SERVER, "file_timestamp", return_value=None)
     @mock.patch.object(SERVER, "tcp_reachable", return_value=False)
@@ -112,6 +127,15 @@ class MonitoringStatusTests(unittest.TestCase):
         value = SERVER.status_snapshot()
         self.assertFalse(value["ok"])
         self.assertFalse(value["mqtt"]["reachable"])
+
+    def test_runtime_status_health_rejects_stale_snapshot(self):
+        now = SERVER.datetime.fromisoformat("2026-08-21T00:00:05+00:00")
+        value = SERVER.runtime_status_health(
+            {"state": "online", "checked_utc": "2026-08-21T00:00:00+00:00"},
+            now=now,
+        )
+        self.assertFalse(value["fresh"])
+        self.assertEqual(value["age_ms"], 5000)
 
     @mock.patch.object(SERVER.subprocess, "run", side_effect=SERVER.subprocess.TimeoutExpired("systemctl", 2))
     def test_systemctl_timeout_is_unknown(self, _run):
