@@ -315,6 +315,9 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
          << "  \"terminals\": [";
     for (std::size_t index = 0; index < terminals_.size(); ++index) {
         const auto& terminal = *terminals_[index];
+        const auto sensor = sensor_receiver_.terminalStatus(
+            terminal.device.terminal_id, config_.sensor.stale_timeout_ms);
+        const auto risk = terminal.dispatcher.runtimeSnapshot();
         if (index) json << ',';
         json << "{\"terminal_id\": " << jsonString(terminal.device.terminal_id)
              << ", \"risk_link\": " << jsonString(linkStateName(terminal.publisher.state()))
@@ -322,7 +325,44 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
              << ", \"risk_queue_dropped\": " << terminal.publisher.droppedCount()
              << ", \"risk_send_failures\": " << terminal.publisher.sendFailureCount()
              << ", \"change_sends\": " << terminal.dispatcher.changeSendCount()
-             << ", \"heartbeat_sends\": " << terminal.dispatcher.heartbeatSendCount() << "}";
+             << ", \"heartbeat_sends\": " << terminal.dispatcher.heartbeatSendCount()
+             << ", \"sensor\": {\"has_sample\": " << (sensor.has_sample ? "true" : "false")
+             << ", \"stale\": " << (sensor.stale ? "true" : "false")
+             << ", \"age_ms\": " << sensor.age_ms
+             << ", \"received\": " << sensor.received
+             << ", \"parse_failures\": " << sensor.parse_failures << "}"
+             << ", \"risk\": {\"has_result\": " << (risk.has_real_result ? "true" : "false")
+             << ", \"state\": ";
+        if (risk.has_real_result) json << jsonString(toString(risk.result.final_risk));
+        else json << "null";
+        json << ", \"exception\": ";
+        if (risk.has_real_result) json << jsonString(toString(risk.result.exception));
+        else json << "null";
+        json << ", \"distance_mm\": ";
+        if (risk.has_real_result && risk.result.distance_mm >= 0.0) json << risk.result.distance_mm;
+        else json << "null";
+        json << ", \"camera_id\": ";
+        if (risk.has_real_result && !risk.result.source_camera_id.empty())
+            json << jsonString(risk.result.source_camera_id);
+        else if (risk.has_real_result && !risk.result.camera_id.empty())
+            json << jsonString(risk.result.camera_id);
+        else
+            json << "null";
+        json << ", \"stream_id\": ";
+        if (risk.has_real_result && !risk.result.stream_id.empty()) json << jsonString(risk.result.stream_id);
+        else json << "null";
+        json << ", \"channel\": ";
+        if (risk.has_real_result && risk.result.channel >= 0) json << risk.result.channel;
+        else json << "null";
+        json << ", \"last_change_utc\": ";
+        if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
+        else json << "null";
+        json << "}"
+             << ", \"events\": {\"state_changes\": " << terminal.dispatcher.changeSendCount()
+             << ", \"last_change_utc\": ";
+        if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
+        else json << "null";
+        json << "}}";
     }
     json << "]\n}\n";
 
