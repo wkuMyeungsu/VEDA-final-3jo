@@ -154,6 +154,33 @@ bool DetectorManager::HandleHttpRequest(Event* event) {
       HandleGetStatus(oas);
     } else if (path_info == "/logs") {
       HandleGetLogs(oas);
+    } else if (path_info == "/test/framemode") {
+      auto method = oas->GetFCGXParam("REQUEST_METHOD");
+      if (method == "GET") {
+        auto mode = raw_store_.GetFrameMode();
+        std::string mode_str = (mode == TestFrameMode::kWhite) ? "white"
+                             : (mode == TestFrameMode::kBlack) ? "black"
+                             : (mode == TestFrameMode::kMarker) ? "marker" : "camera";
+        oas->SetResponseBody(std::string("{\"frame_mode\":\"") + mode_str + "\"}");
+      } else if (method == "POST") {
+        auto body = oas->GetRequestBody();
+        JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
+        doc.Parse(body);
+        if (!doc.HasParseError() && doc.HasMember("mode") && doc["mode"].IsString()) {
+          std::string m = doc["mode"].GetString();
+          if (m == "white") raw_store_.SetFrameMode(TestFrameMode::kWhite);
+          else if (m == "black") raw_store_.SetFrameMode(TestFrameMode::kBlack);
+          else if (m == "marker") raw_store_.SetFrameMode(TestFrameMode::kMarker);
+          else raw_store_.SetFrameMode(TestFrameMode::kCamera);
+          oas->SetResponseBody(std::string("{\"result\":\"ok\"}"));
+        } else {
+          oas->SetStatusCode(400);
+          oas->SetResponseBody("invalid json or mode");
+        }
+      } else {
+        oas->SetStatusCode(405);
+        oas->SetResponseBody("method not allowed");
+      }
     }
   }
   return true;
@@ -172,6 +199,7 @@ void DetectorManager::RegisterURI() {
   auto* settings_apply_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/settings/apply"), GetInstanceName(), methods);
   auto* status_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/status"), GetInstanceName(), methods);
   auto* logs_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/logs"), GetInstanceName(), methods);
+  auto* test_framemode_uri = new ("OpenAPI") IAppDispatcher::OpenAPIRegistrar(String("/test/framemode"), GetInstanceName(), methods);
 
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, write_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, check_uri);
@@ -179,6 +207,7 @@ void DetectorManager::RegisterURI() {
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, settings_apply_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, status_uri);
   SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, logs_uri);
+  SendNoReplyEvent("AppDispatcher", static_cast<int32_t>(IAppDispatcher::EEventType::eRegisterCommand), 0, test_framemode_uri);
 }
 
 std::string DetectorManager::GetCurrentTimeToString() {
@@ -400,6 +429,12 @@ void DetectorManager::HandleGetStatus(OpenAppSerializable* oas) {
   }
   doc.AddMember("channels", channels_arr, alloc);
   doc.AddMember("last_sent", last_sent, alloc);
+
+  auto mode = raw_store_.GetFrameMode();
+  std::string mode_str = (mode == TestFrameMode::kWhite) ? "white"
+                       : (mode == TestFrameMode::kBlack) ? "black"
+                       : (mode == TestFrameMode::kMarker) ? "marker" : "camera";
+  doc.AddMember("frame_mode", mode_str, alloc);
 
   rapidjson::StringBuffer strbuf;
   rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
