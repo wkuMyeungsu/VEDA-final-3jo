@@ -72,6 +72,10 @@ std::string alertContext(const JudgmentResult& result) {
     return context.empty() ? std::string() : " (" + context + ")";
 }
 
+const char* sensorModeLogLabel(forklift::runtime::SensorMode mode) {
+    return mode == forklift::runtime::SensorMode::Disabled ? "입력 제외(테스트)" : "네트워크";
+}
+
 std::string jsonString(const std::string& value) {
     std::string escaped;
     escaped.reserve(value.size() + 2);
@@ -751,9 +755,10 @@ int main(int argc, char* argv[]) {
     CentralServer server(std::move(config), options.sensor_mode);
     server.start();
     server.startWorkers();
-    LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (CCTV 스트림: " +
+    LOG_INFO("SERVER", "========== 중앙 안전 서버 기동 완료 (CCTV 스트림: " +
                            std::to_string(server.config().streams.size()) + "개, 지게차 단말: " +
-                           std::to_string(server.config().forklifts.size()) + "대)");
+                           std::to_string(server.config().forklifts.size()) + "대, 센서: " +
+                           sensorModeLogLabel(options.sensor_mode) + ") ==========");
     while (!stop_requested) std::this_thread::sleep_for(std::chrono::milliseconds(200));
     LOG_INFO("SERVER", "서버 종료 신호 감지 (안전 종료 진행)");
     server.stop();
