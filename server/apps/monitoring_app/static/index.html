@@ -128,6 +128,15 @@
         <article class="resource-card"><header><h3>전체 시스템</h3><span id="resource-host-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><div class="resource-values"><div class="resource-value"><strong id="resource-host-cpu">—</strong><span>CPU</span></div><div class="resource-value"><strong id="resource-host-memory">—</strong><span>메모리 사용량</span></div><div class="resource-value"><strong id="resource-host-temperature">—</strong><span>온도</span></div></div><p id="resource-host-detail" class="resource-detail">라즈베리파이 전체 기준 · 측정 준비 중</p></article>
       </div>
     </section>
+
+    <section class="panel">
+      <div class="section-heading"><h2>운영 판단</h2><span id="decision-summary" class="section-meta">확인 중</span></div>
+      <div class="metric-grid">
+        <article class="metric-card"><div class="metric-heading"><h3>판정 처리</h3><span id="decision-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="decision-state">—</strong></div><p id="decision-detail" class="metric-detail">판정 상태 확인 중</p></article>
+        <article class="metric-card"><div class="metric-heading"><h3>위험 알림</h3><span id="risk-output-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="risk-output-state">—</strong></div><p id="risk-output-detail" class="metric-detail">알림 송신 상태 확인 중</p></article>
+        <article class="metric-card"><div class="metric-heading"><h3>이벤트 저장</h3><span id="event-storage-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="event-storage-state">—</strong></div><p id="event-storage-detail" class="metric-detail">이벤트 DB 상태 확인 중</p></article>
+      </div>
+    </section>
   </section>
 
   <section id="tab-terminals" class="tab-panel" role="tabpanel" aria-labelledby="tab-terminals-button">
@@ -146,12 +155,12 @@
 
   <section id="tab-system" class="tab-panel" role="tabpanel" aria-labelledby="tab-system-button">
     <section class="panel">
-      <div class="section-heading"><h2>공통 운영 상태</h2><span id="server-run-id" class="section-meta">실행 ID 확인 중</span></div>
+      <div class="section-heading"><h2>시스템 세부 진단</h2><span id="server-run-id" class="section-meta">실행 ID 확인 중</span></div>
       <div class="metric-grid">
-        <article class="metric-card"><div class="metric-heading"><h3>상태 갱신</h3><span id="runtime-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="runtime-state">—</strong></div><p id="runtime-detail" class="metric-detail">서버 상태 갱신 확인 중</p></article>
-        <article class="metric-card"><div class="metric-heading"><h3>처리 대기열</h3><span id="queue-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="queue-depth">—</strong><span>/ <span id="queue-capacity">—</span></span></div><p id="queue-detail" class="metric-detail">대기 중 / 최대 용량 · 버림 확인 중</p></article>
-        <article class="metric-card"><div class="metric-heading"><h3>공통 저장소</h3><span id="storage-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="events-written">—</strong><span>건 기록</span></div><p id="storage-detail" class="metric-detail">저장 오류 확인 중</p></article>
-        <article class="metric-card"><div class="metric-heading"><h3>센서 전체 진단</h3><span id="sensor-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="sensor-received">—</strong><span>건 누적</span></div><p id="sensor-detail" class="metric-detail">단말별 신선도 확인 중</p></article>
+        <article class="metric-card"><div class="metric-heading"><h3>서버 상태 보고</h3><span id="runtime-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="runtime-state">—</strong></div><p id="runtime-detail" class="metric-detail">서버 상태 보고 확인 중</p></article>
+        <article class="metric-card"><div class="metric-heading"><h3>메타데이터 처리</h3><span id="queue-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="queue-state">—</strong></div><p id="queue-detail" class="metric-detail">처리 지연 확인 중</p></article>
+        <article class="metric-card"><div class="metric-heading"><h3>이벤트 DB</h3><span id="storage-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="storage-state">—</strong></div><p id="storage-detail" class="metric-detail">저장 상태 확인 중</p></article>
+        <article class="metric-card"><div class="metric-heading"><h3>센서 입력</h3><span id="sensor-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></div><div class="metric-value"><strong id="sensor-state">—</strong></div><p id="sensor-detail" class="metric-detail">입력 모드 확인 중</p></article>
       </div>
     </section>
 
@@ -279,6 +288,74 @@
       const value=resources||{};
       renderHostResource(value.host);
       setText('resource-summary',value.host?.state==='ok'?'전체 시스템 측정 정상':'측정 확인 필요');
+    };
+    const renderOperationalSummary=(snapshot)=>{
+      const value=snapshot||{};
+      const terminals=Array.isArray(value.terminals)?value.terminals:[];
+      const sensorBypassed=value.sensor_mode==='disabled';
+      const queue=value.queue||{};
+      const queueDepth=Number(queue.depth)||0;
+      const queueCapacity=Number(queue.capacity)||0;
+      const queueDropped=Number(queue.dropped)||0;
+      const storage=value.storage||{};
+      const storageFailures=(Number(storage.events_write_failures)||0)+(Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0);
+      const resultCount=terminals.filter((terminal)=>terminal.risk?.has_result===true).length;
+      const localizationIssues=terminals.filter((terminal)=>{
+        const status=terminal.localization?.status;
+        return status&&status!=='LOCALIZED';
+      }).length;
+      let decisionKind='unknown';
+      let decisionState='확인 필요';
+      let decisionDetail='등록된 단말의 판정 상태를 확인할 수 없음';
+      if(!terminals.length){
+        decisionDetail='등록된 단말이 없음';
+      }else if(queueDropped>0||(queueCapacity>0&&queueDepth/queueCapacity>=.8)){
+        decisionKind='problem';
+        decisionState='처리 지연';
+        decisionDetail=`대기 ${formatNumber(queueDepth)}건 · 손실 ${formatNumber(queueDropped)}건`;
+      }else if(resultCount<terminals.length){
+        decisionKind='unknown';
+        decisionState='판정 대기';
+        decisionDetail=`${formatNumber(resultCount)}/${formatNumber(terminals.length)}개 단말 판정 확인`;
+      }else if(!sensorBypassed&&terminals.some((terminal)=>terminal.sensor?.has_sample!==true||terminal.sensor?.stale===true)){
+        decisionKind='problem';
+        decisionState='입력 지연';
+        decisionDetail='센서 입력이 없거나 오래되어 판정 확인 필요';
+      }else if(localizationIssues>0){
+        decisionKind='unknown';
+        decisionState='위치 확인 필요';
+        decisionDetail=`${formatNumber(localizationIssues)}개 단말의 카메라 위치 진단 확인 필요`;
+      }else if(sensorBypassed){
+        decisionKind='standby';
+        decisionState='시험 모드';
+        decisionDetail=`센서 제외 · ${formatNumber(resultCount)}개 단말 카메라 판정 확인`;
+      }else{
+        decisionKind='good';
+        decisionState='정상';
+        decisionDetail=`${formatNumber(resultCount)}개 단말 판정 처리 중 · 지연 없음`;
+      }
+      setIndicator('decision-indicator',decisionKind,decisionState);
+      setText('decision-state',decisionState);
+      setText('decision-detail',decisionDetail);
+
+      const connectedCount=terminals.filter((terminal)=>terminal.risk_link==='connected').length;
+      const sendFailures=terminals.reduce((sum,terminal)=>sum+Number(terminal.risk_send_failures||0),0);
+      const riskQueueDropped=terminals.reduce((sum,terminal)=>sum+Number(terminal.risk_queue_dropped||0),0);
+      const riskOk=terminals.length>0&&connectedCount===terminals.length&&sendFailures===0&&riskQueueDropped===0;
+      const riskKind=!terminals.length?'unknown':riskOk?'good':'problem';
+      const riskState=!terminals.length?'확인 필요':riskOk?'정상':'확인 필요';
+      setIndicator('risk-output-indicator',riskKind,riskState);
+      setText('risk-output-state',riskState);
+      setText('risk-output-detail',terminals.length?`${formatNumber(connectedCount)}/${formatNumber(terminals.length)}개 단말 연결 · 전송 실패 ${formatNumber(sendFailures)}건`:'등록된 단말이 없음');
+
+      const storageKind=storageFailures===0?'good':'problem';
+      const storageState=storageFailures===0?'정상':'확인 필요';
+      const storageDropped=(Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0);
+      setIndicator('event-storage-indicator',storageKind,storageState);
+      setText('event-storage-state',storageState);
+      setText('event-storage-detail',`이번 실행 ${formatNumber(storage.events_written)}건 기록 · 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber(storageDropped)}건`);
+      const issueCount=[decisionKind==='problem',riskKind==='problem',storageKind==='problem'].filter(Boolean).length;
+      setText('decision-summary',issueCount?`${formatNumber(issueCount)}개 항목 확인 필요`:sensorBypassed?'센서 제외 시험 모드':'주요 기능 정상');
     };
     const appendPersonRow=(parent,person)=>{
       const row=document.createElement('div');
@@ -431,9 +508,19 @@
       setIndicator('safety-indicator','unknown','안전 서버 상태 확인 필요');
       setIndicator('mqtt-indicator','unknown','MQTT 연결 상태 확인 필요');
       setIndicator('runtime-indicator','unknown','서버 상태 갱신 확인 필요');
-      setIndicator('queue-indicator','unknown','처리 대기열 상태 확인 필요');
-      setIndicator('storage-indicator','unknown','저장소 상태 확인 필요');
-      setIndicator('sensor-indicator','unknown','센서 진단 확인 필요');
+      setIndicator('queue-indicator','unknown','메타데이터 처리 상태 확인 필요');
+      setIndicator('storage-indicator','unknown','이벤트 DB 상태 확인 필요');
+      setIndicator('sensor-indicator','unknown','센서 입력 상태 확인 필요');
+      setText('decision-state','확인 필요');
+      setText('decision-detail','판정 상태를 확인할 수 없습니다.');
+      setIndicator('decision-indicator','unknown','판정 상태 확인 필요');
+      setText('risk-output-state','확인 필요');
+      setText('risk-output-detail','위험 알림 상태를 확인할 수 없습니다.');
+      setIndicator('risk-output-indicator','unknown','위험 알림 상태 확인 필요');
+      setText('event-storage-state','확인 필요');
+      setText('event-storage-detail','이벤트 DB 상태를 확인할 수 없습니다.');
+      setIndicator('event-storage-indicator','unknown','이벤트 DB 상태 확인 필요');
+      setText('decision-summary','확인 필요');
       renderResources({});
       setText('terminal-cards','실행 정보 없음');
       setText('terminal-summary','실행 정보 없음');
@@ -452,12 +539,14 @@
         const snapshotAge=runtimeAgeMs(snapshot?.checked_utc);
         const runtimeFresh=Boolean(snapshot)&&snapshotAge<=RUNTIME_STATUS_MAX_AGE_SECONDS*MILLISECONDS_PER_SECOND;
         const infrastructureOk=safetyState==='active'&&mqttReachable===true&&runtimeFresh;
+        const sensorBypassed=snapshot?.sensor_mode==='disabled';
         const localizationProblem=(snapshot?.terminals||[]).some((terminal)=>{
           const status=terminal.localization?.status;
           return status&&status!=='LOCALIZED';
         });
 
-        if(infrastructureOk&&!localizationProblem)setOverall('good','정상','서버 heartbeat와 MQTT 연결이 정상입니다.');
+        if(infrastructureOk&&sensorBypassed&&!localizationProblem)setOverall('standby','시험 모드','센서 판정을 제외하고 카메라·위치 상태를 확인 중입니다.');
+        else if(infrastructureOk&&!localizationProblem)setOverall('good','정상','서버 heartbeat와 MQTT 연결이 정상입니다.');
         else if(infrastructureOk&&localizationProblem)setOverall('unknown','주의','서버는 실행 중이나 단말 위치 진단을 확인하세요.');
         else if(safetyState==='unknown'||typeof mqttReachable!=='boolean'||!snapshot)setOverall('unknown','확인 필요','서버 공통 상태를 확인하세요.');
         else setOverall('problem','문제','서버 heartbeat, 안전 서버 또는 MQTT를 확인하세요.');
@@ -500,36 +589,41 @@
 
           const sensor=snapshot.sensor||{};
           const sensorBypassed=snapshot.sensor_mode==='disabled';
-          setIndicator('sensor-indicator',sensorBypassed||Number(sensor.parse_failures||0)===0?'good':'problem',sensorBypassed?'센서 제외 테스트':Number(sensor.parse_failures||0)===0?'전체 파싱 정상':`파싱 실패 ${formatNumber(sensor.parse_failures)}건`);
-          setText('sensor-received',sensorBypassed?'제외':formatNumber(sensor.received));
-          setText('sensor-detail',sensorBypassed?'실제 MQTT 센서 입력을 위험 판정에서 제외함':`전체 단말 합산 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건 · 신선도는 단말별 확인`);
+          const sensorParseFailures=Number(sensor.parse_failures||0);
+          setIndicator('sensor-indicator',sensorBypassed?'standby':sensorParseFailures===0?'good':'problem',sensorBypassed?'센서 제외 시험 모드':sensorParseFailures===0?'센서 파싱 정상':`센서 파싱 실패 ${formatNumber(sensorParseFailures)}건`);
+          setText('sensor-state',sensorBypassed?'제외 모드':sensorParseFailures===0?'정상':'확인 필요');
+          setText('sensor-detail',sensorBypassed?'센서 판정을 사용하지 않음':`이번 실행 ${formatNumber(sensor.received)}건 수신 · 파싱 실패 ${formatNumber(sensorParseFailures)}건`);
 
           const queue=snapshot.queue||{};
           const queueDropped=Number(queue.dropped)||0;
-          setIndicator('queue-indicator',queueDropped===0?'good':'problem',queueDropped===0?'대기열 손실 없음':`대기열 손실 ${formatNumber(queueDropped)}건`);
-          setText('queue-depth',formatNumber(queue.depth));
-          setText('queue-capacity',formatNumber(queue.capacity));
-          setText('queue-detail',`현재 / 최대 · 대기열에서 버린 메시지 ${formatNumber(queueDropped)}건`);
+          const queueDepth=Number(queue.depth)||0;
+          const queueCapacity=Number(queue.capacity)||0;
+          const queueBusy=queueCapacity>0&&queueDepth/queueCapacity>=.8;
+          setIndicator('queue-indicator',queueDropped>0||queueBusy?'problem':'good',queueDropped>0?'메타데이터 손실 발생':queueBusy?'처리 지연 발생':'처리 지연 없음');
+          setText('queue-state',queueDropped>0||queueBusy?'확인 필요':'정상');
+          setText('queue-detail',`현재 대기 ${formatNumber(queueDepth)}건 · 설정 용량 ${formatNumber(queueCapacity)}건 · 손실 ${formatNumber(queueDropped)}건`);
 
           const storage=snapshot.storage||{};
           const storageFailures=(Number(storage.events_write_failures)||0)+(Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0);
-          setIndicator('storage-indicator',storageFailures===0?'good':'problem',storageFailures===0?'공통 저장 정상':`공통 저장 문제 ${formatNumber(storageFailures)}건`);
-          setText('events-written',formatNumber(storage.events_written));
-          setText('storage-detail',`쓰기 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber((Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0))}건`);
+          const storageDropped=(Number(storage.events_dropped)||0)+(Number(storage.latency_dropped)||0);
+          setIndicator('storage-indicator',storageFailures===0?'good':'problem',storageFailures===0?'이벤트 DB 정상':`이벤트 DB 문제 ${formatNumber(storageFailures)}건`);
+          setText('storage-state',storageFailures===0?'정상':'확인 필요');
+          setText('storage-detail',`이번 실행 ${formatNumber(storage.events_written)}건 기록 · 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber(storageDropped)}건`);
+          renderOperationalSummary(snapshot);
           renderTerminalCards(snapshot.terminals||[],snapshot.sensor_mode||'network');
           renderPeopleSection(snapshot.terminals||[]);
         }else{
           setText('server-run-id','실행 정보 없음');
           setText('runtime-state','—');
           setText('runtime-detail','실행 정보 없음');
-          setText('sensor-received','—');
           renderResources({});
+          setText('sensor-state','—');
           setText('sensor-detail','실행 정보 없음');
-          setText('queue-depth','—');
-          setText('queue-capacity','—');
+          setText('queue-state','—');
           setText('queue-detail','실행 정보 없음');
-          setText('events-written','—');
+          setText('storage-state','—');
           setText('storage-detail','실행 정보 없음');
+          renderOperationalSummary({});
           setText('terminal-cards','실행 정보 없음');
           setText('terminal-summary','실행 정보 없음');
           setText('people-detections','실행 정보 없음');
