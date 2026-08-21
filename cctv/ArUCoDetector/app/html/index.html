@@ -465,7 +465,9 @@
               const ch = c.channel;
               if (ch < 1 || ch > 4) continue;
               setCellText('ch_state_' + ch, c.state);
-              setCellText('ch_markers_' + ch, c.marker_count);
+              const markerText = (c.marker_count != null ? c.marker_count : 0) +
+                (Array.isArray(c.marker_ids) && c.marker_ids.length > 0 ? ' (ID: ' + c.marker_ids.join(', ') + ')' : '');
+              setCellText('ch_markers_' + ch, markerText);
               setCellText('ch_rejected_' + ch, c.rejected_count);
               setCellText('ch_latency_' + ch, c.latency_ms);
               setCellText('ch_cpulatency_' + ch, c.cpu_latency_ms);

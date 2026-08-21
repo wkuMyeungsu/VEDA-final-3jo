@@ -191,6 +191,7 @@ void ChannelWorker::RunOnce()
     {
         std::lock_guard<std::mutex> lk(status_mtx_);
         status_.marker_count = static_cast<int>(result.ids.size());
+        status_.marker_ids = result.ids;
         status_.rejected_count = result.rejected_count;
         status_.latency_ms = latency;
         status_.cpu_latency_ms = cpu_latency;

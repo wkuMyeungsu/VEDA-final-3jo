@@ -32,6 +32,7 @@ class ChannelWorker {
         struct Status {
             bool running = false;       // 이 워커가 폴링 루프를 돌고 있는가
             int marker_count = 0;       // 마지막 폴링에서 검출된 마커 개수
+            std::vector<int> marker_ids; // 마지막 폴링에서 검출된 마커 ID 목록
             int rejected_count = 0;     // 마지막 폴링에서 사각형처럼 보였지만 사전과 안 맞아 탈락한 후보 개수.
                                          // 마커 유무와 무관하게 이 값이 크면 장면(컨투어)이 복잡해 검출 비용이 늘어난다는 신호.
             int latency_ms = 0;         // 마지막 폴링 1회 소요 시간(ms) — 벽시계(체감 지연). 다른 채널에게
