@@ -209,12 +209,14 @@ http://<server-address>:8001
 ### systemd 실행
 
 ```sh
-sudo systemctl restart homography-app.service
+sudo systemctl start homography-app.service
 sudo systemctl status homography-app.service --no-pager
+sudo systemctl stop homography-app.service
 ```
 
-unit 파일은 `server/deploy/systemd/homography-app.service`에 있다. 설치 환경에
-따라 `User`, `WorkingDirectory`, `ExecStart`, 설정·도구 경로를 수정한다.
+unit 파일은 `server/deploy/systemd/homography-app.service`에 있다. 이 앱은
+온디맨드 유지보수 도구이므로 설치 시 비활성화되며 자동 재시작하지 않는다.
+필요할 때 `start`하고 보정 작업이 끝나면 `stop`한다.
 
 ## 검증
 
