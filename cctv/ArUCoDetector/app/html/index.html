@@ -1005,10 +1005,22 @@
             cmpRoundDetail.push({
               slot: slot.label, round, channel: ch,
               detectionCount: tt ? tt.detectionCount : 0,
-              slot_avg_us: sl ? sl.avg : '', slot_p95_us: sl ? sl.p95 : '',
-              undist_avg_us: un ? un.avg : '', undist_p95_us: un ? un.p95 : '',
-              detect_avg_us: dt ? dt.avg : '', detect_p95_us: dt ? dt.p95 : '',
-              total_avg_us: tt ? tt.avg : '', total_p95_us: tt ? tt.p95 : '',
+              slot_avg_ms: sl ? (sl.avg / 1000).toFixed(2) : '',
+              slot_avg_us: sl ? sl.avg : '',
+              slot_p95_ms: sl ? (sl.p95 / 1000).toFixed(2) : '',
+              slot_p95_us: sl ? sl.p95 : '',
+              undist_avg_ms: un ? (un.avg / 1000).toFixed(2) : '',
+              undist_avg_us: un ? un.avg : '',
+              undist_p95_ms: un ? (un.p95 / 1000).toFixed(2) : '',
+              undist_p95_us: un ? un.p95 : '',
+              detect_avg_ms: dt ? (dt.avg / 1000).toFixed(2) : '',
+              detect_avg_us: dt ? dt.avg : '',
+              detect_p95_ms: dt ? (dt.p95 / 1000).toFixed(2) : '',
+              detect_p95_us: dt ? dt.p95 : '',
+              total_avg_ms: tt ? (tt.avg / 1000).toFixed(2) : '',
+              total_avg_us: tt ? tt.avg : '',
+              total_p95_ms: tt ? (tt.p95 / 1000).toFixed(2) : '',
+              total_p95_us: tt ? tt.p95 : '',
               rejected_avg: rj ? rj.avg : ''
             });
           }
@@ -1039,10 +1051,15 @@
           label: slot.label,
           channels: slot.channels.join('+'),
           totalDetectionCount,
+          avgSlot_ms: totalDetectionCount > 0 ? ((sumSlotWeighted / totalDetectionCount) / 1000).toFixed(2) : 0,
           avgSlot_us: totalDetectionCount > 0 ? Math.round(sumSlotWeighted / totalDetectionCount) : 0,
+          avgUndist_ms: totalDetectionCount > 0 ? ((sumUndistWeighted / totalDetectionCount) / 1000).toFixed(2) : 0,
           avgUndist_us: totalDetectionCount > 0 ? Math.round(sumUndistWeighted / totalDetectionCount) : 0,
+          avgDetect_ms: totalDetectionCount > 0 ? ((sumDetectWeighted / totalDetectionCount) / 1000).toFixed(2) : 0,
           avgDetect_us: totalDetectionCount > 0 ? Math.round(sumDetectWeighted / totalDetectionCount) : 0,
+          avgTotal_ms: totalDetectionCount > 0 ? ((sumTotalWeighted / totalDetectionCount) / 1000).toFixed(2) : 0,
           avgTotal_us: totalDetectionCount > 0 ? Math.round(sumTotalWeighted / totalDetectionCount) : 0,
+          avgLoss_ms: perChannel.length > 0 ? ((perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) / 1000).toFixed(2) : 0,
           avgLoss_us: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) : 0,
           avgRatio: perChannel.length > 0 ? Math.round((perChannel.reduce((a, p) => a + p.ratio, 0) / perChannel.length) * 10) / 10 : 0,
           avgRejected: totalDetectionCount > 0 ? Math.round(sumRejectedWeighted / totalDetectionCount) : 0
@@ -1116,12 +1133,12 @@
     }
 
     function downloadCompareSummaryCsv() {
-      downloadCsvGeneric('compare_summary_us',
-        ['label', 'channels', 'totalDetectionCount', 'avgSlot_us', 'avgUndist_us', 'avgDetect_us', 'avgTotal_us', 'avgLoss_us', 'avgRatio', 'avgRejected'], cmpSlotResults);
+      downloadCsvGeneric('compare_summary',
+        ['label', 'channels', 'totalDetectionCount', 'avgSlot_ms', 'avgSlot_us', 'avgUndist_ms', 'avgUndist_us', 'avgDetect_ms', 'avgDetect_us', 'avgTotal_ms', 'avgTotal_us', 'avgLoss_ms', 'avgLoss_us', 'avgRatio', 'avgRejected'], cmpSlotResults);
     }
     function downloadCompareDetailCsv() {
-      downloadCsvGeneric('compare_detail_us',
-        ['slot', 'round', 'channel', 'detectionCount', 'slot_avg_us', 'slot_p95_us', 'undist_avg_us', 'undist_p95_us', 'detect_avg_us', 'detect_p95_us', 'total_avg_us', 'total_p95_us', 'rejected_avg'],
+      downloadCsvGeneric('compare_detail',
+        ['slot', 'round', 'channel', 'detectionCount', 'slot_avg_ms', 'slot_avg_us', 'slot_p95_ms', 'slot_p95_us', 'undist_avg_ms', 'undist_avg_us', 'undist_p95_ms', 'undist_p95_us', 'detect_avg_ms', 'detect_avg_us', 'detect_p95_ms', 'detect_p95_us', 'total_avg_ms', 'total_avg_us', 'total_p95_ms', 'total_p95_us', 'rejected_avg'],
         cmpRoundDetail);
     }
     // ========================================================================
