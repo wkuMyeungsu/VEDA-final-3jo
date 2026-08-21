@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Server Operations Console</title>
+  <title>서버 운영 콘솔</title>
   <style>
     body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#20252b;background:#f6f7f9}
     section{background:#fff;border:1px solid #dfe3e8;border-radius:10px;padding:1.2rem;margin:1rem 0}
@@ -14,28 +14,43 @@
   </style>
 </head>
 <body data-refresh-interval-seconds="__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__">
-  <h1>Server Operations Console</h1>
+  <h1>서버 운영 콘솔</h1>
   <p id="refresh-note">읽기 전용 운영 상태입니다.</p>
   <section>
-    <h2>Runtime</h2>
+    <h2>실행 상태</h2>
     <dl>
-      <dt>Safety server</dt><dd id="safety">확인 중</dd>
+      <dt>안전 서버</dt><dd id="safety">확인 중</dd>
       <dt>MQTT TLS</dt><dd id="mqtt">확인 중</dd>
-      <dt>Homography</dt><dd id="homography-state">확인 중</dd>
-      <dt>Server log</dt><dd id="server-log">확인 중</dd>
-      <dt>Runtime snapshot</dt><dd id="runtime-status">확인 중</dd>
-      <dt>Last check</dt><dd id="checked">확인 중</dd>
+      <dt>호모그래피 앱</dt><dd id="homography-state">확인 중</dd>
+      <dt>서버 로그 마지막 기록</dt><dd id="server-log">확인 중</dd>
+      <dt>런타임 상태</dt><dd id="runtime-status">확인 중</dd>
+      <dt>마지막 확인</dt><dd id="checked">확인 중</dd>
     </dl>
   </section>
-  <section><h2>Recent server logs</h2><pre id="server-logs">확인 중</pre></section>
-  <section><h2>Maintenance tool</h2><a id="homography" href="#">Open Homography App</a></section>
+  <section><h2>최근 서버 로그</h2><pre id="server-logs">확인 중</pre></section>
+  <section><h2>유지보수 도구</h2><a id="homography" href="#">호모그래피 앱 열기</a></section>
   <script>
     const MILLISECONDS_PER_SECOND = 1000;
     const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
     const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
+    const STATUS_SYMBOLS = Object.freeze({active:'O',online:'O',inactive:'X',offline:'X',failed:'X',unknown:'?'});
+    const STATUS_LABELS = Object.freeze({active:'활성',online:'연결됨',inactive:'비활성',offline:'연결 끊김',failed:'실패',unknown:'확인 불가'});
     document.getElementById('refresh-note').textContent =
       `읽기 전용 운영 상태입니다. ${REFRESH_INTERVAL_SECONDS}초마다 갱신됩니다.`;
-    const setState=(id,value)=>{const node=document.getElementById(id);node.textContent=value;node.className=String(value).toLowerCase()};
+    const setState=(id,value)=>{
+      const node=document.getElementById(id);
+      const state=String(value||'unknown').toLowerCase();
+      node.textContent=STATUS_SYMBOLS[state]||'?';
+      node.className=state;
+      node.title=STATUS_LABELS[state]||'확인 불가';
+      node.setAttribute('aria-label',STATUS_LABELS[state]||'확인 불가');
+    };
+    const formatTimestamp=(value)=>{
+      if(!value)return '기록 없음';
+      const date=new Date(value);
+      if(Number.isNaN(date.getTime()))return value;
+      return new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeStyle:'medium',timeZone:'Asia/Seoul'}).format(date);
+    };
     async function refresh(){
       try{
         const response=await fetch('/api/status',{cache:'no-store'});
@@ -43,16 +58,21 @@
         setState('safety',value.safety_server.state);
         setState('mqtt',value.mqtt.reachable?'online':'offline');
         setState('homography-state',value.homography.state);
-        document.getElementById('server-log').textContent=value.server_log.modified_utc||'기록 없음';
+        const serverLogTime=value.server_log.modified_utc||'';
+        const serverLogNode=document.getElementById('server-log');
+        serverLogNode.textContent=formatTimestamp(serverLogTime);
+        serverLogNode.title=serverLogTime;
         const recentLines = value.server_log.recent_lines||[];
         document.getElementById('server-logs').textContent=recentLines.length
           ? recentLines.join('\n')
           : '기록 없음';
         const snapshot=value.runtime_status&&value.runtime_status.snapshot;
         document.getElementById('runtime-status').textContent=snapshot
-          ? `${snapshot.state||'unknown'} / queue drop ${snapshot.queue?.dropped??'?'}`
+          ? `${STATUS_SYMBOLS[String(snapshot.state||'unknown').toLowerCase()]||'?'} ${STATUS_LABELS[String(snapshot.state||'unknown').toLowerCase()]||'확인 불가'} · 처리 큐 버림 ${snapshot.queue?.dropped??'?'}건`
           : '기록 없음';
-        document.getElementById('checked').textContent=value.checked_utc;
+        const checkedNode=document.getElementById('checked');
+        checkedNode.textContent=formatTimestamp(value.checked_utc);
+        checkedNode.title=value.checked_utc||'';
       }catch(error){setState('safety','unknown');setState('mqtt','unknown');setState('homography-state','unknown');document.getElementById('runtime-status').textContent='확인 실패';document.getElementById('server-logs').textContent='확인 실패'}
     }
     document.getElementById('homography').href='http://'+location.hostname+':8001';

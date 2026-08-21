@@ -36,6 +36,10 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("setInterval(refresh,1000)", page)
         self.assertIn('<pre id="server-logs">확인 중</pre>', page)
         self.assertIn("recentLines.join('\\n')", page)
+        for label in ("서버 운영 콘솔", "안전 서버", "호모그래피 앱", "최근 서버 로그", "유지보수 도구"):
+            self.assertIn(label, page)
+        self.assertIn("active:'O'", page)
+        self.assertIn("inactive:'X'", page)
 
     def test_recent_logs_returns_only_the_requested_tail(self):
         with tempfile.TemporaryDirectory() as directory:
