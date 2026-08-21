@@ -41,7 +41,8 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn(".status-value.active .status-dot", page)
         self.assertIn(".status-value.inactive .status-dot", page)
         self.assertIn("dot.className='status-dot'", page)
-        self.assertIn("node.replaceChildren(dot,label)", page)
+        self.assertIn("node.replaceChildren(dot)", page)
+        self.assertNotIn("status-label", page)
         self.assertNotIn("active:'O'", page)
         self.assertNotIn("inactive:'X'", page)
 

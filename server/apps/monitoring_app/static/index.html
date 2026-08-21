@@ -37,7 +37,7 @@
     const MILLISECONDS_PER_SECOND = 1000;
     const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
     const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
-    const STATUS_LABELS = Object.freeze({active:'활성',online:'정상',inactive:'비활성',offline:'연결 끊김',failed:'실패',unknown:'확인 불가'});
+    const STATUS_LABELS = Object.freeze({active:'실행 중',online:'연결됨',inactive:'중지됨',offline:'연결 끊김',failed:'실패',unknown:'확인 불가'});
     document.getElementById('refresh-note').textContent =
       `읽기 전용 운영 상태입니다. ${REFRESH_INTERVAL_SECONDS}초마다 갱신됩니다.`;
     const setState=(id,value)=>{
@@ -46,10 +46,7 @@
       const dot=document.createElement('span');
       dot.className='status-dot';
       dot.setAttribute('aria-hidden','true');
-      const label=document.createElement('span');
-      label.className='status-label';
-      label.textContent=STATUS_LABELS[state]||'확인 불가';
-      node.replaceChildren(dot,label);
+      node.replaceChildren(dot);
       node.className=`status-value ${state}`;
       node.title=STATUS_LABELS[state]||'확인 불가';
       node.setAttribute('aria-label',STATUS_LABELS[state]||'확인 불가');
