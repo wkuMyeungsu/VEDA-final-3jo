@@ -51,10 +51,10 @@ double iou(const BoundingBox& a, const BoundingBox& b) {
 
 CrossCameraTracker::CrossCameraTracker(double iou_threshold,
                                        double world_distance_threshold_mm,
-                                       int max_missed_frames)
+                                       double track_timeout_sec)
     : iou_threshold_(iou_threshold),
       world_distance_threshold_mm_(world_distance_threshold_mm),
-      max_missed_frames_(max_missed_frames) {}
+      track_timeout_sec_(track_timeout_sec) {}
 
 std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& detections, double now_s) {
     std::vector<bool> det_matched(detections.size(), false);
@@ -124,7 +124,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
         t.missed_frames = 0;
     }
 
-    // ── 3) 매칭 안 된 기존 트랙: missed_frames 증가, 초과 시 소멸 ──
+    // ── 3) 매칭 안 된 기존 트랙: missed_frames 증가(로그용), 시간 초과 시 소멸 ──
     for (size_t ti = 0; ti < tracks_.size(); ++ti) {
         if (!track_matched[ti]) {
             tracks_[ti].missed_frames++;
@@ -133,11 +133,11 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
     tracks_.erase(
         std::remove_if(tracks_.begin(), tracks_.end(),
             [&](const Track& t) {
-                bool expired = t.missed_frames > max_missed_frames_;
+                bool expired = (now_s - t.last_seen_s) > track_timeout_sec_;
                 if (expired) {
                     LOG_DEBUG("CCTV", "사람 트랙 만료 (track_id=" + std::to_string(t.track_id) +
-                                       ", " + std::to_string(t.missed_frames) +
-                                       "프레임 연속 미검출)");
+                                       ", " + std::to_string(now_s - t.last_seen_s) +
+                                       "초 연속 미검출)");
                 }
                 return expired;
             }),

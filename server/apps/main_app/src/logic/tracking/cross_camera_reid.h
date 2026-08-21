@@ -37,7 +37,7 @@ struct Detection {
 class CrossCameraTracker {
 public:
     CrossCameraTracker(double iou_threshold, double world_distance_threshold_mm,
-                       int max_missed_frames);
+                       double track_timeout_sec);
 
     // 한 프레임의 검출 목록을 받아 트랙을 갱신하고, 현재 트랙 목록을 반환
     std::vector<Track> update(const std::vector<Detection>& detections, double now_s);
@@ -46,7 +46,7 @@ private:
     // 추적 기준은 공통 JSON에서 생성 시 주입받고 실행 중에는 변경하지 않는다.
     const double iou_threshold_;
     const double world_distance_threshold_mm_;
-    const int max_missed_frames_;
+    const double track_timeout_sec_;
     std::vector<Track> tracks_;
     int next_id_ = 1;
 };

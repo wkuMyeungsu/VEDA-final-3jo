@@ -56,6 +56,7 @@ private:
     std::optional<std::string> active_stream_;
     std::string active_camera_id_;
     int active_channel_ = -1;
+    double track_freshness_sec_;
     CrossCameraTracker cross_camera_tracker_;
     JudgmentPipeline judgment_pipeline_;
 };

@@ -91,7 +91,7 @@ forklift::config::SafetyServerConfig testConfig() {
                               "rtsp://test-2", CHANNEL3_HOMOGRAPHY_PATH, 2592, 1520});
     config.handover.confirm_frames = 3;
     config.handover.lost_grace_ms = 500;
-    config.tracking = {0.3, 1000.0, 5};
+    config.tracking = {0.3, 1000.0, 200, 500};
     return config;
 }
 
