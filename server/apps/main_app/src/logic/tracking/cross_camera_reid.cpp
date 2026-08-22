@@ -122,6 +122,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
         t.last_world  = d.world;
         t.last_seen_s = now_s;
         t.missed_frames = 0;
+        t.observed_utc = d.observed_utc;
     }
 
     // ── 3) 매칭 안 된 기존 트랙: missed_frames 증가(로그용), 시간 초과 시 소멸 ──
@@ -154,6 +155,7 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             nt.last_bbox     = detections[di].bbox;
             nt.last_world    = detections[di].world;
             nt.last_seen_s   = now_s;
+            nt.observed_utc = detections[di].observed_utc;
             LOG_DEBUG("CCTV", "사람 트랙 생성 (track_id=" + std::to_string(nt.track_id) +
                                ", stream: " + nt.stream_id + ")");
             tracks_.push_back(nt);

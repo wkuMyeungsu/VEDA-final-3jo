@@ -16,6 +16,7 @@ module tb_top;
     wire uart_tx_o;
     wire [1:0] led;
     wire buzzer_out;
+    wire [3:0] warning_state_bcd;
 
     always #(CLK_NS/2.0) clk = ~clk;
 
@@ -23,15 +24,28 @@ module tb_top;
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .BAUD_RATE  (BAUD_RATE)
     ) dut (
-        .clk           (clk),
-        .rst_n         (rst_n),
-        .uart_rx_i     (uart_rx_i),
-        .uart_tx_o     (uart_tx_o),
-        .estop_n       (estop_n),
-        .manual_reset_n(manual_reset_n),
-        .led           (led),
-        .buzzer_out    (buzzer_out)
+        .clk              (clk),
+        .rst_n            (rst_n),
+        .uart_rx_i        (uart_rx_i),
+        .uart_tx_o        (uart_tx_o),
+        .estop_n          (estop_n),
+        .manual_reset_n   (manual_reset_n),
+        .led              (led),
+        .buzzer_out       (buzzer_out),
+        .warning_state_bcd(warning_state_bcd)
     );
+
+    // warning_state_bcd가 dut 내부 warning_state와 항상 같은 값을
+    // zero-extend해서 보여주는지 매 변화마다 확인 (2026-08-14 추가)
+    always @(warning_state_bcd) begin
+        #1; // dut.warning_state와의 조합논리 갱신 레이스 회피
+        if (warning_state_bcd !== {1'b0, dut.warning_state})
+            $display("[%0t ns] FAIL: warning_state_bcd=%0d != warning_state=%0d",
+                      $time, warning_state_bcd, dut.warning_state);
+        else
+            $display("[%0t ns] warning_state_bcd=%0d (warning_state=%0d, OK)",
+                      $time, warning_state_bcd, dut.warning_state);
+    end
 
     // ---- Pi -> FPGA: 바이트 하나를 UART로 송신 ----
     task send_byte(input [7:0] data);

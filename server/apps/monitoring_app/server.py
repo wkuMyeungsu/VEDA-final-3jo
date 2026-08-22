@@ -4,6 +4,8 @@ import json
 import os
 import socket
 import subprocess
+import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +25,10 @@ DEFAULT_REFRESH_INTERVAL_SECONDS = 1
 DEFAULT_RECENT_LOG_LINES = 50
 MAX_LOG_TAIL_BYTES = 64 * 1024
 RUNTIME_STATUS_MAX_AGE_SECONDS = 3
+PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
+THERMAL_ROOT = Path(os.environ.get("SERVER_MONITORING_THERMAL_ROOT", "/sys/class/thermal"))
+_RESOURCE_SAMPLE_LOCK = threading.Lock()
+_HOST_CPU_SAMPLE = None
 
 
 def refresh_interval_seconds():
@@ -68,6 +74,146 @@ def tcp_reachable(host, port):
             return True
     except OSError:
         return False
+
+
+def _read_host_cpu_ticks():
+    """Read aggregate CPU counters from the host procfs."""
+    try:
+        lines = (PROC_ROOT / "stat").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if not line.startswith("cpu "):
+            continue
+        try:
+            values = [int(value) for value in line.split()[1:]]
+        except (TypeError, ValueError):
+            return None
+        if len(values) < 5:
+            return None
+        total_ticks = sum(values)
+        idle_ticks = values[3] + values[4]
+        return total_ticks, idle_ticks
+    return None
+
+
+def _read_host_memory():
+    """Read host memory totals and availability from procfs."""
+    try:
+        lines = (PROC_ROOT / "meminfo").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    values = {}
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].endswith(":"):
+            continue
+        try:
+            values[parts[0][:-1]] = int(parts[1])
+        except (TypeError, ValueError):
+            continue
+    total_kb = values.get("MemTotal")
+    available_kb = values.get("MemAvailable")
+    if total_kb is None or available_kb is None or total_kb <= 0:
+        return None
+    available_kb = max(0, min(total_kb, available_kb))
+    return total_kb, available_kb
+
+
+def _read_host_temperature():
+    """Read a CPU/SoC thermal zone temperature in degrees Celsius."""
+    try:
+        zones = sorted(THERMAL_ROOT.glob("thermal_zone*/temp"))
+    except OSError:
+        zones = []
+    preferred = []
+    fallback = []
+    for temp_path in zones:
+        zone_dir = temp_path.parent
+        try:
+            zone_type = (zone_dir / "type").read_text(encoding="utf-8").strip().lower()
+        except OSError:
+            zone_type = ""
+        if any(token in zone_type for token in ("cpu", "soc", "bcm", "pkg")):
+            preferred.append((temp_path, zone_type))
+        else:
+            fallback.append((temp_path, zone_type))
+    for temp_path, zone_type in preferred + fallback:
+        try:
+            raw_value = float(temp_path.read_text(encoding="utf-8").strip())
+        except (OSError, TypeError, ValueError):
+            continue
+        value = raw_value / 1000.0 if abs(raw_value) > 200 else raw_value
+        if -20.0 <= value <= 150.0:
+            return round(value, 1), zone_type or temp_path.parent.name
+    return None, None
+
+
+def host_resource(sampled_at=None, sampled_utc=None):
+    """Return whole-Raspberry-Pi CPU and memory usage from procfs."""
+    global _HOST_CPU_SAMPLE
+    now = sampled_at if sampled_at is not None else time.monotonic()
+    timestamp = sampled_utc or datetime.now(timezone.utc).isoformat()
+    cpu_ticks = _read_host_cpu_ticks()
+    memory = _read_host_memory()
+    if cpu_ticks is None or memory is None:
+        with _RESOURCE_SAMPLE_LOCK:
+            _HOST_CPU_SAMPLE = None
+        return {
+            "state": "unavailable",
+            "cpu_percent": None,
+            "memory_used_kb": None,
+            "memory_used_mb": None,
+            "memory_total_kb": None,
+            "memory_total_mb": None,
+            "memory_available_kb": None,
+            "memory_available_mb": None,
+            "memory_percent": None,
+            "temperature_c": None,
+            "temperature_source": None,
+            "sampled_utc": timestamp,
+        }
+
+    total_ticks, idle_ticks = cpu_ticks
+    total_kb, available_kb = memory
+    used_kb = total_kb - available_kb
+    temperature_c, temperature_source = _read_host_temperature()
+    cpu_percent = None
+    with _RESOURCE_SAMPLE_LOCK:
+        previous = _HOST_CPU_SAMPLE
+        _HOST_CPU_SAMPLE = {
+            "sampled_at": now,
+            "total_ticks": total_ticks,
+            "idle_ticks": idle_ticks,
+        }
+        if previous:
+            total_delta = total_ticks - previous["total_ticks"]
+            idle_delta = idle_ticks - previous["idle_ticks"]
+            if total_delta > 0:
+                cpu_percent = max(0.0, min(100.0, (total_delta - idle_delta) / total_delta * 100.0))
+    return {
+        "state": "ok",
+        "cpu_percent": round(cpu_percent, 1) if cpu_percent is not None else None,
+        "memory_used_kb": used_kb,
+        "memory_used_mb": round(used_kb / 1024, 1),
+        "memory_total_kb": total_kb,
+        "memory_total_mb": round(total_kb / 1024, 1),
+        "memory_available_kb": available_kb,
+        "memory_available_mb": round(available_kb / 1024, 1),
+        "memory_percent": round(used_kb / total_kb * 100.0, 1),
+        "temperature_c": temperature_c,
+        "temperature_source": temperature_source,
+        "sampled_utc": timestamp,
+    }
+
+
+def resource_snapshot(_safety_state=None):
+    """Collect lightweight CPU and memory metrics for the whole host."""
+    sampled_utc = datetime.now(timezone.utc).isoformat()
+    return {
+        "checked_utc": sampled_utc,
+        "host": host_resource(sampled_utc=sampled_utc),
+    }
 
 
 def file_timestamp(path):
@@ -126,19 +272,16 @@ def read_recent_logs(path, limit=DEFAULT_RECENT_LOG_LINES):
 
 def status_snapshot():
     safety_state = service_state("forklift_safety_server.service")
-    homography_state = service_state("homography-app.service")
     mqtt_ok = tcp_reachable(MQTT_HOST, MQTT_PORT)
     runtime_status = read_runtime_status(RUNTIME_STATUS)
     runtime_health = runtime_status_health(runtime_status)
+    resources = resource_snapshot(safety_state)
     return {
         "ok": safety_state == "active" and mqtt_ok and runtime_health["fresh"],
         "service": "monitoring-app",
         "monitoring": "online",
         "safety_server": {"state": safety_state},
-        "homography": {
-            "state": homography_state,
-            "lifecycle": "on-demand",
-        },
+        "resources": resources,
         "mqtt": {
             "reachable": mqtt_ok,
             "host": MQTT_HOST,

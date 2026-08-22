@@ -252,7 +252,7 @@
           <h2>지연 측정</h2>
           <p class="muted" style="margin: -4px 0 12px;">
             [측정 시작] 후 각 채널이 새로 검출을 완료할 때마다 지연(ms)을 수집합니다(0.5초 간격 확인).
-            아래 표는 1초마다 <b>측정 시작부터 지금까지 누적된</b> 통계로 그 자리에서 갱신됩니다 — 표본이 쌓일수록
+            아래 표는 1초마다 <b>측정 시작부터 지금까지 누적된</b> 통계로 그 자리에서 갱신됩니다 — 검출 횟수가 쌓일수록
             p95·평균이 어떻게 안정화되는지 볼 수 있습니다.
             <b>지연</b>은 체감 지연(다른 채널과의 CPU 경합으로 대기한 시간 포함),
             <b>CPU지연</b>은 이 채널이 실제로 CPU에서 실행된 순수 파이프라인 시간(경합 미포함)입니다.
@@ -296,7 +296,7 @@
               <table>
                 <thead>
                   <tr>
-                    <th>항목</th><th>활성채널</th><th>표본수</th>
+                    <th>항목</th><th>활성채널</th><th>검출횟수</th>
                     <th>평균지연(wall)</th><th>평균CPU지연</th>
                     <th>경합손실(ms)</th><th>경합비율(%)</th><th>변동폭(ms)</th><th>평균 탈락후보</th>
                   </tr>
@@ -315,7 +315,7 @@
             <table>
               <thead>
                 <tr>
-                  <th rowspan="2">채널</th><th rowspan="2">표본 수</th>
+                  <th rowspan="2">채널</th><th rowspan="2">검출 횟수</th>
                   <th colspan="4">지연(ms) · 체감 (경합 포함)</th>
                   <th colspan="4">CPU지연(ms) · 파이프라인 (경합 제외)</th>
                   <th rowspan="2">탈락후보<br>(평균)</th>
@@ -327,25 +327,25 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>1</td><td id="lat_n_1">—</td>
+                  <td>1</td><td id="lat_detectionCount_1">—</td>
                   <td id="lat_wall_min_1">—</td><td id="lat_wall_avg_1">—</td><td id="lat_wall_p95_1">—</td><td id="lat_wall_max_1">—</td>
                   <td id="lat_cpu_min_1">—</td><td id="lat_cpu_avg_1">—</td><td id="lat_cpu_p95_1">—</td><td id="lat_cpu_max_1">—</td>
                   <td id="lat_rejected_avg_1">—</td>
                 </tr>
                 <tr>
-                  <td>2</td><td id="lat_n_2">—</td>
+                  <td>2</td><td id="lat_detectionCount_2">—</td>
                   <td id="lat_wall_min_2">—</td><td id="lat_wall_avg_2">—</td><td id="lat_wall_p95_2">—</td><td id="lat_wall_max_2">—</td>
                   <td id="lat_cpu_min_2">—</td><td id="lat_cpu_avg_2">—</td><td id="lat_cpu_p95_2">—</td><td id="lat_cpu_max_2">—</td>
                   <td id="lat_rejected_avg_2">—</td>
                 </tr>
                 <tr>
-                  <td>3</td><td id="lat_n_3">—</td>
+                  <td>3</td><td id="lat_detectionCount_3">—</td>
                   <td id="lat_wall_min_3">—</td><td id="lat_wall_avg_3">—</td><td id="lat_wall_p95_3">—</td><td id="lat_wall_max_3">—</td>
                   <td id="lat_cpu_min_3">—</td><td id="lat_cpu_avg_3">—</td><td id="lat_cpu_p95_3">—</td><td id="lat_cpu_max_3">—</td>
                   <td id="lat_rejected_avg_3">—</td>
                 </tr>
                 <tr>
-                  <td>4</td><td id="lat_n_4">—</td>
+                  <td>4</td><td id="lat_detectionCount_4">—</td>
                   <td id="lat_wall_min_4">—</td><td id="lat_wall_avg_4">—</td><td id="lat_wall_p95_4">—</td><td id="lat_wall_max_4">—</td>
                   <td id="lat_cpu_min_4">—</td><td id="lat_cpu_avg_4">—</td><td id="lat_cpu_p95_4">—</td><td id="lat_cpu_max_4">—</td>
                   <td id="lat_rejected_avg_4">—</td>
@@ -465,7 +465,9 @@
               const ch = c.channel;
               if (ch < 1 || ch > 4) continue;
               setCellText('ch_state_' + ch, c.state);
-              setCellText('ch_markers_' + ch, c.marker_count);
+              const markerText = (c.marker_count != null ? c.marker_count : 0) +
+                (Array.isArray(c.marker_ids) && c.marker_ids.length > 0 ? ' (ID: ' + c.marker_ids.join(', ') + ')' : '');
+              setCellText('ch_markers_' + ch, markerText);
               setCellText('ch_rejected_' + ch, c.rejected_count);
               setCellText('ch_latency_' + ch, c.latency_ms);
               setCellText('ch_cpulatency_' + ch, c.cpu_latency_ms);
@@ -483,32 +485,32 @@
     // 깨끗이 제거된다. (GET /status는 상태모니터링도 같이 쓰는 공용 엔드포인트라 그대로 둘 것)
     //
     // 설계:
-    //  - 표본 수집(0.5초)과 화면 표시(1초)를 분리한다 — 데이터는 촘촘히, 표시는 읽기 편하게.
-    //  - last_detect가 바뀐 경우만 표본으로 채택해 같은 검출 결과의 중복 집계를 막는다.
+    //  - 검출 확인(0.5초)과 화면 표시(1초)를 분리한다 — 데이터는 촘촘히, 표시는 읽기 편하게.
+    //  - last_detect가 바뀐 경우만 새 검출로 인정해 같은 검출 결과의 중복 집계를 막는다.
     //  - 표는 채널당 1행(총 4행) 고정 — 매 틱마다 "측정 시작부터 지금까지 누적" 통계로
     //    같은 셀 값만 덮어쓴다(행이 늘어나지 않음). 경과시간은 표가 아니라 측정 배지 옆에 표시.
-    //  - 표본 저장: min/max/합계/개수는 표본이 들어올 때 O(1)로 바로 누적한다(매 틱마다
-    //    배열 전체를 훑지 않음). 다만 p95는 전체 분포 없이는 정확히 못 구하므로 원본 표본
+    //  - 검출값 저장: min/max/합계/개수는 새 검출이 들어올 때 O(1)로 바로 누적한다(매 틱마다
+    //    배열 전체를 훑지 않음). 다만 p95는 전체 분포 없이는 정확히 못 구하므로 원본 검출값
     //    배열도 계속 갖고 있다가, 표시 시점에만 그 배열을 정렬해 p95를 뽑는다.
-    //    (표본 수가 측정 세션 동안 많아야 수천 개 수준이라 이 정도 정렬 비용은 매 틱 걱정할
+    //    (검출 횟수가 측정 세션 동안 많아야 수천 개 수준이라 이 정도 정렬 비용은 매 틱 걱정할
     //    수준이 아니라서, min/max/합계만 O(1)로 따로 유지하는 정도로 충분하다 판단함)
     // ========================================================================
     let latencyMeasuring = false;
-    let latencySampleTimer = null;   // 0.5초: /status를 촘촘히 확인해 표본 수집
+    let detectionPollTimer = null;   // 0.5초: /status를 촘촘히 확인해 새 검출 확인
     let latencyDisplayTimer = null;  // 1초: 누적 통계로 표 셀 + 경과시간 갱신
     let latencyStartTime = null;     // 측정 시작 시각(ms) — 경과시간 계산용
     // 체감(wall, latency_ms)과 파이프라인(cpu, cpu_latency_ms)을 별도 스토어에 나란히 누적한다.
-    // 같은 검출 이벤트에서 동시에 뽑은 값이라 표본 수(n)는 항상 서로 같다.
-    let latencyStatsWall = {};       // { 채널: { samples:[], n, sum, min, max } }
-    let latencyStatsCpu = {};        // { 채널: { samples:[], n, sum, min, max } }
-    let latencyStatsRejected = {};   // { 채널: { samples:[], n, sum, min, max } } -- 탈락 후보 수 (장면 복잡도 신호)
-    let latencyLastDetect = {};      // { 채널: 마지막으로 표본 채택한 last_detect 값 } (중복 집계 방지)
-    const kLatencySampleIntervalMs = 500;
+    // 같은 검출 이벤트에서 동시에 뽑은 값이라 검출 횟수(detectionCount)는 항상 서로 같다.
+    let latencyStatsWall = {};       // { 채널: { values:[], detectionCount, sum, min, max } }
+    let latencyStatsCpu = {};        // { 채널: { values:[], detectionCount, sum, min, max } }
+    let latencyStatsRejected = {};   // { 채널: { values:[], detectionCount, sum, min, max } } -- 탈락 후보 수 (장면 복잡도 신호)
+    let latencyLastDetect = {};      // { 채널: 마지막으로 검출로 인정한 last_detect 값 } (중복 집계 방지)
+    const kDetectionPollIntervalMs = 500;
     const kLatencyDisplayIntervalMs = 1000;
 
     function makeEmptyStatStore() {
       const s = {};
-      for (let ch = 1; ch <= 4; ch++) s[ch] = { samples: [], n: 0, sum: 0, min: Infinity, max: -Infinity };
+      for (let ch = 1; ch <= 4; ch++) s[ch] = { values: [], detectionCount: 0, sum: 0, min: Infinity, max: -Infinity };
       return s;
     }
 
@@ -522,19 +524,19 @@
       document.getElementById('latency_start_btn').disabled = true;
       document.getElementById('latency_stop_btn').disabled = false;
       for (let ch = 1; ch <= 4; ch++) {
-        setCellText('lat_n_' + ch, '—');
+        setCellText('lat_detectionCount_' + ch, '—');
         for (const p of ['wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max']) {
           setCellText('lat_' + p + '_' + ch, '—');
         }
         setCellText('lat_rejected_avg_' + ch, '—');
       }
-      sampleLatencyOnce();
+      pollForNewDetection();
       updateLatencyDisplay();
-      latencySampleTimer = setInterval(sampleLatencyOnce, kLatencySampleIntervalMs);
+      detectionPollTimer = setInterval(pollForNewDetection, kDetectionPollIntervalMs);
       latencyDisplayTimer = setInterval(updateLatencyDisplay, kLatencyDisplayIntervalMs);
     }
 
-    function sampleLatencyOnce() {
+    function pollForNewDetection() {
       fetch(base_uri + '/status')
         .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
         .then(d => {
@@ -542,24 +544,24 @@
           for (const c of d.channels) {
             const ch = c.channel;
             if (ch < 1 || ch > 4) continue;
-            // last_detect가 이전에 기록한 값과 다를 때만 "새 검출"로 보고 표본 추가.
+            // last_detect가 이전에 기록한 값과 다를 때만 "새 검출"로 보고 값 추가.
             if (c.last_detect && latencyLastDetect[ch] !== c.last_detect) {
               latencyLastDetect[ch] = c.last_detect;
-              if (typeof c.latency_ms === 'number') addSample(latencyStatsWall, ch, c.latency_ms);
-              if (typeof c.cpu_latency_ms === 'number') addSample(latencyStatsCpu, ch, c.cpu_latency_ms);
-              if (typeof c.rejected_count === 'number') addSample(latencyStatsRejected, ch, c.rejected_count);
+              if (typeof c.latency_ms === 'number') addDetection(latencyStatsWall, ch, c.latency_ms);
+              if (typeof c.cpu_latency_ms === 'number') addDetection(latencyStatsCpu, ch, c.cpu_latency_ms);
+              if (typeof c.rejected_count === 'number') addDetection(latencyStatsRejected, ch, c.rejected_count);
             }
           }
         })
-        .catch(() => { /* 측정 중 일시 오류는 무시하고 다음 표본에서 재시도 */ });
+        .catch(() => { /* 측정 중 일시 오류는 무시하고 다음 확인에서 재시도 */ });
     }
 
-    // 표본 1개를 지정된 스토어(wall 또는 cpu)의 채널 통계에 반영.
-    // n/sum/min/max는 O(1)로 즉시 갱신(매 틱마다 배열을 안 훑음).
-    function addSample(store, ch, ms) {
+    // 검출값 1개를 지정된 스토어(wall 또는 cpu)의 채널 통계에 반영.
+    // detectionCount/sum/min/max는 O(1)로 즉시 갱신(매 틱마다 배열을 안 훑음).
+    function addDetection(store, ch, ms) {
       const s = store[ch];
-      s.samples.push(ms);
-      s.n++;
+      s.values.push(ms);
+      s.detectionCount++;
       s.sum += ms;
       if (ms < s.min) s.min = ms;
       if (ms > s.max) s.max = ms;
@@ -570,13 +572,13 @@
       return sortedArr[Math.max(0, idx)];
     }
 
-    // 지정된 스토어에서 채널의 "지금까지 누적된" 통계. n/min/max/avg는 O(1) 필드에서 바로 꺼내고,
-    // p95만 이 시점에 표본 배열을 정렬해서 구한다. 표본 없으면 null.
+    // 지정된 스토어에서 채널의 "지금까지 누적된" 통계. detectionCount/min/max/avg는 O(1) 필드에서 바로 꺼내고,
+    // p95만 이 시점에 검출값 배열을 정렬해서 구한다. 검출값 없으면 null.
     function computeStatsFrom(store, ch) {
       const s = store[ch];
-      if (!s || s.n === 0) return null;
-      const sorted = s.samples.slice().sort((a, b) => a - b);
-      return { n: s.n, min: s.min, max: s.max, avg: Math.round(s.sum / s.n), p95: percentile(sorted, 0.95) };
+      if (!s || s.detectionCount === 0) return null;
+      const sorted = s.values.slice().sort((a, b) => a - b);
+      return { detectionCount: s.detectionCount, min: s.min, max: s.max, avg: Math.round(s.sum / s.detectionCount), p95: percentile(sorted, 0.95) };
     }
 
     // 표 셀(채널당 1행, 고정)을 wall/cpu 누적 통계로 그 자리에서 갱신 + 배지 옆 경과시간 갱신.
@@ -589,7 +591,7 @@
         const w = computeStatsFrom(latencyStatsWall, ch);
         const c = computeStatsFrom(latencyStatsCpu, ch);
         const rj = computeStatsFrom(latencyStatsRejected, ch);
-        setCellText('lat_n_' + ch, w ? w.n : 0);   // wall/cpu 표본 수는 항상 동일하므로 wall 기준
+        setCellText('lat_detectionCount_' + ch, w ? w.detectionCount : 0);   // wall/cpu 검출 횟수는 항상 동일하므로 wall 기준
         setCellText('lat_wall_min_' + ch, w ? w.min : '—');
         setCellText('lat_wall_avg_' + ch, w ? w.avg : '—');
         setCellText('lat_wall_p95_' + ch, w ? w.p95 : '—');
@@ -604,11 +606,11 @@
 
     function stopLatencyMeasure() {
       latencyMeasuring = false;
-      if (latencySampleTimer) { clearInterval(latencySampleTimer); latencySampleTimer = null; }
+      if (detectionPollTimer) { clearInterval(detectionPollTimer); detectionPollTimer = null; }
       if (latencyDisplayTimer) { clearInterval(latencyDisplayTimer); latencyDisplayTimer = null; }
       document.getElementById('latency_start_btn').disabled = false;
       document.getElementById('latency_stop_btn').disabled = true;
-      updateLatencyDisplay();  // 마지막 표본까지 반영한 값으로 한 번 더 갱신 + 배지를 "측정 종료"로 고정
+      updateLatencyDisplay();  // 마지막 검출값까지 반영한 값으로 한 번 더 갱신 + 배지를 "측정 종료"로 고정
     }
 
     // ========================================================================
@@ -618,9 +620,9 @@
     // 그 외 파일은 안 건드려도 됨 (/settings, /settings/apply는 원래 있는 운영 엔드포인트).
     //
     // 의존성 방향(중요): 이 블록은 위 "지연 측정"(수동) 섹션의 전역 상태
-    // (latencyStatsWall/Cpu, latencyMeasuring, latencyStartTime, latencySampleTimer,
-    // latencyDisplayTimer)와 함수(makeEmptyStatStore/addSample/computeStatsFrom/
-    // sampleLatencyOnce/updateLatencyDisplay), 그리고 결과 표(lat_wall_*/lat_cpu_* 셀)를
+    // (latencyStatsWall/Cpu, latencyMeasuring, latencyStartTime, detectionPollTimer,
+    // latencyDisplayTimer)와 함수(makeEmptyStatStore/addDetection/computeStatsFrom/
+    // pollForNewDetection/updateLatencyDisplay), 그리고 결과 표(lat_wall_*/lat_cpu_* 셀)를
     // 그대로 재사용한다.
     //   ① 이 블록만 단독 삭제 = 안전. "지연 측정"(수동) 기능은 영향 없이 그대로 동작.
     //   ② "지연 측정" 자체를 통째로 지울 경우 = 이 블록도 반드시 함께 지워야 함
@@ -702,9 +704,9 @@
       latencyLastDetect = {};
       latencyMeasuring = true;
       latencyStartTime = Date.now();
-      sampleLatencyOnce();
+      pollForNewDetection();
       updateLatencyDisplay();
-      latencySampleTimer = setInterval(sampleLatencyOnce, kLatencySampleIntervalMs);
+      detectionPollTimer = setInterval(pollForNewDetection, kDetectionPollIntervalMs);
       latencyDisplayTimer = setInterval(() => {
         updateLatencyDisplay();
         const elapsed = Math.floor((Date.now() - latencyStartTime) / 1000);
@@ -714,17 +716,17 @@
       // durationSec만큼 기다리되, [중단]이 눌리면 cancellableWait가 즉시 resolve 되면서
       // 아래 정리(interval clear)가 바로 실행된다 — 남은 시간을 기다릴 필요 없음.
       return cancellableWait(durationSec * 1000).then(() => {
-        clearInterval(latencySampleTimer); latencySampleTimer = null;
+        clearInterval(detectionPollTimer); detectionPollTimer = null;
         clearInterval(latencyDisplayTimer); latencyDisplayTimer = null;
         latencyMeasuring = false;
         updateLatencyDisplay();
       });
     }
 
-    // 한 라운드의 표본을 항목 단위 풀(pool)에 합산 (percentile 계산을 위해 원본 표본을 그대로 옮김)
+    // 한 라운드의 검출값을 항목 단위 풀(pool)에 합산 (percentile 계산을 위해 원본 검출값을 그대로 옮김)
     function mergeIntoPool(poolStore, ch, sourceStatEntry) {
       if (!sourceStatEntry) return;
-      for (const v of sourceStatEntry.samples) addSample(poolStore, ch, v);
+      for (const v of sourceStatEntry.values) addDetection(poolStore, ch, v);
     }
 
     async function startCompareTest() {
@@ -800,7 +802,7 @@
             const rj = computeStatsFrom(latencyStatsRejected, ch);
             cmpRoundDetail.push({
               slot: slot.label, round, channel: ch,
-              n: w ? w.n : 0,
+              detectionCount: w ? w.detectionCount : 0,
               wall_min: w ? w.min : '', wall_avg: w ? w.avg : '', wall_p95: w ? w.p95 : '', wall_max: w ? w.max : '',
               cpu_min: c ? c.min : '', cpu_avg: c ? c.avg : '', cpu_p95: c ? c.p95 : '', cpu_max: c ? c.max : '',
               rejected_avg: rj ? rj.avg : ''
@@ -808,8 +810,8 @@
           }
         }
 
-        // 항목 요약 계산 — 라운드 전체를 풀링한 표본 기준 (개별 라운드 p95 평균보다 통계적으로 안정적)
-        let sumRatio = 0, ratioCount = 0, totalN = 0, sumWallWeighted = 0, sumCpuWeighted = 0, sumRejectedWeighted = 0;
+        // 항목 요약 계산 — 라운드 전체를 풀링한 검출값 기준 (개별 라운드 p95 평균보다 통계적으로 안정적)
+        let sumRatio = 0, ratioCount = 0, totalDetectionCount = 0, sumWallWeighted = 0, sumCpuWeighted = 0, sumRejectedWeighted = 0;
         const perChannel = [];
         for (const ch of slot.channels) {
           const w = computeStatsFrom(slotPoolWall, ch);
@@ -821,21 +823,21 @@
           const spread = w.p95 - w.min;
           perChannel.push({ loss, ratio, spread });
           sumRatio += ratio; ratioCount++;
-          totalN += w.n;
-          sumWallWeighted += w.avg * w.n;
-          sumCpuWeighted += c.avg * w.n;
-          sumRejectedWeighted += (rj ? rj.avg : 0) * w.n;
+          totalDetectionCount += w.detectionCount;
+          sumWallWeighted += w.avg * w.detectionCount;
+          sumCpuWeighted += c.avg * w.detectionCount;
+          sumRejectedWeighted += (rj ? rj.avg : 0) * w.detectionCount;
         }
         cmpSlotResults.push({
           label: slot.label,
           channels: slot.channels.join('+'),
-          totalN,
-          avgWall: totalN > 0 ? Math.round(sumWallWeighted / totalN) : 0,
-          avgCpu: totalN > 0 ? Math.round(sumCpuWeighted / totalN) : 0,
+          totalDetectionCount,
+          avgWall: totalDetectionCount > 0 ? Math.round(sumWallWeighted / totalDetectionCount) : 0,
+          avgCpu: totalDetectionCount > 0 ? Math.round(sumCpuWeighted / totalDetectionCount) : 0,
           avgLoss: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) : 0,
           avgRatio: ratioCount > 0 ? Math.round((sumRatio / ratioCount) * 10) / 10 : 0,
           avgSpread: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.spread, 0) / perChannel.length) : 0,
-          avgRejected: totalN > 0 ? Math.round(sumRejectedWeighted / totalN) : 0
+          avgRejected: totalDetectionCount > 0 ? Math.round(sumRejectedWeighted / totalDetectionCount) : 0
         });
       }
 
@@ -870,7 +872,7 @@
       tbody.innerHTML = '';
       for (const r of cmpSlotResults) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalN}</td>` +
+        tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalDetectionCount}</td>` +
           `<td>${r.avgWall}</td><td>${r.avgCpu}</td><td>${r.avgLoss}</td><td>${r.avgRatio}%</td><td>${r.avgSpread}</td><td>${r.avgRejected}</td>`;
         tbody.appendChild(tr);
       }
@@ -905,11 +907,11 @@
 
     function downloadCompareSummaryCsv() {
       downloadCsvGeneric('compare_summary',
-        ['label', 'channels', 'totalN', 'avgWall', 'avgCpu', 'avgLoss', 'avgRatio', 'avgSpread', 'avgRejected'], cmpSlotResults);
+        ['label', 'channels', 'totalDetectionCount', 'avgWall', 'avgCpu', 'avgLoss', 'avgRatio', 'avgSpread', 'avgRejected'], cmpSlotResults);
     }
     function downloadCompareDetailCsv() {
       downloadCsvGeneric('compare_detail',
-        ['slot', 'round', 'channel', 'n', 'wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max', 'rejected_avg'],
+        ['slot', 'round', 'channel', 'detectionCount', 'wall_min', 'wall_avg', 'wall_p95', 'wall_max', 'cpu_min', 'cpu_avg', 'cpu_p95', 'cpu_max', 'rejected_avg'],
         cmpRoundDetail);
     }
     // ========================================================================

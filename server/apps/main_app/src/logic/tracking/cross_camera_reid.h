@@ -30,6 +30,9 @@ struct Detection {
     BoundingBox bbox;    // 자기 카메라 픽셀 좌표 (ONVIF BoundingBox 그대로)
     WorldPoint  world;   // world 좌표 (카메라가 달라도 비교 가능)
     double      timestamp_s;
+    // 원본 메타데이터의 UTC 시각. runtime snapshot에서 트랙의 마지막
+    // 실제 검출 시각을 표시할 때 사용한다.
+    std::string observed_utc;
 };
 
 // 크로스카메라 트래커. 한 프레임의 검출 목록을 넣으면 IoU(동일 카메라)/world 거리

@@ -210,8 +210,18 @@ void DetectorManager::SendMetadata(int channel, const std::vector<int>& ids, con
   std::string target = "MetadataManager_" + std::to_string(channel - 1);
   SendNoReplyEvent(target, static_cast<int32_t>(IMetadataManager::EEventType::eRequestRawMetadata), 0, req);
 
-  // 상태 모니터링 UI(GET /logs)에 채널별 검출 결과 노출
-  AppendLog(GetCurrentTimeToString() + " [ch" + std::to_string(channel) + "] markers=" + std::to_string(ids.size()));
+  // 상태 모니터링 UI(GET /logs)에 채널별 검출 결과 및 마커 ID 목록 노출
+  std::string log_line = GetCurrentTimeToString() + " [ch" + std::to_string(channel) + "] markers=" + std::to_string(ids.size());
+  if (!ids.empty()) {
+    std::string ids_str = "[";
+    for (size_t i = 0; i < ids.size(); ++i) {
+      if (i > 0) ids_str += ", ";
+      ids_str += std::to_string(ids[i]);
+    }
+    ids_str += "]";
+    log_line += " IDs=" + ids_str;
+  }
+  AppendLog(log_line);
 }
 
 void DetectorManager::ProcessMetadata(Event* event) {
@@ -367,6 +377,11 @@ void DetectorManager::HandleGetStatus(OpenAppSerializable* oas) {
     obj.AddMember("channel", ch, alloc);
     obj.AddMember("state", state, alloc);
     obj.AddMember("marker_count", st.marker_count, alloc);
+    JsonUtility::ValueType ids_arr(JsonUtility::Type::kArrayType);
+    for (int id : st.marker_ids) {
+      ids_arr.PushBack(id, alloc);
+    }
+    obj.AddMember("marker_ids", ids_arr, alloc);
     obj.AddMember("rejected_count", st.rejected_count, alloc);
     obj.AddMember("latency_ms", st.latency_ms, alloc);
     obj.AddMember("cpu_latency_ms", st.cpu_latency_ms, alloc);

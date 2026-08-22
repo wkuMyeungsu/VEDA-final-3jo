@@ -49,6 +49,8 @@ struct Track {
     WorldPoint  last_world;
     double      last_seen_s = 0.0;
     int         missed_frames = 0;
+    // 마지막으로 이 트랙을 갱신한 원본 메타데이터의 UTC 시각.
+    std::string observed_utc;
 };
 
 // 최근접 사람 선택 결과
