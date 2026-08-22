@@ -153,7 +153,8 @@ public:
     explicit DangerJudgmentEngine(
         const forklift::config::DangerJudgmentConfig& config,
         double forklift_collision_radius_mm,
-        std::chrono::milliseconds dead_reckoning_release_grace);
+        std::chrono::milliseconds dead_reckoning_release_grace,
+        bool ignore_sensor_input = false);
 
     // 한 프레임 처리: 카메라 입력 + 센서 입력 -> 최종 판정
     //
@@ -183,6 +184,7 @@ private:
     const double forklift_collision_radius_mm;
     const double impact_accel_threshold_g;
     const std::chrono::milliseconds dead_reckoning_release_grace_ms;
+    const bool ignore_sensor_input_;
 
     static double euclideanDistance(const WorldPoint& a, const WorldPoint& b);
 

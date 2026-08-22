@@ -31,7 +31,8 @@
 DangerJudgmentEngine::DangerJudgmentEngine(
     const forklift::config::DangerJudgmentConfig& config,
     double collision_radius_mm,
-    std::chrono::milliseconds dead_reckoning_release_grace)
+    std::chrono::milliseconds dead_reckoning_release_grace,
+    bool ignore_sensor_input)
     : caution_threshold_mm(config.caution_threshold_mm),
       danger_threshold_mm(config.danger_threshold_mm),
       emergency_threshold_mm(config.emergency_threshold_mm),
@@ -40,7 +41,8 @@ DangerJudgmentEngine::DangerJudgmentEngine(
       tof_danger_mm(config.tof_danger_mm),
       forklift_collision_radius_mm(collision_radius_mm),
       impact_accel_threshold_g(config.impact_accel_threshold_g),
-      dead_reckoning_release_grace_ms(dead_reckoning_release_grace) {}
+      dead_reckoning_release_grace_ms(dead_reckoning_release_grace),
+      ignore_sensor_input_(ignore_sensor_input) {}
 
 JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const SensorInput& sen) const {
     JudgmentResult result;
@@ -70,7 +72,11 @@ JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const Sens
     result.distance_mm = dist;
 
     // ── 2) ToF 기반 판정 ────────────────────────────
-    if (sen.tof_ok) {
+    if (ignore_sensor_input_) {
+        // 센서 제외 테스트 모드에서는 ToF/IMU 입력을 읽거나 판정에 반영하지 않는다.
+        // 센서값을 "정상"으로 위조하는 것이 아니라 카메라 판정만 남긴다.
+        result.tof_risk = RiskLevel::SAFE;
+    } else if (sen.tof_ok) {
         result.tof_risk = classifyByTof(sen.tof_distance_mm);
     } else {
         result.tof_risk = RiskLevel::SAFE; // 판정 불가 -> 예외 단계에서 보정
@@ -159,10 +165,10 @@ RiskLevel DangerJudgmentEngine::classifyByTof(double dist_mm) const {
 ExceptionState DangerJudgmentEngine::detectException(const CameraInput& cam, const SensorInput& sen,
                                                      RiskLevel tof_risk) const {
     // 우선순위: 충돌 의심 > 센서 고장 > dead-reckoning > 대상 미확인 근접
-    if (sen.imu_accel_g >= impact_accel_threshold_g) {
+    if (!ignore_sensor_input_ && sen.imu_accel_g >= impact_accel_threshold_g) {
         return ExceptionState::EMERGENCY_IMPACT;
     }
-    if (!sen.imu_ok || !sen.tof_ok) {
+    if (!ignore_sensor_input_ && (!sen.imu_ok || !sen.tof_ok)) {
         return ExceptionState::SENSOR_FAULT;
     }
 
@@ -170,7 +176,8 @@ ExceptionState DangerJudgmentEngine::detectException(const CameraInput& cam, con
     // 진입은 즉시(안전 방향이라 늦추면 안 됨), 해제만 dead_reckoning_release_grace_ms
     // 동안 미확보 프레임이 한 번도 없어야 반영한다. classifyByDistance()의 in_emergency_
     // 히스테리시스와 같은 원칙이고, 축만 거리 대신 시간이다.
-    const bool raw_dead_reckoning = !cam.forklift_localized || sen.is_dead_reckoning;
+    const bool raw_dead_reckoning = !cam.forklift_localized ||
+                                    (!ignore_sensor_input_ && sen.is_dead_reckoning);
     if (raw_dead_reckoning) {
         dead_reckoning_active_ = true;
         last_dead_reckoning_time_ = std::chrono::steady_clock::now();
@@ -185,7 +192,7 @@ ExceptionState DangerJudgmentEngine::detectException(const CameraInput& cam, con
     }
 
     // [신규] 지게차 좌표는 정상인데 카메라에 사람이 안 잡히고, ToF는 근접(CAUTION 이상)을 보고 -> 미확인 근접
-    if (!cam.person_detected && tof_risk != RiskLevel::SAFE) {
+    if (!ignore_sensor_input_ && !cam.person_detected && tof_risk != RiskLevel::SAFE) {
         return ExceptionState::UNCONFIRMED_PROXIMITY;
     }
     return ExceptionState::NONE;

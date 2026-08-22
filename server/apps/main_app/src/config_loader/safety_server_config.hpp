@@ -37,7 +37,8 @@ struct HandoverConfig {
 struct TrackingConfig {
     double iou_threshold{};
     double world_distance_threshold_mm{};
-    int max_missed_frames{};
+    int track_freshness_ms{};
+    int track_timeout_ms{};
 };
 
 struct SensorConfig {

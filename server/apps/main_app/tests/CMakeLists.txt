@@ -25,6 +25,13 @@ add_executable(test_bounded_queue test_bounded_queue.cpp)
 target_include_directories(test_bounded_queue PRIVATE ${SERVER_SRC_DIR})
 add_test(NAME bounded_queue_test COMMAND test_bounded_queue)
 
+add_executable(test_server_command_line_options
+    test_server_command_line_options.cpp
+    ${SERVER_SRC_DIR}/runtime/server_command_line_options.cpp
+)
+target_include_directories(test_server_command_line_options PRIVATE ${SERVER_SRC_DIR})
+add_test(NAME server_command_line_options_test COMMAND test_server_command_line_options)
+
 add_executable(test_judgment_engine test_exception_trigger.cpp)
 target_link_libraries(test_judgment_engine PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_engine_test COMMAND test_judgment_engine)
@@ -83,12 +90,17 @@ add_executable(test_marker_stream_tracker test_marker_channel_tracker.cpp)
 target_link_libraries(test_marker_stream_tracker PRIVATE server_tracking)
 add_test(NAME marker_stream_tracker_test COMMAND test_marker_stream_tracker)
 
+add_executable(test_nearest_person_selector test_nearest_person_selector.cpp)
+target_link_libraries(test_nearest_person_selector PRIVATE server_tracking)
+add_test(NAME nearest_person_selector_test COMMAND test_nearest_person_selector)
+
 set_tests_properties(
     onvif_metadata_parser_test
     metadata_router_test
     aruco_metadata_parser_test
     metadata_timing_test
     bounded_queue_test
+    server_command_line_options_test
     judgment_engine_test
     judgment_pipeline_test
     assignment_publisher_test
@@ -96,6 +108,7 @@ set_tests_properties(
     safety_server_config_test
     homography_transformer_test
     marker_stream_tracker_test
+    nearest_person_selector_test
     PROPERTIES
         LABELS "unit"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"

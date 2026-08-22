@@ -31,10 +31,13 @@ double euclideanDistance(const WorldPoint& a, const WorldPoint& b) {
 }
 
 NearestPersonResult selectNearestPerson(const WorldPoint& forklift,
-                                        const std::vector<Track>& tracks) {
+                                        const std::vector<Track>& tracks,
+                                        double now_s,
+                                        double freshness_sec) {
     NearestPersonResult result;
     for (const auto& t : tracks) {
-        if (t.missed_frames > 0) continue; // 이번 프레임에 실제로 안 보인 트랙은 제외
+        // 다른 채널의 프레임이 들어온 순간에도, 최근에 관측된 사람은 후보로 남긴다.
+        if (now_s - t.last_seen_s > freshness_sec) continue;
 
         double d = euclideanDistance(forklift, t.last_world);
         if (d < result.distance_mm) {

@@ -35,6 +35,7 @@
 #include "network/result_dispatcher.hpp"
 #include "network/result_publisher.hpp"
 #include "network/sensor_uplink_receiver.hpp"
+#include "runtime/server_command_line_options.hpp"
 
 namespace {
 
@@ -71,6 +72,10 @@ std::string alertContext(const JudgmentResult& result) {
     return context.empty() ? std::string() : " (" + context + ")";
 }
 
+const char* sensorModeLogLabel(forklift::runtime::SensorMode mode) {
+    return mode == forklift::runtime::SensorMode::Disabled ? "입력 제외(테스트)" : "네트워크";
+}
+
 std::string jsonString(const std::string& value) {
     std::string escaped;
     escaped.reserve(value.size() + 2);
@@ -84,6 +89,23 @@ std::string jsonString(const std::string& value) {
     }
     escaped.push_back('"');
     return escaped;
+}
+
+std::string markerIdList(const std::vector<int>& marker_ids) {
+    if (marker_ids.empty()) return "없음";
+    std::ostringstream output;
+    for (std::size_t index = 0; index < marker_ids.size(); ++index) {
+        if (index) output << ',';
+        output << marker_ids[index];
+    }
+    return output.str();
+}
+
+const char* localizationLogLabel(const std::string& status) {
+    if (status == "LOCALIZED") return "지게차 위치 확인";
+    if (status == "MARKER_NOT_DETECTED") return "지게차 기준 마커 미검출";
+    if (status == "HOMOGRAPHY_UNAVAILABLE") return "지게차 좌표 변환 불가";
+    return "ArUco 입력 대기";
 }
 
 const char* linkStateName(risk_transport::LinkState state) {
@@ -149,19 +171,20 @@ struct TerminalContext;
 // TERM 하나의 상태. 마커·센서·판정 히스테리시스·결과 발행기를 TERM별로 분리한다.
 struct TerminalContext {
     forklift::config::ForkliftDevice device;
-    StubSensorReader stub_sensor;
     NetworkSensorReader sensor_reader;
     forklift::logic::SafetyFramePipeline pipeline;
     risk_transport::ResultPublisher publisher;
     risk_transport::ResultDispatcher dispatcher;
+    std::string last_localization_status;
 
     TerminalContext(forklift::config::SafetyServerConfig config,
                     forklift::config::ForkliftDevice forklift,
-                    risk_transport::SensorUplinkReceiver& receiver)
+                    risk_transport::SensorUplinkReceiver& receiver,
+                    forklift::runtime::SensorMode sensor_mode)
         : device(std::move(forklift)),
-          stub_sensor(config.sensor.stub_tof_distance_mm),
           sensor_reader(receiver, device.terminal_id, config.sensor.stale_timeout_ms),
-          pipeline(config, device, sensor_reader),
+          pipeline(config, device, sensor_reader,
+                   sensor_mode == forklift::runtime::SensorMode::Disabled),
           publisher(device.terminal_id, config.network.mqtt_host, config.network.mqtt_port,
                     risk_transport::MqttTlsOptions{config.network.tls_enabled, config.network.ca_cert_path,
                                                    config.network.client_cert_path, config.network.client_key_path},
@@ -173,8 +196,10 @@ struct TerminalContext {
 // 중앙 서버. RTSP worker는 여기로 프레임만 넣고, 위험 판정은 이 클래스의 한 스레드에서만 한다.
 class CentralServer {
 public:
-    explicit CentralServer(forklift::config::SafetyServerConfig config)
+    CentralServer(forklift::config::SafetyServerConfig config,
+                  forklift::runtime::SensorMode sensor_mode)
         : config_(std::move(config)),
+          sensor_mode_(sensor_mode),
           sensor_receiver_(configuredTerminalIds(config_.forklifts),
                            config_.network.mqtt_host, config_.network.mqtt_port,
                            tlsOptions()),
@@ -188,7 +213,8 @@ public:
                          config_.output_storage.enable_raw_csv_logging),
           aruco_logger_(config_.output_storage.aruco_csv,
                         config_.output_storage.enable_raw_csv_logging),
-          events_(static_cast<std::size_t>(config_.stream.metadata_queue_capacity)) {
+          events_(static_cast<std::size_t>(config_.stream.metadata_queue_capacity)),
+          server_started_utc_(nowIso8601Ms()) {
         for (const auto& device : config_.forklifts)
             terminals_.push_back(makeTerminal(device));
     }
@@ -235,6 +261,7 @@ private:
     void process(const MetadataEvent& event);
 
     forklift::config::SafetyServerConfig config_;
+    forklift::runtime::SensorMode sensor_mode_;
     risk_transport::SensorUplinkReceiver sensor_receiver_;
     risk_transport::ResultPublisher server_status_;
     risk_transport::AssignmentPublisher assignment_publisher_;
@@ -245,6 +272,7 @@ private:
     std::vector<std::unique_ptr<TerminalContext>> terminals_;
     std::vector<std::unique_ptr<StreamWorker>> workers_;
     forklift::common::BoundedQueue<MetadataEvent> events_;
+    const std::string server_started_utc_;
     std::atomic<bool> running_{false};
     std::thread process_thread_;
     std::thread status_thread_;
@@ -252,7 +280,7 @@ private:
 
 std::unique_ptr<TerminalContext> CentralServer::makeTerminal(
     const forklift::config::ForkliftDevice& device) {
-    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_);
+    return std::make_unique<TerminalContext>(config_, device, sensor_receiver_, sensor_mode_);
 }
 
 void CentralServer::process(const MetadataEvent& event) {
@@ -264,6 +292,26 @@ void CentralServer::process(const MetadataEvent& event) {
             const double now_s = std::chrono::duration<double>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             auto output = terminal->pipeline.processObjectFrame(event.object, now_s);
+            const auto localization = terminal->pipeline.localizationStatus();
+            if (localization.status != terminal->last_localization_status) {
+                const std::string stream = localization.last_aruco_frame_stream_id.empty()
+                                               ? "없음"
+                                               : localization.last_aruco_frame_stream_id;
+                const std::string target_seen = localization.last_target_marker_seen_utc.empty()
+                                                    ? "이번 실행에서 없음"
+                                                    : localization.last_target_marker_seen_utc;
+                const std::string message =
+                    "[" + terminal->device.terminal_id + "] " + localizationLogLabel(localization.status) +
+                    " (설정 ID: " + std::to_string(localization.configured_marker_id) +
+                    ", 최근 ArUco 스트림: " + stream +
+                    ", 최근 관측 ID: " + markerIdList(localization.last_observed_marker_ids) +
+                    ", 설정 ID 마지막 검출: " + target_seen + ")";
+                if (localization.status == "LOCALIZED")
+                    LOG_INFO("CCTV", message);
+                else
+                    LOG_WARN("CCTV", message);
+                terminal->last_localization_status = localization.status;
+            }
             terminal->dispatcher.submit(output.judgment.result);
         }
         return;
@@ -285,6 +333,8 @@ void CentralServer::process(const MetadataEvent& event) {
 void CentralServer::writeRuntimeStatus(const std::string& state) {
     const std::filesystem::path status_path = config_.output_storage.runtime_status;
     if (status_path.empty()) return;
+    const double now_s = std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 
     std::error_code error;
     const auto parent = status_path.parent_path();
@@ -297,9 +347,11 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
 
     std::ostringstream json;
     json << "{\n"
-         << "  \"schema_version\": 1,\n"
+         << "  \"schema_version\": 2,\n"
          << "  \"state\": " << jsonString(state) << ",\n"
+         << "  \"sensor_mode\": " << jsonString(forklift::runtime::sensorModeName(sensor_mode_)) << ",\n"
          << "  \"server_run_id\": " << jsonString(forklift::logging::Logger::instance().runId()) << ",\n"
+         << "  \"server_started_utc\": " << jsonString(server_started_utc_) << ",\n"
          << "  \"checked_utc\": " << jsonString(nowIso8601Ms()) << ",\n"
          << "  \"queue\": {\"depth\": " << events_.size()
          << ", \"capacity\": " << config_.stream.metadata_queue_capacity
@@ -315,6 +367,11 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
          << "  \"terminals\": [";
     for (std::size_t index = 0; index < terminals_.size(); ++index) {
         const auto& terminal = *terminals_[index];
+        const auto sensor = sensor_receiver_.terminalStatus(
+            terminal.device.terminal_id, config_.sensor.stale_timeout_ms);
+        const auto risk = terminal.dispatcher.runtimeSnapshot();
+        const auto localization = terminal.pipeline.localizationStatus();
+        const auto people = terminal.pipeline.peopleStatus(now_s);
         if (index) json << ',';
         json << "{\"terminal_id\": " << jsonString(terminal.device.terminal_id)
              << ", \"risk_link\": " << jsonString(linkStateName(terminal.publisher.state()))
@@ -322,7 +379,134 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
              << ", \"risk_queue_dropped\": " << terminal.publisher.droppedCount()
              << ", \"risk_send_failures\": " << terminal.publisher.sendFailureCount()
              << ", \"change_sends\": " << terminal.dispatcher.changeSendCount()
-             << ", \"heartbeat_sends\": " << terminal.dispatcher.heartbeatSendCount() << "}";
+             << ", \"heartbeat_sends\": " << terminal.dispatcher.heartbeatSendCount()
+             << ", \"sensor\": {\"has_sample\": " << (sensor.has_sample ? "true" : "false")
+             << ", \"stale\": " << (sensor.stale ? "true" : "false")
+             << ", \"age_ms\": " << sensor.age_ms
+             << ", \"received\": " << sensor.received
+             << ", \"parse_failures\": " << sensor.parse_failures << "}"
+             << ", \"risk\": {\"has_result\": " << (risk.has_real_result ? "true" : "false")
+             << ", \"state\": ";
+        if (risk.has_real_result) json << jsonString(toString(risk.result.final_risk));
+        else json << "null";
+        json << ", \"exception\": ";
+        if (risk.has_real_result) json << jsonString(toString(risk.result.exception));
+        else json << "null";
+        json << ", \"distance_mm\": ";
+        if (risk.has_real_result && risk.result.distance_mm >= 0.0) json << risk.result.distance_mm;
+        else json << "null";
+        json << ", \"camera_id\": ";
+        if (risk.has_real_result && !risk.result.source_camera_id.empty())
+            json << jsonString(risk.result.source_camera_id);
+        else if (risk.has_real_result && !risk.result.camera_id.empty())
+            json << jsonString(risk.result.camera_id);
+        else
+            json << "null";
+        json << ", \"stream_id\": ";
+        if (risk.has_real_result && !risk.result.stream_id.empty()) json << jsonString(risk.result.stream_id);
+        else json << "null";
+        json << ", \"channel\": ";
+        if (risk.has_real_result && risk.result.channel >= 0) json << risk.result.channel;
+        else json << "null";
+        json << ", \"last_change_utc\": ";
+        if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
+        else json << "null";
+        json << "}"
+             << ", " << "\"localization\": {\"status\": "
+             << jsonString(localization.status)
+             << ", \"configured_marker_id\": " << localization.configured_marker_id
+             << ", \"localized\": " << (localization.localized ? "true" : "false")
+             << ", \"active_stream_id\": ";
+        if (!localization.active_stream_id.empty()) json << jsonString(localization.active_stream_id);
+        else json << "null";
+        json << ", \"active_camera_id\": ";
+        if (!localization.active_camera_id.empty()) json << jsonString(localization.active_camera_id);
+        else json << "null";
+        json << ", \"active_channel\": ";
+        if (localization.active_channel >= 1) json << localization.active_channel;
+        else json << "null";
+        json << ", \"last_aruco_frame_utc\": ";
+        if (!localization.last_aruco_frame_utc.empty()) json << jsonString(localization.last_aruco_frame_utc);
+        else json << "null";
+        json << ", \"last_aruco_frame_stream_id\": ";
+        if (!localization.last_aruco_frame_stream_id.empty()) json << jsonString(localization.last_aruco_frame_stream_id);
+        else json << "null";
+        json << ", \"last_aruco_frame_channel\": ";
+        if (localization.last_aruco_frame_channel >= 1) json << localization.last_aruco_frame_channel;
+        else json << "null";
+        json << ", \"last_target_marker_seen_utc\": ";
+        if (!localization.last_target_marker_seen_utc.empty()) json << jsonString(localization.last_target_marker_seen_utc);
+        else json << "null";
+        json << ", \"last_target_marker_stream_id\": ";
+        if (!localization.last_target_marker_stream_id.empty()) json << jsonString(localization.last_target_marker_stream_id);
+        else json << "null";
+        json << ", \"last_target_marker_channel\": ";
+        if (localization.last_target_marker_channel >= 1) json << localization.last_target_marker_channel;
+        else json << "null";
+        json << ", \"last_observed_markers_utc\": ";
+        if (!localization.last_observed_markers_utc.empty()) json << jsonString(localization.last_observed_markers_utc);
+        else json << "null";
+        json << ", \"last_observed_markers_stream_id\": ";
+        if (!localization.last_observed_markers_stream_id.empty()) json << jsonString(localization.last_observed_markers_stream_id);
+        else json << "null";
+        json << ", \"last_observed_markers_channel\": ";
+        if (localization.last_observed_markers_channel >= 1) json << localization.last_observed_markers_channel;
+        else json << "null";
+        json << ", \"last_observed_marker_ids\": [";
+        for (std::size_t marker_index = 0;
+             marker_index < localization.last_observed_marker_ids.size(); ++marker_index) {
+            if (marker_index) json << ',';
+            json << localization.last_observed_marker_ids[marker_index];
+        }
+        json << "]}"
+             << ", \"people\": {\"count\": " << people.tracks.size()
+             << ", \"last_update_utc\": ";
+        if (!people.last_update_utc.empty()) json << jsonString(people.last_update_utc);
+        else json << "null";
+        json << ", \"last_update_age_ms\": ";
+        if (people.last_update_s >= 0.0) {
+            const double age_ms = (now_s > people.last_update_s)
+                                      ? (now_s - people.last_update_s) * 1000.0
+                                      : 0.0;
+            json << age_ms;
+        } else {
+            json << "null";
+        }
+        json << ", \"tracks\": [";
+        for (std::size_t person_index = 0; person_index < people.tracks.size(); ++person_index) {
+            const auto& person = people.tracks[person_index];
+            if (person_index) json << ',';
+            const double age_ms = (now_s > person.last_seen_s)
+                                      ? (now_s - person.last_seen_s) * 1000.0
+                                      : 0.0;
+            json << "{\"track_id\": " << person.track_id
+                 << ", \"position\": {\"x_mm\": " << person.position.x
+                 << ", \"y_mm\": " << person.position.y << "}"
+                 << ", \"distance_mm\": ";
+            if (person.distance_mm >= 0.0) json << person.distance_mm;
+            else json << "null";
+            json << ", \"stream_id\": ";
+            if (!person.stream_id.empty()) json << jsonString(person.stream_id);
+            else json << "null";
+            json << ", \"camera_id\": ";
+            if (!person.camera_id.empty()) json << jsonString(person.camera_id);
+            else json << "null";
+            json << ", \"channel\": ";
+            if (person.channel >= 1) json << person.channel;
+            else json << "null";
+            json << ", \"age_ms\": " << age_ms
+                 << ", \"missed_frames\": " << person.missed_frames
+                 << ", \"observed_utc\": ";
+            if (!person.observed_utc.empty()) json << jsonString(person.observed_utc);
+            else json << "null";
+            json << "}";
+        }
+        json << "]}"
+             << ", \"events\": {\"state_changes\": " << terminal.dispatcher.changeSendCount()
+             << ", \"last_change_utc\": ";
+        if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
+        else json << "null";
+        json << "}}";
     }
     json << "]\n}\n";
 
@@ -580,7 +764,11 @@ struct CentralServer::StreamWorker {
 CentralServer::~CentralServer() { stop(); }
 
 void CentralServer::start() {
-    sensor_receiver_.start();
+    if (sensor_mode_ == forklift::runtime::SensorMode::Disabled) {
+        LOG_WARN("SENSOR", "센서 제외 테스트 모드 활성화 (센서 입력을 위험 판정에서 사용하지 않음)");
+    } else {
+        sensor_receiver_.start();
+    }
     server_status_.start();
     assignment_publisher_.start();
     event_logger_.start();
@@ -635,7 +823,7 @@ void CentralServer::stop() {
     for (auto& terminal : terminals_) terminal->publisher.stop();
     assignment_publisher_.stop();
     server_status_.stop();
-    sensor_receiver_.stop();
+    if (sensor_mode_ != forklift::runtime::SensorMode::Disabled) sensor_receiver_.stop();
     event_logger_.stop();
     if (config_.output_storage.enable_raw_csv_logging) {
         latency_logger_.stop();
@@ -647,31 +835,21 @@ void CentralServer::stop() {
 int main(int argc, char* argv[]) {
     g_setenv("GIO_USE_PROXY_RESOLVER", "dummy", TRUE);
     gst_init(&argc, &argv);
-    std::string config_dir = forklift::config::resolveConfigDirectory();
-    std::string common_config_dir;
-    bool enable_debug_csv_flag = false;
-    for (int index = 1; index < argc; ++index) {
-        const std::string option = argv[index];
-        if (option == "--config-dir" && index + 1 < argc) {
-            config_dir = argv[++index];
-        } else if (option == "--common-config-dir" && index + 1 < argc) {
-            common_config_dir = argv[++index];
-        } else if (option == "--enable-debug-csv" || option == "--debug") {
-            enable_debug_csv_flag = true;
-        } else if (option == "--help" || option == "-h") {
-            std::cout << "사용법: " << argv[0] << " [옵션]\n\n"
-                      << "옵션:\n"
-                      << "  --config-dir PATH         안전 설정 디렉터리 경로 (기본값: 자동 감지)\n"
-                      << "  --common-config-dir PATH  공통 설정 디렉터리 경로 (기본값: 자동 감지)\n"
-                      << "  --debug, --enable-debug-csv 디버그 원시 CSV 로깅 활성화\n"
-                      << "  --help, -h                도움말 출력\n";
-            return 0;
-        } else {
-            std::cerr << "사용법: " << argv[0]
-                      << " [--config-dir PATH] [--common-config-dir PATH] [--debug] [--help]\n";
-            return 1;
-        }
+    auto command_line = forklift::runtime::parseServerCommandLine(
+        argc, argv, forklift::config::resolveConfigDirectory());
+    if (!command_line.ok()) {
+        std::cerr << command_line.error << "\n"
+                  << forklift::runtime::serverCommandLineUsage(argv[0]);
+        return 1;
     }
+    if (command_line.options.show_help) {
+        std::cout << forklift::runtime::serverCommandLineUsage(argv[0]);
+        return 0;
+    }
+
+    auto options = std::move(command_line.options);
+    std::string config_dir = options.config_dir;
+    std::string common_config_dir = options.common_config_dir;
     if (common_config_dir.empty())
         common_config_dir = forklift::config::resolveCommonConfigDirectory(config_dir);
 
@@ -682,7 +860,7 @@ int main(int argc, char* argv[]) {
         LOG_ERROR("CONFIG", std::string("서버 기동 실패 (사유: ") + error.what() + ")");
         return 2;
     }
-    if (enable_debug_csv_flag) {
+    if (options.enable_debug_csv) {
         config.output_storage.enable_raw_csv_logging = true;
     }
     forklift::logging::Logger::instance().setDebugEnabled(
@@ -709,12 +887,13 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
-    CentralServer server(std::move(config));
+    CentralServer server(std::move(config), options.sensor_mode);
     server.start();
     server.startWorkers();
-    LOG_INFO("SERVER", "중앙 안전 서버 기동 완료 (CCTV 스트림: " +
+    LOG_INFO("SERVER", "========== 중앙 안전 서버 기동 완료 (CCTV 스트림: " +
                            std::to_string(server.config().streams.size()) + "개, 지게차 단말: " +
-                           std::to_string(server.config().forklifts.size()) + "대)");
+                           std::to_string(server.config().forklifts.size()) + "대, 센서: " +
+                           sensorModeLogLabel(options.sensor_mode) + ") ==========");
     while (!stop_requested) std::this_thread::sleep_for(std::chrono::milliseconds(200));
     LOG_INFO("SERVER", "서버 종료 신호 감지 (안전 종료 진행)");
     server.stop();

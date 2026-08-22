@@ -83,6 +83,17 @@ struct SensorUplinkSample {
     std::chrono::steady_clock::time_point received_at{};
 };
 
+// 운영 상태 화면에 제공할 단말별 센서 수신 상태.
+// received/parse_failures는 프로세스 기동 이후 해당 단말에 귀속된 누적값이고,
+// age_ms/stale은 현재 입력이 살아 있는지를 판단하기 위한 신선도 값이다.
+struct TerminalSensorStatus {
+    bool has_sample = false;
+    bool stale = true;
+    std::int64_t age_ms = -1;
+    std::size_t received = 0;
+    std::size_t parse_failures = 0;
+};
+
 class SensorUplinkReceiver {
 public:
     // 마지막 수신 이후 이만큼 지나면 isStale() == true.
@@ -139,6 +150,12 @@ public:
     //    같은 원칙이다.)
     bool isStale(const std::string& terminal_id, int timeout_ms = kDefaultStaleTimeoutMs) const;
 
+    // 단말별 센서 신선도와 수신 누적값을 한 번에 읽는다.
+    // status snapshot 작성용이며, 내부 최신값 캐시와 같은 mutex로 일관된 시점을 보장한다.
+    TerminalSensorStatus terminalStatus(
+        const std::string& terminal_id,
+        int timeout_ms = kDefaultStaleTimeoutMs) const;
+
     // MQTT 브로커에 현재 연결돼 있는지(구독 세션 전체 단위 - TCP 버전의 "단말 접속"과
     // 달리 특정 단말과는 무관하다. 어느 단말이 값을 보내는지는 이제 토픽으로 구분된다).
     bool isConnected() const { return connected_.load(); }
@@ -157,7 +174,8 @@ private:
     void onConnect(int rc);
     void onDisconnect(int rc);
     void onMessage(const mosquitto_message* msg);
-    void logParseFailure(const std::string& why, const std::string& topic, const std::string& payload);
+    void logParseFailure(const std::string& why, const std::string& topic,
+                         const std::string& payload, const std::string& terminal_id = {});
     bool isConfiguredTerminal(const std::string& terminal_id) const;
 
     std::string broker_host_;
@@ -173,6 +191,8 @@ private:
     // ── 공유 상태 (mosquitto 내부 네트워크 스레드 + 외부 조회 스레드) ───────────
     mutable std::mutex mtx_;
     std::map<std::string, SensorUplinkSample> latest_by_terminal_;
+    std::map<std::string, std::size_t> received_by_terminal_;
+    std::map<std::string, std::size_t> parse_failures_by_terminal_;
 
     std::atomic<std::size_t> received_{0};
     std::atomic<std::size_t> parse_failures_{0};

@@ -349,6 +349,11 @@ void testOnlyLogsOnStateChange() {
     check(sent == 5, "네트워크 전송도 같은 5회 (실제: " + std::to_string(sent) + ")");
     check(dispatcher.changeSendCount() == 5,
           "changeSendCount() == 5 (실제: " + std::to_string(dispatcher.changeSendCount()) + ")");
+    const auto runtime = dispatcher.runtimeSnapshot();
+    check(runtime.has_result && runtime.has_real_result,
+          "runtime snapshot에 실제 마지막 판정이 노출됨");
+    check(runtime.result.final_risk == RiskLevel::SAFE && !runtime.last_change_utc.empty(),
+          "runtime snapshot의 마지막 위험도·전이 시각이 일치함");
 
     // previous_risk_level 체인: NULL -> 0 -> 1 -> 2 -> 2
     //   4행(예외만 변한 이벤트)의 직전 위험도는 그대로 2여야 한다. "이벤트가 있었다 = 위험도가

@@ -40,9 +40,10 @@ NearestPersonResult found(const char* stream_id, const char* camera_id, int chan
 
 NearestPersonResult notFound() { return {}; }
 
-JudgmentPipeline makePipeline(StubSensorReader& sensors, double radius = 0.0) {
+JudgmentPipeline makePipeline(StubSensorReader& sensors, double radius = 0.0,
+                             bool ignore_sensor_input = false) {
     JudgmentPipeline pipeline(kTerminal, sensors, kJudgmentConfig, radius,
-                              std::chrono::milliseconds(500));
+                              std::chrono::milliseconds(500), ignore_sensor_input);
     pipeline.setActiveStream(kStream1, kCamera1, kChannel1);
     return pipeline;
 }
@@ -113,6 +114,21 @@ void testDeviceRadiusAndHandover() {
           "핸드오버 시 stream/camera/channel을 함께 갱신");
     check(after_handover.result.final_risk == RiskLevel::SAFE,
           "핸드오버 시 이전 stream의 EMERGENCY 히스테리시스를 리셋");
+}
+
+void testSensorExcludedMode() {
+    std::cout << "\n[센서 제외 테스트 모드]\n";
+    // ToF라면 DANGER가 될 값이지만, 센서 제외 모드에서는 카메라 거리만 반영한다.
+    StubSensorReader sensors(100.0);
+    auto pipeline = makePipeline(sensors, 0.0, true);
+    const auto result = pipeline.processFrame(
+        kForklift, true, found(kStream1, kCamera1, kChannel1, {8500.0, 5000.0}));
+    check(result.result.camera_risk == RiskLevel::SAFE,
+          "센서 제외 모드에서 카메라 원거리 판정은 SAFE");
+    check(result.result.tof_risk == RiskLevel::SAFE && result.result.exception == ExceptionState::NONE,
+          "센서 제외 모드에서 ToF 위험도와 센서 예외를 판정하지 않음");
+    check(result.result.final_risk == RiskLevel::SAFE,
+          "센서 제외 모드에서 센서값 때문에 위험도가 상승하지 않음");
 }
 
 void testAlertHookOnlyRunsOnStateTransition() {
@@ -192,6 +208,7 @@ int main() {
     testStreamIdentityMapping();
     testRiskAndJson();
     testDeviceRadiusAndHandover();
+    testSensorExcludedMode();
     testAlertHookOnlyRunsOnStateTransition();
     testDispatcherAddsCorrelationContext();
     return failures == 0 ? 0 : 1;

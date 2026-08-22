@@ -63,9 +63,12 @@ JudgmentPipeline::JudgmentPipeline(
     const std::string& terminal_id, ISensorReader& sensors,
     const forklift::config::DangerJudgmentConfig& judgment_config,
     double collision_radius_mm,
-    std::chrono::milliseconds dead_reckoning_release_grace)
+    std::chrono::milliseconds dead_reckoning_release_grace,
+    bool ignore_sensor_input)
     : terminal_id_(terminal_id), sensors_(&sensors),
-      engine_(judgment_config, collision_radius_mm, dead_reckoning_release_grace) {}
+      ignore_sensor_input_(ignore_sensor_input),
+      engine_(judgment_config, collision_radius_mm, dead_reckoning_release_grace,
+              ignore_sensor_input) {}
 
 void JudgmentPipeline::setActiveStream(const std::string& stream_id,
                                        const std::string& camera_id,
@@ -93,8 +96,8 @@ CameraInput JudgmentPipeline::toCameraInput(const WorldPoint& forklift,
     cam.forklift           = forklift;
 
     // ── 사람 좌표: 최근접 선택 결과 1명 ────────────────────────
-    // selector가 이미 missed_frames>0인 트랙을 후보에서 뺐으므로,
-    // found=false는 "이번 프레임에 유효하게 검출된 사람이 없음"과 같은 의미다.
+    // selector가 이미 freshness_sec를 초과한 오래된 트랙을 후보에서 뺐으므로,
+    // found=false는 "최근 freshness_sec 이내에 유효하게 검출된 사람이 없음"과 같은 의미다.
     // -> CameraInput.person_detected에 그대로 대응된다.
     cam.person_detected = nearest.found;
     cam.person          = nearest.found ? nearest.position : WorldPoint{};
@@ -132,7 +135,10 @@ PipelineOutput JudgmentPipeline::processFrame(const WorldPoint& forklift,
     PipelineOutput out;
 
     const CameraInput cam = toCameraInput(forklift, forklift_localized, nearest);
-    const SensorInput sen = sensors_->read();
+    SensorInput sen;
+    if (!ignore_sensor_input_) {
+        sen = sensors_->read();
+    }
 
     // t1_judge_in: 판정 연산(engine_.evaluate) 시작 직전.
     const auto t1 = LatencyStamps::Clock::now();

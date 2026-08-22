@@ -3,12 +3,16 @@
 서버는 다음 명령으로 실행한다.
 
 ```text
-forklift_safety_server [--config-dir PATH] [--common-config-dir PATH]
+forklift_safety_server [--config-dir PATH] [--common-config-dir PATH] [--no-sensor]
 ```
 
 `PATH`를 생략하면 `server/config/safety`를 찾는다. 공통 카메라·단말 식별 설정은
 `server/config`에서 읽으며, 다른 위치에 둘 때는 `--common-config-dir PATH`를 함께 지정한다.
 운영 설정은 장비마다 달라지므로 Git에는 샘플만 남기고 실제 값은 별도 파일로 둔다.
+
+센서가 아직 연결되지 않은 카메라 판정 테스트에서는 `--no-sensor`를 추가한다. 이때는
+센서 입력을 읽거나 위험 판정에 반영하지 않고 카메라·추적·호모그래피 경로만 검사한다.
+옵션을 생략하면 기본값인 실제 네트워크 센서 수신·퓨전 모드로 동작한다.
 
 ## 파일 역할
 

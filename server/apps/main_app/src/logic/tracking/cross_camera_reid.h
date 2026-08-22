@@ -30,6 +30,9 @@ struct Detection {
     BoundingBox bbox;    // 자기 카메라 픽셀 좌표 (ONVIF BoundingBox 그대로)
     WorldPoint  world;   // world 좌표 (카메라가 달라도 비교 가능)
     double      timestamp_s;
+    // 원본 메타데이터의 UTC 시각. runtime snapshot에서 트랙의 마지막
+    // 실제 검출 시각을 표시할 때 사용한다.
+    std::string observed_utc;
 };
 
 // 크로스카메라 트래커. 한 프레임의 검출 목록을 넣으면 IoU(동일 카메라)/world 거리
@@ -37,7 +40,7 @@ struct Detection {
 class CrossCameraTracker {
 public:
     CrossCameraTracker(double iou_threshold, double world_distance_threshold_mm,
-                       int max_missed_frames);
+                       double track_timeout_sec);
 
     // 한 프레임의 검출 목록을 받아 트랙을 갱신하고, 현재 트랙 목록을 반환
     std::vector<Track> update(const std::vector<Detection>& detections, double now_s);
@@ -46,7 +49,7 @@ private:
     // 추적 기준은 공통 JSON에서 생성 시 주입받고 실행 중에는 변경하지 않는다.
     const double iou_threshold_;
     const double world_distance_threshold_mm_;
-    const int max_missed_frames_;
+    const double track_timeout_sec_;
     std::vector<Track> tracks_;
     int next_id_ = 1;
 };

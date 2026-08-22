@@ -91,7 +91,7 @@ forklift::config::SafetyServerConfig testConfig() {
                               "rtsp://test-2", CHANNEL3_HOMOGRAPHY_PATH, 2592, 1520});
     config.handover.confirm_frames = 3;
     config.handover.lost_grace_ms = 500;
-    config.tracking = {0.3, 1000.0, 5};
+    config.tracking = {0.3, 1000.0, 200, 500};
     return config;
 }
 
@@ -216,6 +216,34 @@ int main() {
     check(device_it != config.forklifts.end(), "TERM별 설정 목록에서 대상 terminal_id를 선택");
     if (device_it == config.forklifts.end()) return 1;
     const auto& device = *device_it;
+
+    // 설정된 ID와 다른 마커만 들어오면 거리 판정을 하지 않고, 운영 상태에
+    // "마커 미검출" 진단 근거를 남겨야 한다.
+    forklift::logic::SafetyFramePipeline markerMissingPipeline(config, device, sensors);
+    ArucoFrame wrongMarkerFrame;
+    wrongMarkerFrame.utcTime = "2026-08-13T00:00:00.000Z";
+    wrongMarkerFrame.channel = kChannel;
+    wrongMarkerFrame.stream_id = kStreamId;
+    wrongMarkerFrame.camera_id = kCameraId;
+    wrongMarkerFrame.markers = {markerAt(34, {20.0, 120.0})};
+    for (int frame = 0; frame < 3; ++frame) {
+        check(!markerMissingPipeline.processArucoStreamFrame(wrongMarkerFrame),
+              "설정 ID와 다른 마커만 들어오면 활성 stream을 확정하지 않음");
+    }
+    auto missingObjects = parseOnvifMetadata(objectXml({{330.0, 120.0}}));
+    missingObjects.stream_id = kStreamId;
+    missingObjects.camera_id = kCameraId;
+    missingObjects.channel = kChannel;
+    const auto missingOutput = markerMissingPipeline.processObjectFrame(missingObjects, 0.5);
+    const auto missingStatus = markerMissingPipeline.localizationStatus();
+    check(!missingOutput.forklift_localized && missingOutput.judgment.result.distance_mm < 0.0,
+          "지게차 마커 미검출 시 거리 측정을 수행하지 않음");
+    check(missingStatus.status == "MARKER_NOT_DETECTED" &&
+              missingStatus.configured_marker_id == kForkliftMarkerId &&
+              missingStatus.last_observed_marker_ids.size() == 1 &&
+              missingStatus.last_observed_marker_ids.front() == 34,
+          "마커 미검출 원인과 최근 관측 ID를 진단 상태에 기록");
+
     forklift::logic::SafetyFramePipeline pipeline(config, device, sensors);
     check(pipeline.homographyStreamLoadErrors().empty(), "stream별 실제 H 계약과 해상도 검증");
 
@@ -245,6 +273,16 @@ int main() {
     const auto otherStreamOutput = pipeline.processObjectFrame(otherStreamObjects, 0.5);
     check(otherStreamOutput.forklift_localized && otherStreamOutput.transformed_people == 1,
           "활성 stream이 아닌 다른 stream의 객체도 H 변환·판정 대상으로 수집");
+    const auto otherStreamPeople = pipeline.peopleStatus(0.5);
+    check(otherStreamPeople.tracks.size() == 1 &&
+              otherStreamPeople.tracks.front().channel == kOtherChannel &&
+              near(otherStreamPeople.tracks.front().position.x, 330.0) &&
+              near(otherStreamPeople.tracks.front().position.y, 120.0) &&
+              otherStreamPeople.tracks.front().observed_utc == "2026-08-13T00:00:00.100Z",
+          "단말별 현재 사람 트랙에 ID·월드 좌표·채널·원본 시각을 보존");
+    check(pipeline.localizationStatus().status == "LOCALIZED" &&
+              pipeline.localizationStatus().last_target_marker_seen_utc == "2026-08-13T00:00:00.000Z",
+          "지게차 위치 확보 시 진단 상태와 대상 마커 마지막 검출 시각을 갱신");
 
     const std::string databasePath = temporaryDbPath();
     removeDb(databasePath);
@@ -284,7 +322,8 @@ int main() {
         objects.channel = kChannel;
         check(objects.objects.size() == 2,
               std::string(step.name) + ": ONVIF XML에서 Human bbox 두 개 파싱");
-        const auto output = pipeline.processObjectFrame(objects, timestamp++);
+        const double frameTimestamp = timestamp++;
+        const auto output = pipeline.processObjectFrame(objects, frameTimestamp);
         dispatcher.submit(output.judgment.result);
 
         const auto& result = output.judgment.result;
@@ -298,6 +337,9 @@ int main() {
         if (nearestTrackId < 0) nearestTrackId = output.nearest.track_id;
         check(output.nearest.track_id == nearestTrackId,
               std::string(step.name) + ": 이동 중에도 최근접 사람 track_id 유지");
+        const auto people = pipeline.peopleStatus(frameTimestamp);
+        check(people.tracks.size() == 2 && people.tracks.front().track_id > 0,
+              std::string(step.name) + ": 현재 검출된 두 사람 트랙을 모니터링 상태에 제공");
         check(result.final_risk == step.expected && near(result.distance_mm, step.distance_mm),
               std::string(step.name) + ": 거리 " + std::to_string(step.distance_mm) +
                   "mm → " + toString(step.expected));
