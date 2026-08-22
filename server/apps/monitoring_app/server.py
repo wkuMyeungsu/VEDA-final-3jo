@@ -77,24 +77,49 @@ def tcp_reachable(host, port):
 
 
 def _read_host_cpu_ticks():
-    """Read aggregate CPU counters from the host procfs."""
+    """Read aggregate and per-core CPU counters from one procfs snapshot."""
     try:
         lines = (PROC_ROOT / "stat").read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
+    aggregate = None
+    cores = {}
     for line in lines:
-        if not line.startswith("cpu "):
+        fields = line.split()
+        if not fields:
+            continue
+        name = fields[0]
+        if name == "cpu":
+            core = None
+        elif name.startswith("cpu") and name[3:].isdigit():
+            core = int(name[3:])
+        else:
             continue
         try:
-            values = [int(value) for value in line.split()[1:]]
+            values = [int(value) for value in fields[1:]]
         except (TypeError, ValueError):
             return None
         if len(values) < 5:
             return None
         total_ticks = sum(values)
         idle_ticks = values[3] + values[4]
-        return total_ticks, idle_ticks
-    return None
+        ticks = {"total_ticks": total_ticks, "idle_ticks": idle_ticks}
+        if core is None:
+            aggregate = ticks
+        else:
+            cores[core] = ticks
+    if aggregate is None or not cores:
+        return None
+    return {"aggregate": aggregate, "cores": cores}
+
+
+def _cpu_percent(current, previous):
+    """Calculate a bounded usage percentage from two CPU tick samples."""
+    total_delta = current["total_ticks"] - previous["total_ticks"]
+    idle_delta = current["idle_ticks"] - previous["idle_ticks"]
+    if total_delta <= 0:
+        return None
+    return max(0.0, min(100.0, (total_delta - idle_delta) / total_delta * 100.0))
 
 
 def _read_host_memory():
@@ -162,6 +187,7 @@ def host_resource(sampled_at=None, sampled_utc=None):
         return {
             "state": "unavailable",
             "cpu_percent": None,
+            "cpu_cores": [],
             "memory_used_kb": None,
             "memory_used_mb": None,
             "memory_total_kb": None,
@@ -174,26 +200,36 @@ def host_resource(sampled_at=None, sampled_utc=None):
             "sampled_utc": timestamp,
         }
 
-    total_ticks, idle_ticks = cpu_ticks
     total_kb, available_kb = memory
     used_kb = total_kb - available_kb
     temperature_c, temperature_source = _read_host_temperature()
     cpu_percent = None
+    cpu_cores = []
     with _RESOURCE_SAMPLE_LOCK:
         previous = _HOST_CPU_SAMPLE
         _HOST_CPU_SAMPLE = {
             "sampled_at": now,
-            "total_ticks": total_ticks,
-            "idle_ticks": idle_ticks,
+            "aggregate": cpu_ticks["aggregate"],
+            "cores": cpu_ticks["cores"],
         }
-        if previous:
-            total_delta = total_ticks - previous["total_ticks"]
-            idle_delta = idle_ticks - previous["idle_ticks"]
-            if total_delta > 0:
-                cpu_percent = max(0.0, min(100.0, (total_delta - idle_delta) / total_delta * 100.0))
+        core_ids = sorted(cpu_ticks["cores"])
+        core_set_changed = previous and set(previous["cores"]) != set(core_ids)
+        if previous and not core_set_changed:
+            cpu_percent = _cpu_percent(cpu_ticks["aggregate"], previous["aggregate"])
+            for core in core_ids:
+                core_percent = _cpu_percent(
+                    cpu_ticks["cores"][core], previous["cores"][core]
+                )
+                cpu_cores.append({
+                    "core": core,
+                    "cpu_percent": round(core_percent, 1) if core_percent is not None else None,
+                })
+        else:
+            cpu_cores = [{"core": core, "cpu_percent": None} for core in core_ids]
     return {
         "state": "ok",
         "cpu_percent": round(cpu_percent, 1) if cpu_percent is not None else None,
+        "cpu_cores": cpu_cores,
         "memory_used_kb": used_kb,
         "memory_used_mb": round(used_kb / 1024, 1),
         "memory_total_kb": total_kb,
