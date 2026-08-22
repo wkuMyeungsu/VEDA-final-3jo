@@ -72,6 +72,13 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn("resource-host-cpu", page)
         self.assertIn("resource-host-memory", page)
         self.assertIn("resource-host-temperature", page)
+        self.assertIn("CPU 코어별 사용량", page)
+        self.assertIn('id="resource-host-cores"', page)
+        self.assertIn('id="resource-host-peak-core"', page)
+        self.assertIn("renderCpuCores", page)
+        self.assertIn("cpu_cores", page)
+        self.assertIn("최고 코어:", page)
+        self.assertIn("cpu-core-bar-value", page)
         self.assertIn("formatTemperature", page)
         self.assertIn("전체 프로세스 포함", page)
         self.assertIn("renderResources", page)
@@ -116,6 +123,18 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertIn('data-refresh-interval-seconds="2"', page)
         self.assertIn("${REFRESH_INTERVAL_SECONDS}초마다", page)
 
+    def test_index_renders_per_core_cpu_and_peak_contract(self):
+        page = STATIC_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('id="resource-host-cores"', page)
+        self.assertIn('id="resource-host-peak-core"', page)
+        self.assertIn("const renderCpuCores", page)
+        self.assertIn("core.cpu_percent", page)
+        self.assertIn("CPU ${core.core}", page)
+        self.assertIn("최고 코어: CPU ${peak.core}", page)
+        self.assertIn("최고 코어: 측정 중", page)
+        self.assertIn("코어별 CPU 측정 불가", page)
+
     @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "invalid"})
     def test_invalid_refresh_interval_uses_safe_default(self):
         self.assertEqual(
@@ -138,7 +157,12 @@ class MonitoringStatusTests(unittest.TestCase):
     def test_host_resource_reads_cpu_and_memory_from_procfs(self):
         with tempfile.TemporaryDirectory() as directory:
             proc_root = pathlib.Path(directory)
-            (proc_root / "stat").write_text("cpu 100 0 100 700 100 0 0 0\n", encoding="utf-8")
+            (proc_root / "stat").write_text(
+                "cpu 100 0 100 700 100 0 0 0\n"
+                "cpu0 50 0 50 350 50 0 0 0\n"
+                "cpu1 50 0 50 350 50 0 0 0\n",
+                encoding="utf-8",
+            )
             (proc_root / "meminfo").write_text(
                 "MemTotal:       4096000 kB\nMemAvailable:   2048000 kB\n",
                 encoding="utf-8",
@@ -153,22 +177,66 @@ class MonitoringStatusTests(unittest.TestCase):
                  mock.patch.object(SERVER, "_HOST_CPU_SAMPLE", None):
                 first = SERVER.host_resource(sampled_at=10.0, sampled_utc="t1")
                 self.assertIsNone(first["cpu_percent"])
+                self.assertEqual(
+                    first["cpu_cores"],
+                    [{"core": 0, "cpu_percent": None}, {"core": 1, "cpu_percent": None}],
+                )
                 self.assertEqual(first["memory_used_mb"], 2000.0)
                 self.assertEqual(first["memory_percent"], 50.0)
                 self.assertEqual(first["temperature_c"], 45.7)
                 self.assertEqual(first["temperature_source"], "cpu-thermal")
 
-                (proc_root / "stat").write_text("cpu 150 0 150 750 100 0 0 0\n", encoding="utf-8")
+                (proc_root / "stat").write_text(
+                    "cpu 150 0 150 750 100 0 0 0\n"
+                    "cpu0 100 0 100 350 50 0 0 0\n"
+                    "cpu1 50 0 50 400 50 0 0 0\n",
+                    encoding="utf-8",
+                )
                 second = SERVER.host_resource(sampled_at=11.0, sampled_utc="t2")
                 self.assertEqual(second["cpu_percent"], 66.7)
+                self.assertEqual(
+                    second["cpu_cores"],
+                    [{"core": 0, "cpu_percent": 100.0}, {"core": 1, "cpu_percent": 0.0}],
+                )
                 self.assertEqual(second["memory_total_mb"], 4000.0)
 
+                (proc_root / "stat").write_text(
+                    "cpu 200 0 200 800 100 0 0 0\n"
+                    "cpu0 125 0 125 375 50 0 0 0\n"
+                    "cpu1 75 0 75 425 50 0 0 0\n"
+                    "cpu2 0 0 0 0 0 0 0 0\n",
+                    encoding="utf-8",
+                )
+                changed_cores = SERVER.host_resource(sampled_at=12.0, sampled_utc="t3")
+                self.assertIsNone(changed_cores["cpu_percent"])
+                self.assertTrue(all(core["cpu_percent"] is None for core in changed_cores["cpu_cores"]))
+
+    def test_host_resource_marks_procfs_failure_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc_root = pathlib.Path(directory)
+            (proc_root / "meminfo").write_text(
+                "MemTotal:       4096000 kB\nMemAvailable:   2048000 kB\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(SERVER, "PROC_ROOT", proc_root), \
+                 mock.patch.object(SERVER, "_HOST_CPU_SAMPLE", None):
+                value = SERVER.host_resource(sampled_utc="t1")
+            self.assertEqual(value["state"], "unavailable")
+            self.assertIsNone(value["cpu_percent"])
+            self.assertEqual(value["cpu_cores"], [])
+
     def test_resource_snapshot_collects_whole_host(self):
-        sample = {"state": "ok", "cpu_percent": 1.0, "memory_used_mb": 2000.0}
+        sample = {
+            "state": "ok",
+            "cpu_percent": 1.0,
+            "cpu_cores": [{"core": 0, "cpu_percent": 1.0}],
+            "memory_used_mb": 2000.0,
+        }
         with mock.patch.object(SERVER, "host_resource", return_value=sample) as resource:
             value = SERVER.resource_snapshot("active")
         self.assertIn("checked_utc", value)
         self.assertEqual(value["host"], sample)
+        self.assertEqual(value["host"]["cpu_cores"][0]["core"], 0)
         resource.assert_called_once()
 
     @mock.patch.object(SERVER, "file_timestamp", return_value="2026-08-21T00:00:00+00:00")

@@ -46,7 +46,7 @@
     .metric-value strong{font-size:1.55rem;letter-spacing:-.04em}
     .metric-value span{color:#667085;font-size:.8rem}
     .metric-detail{color:#667085;font-size:.78rem;line-height:1.45;margin-top:.45rem}
-    .resource-grid{display:grid;grid-template-columns:minmax(280px,520px);gap:.8rem}
+    .resource-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.8rem}
     .resource-card{border:1px solid #eaecf0;border-radius:9px;padding:1rem;background:#fcfcfd}
     .resource-card header{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
     .resource-card h3{font-size:.9rem}
@@ -55,6 +55,12 @@
     .resource-value strong{font-size:1.45rem;letter-spacing:-.04em}
     .resource-value span{color:#667085;font-size:.8rem}
     .resource-detail{color:#667085;font-size:.76rem;line-height:1.4;margin-top:.55rem}
+    .cpu-core-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:.55rem;margin-top:.8rem}
+    .cpu-core{padding:.55rem;border:1px solid #eaecf0;border-radius:7px;background:#fff}
+    .cpu-core-heading{display:flex;justify-content:space-between;gap:.35rem;font-size:.76rem}
+    .cpu-core-heading strong{font-size:.78rem}
+    .cpu-core-bar{height:.32rem;margin-top:.45rem;border-radius:999px;background:#eaecf0;overflow:hidden}
+    .cpu-core-bar-value{height:100%;border-radius:inherit;background:#216eaa}
     .terminal-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.8rem}
     .terminal-card{border:1px solid #dfe3e8;border-radius:10px;padding:1rem;background:#fcfcfd}
     .terminal-card header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding-bottom:.8rem;border-bottom:1px solid #eaecf0}
@@ -127,6 +133,7 @@
       <div class="section-heading"><h2>라즈베리파이 자원 사용량</h2><span id="resource-summary" class="section-meta">측정 중</span></div>
       <div class="resource-grid">
         <article class="resource-card"><header><h3>전체 시스템</h3><span id="resource-host-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><div class="resource-values"><div class="resource-value"><strong id="resource-host-cpu">—</strong><span>CPU</span></div><div class="resource-value"><strong id="resource-host-memory">—</strong><span>메모리 사용량</span></div><div class="resource-value"><strong id="resource-host-temperature">—</strong><span>온도</span></div></div><p id="resource-host-detail" class="resource-detail">라즈베리파이 전체 기준 · 측정 준비 중</p></article>
+        <article class="resource-card"><header><h3>CPU 코어별 사용량</h3><span id="resource-host-peak-core" class="resource-detail">최고 코어: 측정 중</span></header><div id="resource-host-cores" class="cpu-core-list" aria-live="polite">코어별 측정 준비 중</div><p class="resource-detail">코어별 사용량으로 단일 코어 편중을 확인합니다.</p></article>
       </div>
     </section>
 
@@ -305,6 +312,43 @@
     const formatPercent=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 중':`${Number(value).toFixed(1)}%`;
     const formatMemoryMb=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 중':`${Number(value).toFixed(1)}MB`;
     const formatTemperature=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 불가':`${Number(value).toFixed(1)}°C`;
+    const renderCpuCores=(resource)=>{
+      const container=document.getElementById('resource-host-cores');
+      const peakNode=document.getElementById('resource-host-peak-core');
+      const state=resource?.state||'unavailable';
+      const cores=Array.isArray(resource?.cpu_cores)?resource.cpu_cores:[];
+      if(state==='unavailable'||cores.length===0){
+        container.textContent=state==='unavailable'?'코어별 CPU 측정 불가':'코어별 CPU 정보 없음';
+        peakNode.textContent='최고 코어: 측정 불가';
+        return;
+      }
+      const measurable=cores.filter((core)=>Number.isFinite(Number(core.cpu_percent)));
+      if(measurable.length===0)peakNode.textContent='최고 코어: 측정 중';
+      else{
+        const peak=measurable.reduce((highest,core)=>Number(core.cpu_percent)>Number(highest.cpu_percent)?core:highest);
+        peakNode.textContent=`최고 코어: CPU ${peak.core} ${formatPercent(peak.cpu_percent)}`;
+      }
+      container.replaceChildren(...cores.map((core)=>{
+        const item=document.createElement('div');
+        item.className='cpu-core';
+        const heading=document.createElement('div');
+        heading.className='cpu-core-heading';
+        const label=document.createElement('span');
+        label.textContent=`CPU ${core.core}`;
+        const value=document.createElement('strong');
+        value.textContent=formatPercent(core.cpu_percent);
+        heading.append(label,value);
+        const bar=document.createElement('div');
+        bar.className='cpu-core-bar';
+        const barValue=document.createElement('div');
+        barValue.className='cpu-core-bar-value';
+        const percent=Number(core.cpu_percent);
+        barValue.style.width=`${Number.isFinite(percent)?Math.max(0,Math.min(100,percent)):0}%`;
+        bar.append(barValue);
+        item.append(heading,bar);
+        return item;
+      }));
+    };
     const renderHostResource=(resource)=>{
       const value=resource||{};
       const state=value.state||'unavailable';
@@ -324,6 +368,7 @@
       else if(value.cpu_percent===null||value.cpu_percent===undefined)details.push('CPU 기준값 수집 중');
       else details.push('전체 프로세스 포함');
       setText('resource-host-detail',details.join(' · ')||'측정 대기');
+      renderCpuCores(value);
     };
     const renderResources=(resources)=>{
       const value=resources||{};
