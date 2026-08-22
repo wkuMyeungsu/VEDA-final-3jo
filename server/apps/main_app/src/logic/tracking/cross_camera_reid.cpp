@@ -109,9 +109,9 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
         const Detection& d = detections[c.det_idx];
 
         if (c.is_handover) {
-            LOG_DEBUG("CCTV", "사람 트랙 핸드오버 (track_id=" + std::to_string(t.track_id) +
+            LOG_DEBUG("CCTV", "사람 추적 이어짐 (기존 추적 ID 유지, 추적 ID=" + std::to_string(t.track_id) +
                                ", " + t.stream_id + " -> " + d.stream_id +
-                               ", world 거리=" + std::to_string(euclideanDistance(t.last_world, d.world)) +
+                               ", 위치 차이=" + std::to_string(euclideanDistance(t.last_world, d.world)) +
                                "mm)");
         }
 
@@ -136,9 +136,9 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             [&](const Track& t) {
                 bool expired = (now_s - t.last_seen_s) > track_timeout_sec_;
                 if (expired) {
-                    LOG_DEBUG("CCTV", "사람 트랙 만료 (track_id=" + std::to_string(t.track_id) +
+                    LOG_DEBUG("CCTV", "사람 추적 종료 (장시간 미검출, 추적 ID=" + std::to_string(t.track_id) +
                                        ", " + std::to_string(now_s - t.last_seen_s) +
-                                       "초 연속 미검출)");
+                                       "초 미검출)");
                 }
                 return expired;
             }),
@@ -156,8 +156,8 @@ std::vector<Track> CrossCameraTracker::update(const std::vector<Detection>& dete
             nt.last_world    = detections[di].world;
             nt.last_seen_s   = now_s;
             nt.observed_utc = detections[di].observed_utc;
-            LOG_DEBUG("CCTV", "사람 트랙 생성 (track_id=" + std::to_string(nt.track_id) +
-                               ", stream: " + nt.stream_id + ")");
+            LOG_DEBUG("CCTV", "사람 추적 시작 (추적 ID=" + std::to_string(nt.track_id) +
+                               ", 스트림: " + nt.stream_id + ")");
             tracks_.push_back(nt);
         }
     }
