@@ -100,6 +100,14 @@ private:
     const int confirm_frames_;
     const std::chrono::milliseconds lost_grace_;
 
+    // 전환 직후의 짧은 실명은 정상 경계 상황(두 화면이 같은 마커를 간헐 동시 검출)에서
+    // 되걸림을 유발한다 -> 전환 후 이 시간 동안은 추가 전환을 금지한다(최소 유지 시간).
+    // ponytail: lost_grace x10(현재 설정에서 5초). 정상 핸드오버 지연이 운영에서
+    // 문제되면
+    // handover.switch_cooldown_ms 설정 항목으로 승격할 것.
+    std::chrono::milliseconds switch_cooldown_;
+    Clock::time_point last_switch_{};
+
     mutable std::mutex mtx_;
     std::map<std::string, StreamState> streams_;
     std::optional<std::string> active_;

@@ -15,7 +15,8 @@ MarkerStreamTracker::MarkerStreamTracker(int marker_id, int confirm_frames,
     // 설정 없이 직접 만드는 호출부(테스트 등)도 있어서 여기서도 바닥을 깐다.
     : marker_id_(marker_id),
       confirm_frames_(std::max(1, confirm_frames)),
-      lost_grace_(std::max(std::chrono::milliseconds(0), lost_grace)) {}
+      lost_grace_(std::max(std::chrono::milliseconds(0), lost_grace)),
+      switch_cooldown_(std::max(std::chrono::milliseconds(0), lost_grace) * 10) {}
 
 std::optional<std::string> MarkerStreamTracker::onArucoFrame(const ArucoFrame& frame) {
     return onArucoFrame(frame, Clock::now());
@@ -56,6 +57,7 @@ std::optional<std::string> MarkerStreamTracker::update(const std::string& stream
     if (!active_) {
         if (!isConfirmed(self)) return std::nullopt;
         active_ = stream_id;
+        last_switch_ = now;
         return active_;
     }
 
@@ -66,12 +68,16 @@ std::optional<std::string> MarkerStreamTracker::update(const std::string& stream
     // ── 3) 후보가 아직 확정되지 않았으면 전환 없음 ──────────────
     if (!isConfirmed(self)) return std::nullopt;
 
+    // ── 3) 후보가 아직 확정되지 않았으면 전환 없음 ──────────────
+    if (!isConfirmed(self)) return std::nullopt;
+
     // ── 4) 액티브가 유예 시간을 넘겨 마커를 놓쳤을 때만 전환 ────
     auto active_it = streams_.find(*active_);
     if (active_it == streams_.end()) {
         // 액티브는 반드시 이 함수를 통해 등록되므로 도달할 수 없는 경로다.
         // 그래도 여기까지 왔다면 액티브 쪽 근거가 사라진 것이니 후보를 채택한다.
         active_ = stream_id;
+        last_switch_ = now;
         return active_;
     }
 
@@ -81,7 +87,11 @@ std::optional<std::string> MarkerStreamTracker::update(const std::string& stream
     // 그 화면에 없다는 결론은 같아서 구분하지 않는다.
     if (now - act.last_seen <= lost_grace_) return std::nullopt;
 
+    // 최소 유지 시간: 전환 직후의 경계 진동(되걸림)을 끊는다.
+    if (now - last_switch_ < switch_cooldown_) return std::nullopt;
+
     active_ = stream_id;
+    last_switch_ = now;
     return active_;
 }
 
