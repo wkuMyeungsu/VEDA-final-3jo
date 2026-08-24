@@ -154,6 +154,7 @@ void RiskEventSource::processPayload(const QByteArray &payload)
         qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << payload; // - 경고 로그: 시간 정보 없음 기록
         m_hasReceivedFirstMessage = true;
         m_lastMessageTimer.start();                                       // - 워치독 기준 시각 재설정: 데이터가 도착했으니 무수신 시계 초기화
+        LatencyTracker::instance().onT1RiskEventReceived(static_cast<int>(metadata.riskLevel())); // - T1 지연 계측점
         emit metadataReceived(metadata);                                  // - 신호 발생: 시간 확인 불가 데이터 전달 처리
         return;
     }
@@ -175,14 +176,15 @@ void RiskEventSource::processPayload(const QByteArray &payload)
 
     m_hasReceivedFirstMessage = true;
     m_lastMessageTimer.start();                                           // - 워치독 기준 시각 재설정: 정상 데이터 수신 시점으로 갱신
+    LatencyTracker::instance().onT1RiskEventReceived(static_cast<int>(metadata.riskLevel())); // - T1 지연 계측점
     emit metadataReceived(metadata);                                      // - 신호 발생: 정상 위험 이벤트 데이터 전달
 }
 
-void RiskEventSource::handleWatchdogTimeout()
+bool RiskEventSource::evaluateWatchdog(qint64 elapsedMs)
 {
     const int threshold = m_hasReceivedFirstMessage ? kWatchdogThresholdMs : kStartupGracePeriodMs;
-    if (!m_lastMessageTimer.isValid() || m_lastMessageTimer.elapsed() < threshold)
-        return;
+    if (elapsedMs < threshold)
+        return false;
 
     qCWarning(lcRiskEventSource) << "no data for" << threshold << "ms, reporting linkLost";
 
@@ -190,4 +192,13 @@ void RiskEventSource::handleWatchdogTimeout()
     emit linkLost();                                                       // - 신호 발생: MetadataDistributor가 전 채널로 팬아웃
 
     m_lastMessageTimer.start();
+    return true;
 }
+
+void RiskEventSource::handleWatchdogTimeout()
+{
+    if (!m_lastMessageTimer.isValid())
+        return;
+    evaluateWatchdog(m_lastMessageTimer.elapsed());
+}
+

@@ -11,6 +11,7 @@ private slots:
     void heartbeatCommErrorRestoredAndPreservedDuringEstop();
     void movementCutoffActiveRestoredFromByte3Bit6();
     void riskTxSuspendedPropertyAndSignal();
+    void closedPortSendFrameBehavior();
 
 private:
     static QByteArray makeFrame(quint8 eventCode, quint8 eventDetail, quint8 statusByte)
@@ -102,6 +103,23 @@ void TestSerialWarningDevice::riskTxSuspendedPropertyAndSignal()
     QCOMPARE(dev.riskTxSuspended(), false);
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.takeFirst().at(0).toBool(), false);
+}
+
+void TestSerialWarningDevice::closedPortSendFrameBehavior()
+{
+    // 존재하지 않는 포트(/dev/null / COM99)로 생성 (포트 미오픈 상태)
+    SerialWarningDevice dev(QStringLiteral("COM99"), 115200);
+
+    // 1) sendFrame()은 포트가 닫혀있으면 false를 반환해야 함
+    QCOMPARE(dev.sendFrame(0x01, 0x01), false);
+
+    // 2) handleWatchdogTxTimer() 호출 시 sendFrame 실패로 인해 m_lastTransmittedRiskLevel이 갱신되지 않아야 함
+    dev.m_lastTransmittedRiskLevel = -1;
+    dev.setRiskLevel(RiskTypes::RiskLevel::Caution); // Level 1
+    dev.handleWatchdogTxTimer();
+
+    // 송신 실패했으므로 -1로 유지 (성공 시에만 1로 갱신되어야 함)
+    QCOMPARE(dev.m_lastTransmittedRiskLevel, -1);
 }
 
 QTEST_MAIN(TestSerialWarningDevice)

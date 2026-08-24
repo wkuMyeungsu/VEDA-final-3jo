@@ -105,5 +105,6 @@ TerminalConfig ConfigLoader::loadTerminalConfig() const
     config.fpgaBaudRate = obj.value(QStringLiteral("fpga_baud_rate")).toInt(config.fpgaBaudRate); // - FPGA UART 보레이트 읽기: 설정값 적용
     config.warningDeviceType =
         obj.value(QStringLiteral("warning_device_type")).toString(config.warningDeviceType); // - 경고 장치 유형 읽기: 설정값 적용
+    config.latencyLogPath = obj.value(QStringLiteral("latency_log_path")).toString(); // - 지연 계측 로그 경로 읽기: 설정값 적용
     return config;                                                            // - 결과 반환: 완성된 단말 설정 반환
 }

@@ -12,5 +12,7 @@
   "_comment_fpga_baud_rate": "gpio-control/src/top.v 기본값과 일치",
   "fpga_baud_rate": 115200,
   "_comment_warning_device": "noop → serial로 전환 (FPGA 실장치 연결 완료 시)",
-  "warning_device_type": "serial"
+  "warning_device_type": "serial",
+  "_comment_latency_log_path": "단말 내부 지연 계측 CSV 절대 경로 (systemd 실행 시 루트 디렉터리 권한 문제 방지)",
+  "latency_log_path": "/home/pi/latency_measurement.csv"
 }

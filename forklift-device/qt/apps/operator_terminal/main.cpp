@@ -19,13 +19,13 @@
 #include <windows.h>
 #endif
 
-
 #include "config/ConfigLoader.h"
 #include "network/MockMetadataSource.h"
 #include "network/NoopWarningDevice.h"
 #include "network/SerialWarningDevice.h"
 #include "network/HandoverClient.h"
 #include "network/RiskEventSource.h" 
+#include "services/LatencyTracker.h"
 #include "services/MetadataDistributor.h"
 #include "services/ServerConnectionService.h"
 #include "video/VideoSourceManager.h"
@@ -70,7 +70,6 @@ int main(int argc, char *argv[])
     qInstallMessageHandler(unifiedConsoleLogHandler);                             // - 콘솔 표준 로그 핸들러 설치
     gst_init(&argc, &argv);                                                       // - GStreamer 초기화: RTSP 영상 수신 라이브러리 초기화
 
-   
     QGuiApplication app(argc, argv);                                             // - 애플리케이션 생성: Qt GUI 애플리케이션 객체 생성      
     QNetworkProxyFactory::setUseSystemConfiguration(false);                      // - 시스템 프록시 자동 탐색 끄기: 조회 중 멈추는 문제 회피, 내부망 직접 접속이라 프록시 불필요
 
@@ -144,6 +143,7 @@ int main(int argc, char *argv[])
     const ConfigLoader configLoader(configDir);                                  // - 설정 로더 생성: 지정 디렉토리 기준 로더 초기화
     const QVector<CameraInfo> cameras = configLoader.loadCameras();              // - 카메라 정보 로드: 카메라 설정 파일 읽기
     const TerminalConfig appConfig = configLoader.loadTerminalConfig();           // - 단말 설정 로드: 터미널 설정 파일 읽기
+    LatencyTracker::instance().initialize(appConfig.latencyLogPath);             // - 지연 계측 서비스 초기화 (terminal.json의 latency_log_path)
 
     VideoSourceManager videoManager;                                             // - 영상 관리자 생성: 카메라 영상 소스 제어 객체 생성
     videoManager.setCameras(cameras);                                            // - 카메라 정보 전달: 영상 관리자에 정보 설정
@@ -219,7 +219,12 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if (auto *rootWindow = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst())) {
+        // - 렌더 스레드에서 직접 호출하여 이벤트 큐 지연 배제 및 새 속성 동기화 이후의 정확한 프레임 렌더링 시점 계측
+        QObject::connect(rootWindow, &QQuickWindow::afterSynchronizing, &LatencyTracker::instance(), &LatencyTracker::onAfterSynchronizing, Qt::DirectConnection);
+        QObject::connect(rootWindow, &QQuickWindow::frameSwapped, &LatencyTracker::instance(), &LatencyTracker::onT2FrameSwapped, Qt::DirectConnection);
+    }
+
     qDebug() << "Operator terminal successfully loaded and running.";
     return app.exec();                                                           // - 앱 이벤트 루프 실행: 메인 이벤트 루프 개시 및 실행
-
 }

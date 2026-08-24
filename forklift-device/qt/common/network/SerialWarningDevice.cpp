@@ -1,4 +1,5 @@
 #include "SerialWarningDevice.h"
+#include "services/LatencyTracker.h"
 
 #include <QLoggingCategory>
 
@@ -147,30 +148,55 @@ void SerialWarningDevice::handleWatchdogTxTimer()
 {
     // - 서버 링크 두절 구간에서는 보내지 않는다.
     //   여기서 SET_RISK(0)을 계속 보내면 FPGA watchdog이 갱신돼 자율 경고가 안 걸린다.
-    if (riskTxSuspended())
+    if (riskTxSuspended()) {
+        LatencyTracker::instance().onT3RiskTransmitSuspended();
         return;
-    sendFrame(kCmdSetRisk, static_cast<quint8>(m_lastRiskLevel));
+    }
+
+    const int currentLevelInt = static_cast<int>(m_lastRiskLevel);
+    const bool isNewRiskLevel = (currentLevelInt != m_lastTransmittedRiskLevel);
+
+    const bool sent = sendFrame(kCmdSetRisk, static_cast<quint8>(m_lastRiskLevel));
+    if (sent) {
+        if (isNewRiskLevel) {
+            LatencyTracker::instance().onT3RiskTransmitted(currentLevelInt);
+            m_lastTransmittedRiskLevel = currentLevelInt;
+        }
+    } else {
+        if (isNewRiskLevel) {
+            LatencyTracker::instance().onT3RiskTransmitPortUnavailable();
+            // - 주의: 실패 시 m_lastTransmittedRiskLevel을 갱신하지 않음.
+            //   그래야 포트가 복구/오픈된 후 첫 송신 시 정상적으로 T3를 기록하고 갱신됨.
+        }
+    }
 }
 
 void SerialWarningDevice::onRiskTxSuspendedChanged(bool suspended)
 {
     if (suspended) {
         qCWarning(lcFpga) << "server link lost -- suspending SET_RISK so the FPGA watchdog can fire";
+        m_lastTransmittedRiskLevel = -1;                          // - 링크 복구 시 첫 송신 감지용 리셋
+        LatencyTracker::instance().onT3RiskTransmitSuspended();
         return;                                                   // - 타이머는 계속 돌린다. 재개 시 바로 복귀하기 위함
     }
     qCInfo(lcFpga) << "server link restored -- resuming SET_RISK";
     handleWatchdogTxTimer();                                       // - 다음 100ms 주기를 기다리지 않고 즉시 1회 송신
 }
 
-void SerialWarningDevice::sendFrame(quint8 command, quint8 data)
+bool SerialWarningDevice::sendFrame(quint8 command, quint8 data)
 {
     if (!m_port.isOpen())
-        return;
+        return false;
 
     const quint8 checksum = kTxHeader ^ command ^ data;
     const char bytes[4] = {static_cast<char>(kTxHeader), static_cast<char>(command), static_cast<char>(data),
                             static_cast<char>(checksum)};
-    m_port.write(bytes, sizeof(bytes));
+    const qint64 bytesWritten = m_port.write(bytes, sizeof(bytes));
+    if (bytesWritten != static_cast<qint64>(sizeof(bytes))) {
+        qCWarning(lcFpga) << "failed to write frame to" << m_portName << "(written:" << bytesWritten << ")";
+        return false;
+    }
+    return true;
 }
 
 void SerialWarningDevice::handleReadyRead()

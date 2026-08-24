@@ -23,4 +23,6 @@ struct TerminalConfig {
     QString fpgaSerialPort = QStringLiteral("/dev/serial0");                            // - FPGA 경고 보드 UART 포트: Pi GPIO 8/10번 핀(TXD/RXD) 직결 기준 기본값
     qint32 fpgaBaudRate = 115200;                                                        // - FPGA 경고 보드 UART 보레이트: gpio-control/src/top.v 기본값과 일치
     QString warningDeviceType = QStringLiteral("noop");                                 // - 경고 장치 유형: 비활성(noop) 또는 실장치(serial)
+    QString latencyLogPath;                                                             // - 지연 계측 CSV 파일 경로 (미설정 시 기록 비활성)
 };
+

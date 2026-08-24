@@ -40,7 +40,7 @@ private slots:
     void openPort();                                                                   // - 포트 열기 시도 (실패 시 재연결 예약)
 
 private:
-    void sendFrame(quint8 command, quint8 data);                                       // - [0xAA][command][data][checksum] 4바이트 전송
+    bool sendFrame(quint8 command, quint8 data);                                       // - [0xAA][command][data][checksum] 4바이트 전송 (성공 여부 반환)
     void processFrame(const QByteArray &frame);                                        // - checksum 검증 완료된 5바이트 수신 프레임 처리
     void scheduleReconnect();                                                          // - 3초 뒤 openPort() 재시도 (RtspVideoSource 패턴과 동일)
 
@@ -51,6 +51,7 @@ private:
     QByteArray m_rxBuffer;                                                             // - 수신 바이트 누적 버퍼 (0x55 헤더 재동기화용)
 
     RiskTypes::RiskLevel m_lastRiskLevel = RiskTypes::RiskLevel::Safe;                 // - watchdog 타이머가 반복 전송할 마지막 위험도 값
+    int m_lastTransmittedRiskLevel = -1;                                               // - 실제 송신된 마지막 위험도 값 (T3 계측용)
 
     QTimer m_watchdogTxTimer;                                                          // - 100ms 송신 타이머 (FPGA watchdog 타임아웃 500ms 대비 5배 여유)
     QTimer m_heartbeatWatchTimer;                                                      // - 무수신 감시 폴링 타이머 (100ms 간격 점검)

@@ -175,6 +175,8 @@ qt_add_qml_module(safety_common
         services/AlertListModel.cpp
         services/DemoController.h
         services/DemoController.cpp
+        services/LatencyTracker.h
+        services/LatencyTracker.cpp
 )
 
 target_link_libraries(safety_common PRIVATE Qt6::QuickControls2 PUBLIC PkgConfig::GST mosquitto_dep)
