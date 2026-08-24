@@ -116,6 +116,7 @@ int solve_manual_command(int argc, char** argv) {
             {"marker_shape_rmse_mm", marker.marker_shape_error_mm}});
     const json output_value = {
         {"schema_version", 2}, {"ok", true}, {"map_unit", "mm"},
+        {"lens_undistorted", has_active_intrinsics()},
         {"marker_size_mm", layout.value("marker_size_mm", config.manual_solve.marker_size_mm)},
         {"H_camera_pixels_to_channel_map", matrix_to_json(result.h_camera_pixels_to_channel_map)},
         {"H_channel_map_to_camera_pixels", matrix_to_json(result.h_channel_map_to_camera_pixels)},
@@ -231,6 +232,22 @@ int main(int argc, char** argv) {
         return 1;
     }
     try {
+        // 설정 파일 옆의 camera_intrinsics.json이 있으면 렌즈 왜곡 보정을 켠다.
+        const fs::path intrinsics_path =
+            fs::path(argument(argc, argv, "--config")).parent_path() / "camera_intrinsics.json";
+        std::ifstream intrinsics_input(intrinsics_path);
+        if (intrinsics_input) {
+            const json value = json::parse(intrinsics_input);
+            cv::Mat camera_matrix(3, 3, CV_64F), dist_coeffs(
+                1, static_cast<int>(value.at("dist_coeffs").size()), CV_64F);
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 3; ++col)
+                    camera_matrix.at<double>(row, col) =
+                        value.at("camera_matrix").at(row).at(col).get<double>();
+            for (std::size_t index = 0; index < value.at("dist_coeffs").size(); ++index)
+                dist_coeffs.at<double>(index) = value.at("dist_coeffs").at(index).get<double>();
+            set_active_intrinsics(camera_matrix, dist_coeffs);
+        }
         const std::string command = argv[1];
         if (command == "detect-markers") return detect_markers_command(argc, argv);
         if (command == "gen-marker") return generate_marker(argc, argv);

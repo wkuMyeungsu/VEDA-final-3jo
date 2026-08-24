@@ -444,6 +444,29 @@ CameraIntrinsics calibrate_camera(const Config& config,
     return result;
 }
 
+namespace {
+cv::Mat g_camera_matrix, g_dist_coeffs;
+}
+
+void set_active_intrinsics(const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs) {
+    camera_matrix.copyTo(g_camera_matrix);
+    dist_coeffs.copyTo(g_dist_coeffs);
+}
+
+bool has_active_intrinsics() { return !g_camera_matrix.empty(); }
+
+cv::Point2f undistort_point(cv::Point2f pixel) {
+    if (!has_active_intrinsics()) return pixel;
+    std::vector<cv::Point2f> input{pixel}, normalized;
+    cv::undistortPoints(input, normalized, g_camera_matrix, g_dist_coeffs);
+    return {static_cast<float>(normalized[0].x *
+                               g_camera_matrix.at<double>(0, 0) +
+                               g_camera_matrix.at<double>(0, 2)),
+            static_cast<float>(normalized[0].y *
+                               g_camera_matrix.at<double>(1, 1)) +
+            static_cast<float>(g_camera_matrix.at<double>(1, 2))};
+}
+
 ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
                                      const json& layout, cv::Mat* overlay) {
     const double side_mm = layout.value("marker_size_mm", config.manual_solve.marker_size_mm);
@@ -469,6 +492,12 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
         }
         corners[index] = std::move(corrected);
     }
+    // 캘리브레이션 산출물 사용 시: 관측·사용자 보정 꼭짓점 모두 무왜곡 좌표로 바꾼다.
+    // 산출된 H는 '무왜곡 카메라 픽셀 -> 지도' 계약이 되며 운영 파일에
+    // lens_undistorted=true로 새겨진다.
+    for (size_t i = 0; i < ids.size(); ++i)
+        for (auto& point : corners[i]) point = undistort_point(point);
+
     std::vector<SquareMarkerObservation> observations;
     for (size_t i = 0; i < ids.size(); ++i) {
         observations.push_back({ids[i], corners[i]});
@@ -532,6 +561,10 @@ cv::Mat align_marker_images(const Config& config, const cv::Mat& source,
     std::vector<std::vector<cv::Point2f>> source_corners, destination_corners;
     detect_marker_corners(config, source, source_corners, source_ids);
     detect_marker_corners(config, destination, destination_corners, destination_ids);
+    for (auto& corners : source_corners)
+        for (auto& point : corners) point = undistort_point(point);
+    for (auto& corners : destination_corners)
+        for (auto& point : corners) point = undistort_point(point);
     std::vector<cv::Point2f> from, to;
     if (common_ids) common_ids->clear();
     for (size_t i = 0; i < source_ids.size(); ++i) {

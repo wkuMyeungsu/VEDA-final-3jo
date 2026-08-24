@@ -27,6 +27,12 @@ struct CameraIntrinsics {
 CameraIntrinsics calibrate_camera(const Config& config,
                                   const std::vector<std::string>& image_paths);
 
+// 렌즈 왜곡 보정. camera_intrinsics.json이 있을 때 설정하면, 이후 모든 픽셀 입력은
+// 무왜곡 좌표로 변환되어 호모그래피 산출에 쓰인다(미설정이면 통과 = 기존 동작).
+void set_active_intrinsics(const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
+bool has_active_intrinsics();
+cv::Point2f undistort_point(cv::Point2f pixel);
+
 // layout의 x_mm/y_mm은 좌상단 위치. marker_size_mm로 네 코너 확장함.
 // overlay가 있으면 입력 영상 크기의 진단 이미지 생성함.
 ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,

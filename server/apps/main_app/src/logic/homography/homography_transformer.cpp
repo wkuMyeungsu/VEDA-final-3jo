@@ -1,6 +1,7 @@
 #include "logic/homography/homography_transformer.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 
@@ -25,6 +26,7 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path, int exp
     HomographyTransformer::StreamHomography result;
     result.image_width_px = width;
     result.image_height_px = height;
+    result.lens_undistorted = root.value("lens_undistorted", false);
     for (int row = 0; row < 3; ++row) {
         if (!matrix.at(row).is_array() || matrix.at(row).size() != 3) throw std::runtime_error("H_camera_pixels_to_shared_map는 3x3 행렬이어야 함");
         for (int col = 0; col < 3; ++col) {
@@ -38,6 +40,31 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path, int exp
 }  // namespace
 
 HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& config) {
+    // 캘리브레이션 산출물 로드(선택). 경로는 첫 H 파일의 상위 상위 폴더(homography 루트).
+    if (!config.homography.stream_files.empty()) {
+        const auto& first_path = config.homography.stream_files.begin()->second;
+        const auto homography_root =
+            std::filesystem::path(first_path).parent_path().parent_path() / "camera_intrinsics.json";
+        std::ifstream input(homography_root);
+        if (input) {
+            try {
+                const json value = json::parse(input);
+                intrinsics_.fx = value.at("camera_matrix").at(0).at(0).get<double>();
+                intrinsics_.fy = value.at("camera_matrix").at(1).at(1).get<double>();
+                intrinsics_.cx = value.at("camera_matrix").at(0).at(2).get<double>();
+                intrinsics_.cy = value.at("camera_matrix").at(1).at(2).get<double>();
+                const auto& coefficients = value.at("dist_coeffs");
+                intrinsics_.k1 = coefficients.at(0).get<double>();
+                intrinsics_.k2 = coefficients.at(1).get<double>();
+                intrinsics_.p1 = coefficients.size() > 2 ? coefficients.at(2).get<double>() : 0.0;
+                intrinsics_.p2 = coefficients.size() > 3 ? coefficients.at(3).get<double>() : 0.0;
+                intrinsics_.k3 = coefficients.size() > 4 ? coefficients.at(4).get<double>() : 0.0;
+                intrinsics_.valid = true;
+            } catch (const std::exception&) {
+                intrinsics_ = {};
+            }
+        }
+    }
     for (const auto& [stream_id, configured_path] : config.homography.stream_files) {
         const auto size_it = config.homography.stream_image_sizes.find(stream_id);
         if (size_it == config.homography.stream_image_sizes.end()) {
@@ -61,11 +88,30 @@ std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(
     const std::string& stream_id, const common::PixelPoint& pixel) const {
     const auto it = streams_.find(stream_id);
     if (it == streams_.end() || !std::isfinite(pixel.x) || !std::isfinite(pixel.y)) return std::nullopt;
+    double px = pixel.x, py = pixel.y;
+    // 무왜곡 계약 H: 렌즈 왜곡 역산(뉴턴 반복) 후 변환한다. 플래그 없는 구버전 H는 통과.
+    if (it->second.lens_undistorted && intrinsics_.valid) {
+        double xn = (px - intrinsics_.cx) / intrinsics_.fx;
+        double yn = (py - intrinsics_.cy) / intrinsics_.fy;
+        for (int iteration = 0; iteration < 10; ++iteration) {
+            const double r2 = xn * xn + yn * yn;
+            const double radial = 1.0 + intrinsics_.k1 * r2 + intrinsics_.k2 * r2 * r2 +
+                                  intrinsics_.k3 * r2 * r2 * r2;
+            const double dx = 2.0 * intrinsics_.p1 * xn * yn +
+                              intrinsics_.p2 * (r2 + 2.0 * xn * xn);
+            const double dy = intrinsics_.p1 * (r2 + 2.0 * yn * yn) +
+                              2.0 * intrinsics_.p2 * xn * yn;
+            xn = (xn - dx) / radial;
+            yn = (yn - dy) / radial;
+        }
+        px = xn * intrinsics_.fx + intrinsics_.cx;
+        py = yn * intrinsics_.fy + intrinsics_.cy;
+    }
     const auto& h = it->second.h;
-    const double denominator = h[6] * pixel.x + h[7] * pixel.y + h[8];
+    const double denominator = h[6] * px + h[7] * py + h[8];
     if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;
-    const double x = (h[0] * pixel.x + h[1] * pixel.y + h[2]) / denominator;
-    const double y = (h[3] * pixel.x + h[4] * pixel.y + h[5]) / denominator;
+    const double x = (h[0] * px + h[1] * py + h[2]) / denominator;
+    const double y = (h[3] * px + h[4] * py + h[5]) / denominator;
     if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
     return common::WorldPoint{x, y};
 }

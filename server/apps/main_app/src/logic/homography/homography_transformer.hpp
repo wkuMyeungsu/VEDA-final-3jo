@@ -19,6 +19,7 @@ public:
         std::array<double, 9> h{};
         int image_width_px = 0;
         int image_height_px = 0;
+        bool lens_undistorted = false;   // true면 pixelToWorld 입력에 왜곡 역산 적용
     };
 
     explicit HomographyTransformer(const config::SafetyServerConfig& config);
@@ -29,8 +30,15 @@ public:
     const std::map<std::string, std::string>& streamLoadErrors() const { return stream_load_errors_; }
 
 private:
+    // 캘리브레이션 산출물(homography/camera_intrinsics.json). 없으면 왜곡 보정 미적용.
+    struct Intrinsics {
+        double fx = 0, fy = 0, cx = 0, cy = 0;
+        double k1 = 0, k2 = 0, p1 = 0, p2 = 0, k3 = 0;
+        bool valid = false;
+    };
     std::map<std::string, StreamHomography> streams_;
     std::map<std::string, std::string> stream_load_errors_;
+    Intrinsics intrinsics_;
 };
 
 }  // namespace forklift::logic

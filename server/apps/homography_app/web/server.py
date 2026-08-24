@@ -52,6 +52,27 @@ HOMOGRAPHY_RESULTS_ROOT = Path(os.environ.get(
     "SAFETY_SERVER_HOMOGRAPHY_DIR",
     str(COMMON_CONFIG_DIR / "homography")))
 MIN_COMMON_MARKERS = int(CONFIG_VALUE.get("map", {}).get("min_common_markers", 3))
+# 캘리브레이션 산출물이 있으면 렌즈 왜곡 보정을 켠다: 이후 산출되는 H는
+# '무왜곡 카메라 픽셀 -> 지도' 계약이 되고, 모든 픽셀 입력은 transform_point에서
+# 무왜곡 좌표로 바꿔 넣는다. 파일을 치우면 즉시 기존 동작(왜곡 좌표 직접 사용).
+CAMERA_INTRINSICS_PATH = HOMOGRAPHY_RESULTS_ROOT / "camera_intrinsics.json"
+CAMERA_INTRINSICS = None
+if CAMERA_INTRINSICS_PATH.is_file():
+    try:
+        _intrinsics_value = json.loads(CAMERA_INTRINSICS_PATH.read_text(encoding="utf-8"))
+        CAMERA_INTRINSICS = {
+            "fx": float(_intrinsics_value["camera_matrix"][0][0]),
+            "fy": float(_intrinsics_value["camera_matrix"][1][1]),
+            "cx": float(_intrinsics_value["camera_matrix"][0][2]),
+            "cy": float(_intrinsics_value["camera_matrix"][1][2]),
+            "k1": float(_intrinsics_value["dist_coeffs"][0]),
+            "k2": float(_intrinsics_value["dist_coeffs"][1]),
+            "p1": float(_intrinsics_value["dist_coeffs"][2]) if len(_intrinsics_value["dist_coeffs"]) > 2 else 0.0,
+            "p2": float(_intrinsics_value["dist_coeffs"][3]) if len(_intrinsics_value["dist_coeffs"]) > 3 else 0.0,
+            "k3": float(_intrinsics_value["dist_coeffs"][4]) if len(_intrinsics_value["dist_coeffs"]) > 4 else 0.0,
+        }
+    except (OSError, ValueError, KeyError, IndexError, json.JSONDecodeError):
+        CAMERA_INTRINSICS = None
 MAX_VERIFICATION_STREAMS = int(STREAM_CONFIG_VALUE.get("verification", {}).get("max_streams", 0))
 if MAX_VERIFICATION_STREAMS < 2 or MAX_VERIFICATION_STREAMS > 32:
     raise ValueError(f"{STREAM_CONFIG}의 verification.max_streams는 2~32 범위여야 합니다")
@@ -392,6 +413,7 @@ def make_operational_homography(value):
     return {
         "schema_version": int(value.get("schema_version", 2)),
         "map_unit": "mm",
+        "lens_undistorted": bool(value.get("lens_undistorted")),
         "camera_id": camera_id,
         "stream_id": stream_id,
         "channel": channel,
@@ -462,6 +484,17 @@ def invert_matrix(matrix):
 def transform_point(matrix, point):
     """3×3 호모그래피로 한 점을 변환한다."""
     x, y = float(point["x"]), float(point["y"])
+    if CAMERA_INTRINSICS:
+        # 렌즈 왜곡 역산(뉴턴 반복). 산출된 H는 무왜곡 픽셀 기준이므로 입력점을 먼저 되돌린다.
+        c = CAMERA_INTRINSICS
+        x, y = (x - c["cx"]) / c["fx"], (y - c["cy"]) / c["fy"]
+        for _ in range(10):
+            radius_sq = x * x + y * y
+            radial = 1.0 + c["k1"] * radius_sq + c["k2"] * radius_sq ** 2 + c["k3"] * radius_sq ** 3
+            dx = 2.0 * c["p1"] * x * y + c["p2"] * (radius_sq + 2.0 * x * x)
+            dy = c["p1"] * (radius_sq + 2.0 * y * y) + 2.0 * c["p2"] * x * y
+            x, y = (x - dx) / radial, (y - dy) / radial
+        x, y = x * c["fx"] + c["cx"], y * c["fy"] + c["cy"]
     denominator = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2]
     if abs(denominator) < 1e-12:
         raise ValueError("호모그래피 변환 분모가 0에 가깝습니다")
@@ -1518,6 +1551,7 @@ class Handler(BaseHTTPRequestHandler):
                     final_value = {
                         "schema_version": 2,
                         "map_unit": "mm",
+                        "lens_undistorted": bool(stream_results[stream_id].get("lens_undistorted")),
                         "camera_id": entry["camera_id"],
                         "stream_id": stream_id,
                         "channel": entry["channel"],
