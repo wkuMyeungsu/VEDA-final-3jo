@@ -11,6 +11,7 @@
 import json
 import os
 import shutil
+import subprocess
 import time
 import urllib.request
 import uuid
@@ -86,9 +87,7 @@ def grab_frame(job_dir, index):
         body = response.read()
     if len(body) < 1000:
         raise ValueError("프레임 응답이 비어 있습니다")
-    path = job_dir / f"frame-{index:03d}.jpg"
-    path.write_bytes(body)
-    return path
+    (job_dir / f"frame-{index:03d}.jpg").write_bytes(body)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -138,7 +137,6 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError("호모그래피 앱(:8001)에서 프레임을 하나도 받지 못했습니다")
 
             output_file = job_dir / "intrinsics.json"
-            import subprocess
             result = subprocess.run(
                 [str(TOOL), "calibrate-intrinsics", "--config", str(CONFIG),
                  "--images", str(job_dir), "--output", str(output_file)],
@@ -147,7 +145,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError(result.stderr.strip() or "캘리브레이션 실패")
 
             value = json.loads(output_file.read_text(encoding="utf-8"))
-            shutil.copyfile(output_file, OUTPUT_PATH)   # 운영 위치에 원자성 요치 없음(단순 복사)
+            temporary = OUTPUT_PATH.with_name(f".{OUTPUT_PATH.name}.{uuid.uuid4().hex}.tmp")
+            shutil.copyfile(output_file, temporary)
+            os.replace(temporary, OUTPUT_PATH)
             self.send_json({"ok": True, "result": value,
                             "saved_to": str(OUTPUT_PATH)})
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError,
