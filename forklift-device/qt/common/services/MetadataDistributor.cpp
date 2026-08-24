@@ -1,14 +1,19 @@
 #include "MetadataDistributor.h"
 
+#include <QDateTime>
+
 #include "../network/IMetadataSource.h"
 
 MetadataDistributor::MetadataDistributor(QVector<CameraInfo> cameras, int eventLogMaxEntries, QObject *parent)
     : QObject(parent)
+    , m_cameras(cameras)
     , m_eventLogModel(eventLogMaxEntries)                                      // - 생성자: 이벤트 로그 모델의 최대 보관 개수 설정
 {
     m_cameraListModel.setCameras(cameras);                                     // - 카메라 설정 등록: 전체 카메라 목록 모델 초기화
-    for (const CameraInfo &info : cameras)                                     // - 카메라 목록 순회: ID 기반 카메라 이름 맵 구성
+    for (const CameraInfo &info : cameras) {                                   // - 카메라 목록 순회: ID 기반 카메라 이름 맵 구성
+        m_cameraNames.insert(info.effectiveId(), info.name);
         m_cameraNames.insert(info.cameraId, info.name);                        // - 이름 맵 저장: 카메라 ID별 이름 저장
+    }
 }
 
 void MetadataDistributor::setSource(IMetadataSource *source)
@@ -25,6 +30,7 @@ void MetadataDistributor::setSource(IMetadataSource *source)
         connect(m_source, &IMetadataSource::metadataReceived, this, &MetadataDistributor::handleMetadata); // - 데이터 수신 신호 연결: 데이터 수신 시 분배 처리 함수 호출
         connect(m_source, &IMetadataSource::connectionStateChanged, this,
                 &MetadataDistributor::handleSourceConnectionStateChanged);     // - 상태 변경 신호 연결: 소스 연결 상태 변경 감지
+        connect(m_source, &IMetadataSource::linkLost, this, &MetadataDistributor::handleLinkLost); // - 통신 두절 신호 연결: 전 채널 팬아웃
         handleSourceConnectionStateChanged(m_source->connectionState());        // - 초기 상태 반영: 현재 소스의 연결 상태 수동 1회 반영
     }
 }
@@ -64,19 +70,57 @@ RiskMetadata MetadataDistributor::latestFor(const QString &cameraId) const
 
 void MetadataDistributor::handleMetadata(const RiskMetadata &metadata)
 {
-    m_latest.insert(metadata.cameraId(), metadata);                             // - 상태 캐시 갱신: 카메라 ID별 최신 메타데이터 맵에 저장
+    // 전역 통신 두절(linkLost) 상태였다가 정상 패킷 수신으로 복구된 경우
+    // -> 다른 비활성 채널들의 NetworkDisconnected 상태를 Safe/None(대기)으로 복구
+    if (m_linkLostState && metadata.exceptionState() != RiskTypes::ExceptionState::NetworkDisconnected) {
+        m_linkLostState = false;
+        const QString activeTarget = !metadata.streamId().isEmpty() ? metadata.streamId() : metadata.cameraId();
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        for (const CameraInfo &cam : m_cameras) {
+            const QString camEffId = cam.effectiveId();
+            if (camEffId != activeTarget) {
+                RiskMetadata recoveryMeta;
+                recoveryMeta.setStreamId(camEffId);
+                recoveryMeta.setCameraId(cam.cameraId);
+                recoveryMeta.setZone(cam.zone);
+                recoveryMeta.setExceptionState(RiskTypes::ExceptionState::None);
+                recoveryMeta.setRiskLevel(RiskTypes::RiskLevel::Safe);
+                recoveryMeta.setDistanceM(0.0);
+                recoveryMeta.setDistanceValid(false);
+                recoveryMeta.setUtcTime(now);
+                handleMetadata(recoveryMeta);
+            }
+        }
+    }
 
-    m_cameraListModel.updateRisk(metadata.cameraId(), metadata.riskLevel(), metadata.exceptionState(),
+    const QString targetId = !metadata.streamId().isEmpty() ? metadata.streamId() : metadata.cameraId();
+    m_latest.insert(targetId, metadata);
+    if (metadata.streamId().isEmpty())
+        m_latest.insert(metadata.cameraId(), metadata);                             // - 상태 캐시 갱신: 카메라 ID별 최신 메타데이터 맵에 저장
+
+    m_cameraListModel.updateRisk(targetId, metadata.riskLevel(), metadata.exceptionState(),
                                   metadata.distanceM(), metadata.distanceValid()); // - 카메라 목록 모델 갱신: 위험 수준, 예외 상태 및 거리 정보 업데이트
 
-    m_alertListModel.upsert(metadata.cameraId(), m_cameraNames.value(metadata.cameraId()), metadata.zone(),
+    m_alertListModel.upsert(targetId, m_cameraNames.value(targetId, m_cameraNames.value(metadata.cameraId())), metadata.zone(),
                              metadata.riskLevel(), metadata.distanceM(), metadata.distanceValid(),
                              metadata.exceptionState());                       // - 경보 목록 모델 갱신: 위험 수준에 따라 경보 목록 항목 추가/갱신/삭제
 
     const bool noteworthy =
         metadata.riskLevel() != RiskTypes::RiskLevel::Safe || metadata.exceptionState() != RiskTypes::ExceptionState::None; // - 주요 이벤트 검증: 안전 단계가 아니거나 예외 발생 여부 확인
-    if (noteworthy)
-        m_eventLogModel.addEntry(metadata);                                    // - 이벤트 로그 추가: 주요 위험/예외 발생 시 로그 모델에 기록
+
+    const bool riskChanged = (m_lastLoggedRisk.value(targetId, RiskTypes::RiskLevel::Safe) != metadata.riskLevel());
+    const bool exceptionChanged = (m_lastLoggedException.value(targetId, RiskTypes::ExceptionState::None) != metadata.exceptionState());
+
+    if (noteworthy) {
+        if (riskChanged || exceptionChanged) {
+            m_lastLoggedRisk.insert(targetId, metadata.riskLevel());
+            m_lastLoggedException.insert(targetId, metadata.exceptionState());
+            m_eventLogModel.addEntry(metadata);                                // - 이벤트 로그 추가: 주요 위험/예외 발생 시 로그 모델에 기록
+        }
+    } else {
+        m_lastLoggedRisk.insert(targetId, RiskTypes::RiskLevel::Safe);
+        m_lastLoggedException.insert(targetId, RiskTypes::ExceptionState::None);
+    }
 
     emit metadataUpdated(metadata);                                            // - 신호 발생: 실시간 메타데이터 갱신 이벤트 전달
 }
@@ -87,4 +131,24 @@ void MetadataDistributor::handleSourceConnectionStateChanged(RiskTypes::Connecti
         return;
     m_connectionState = state;                                                 // - 상태값 갱신: 내부 상태 변수 업데이트
     emit connectionStateChanged();                                             // - 신호 발생: 데이터 소스 연결 상태 변경 알림
+}
+
+void MetadataDistributor::handleLinkLost()
+{
+    if (m_linkLostState)                                                       // - 이미 두절 상태면 팬아웃을 반복하지 않는다
+        return;
+    m_linkLostState = true;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (const CameraInfo &cam : m_cameras) {
+        RiskMetadata meta;
+        meta.setStreamId(cam.effectiveId());
+        meta.setCameraId(cam.cameraId);
+        meta.setZone(cam.zone);
+        meta.setExceptionState(RiskTypes::ExceptionState::NetworkDisconnected);
+        meta.setRiskLevel(RiskTypes::RiskLevel::Safe);
+        meta.setDistanceM(0.0);
+        meta.setDistanceValid(false);
+        meta.setUtcTime(now);
+        handleMetadata(meta);
+    }
 }

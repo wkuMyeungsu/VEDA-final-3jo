@@ -184,10 +184,15 @@ int main(int argc, char *argv[])
     handoverClient.setTerminalId(appConfig.terminalId);
     handoverClient.connectToServer(appConfig.mqttBrokerHost, appConfig.mqttBrokerPort);
     metadataDistributor.start();
-    QString initialCameraId = parser.value(cameraOption);
-    if (initialCameraId.isEmpty())
+    QString initialCameraId = parser.value(cameraOption);                        // - 실행 옵션 우선: --camera 로 지정한 ID 사용
+    if (initialCameraId.isEmpty())                                               // - 미지정 확인: 옵션이 없으면 설정 파일 값 사용
         initialCameraId = appConfig.defaultCameraId;
-    if (initialCameraId.isEmpty() && !cameras.isEmpty())
+    if (!initialCameraId.isEmpty() && !videoManager.sourceFor(initialCameraId)) { // - 존재 확인: cameras.json에 없는 ID면 켤 영상 소스가 아예 없음
+        qWarning() << "initial camera" << initialCameraId
+                   << "is not in cameras.json - falling back to the first camera"; // - 경고 로그: 설정 불일치를 조용히 넘기지 않고 남김
+        initialCameraId.clear();                                                 // - 값 비우기: 아래 대체 규칙을 타게 함
+    }
+    if (initialCameraId.isEmpty() && !cameras.isEmpty())                         // - 대체 지정: 그래도 비어 있으면 목록 첫 카메라로 시작
         initialCameraId = cameras.first().effectiveId();
     activeCamera.setActiveCameraId(initialCameraId);
 

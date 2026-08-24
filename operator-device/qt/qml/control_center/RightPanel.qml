@@ -156,13 +156,13 @@ Rectangle {
                         Layout.fillWidth: true
                         spacing: 2
                         Text {
-                            text: alertListModel.count > 0 ? "실시간 위험 감지: " + alertListModel.count + "건" : "전체 구역 안전 상태 유지 중"
+                            text: alertListModel.count > 0 ? "실시간 위험/이상 감지: " + alertListModel.count + "건" : "전체 구역 안전 상태 유지 중"
                             color: alertListModel.count > 0 ? Theme.colorDanger : Theme.colorSafe
                             font.pixelSize: 13
                             font.weight: Font.Bold
                         }
                         Text {
-                            text: "총 1개 구역 · 4개 채널 스트림 정상 수신"
+                            text: alertListModel.count > 0 ? "총 1개 구역 · " + alertListModel.count + "개 경보/이상 상태 발생" : "총 1개 구역 · 4개 채널 스트림 정상 수신"
                             color: Theme.colorTextSecondary
                             font.pixelSize: 11
                         }
@@ -334,9 +334,11 @@ Rectangle {
                     width: ListView.view.width
                     height: 52
                     radius: Theme.radiusSm
-                    color: model.riskLevel > 0 ? Theme.colorDangerBg : Theme.colorSurface
+                    readonly property bool hasException: model.exceptionState > 0
+                    readonly property bool hasRisk: model.riskLevel > 0
+                    color: hasException ? Theme.colorUnknownBg : (hasRisk ? Theme.colorDangerBg : Theme.colorSurface)
                     border.width: 1
-                    border.color: model.riskLevel > 0 ? Theme.colorDanger : Theme.colorBorder
+                    border.color: hasException ? Theme.colorUnknown : (hasRisk ? Theme.colorDanger : Theme.colorBorder)
 
                     RowLayout {
                         anchors.fill: parent
@@ -361,17 +363,19 @@ Rectangle {
                                 elide: Text.ElideRight
                             }
                             Text {
-                                text: model.riskLevel > 0 
-                                      ? ("접근 경보: " + (model.distanceValid ? model.distanceM.toFixed(2) + "m" : "위험"))
-                                      : "정상 안전 거리 유지"
-                                color: model.riskLevel > 0 ? Theme.colorDanger : Theme.colorTextSecondary
+                                text: hasException
+                                      ? Theme.exceptionLabel(model.exceptionState)
+                                      : (hasRisk
+                                         ? ("접근 경보: " + (model.distanceValid ? Math.round(model.distanceM * 1000) + " mm" : "위험"))
+                                         : (model.distanceValid ? "정상 안전 거리 유지" : "센서 대기 (미배정)"))
+                                color: hasException ? Theme.colorUnknown : (hasRisk ? Theme.colorDanger : Theme.colorTextSecondary)
                                 font.pixelSize: 11
                             }
                         }
 
                         Text {
-                            text: model.riskLevel > 0 ? "위험" : "정상"
-                            color: model.riskLevel > 0 ? Theme.colorDanger : Theme.colorTextMuted
+                            text: hasException ? "확인 불가" : (hasRisk ? "위험" : (model.distanceValid ? "정상" : "대기"))
+                            color: hasException ? Theme.colorUnknown : (hasRisk ? Theme.colorDanger : Theme.colorTextMuted)
                             font.pixelSize: 11
                             font.weight: Font.Bold
                         }
@@ -384,10 +388,12 @@ Rectangle {
                     }
                 }
             }
+
+            Item { Layout.fillHeight: true }
         }
 
         // =========================================================================
-        // LEVEL 4: 단일 채널 실시간 AI 정밀 분석 (확대뷰일 때)
+        // LEVEL 4: 선택 스트림(카메라 채널) 상세 분석 뷰
         // =========================================================================
         ColumnLayout {
             id: level4Column
@@ -396,6 +402,47 @@ Rectangle {
             spacing: Theme.spacingSm
             visible: root.navDepth === 4
 
+            property double currentDist: 0.0
+            property int currentChRiskLevel: 0
+            property int currentChException: 0
+            property bool chDistValid: false
+            readonly property bool hasChException: currentChException > 0
+            readonly property bool hasChRisk: currentChRiskLevel > 0
+
+            function updateCurrentValues() {
+                if (root.selectedStreamId && root.selectedStreamId.length > 0) {
+                    level4Column.currentDist = cameraListModel.distanceMFor(root.selectedStreamId);
+                    level4Column.currentChRiskLevel = cameraListModel.riskLevelFor(root.selectedStreamId);
+                    level4Column.currentChException = cameraListModel.exceptionStateFor(root.selectedStreamId);
+                    level4Column.chDistValid = cameraListModel.distanceValidFor(root.selectedStreamId);
+                }
+            }
+
+            Connections {
+                target: cameraListModel
+                function onRiskUpdated(cameraId, rLevel, exState, dist) {
+                    if (cameraId === root.selectedStreamId) {
+                        level4Column.currentChRiskLevel = rLevel;
+                        level4Column.currentChException = exState;
+                        level4Column.currentDist = dist;
+                        level4Column.chDistValid = cameraListModel.distanceValidFor(cameraId);
+                    }
+                }
+            }
+
+            Connections {
+                target: root
+                function onSelectedStreamIdChanged() {
+                    level4Column.updateCurrentValues();
+                }
+                function onNavDepthChanged() {
+                    if (root.navDepth === 4)
+                        level4Column.updateCurrentValues();
+                }
+            }
+
+            Component.onCompleted: level4Column.updateCurrentValues()
+
             // 1) 실시간 접근 거리 게이지 바
             Rectangle {
                 Layout.fillWidth: true
@@ -403,10 +450,7 @@ Rectangle {
                 radius: Theme.radiusSm
                 color: Theme.colorSurface
                 border.width: 1
-                border.color: currentChRiskLevel > 0 ? Theme.colorDanger : Theme.colorBorder
-
-                property double currentDist: cameraListModel.distanceMFor(root.selectedStreamId)
-                property int currentChRiskLevel: cameraListModel.riskLevelFor(root.selectedStreamId)
+                border.color: level4Column.hasChException ? Theme.colorUnknown : (level4Column.hasChRisk ? Theme.colorDanger : Theme.colorBorder)
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -422,16 +466,24 @@ Rectangle {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: parent.parent.currentChRiskLevel > 0
-                                  ? (parent.parent.currentDist > 0 ? parent.parent.currentDist.toFixed(2) + " m" : "위험 접근")
-                                  : (parent.parent.currentDist > 0 ? "안전 거리 확보됨 (> 5.0m)" : "정상 모니터링")
-                            color: parent.parent.currentChRiskLevel > 0 ? Theme.colorDanger : Theme.colorSafe
-                            font.pixelSize: parent.parent.currentChRiskLevel > 0 ? 16 : 13
+                            text: level4Column.hasChException
+                                  ? Theme.exceptionLabel(level4Column.currentChException)
+                                  : (level4Column.hasChRisk
+                                     ? (level4Column.chDistValid ? Math.round(level4Column.currentDist * 1000) + " mm" : "위험 접근")
+                                     : (level4Column.chDistValid
+                                        ? (level4Column.currentDist > 0 ? "안전 거리 확보됨 (> 5000 mm)" : "정상 모니터링")
+                                        : "센서 대기 (미배정)"))
+                            color: level4Column.hasChException
+                                   ? Theme.colorUnknown
+                                   : (level4Column.hasChRisk
+                                      ? Theme.colorDanger
+                                      : (level4Column.chDistValid ? Theme.colorSafe : Theme.colorTextMuted))
+                            font.pixelSize: (level4Column.hasChException || level4Column.hasChRisk) ? 16 : 13
                             font.weight: Font.Bold
                         }
                     }
 
-                    // 거리 프로그레스 게이지 바 (0m ~ 10m 기준)
+                    // 거리 프로그레스 게이지 바 (0 ~ 10000 mm 기준)
                     Rectangle {
                         Layout.fillWidth: true
                         height: 10
@@ -439,13 +491,17 @@ Rectangle {
                         color: Theme.colorSurfaceSunken
 
                         Rectangle {
-                            width: parent.parent.parent.currentChRiskLevel > 0
-                                   ? Math.min(parent.width, Math.max(8, parent.width * (Math.min(10.0, parent.parent.parent.currentDist) / 10.0)))
-                                   : parent.width
+                            width: (level4Column.hasChException || !level4Column.chDistValid)
+                                   ? parent.width
+                                   : (level4Column.hasChRisk
+                                      ? Math.min(parent.width, Math.max(8, parent.width * (Math.min(10.0, level4Column.currentDist) / 10.0)))
+                                      : parent.width)
                             height: parent.height
                             radius: 5
-                            color: parent.parent.parent.currentChRiskLevel === 2 ? Theme.colorDanger 
-                                 : (parent.parent.parent.currentChRiskLevel === 1 ? Theme.colorCaution : Theme.colorSafe)
+                            color: (level4Column.hasChException || !level4Column.chDistValid)
+                                   ? Theme.colorUnknown
+                                   : (level4Column.currentChRiskLevel === 2 ? Theme.colorDanger 
+                                      : (level4Column.currentChRiskLevel === 1 ? Theme.colorCaution : Theme.colorSafe))
 
                             Behavior on width { NumberAnimation { duration: 150 } }
                         }
@@ -453,11 +509,11 @@ Rectangle {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "0m (위험)"; color: Theme.colorDanger; font.pixelSize: 10 }
+                        Text { text: "0 mm (위험)"; color: Theme.colorDanger; font.pixelSize: 10 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "5m (주의)"; color: Theme.colorCaution; font.pixelSize: 10 }
+                        Text { text: "5000 mm (주의)"; color: Theme.colorCaution; font.pixelSize: 10 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "10m (안전)"; color: Theme.colorSafe; font.pixelSize: 10 }
+                        Text { text: "10000 mm (안전)"; color: Theme.colorSafe; font.pixelSize: 10 }
                     }
                 }
             }
@@ -543,8 +599,9 @@ Rectangle {
                         }
 
                         Text {
-                            text: Theme.riskLabel(model.riskLevel)
-                            color: Theme.riskColor(model.riskLevel)
+                            readonly property bool isEx: model.exceptionState > 0
+                            text: isEx ? Theme.exceptionLabel(model.exceptionState) : Theme.riskLabel(model.riskLevel)
+                            color: isEx ? Theme.colorUnknown : Theme.riskColor(model.riskLevel)
                             font.pixelSize: 11
                             font.weight: Font.Bold
                         }
@@ -552,7 +609,7 @@ Rectangle {
                         Item { Layout.fillWidth: true }
 
                         Text {
-                            text: model.distanceValid ? model.distanceM.toFixed(2) + "m" : "-"
+                            text: model.distanceValid ? Math.round(model.distanceM * 1000) + " mm" : "-"
                             color: Theme.colorTextSecondary
                             font.pixelSize: 11
                         }

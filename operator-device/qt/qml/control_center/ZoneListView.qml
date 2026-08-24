@@ -19,11 +19,14 @@ Item {
 
     function isZoneAlert(zoneId) {
         for (var i = 0; i < cameraListModel.count; ++i) {
-            var z = cameraListModel.zoneFor(cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.CameraIdRole));
-            if (z === zoneId) {
-                var rLevel = cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.RiskLevelRole);
-                var ex = cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.ExceptionStateRole);
-                if (rLevel > 0 || ex > 0) return true;
+            var id = cameraListModel.cameraIdAt(i);
+            if (id && id.length > 0) {
+                var z = cameraListModel.zoneFor(id);
+                if (z === zoneId) {
+                    var rLevel = cameraListModel.riskLevelFor(id);
+                    var ex = cameraListModel.exceptionStateFor(id);
+                    if (rLevel > 0 || ex > 0) return true;
+                }
             }
         }
         return false;

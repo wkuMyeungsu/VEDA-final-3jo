@@ -17,10 +17,11 @@ constexpr int kReconnectDelayBaseSec = 3;  // - 재연결 시작 대기(초)
 constexpr int kReconnectDelayMaxSec = 30;  // - 재연결 최대 대기(초)
 constexpr int kMqttKeepAliveSec = 60;      // - MQTT keepalive 주기(초)
 
-constexpr qint64 kStaleThresholdMs = 1000; // - 오래된 메시지 기준(1초)
+constexpr qint64 kStaleThresholdMs = 1000; // - retain 메시지 허용 나이(1초): 접속 직후 첫 1건에만 적용된다(processPayload 참고)
+constexpr int kStartupGracePeriodMs = 5000; // - 기동 유예 시간 (5초)
 
 constexpr int kServerHeartbeatMs = 200;    // - 서버 하트비트 주기(ms)
-constexpr int kWatchdogMultiplier = 3;     // - 워치독 배수
+constexpr int kWatchdogMultiplier = 5;     // - 워치독 배수 (5 * 200ms = 1000ms)
 constexpr int kWatchdogThresholdMs = kServerHeartbeatMs * kWatchdogMultiplier; // - 워치독 만료 시간(ms)
 constexpr int kWatchdogPollIntervalMs = 100; // - 워치독 폴링 주기(ms)
 }
@@ -64,8 +65,10 @@ void RiskEventSource::start()
     mosquitto_connect_async(m_mosq, m_brokerHost.toUtf8().constData(), m_brokerPort, kMqttKeepAliveSec); // - 비동기 접속 시도
     mosquitto_loop_start(m_mosq); // - 네트워크 스레드 시작
 
-    m_lastMessageTimer.invalidate(); // - 워치독 기준 시각 초기화
-    m_watchdogTimer.start();         // - 워치독 시작
+    m_hasReceivedFirstMessage = false;
+    m_staleCheckArmed = false;   // - 아직 접속 전이라 retain 메시지가 올 수 없다
+    m_lastMessageTimer.start();   // - 기동 시점부터 타이머 시작 (첫 기동 시 5초 유예 적용)
+    m_watchdogTimer.start();      // - 워치독 시작
 }
 
 void RiskEventSource::stop()
@@ -96,6 +99,7 @@ void RiskEventSource::onConnect(struct mosquitto *mosq, void *obj, int rc)
         qCInfo(lcRiskEventSource) << "connected to broker, subscribed to" << self->m_topic; // - 정보 로그
         self->setConnectionState(RiskTypes::ConnectionState::Connected); // - 상태 변경: 연결됨
         self->m_lastMessageTimer.start(); // - 워치독 기준 시각 갱신
+        self->m_staleCheckArmed = true;   // - 구독 직후 도착할 retain 메시지 1건만 나이를 검사한다
     }, Qt::QueuedConnection);
 }
 
@@ -136,39 +140,48 @@ void RiskEventSource::processPayload(const QByteArray &payload)
 
     const RiskMetadata metadata = RiskMetadata::fromJson(doc.object()); // - 데이터 변환
 
+    // - stale 검사는 접속 직후 retain 메시지 1건만 대상으로 한다. 아래 어느 경로로
+    //   빠져나가든 여기서 소진하므로, 두 번째 메시지부터는 나이를 보지 않는다.
+    const bool checkStale = m_staleCheckArmed;
+    m_staleCheckArmed = false;
+
     const QDateTime utcTime = metadata.utcTime(); // - 시간 정보 추출
     if (!utcTime.isValid()) { // - 시각 검증
         qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << payload; // - 경고 로그
-        m_lastCameraId = metadata.cameraId(); // - 카메라 ID 기록
+        m_hasReceivedFirstMessage = true;
         m_lastMessageTimer.start();           // - 워치독 기준 시각 갱신
         emit metadataReceived(metadata);      // - 신호 발생
         return;
     }
 
     const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc()); // - 경과 시간 계산
-    if (ageMs > kStaleThresholdMs) { // - 오래된 값 검증
-        qCInfo(lcRiskEventSource) << "discarding stale retained message, age(ms)=" << ageMs
-                                   << "utc_time=" << utcTime.toString(Qt::ISODateWithMs); // - 정보 로그
+    if (ageMs < 0) {
+        qCWarning(lcRiskEventSource) << "utc_time is in the future (NTP skew?), accepting:" << utcTime.toString(Qt::ISODateWithMs);
+    } else if (checkStale && ageMs > kStaleThresholdMs) {
+        // - 접속 직후 첫 메시지가 오래됨 = 서버가 멈춘 뒤 브로커에 남아 있던 retain 값일 가능성.
+        //   접속당 최대 1회만 찍히므로 경고 수준으로 남긴다. 매 접속마다 반복된다면
+        //   메시지가 진짜 오래된 게 아니라 단말 시계가 뒤처진 것을 의심해야 한다.
+        qCWarning(lcRiskEventSource) << "discarding stale retained message on connect, age(ms)=" << ageMs
+                                      << "utc_time=" << utcTime.toString(Qt::ISODateWithMs)
+                                      << "-- if this repeats every connect, check clock sync (chronyc tracking)";
         return; // - 데이터 폐기
     }
 
-    m_lastCameraId = metadata.cameraId(); // - 카메라 ID 기록
+    m_hasReceivedFirstMessage = true;
     m_lastMessageTimer.start();           // - 워치독 기준 시각 갱신
     emit metadataReceived(metadata);      // - 신호 발생
 }
 
 void RiskEventSource::handleWatchdogTimeout()
 {
-    if (!m_lastMessageTimer.isValid() || m_lastMessageTimer.elapsed() < kWatchdogThresholdMs) // - 정상 범위 판단
+    const int threshold = m_hasReceivedFirstMessage ? kWatchdogThresholdMs : kStartupGracePeriodMs;
+    if (!m_lastMessageTimer.isValid() || m_lastMessageTimer.elapsed() < threshold)
         return;
 
-    qCWarning(lcRiskEventSource) << "no data for" << kWatchdogThresholdMs << "ms, reporting NetworkDisconnected"; // - 경고 로그
+    qCWarning(lcRiskEventSource) << "no data for" << threshold << "ms, reporting linkLost";
 
-    RiskMetadata metadata; // - 임시 메타데이터 생성
-    metadata.setCameraId(m_lastCameraId);                                       // - 카메라 ID 유지
-    metadata.setExceptionState(RiskTypes::ExceptionState::NetworkDisconnected); // - 예외 상태 설정
-    metadata.setUtcTime(QDateTime::currentDateTimeUtc());                       // - 시각 설정
-    emit metadataReceived(metadata); // - 신호 발생
+    m_hasReceivedFirstMessage = true;
+    emit linkLost(); // - MetadataDistributor가 전 채널로 팬아웃
 
     m_lastMessageTimer.start(); // - 기준 시각 재설정
 }

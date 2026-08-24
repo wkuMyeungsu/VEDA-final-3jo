@@ -51,6 +51,7 @@ private:
     QTimer *m_reconnectTimer = nullptr;                                        // - 재연결 타이머: 다음 재시도 시각 예약용 (메인 스레드 전용)
     bool m_userStopped = false;                                                // - 수동 정지 상태: stop() 호출 후 자동 재연결을 막는 의도 플래그
     int m_reconnectDelayMs = 0;                                                // - 다음 재연결 대기 시간: 실패할수록 2배씩 증가, 접속 성공 시 0으로 초기화
+    bool m_everConnected = false;                                              // - 접속 성공 이력: 한 번도 붙은 적 없으면 재시도 간격을 짧게 유지
 
     QMutex m_pendingMutex;                                                     // - 보관용 잠금: 스트리밍 스레드와 메인 스레드의 슬롯 접근 보호
     QImage m_pendingFrame;                                                     // - 프레임 슬롯: 아직 배달하지 않은 최신 프레임 1장

@@ -41,8 +41,10 @@ signals:
 private slots:
     void handleMetadata(const RiskMetadata &metadata);                        // - 데이터 수신 처리: 수신 메타데이터를 캐시 및 3개 모델에 분배
     void handleSourceConnectionStateChanged(RiskTypes::ConnectionState state); // - 상태 변경 처리: 데이터 소스의 연결 상태 변경 감지
+    void handleLinkLost();                                                    // - 통신 두절 처리: 워치독 발생 시 전 채널 팬아웃
 
 private:
+    QVector<CameraInfo> m_cameras;                                             // - 카메라 원본 목록: 전체 채널 팬아웃 및 복구용
     QHash<QString, QString> m_cameraNames;                                     // - 카메라 이름 맵: 카메라 ID 기준 명칭 보관
     QHash<QString, RiskMetadata> m_latest;                                     // - 최신 데이터 맵: 카메라 ID별 마지막 위험 메타데이터 보관
     CameraListModel m_cameraListModel;                                         // - 전체 카메라 모델: 카메라 그리드 및 상태 보관
@@ -51,4 +53,7 @@ private:
     IMetadataSource *m_source = nullptr;                                       // - 데이터 소스 포인터: 연결된 메타데이터 수신 객체 참조
     IMetadataSource *m_demoSource = nullptr;                                   // - 데모 보조 입력 포인터: 데모 패널 값 전용 (mqtt 모드에서만 사용, 없으면 nullptr)
     RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected; // - 연결 상태: 데이터 소스 접속 상태 보관
+    bool m_linkLostState = false;                                              // - 통신 두절 플래그
+    QHash<QString, RiskTypes::RiskLevel> m_lastLoggedRisk;                     // - 로그 중복 방지용 상태 캐시
+    QHash<QString, RiskTypes::ExceptionState> m_lastLoggedException;
 };

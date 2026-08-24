@@ -79,7 +79,7 @@ Rectangle {
         // 2) 실시간 접근 거리 (위험 발생 시 또는 거리 유효 시)
         Text {
             visible: root.distanceValid && root.distanceM > 0
-            text: root.distanceM.toFixed(2) + " m"
+            text: Math.round(root.distanceM * 1000) + " mm"
             color: root.accent
             font.pixelSize: 16
             font.bold: true

@@ -53,6 +53,7 @@ public:
     // 카메라 1대의 영상 연결 상태만 갱신 (위험도와 별개 채널이라 함수 분리)
     void updateVideoConnectionState(const QString &cameraId, RiskTypes::ConnectionState state);
 
+    Q_INVOKABLE QString cameraIdAt(int row) const;
     Q_INVOKABLE int indexForCameraId(const QString &cameraId) const;
     Q_INVOKABLE int videoConnectionStateFor(const QString &cameraId) const;
     Q_INVOKABLE int riskLevelFor(const QString &cameraId) const;
@@ -74,7 +75,7 @@ private:
         RiskTypes::RiskLevel riskLevel = RiskTypes::RiskLevel::Safe;               // updateRisk()가 갱신
         RiskTypes::ExceptionState exceptionState = RiskTypes::ExceptionState::None; // updateRisk()가 갱신
         double distanceM = 0.0;                                                    // updateRisk()가 갱신
-        bool distanceValid = true;                                                 // updateRisk()가 갱신 (측정불가 구분용)
+        bool distanceValid = false;                                                // updateRisk()가 갱신 (기동 직후/미수신 시 '측정 불가/대기' 기본값)
         RiskTypes::ConnectionState videoConnectionState = RiskTypes::ConnectionState::Disconnected; // updateVideoConnectionState()가 갱신
     };
 

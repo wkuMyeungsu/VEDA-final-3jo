@@ -26,10 +26,10 @@ ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, Meta
     , m_warningDevice(warningDevice)                                       // - 경고 장치 제어 객체 보관
 {
     for (const CameraInfo &info : cameras) {
-        if (!info.streamId.isEmpty())
+        if (!info.streamId.isEmpty())                                      // - 스트림 키 등록: 채널별 고유 ID로 정보 찾기
             m_cameras.insert(info.streamId, info);
-        if (!info.cameraId.isEmpty())
-            m_cameras.insert(info.cameraId, info);
+        if (!info.cameraId.isEmpty() && !m_cameras.contains(info.cameraId)) // - 카메라 키 등록: 먼저 온 채널만 유지 (VideoSourceManager의 소스 선택 규칙과 맞춤)
+            m_cameras.insert(info.cameraId, info);                         // - 규칙이 어긋나면 "CAM_01" 영상은 1번 채널인데 이름/구역은 4번 채널 값이 표시됨
     }
 
     if (m_metadataDistributor)                                             // - 데이터 수신 이벤트 연결: 분배기의 데이터 갱신 신호 연결
@@ -68,15 +68,20 @@ ActiveCameraController::ActiveCameraController(QVector<CameraInfo> cameras, Meta
 // "이전 카메라 영상 위에 다른 카메라의 사람 박스"가 그려짐.
 void ActiveCameraController::setActiveCameraId(const QString &cameraId)
 {
-    if (m_pendingCameraId.isEmpty() && m_activeCameraId == cameraId)       // - 중복 전환 방지: 이미 보고 있고 기다리는 것도 없으면 생략
+    if (m_pendingCameraId.isEmpty() && m_activeCameraId == cameraId) {     // - 같은 카메라 재지정: 화면은 그대로 두되 스트림은 반드시 살려 둠
+        if (m_videoManager)                                                // - 재생 보장: 아직 안 켜졌거나 정지 예약된 경우를 되살림 (부팅 직후 서버가 같은 채널을 지정하는 경로)
+            m_videoManager->requestStart(cameraId);
         return;
+    }
     if (m_pendingCameraId == cameraId)                                     // - 중복 요청 방지: 같은 카메라를 이미 기다리는 중이면 생략
         return;
 
     const QString abandonedCameraId = m_pendingCameraId;                   // - 포기 대상 기억: 기다리다 취소하는 카메라 ID 보관
     cancelPendingSwap();                                                   // - 대기 상태 정리: 이전 요청의 연결과 타이머 해제
 
-    if (!abandonedCameraId.isEmpty() && abandonedCameraId != m_activeCameraId && m_videoManager) // - 포기 카메라 반납: 켜둔 채 방치되지 않게 정지 예약
+    if (!abandonedCameraId.isEmpty() && abandonedCameraId != m_activeCameraId && m_videoManager // - 포기 카메라 반납: 켜둔 채 방치되지 않게 정지 예약
+        && m_videoManager->sourceFor(abandonedCameraId) != m_videoManager->sourceFor(cameraId) // - 같은 소스 보호: 이제 켜려는 것과 같은 소스면 끄면 안 됨
+        && m_videoManager->sourceFor(abandonedCameraId) != m_videoManager->sourceFor(m_activeCameraId)) // - 같은 소스 보호: 지금 보고 있는 것과 같은 소스면 끄면 안 됨
         m_videoManager->requestStopAfter(abandonedCameraId, kCameraLingerMs);
 
     if (cameraId == m_activeCameraId) {                                    // - 원위치 처리: 기다리던 전환만 취소되고 화면은 그대로인 경우
@@ -89,9 +94,21 @@ void ActiveCameraController::setActiveCameraId(const QString &cameraId)
 
     IVideoSource *source = m_videoManager ? m_videoManager->sourceFor(cameraId) : nullptr; // - 소스 조회: 새 카메라의 영상 소스 획득
 
+    // 설정에 아예 없는 ID는 "죽은 카메라"와 다르다. 죽은 카메라는 신호 없음을 보여주는 게 맞지만,
+    // 없는 ID는 잘못된 지시라서 그대로 받으면 멀쩡히 나오던 화면까지 같이 꺼진다.
+    if (!source && !m_activeCameraId.isEmpty()) {                          // - 잘못된 지시 거부: 소스가 없고 지킬 화면이 있으면 전환하지 않음
+        qCWarning(lcActiveCamera) << "ignoring switch to unknown camera" << cameraId
+                                   << "-- keeping" << m_activeCameraId;    // - 경고 로그: 무시한 전환 요청과 유지 중인 카메라 기록
+        cancelPendingSwap();                                               // - 대기 상태 정리: 방금 지정한 대기 카메라 되돌리기
+        return;
+    }
+
     if (m_activeCameraId.isEmpty() || !source) {                           // - 즉시 확정 조건: 지킬 이전 화면이 없거나 기다릴 소스가 없는 경우
         if (source && m_videoManager)                                      // - 재생 시작: 소스가 있으면 먼저 구동
             m_videoManager->requestStart(cameraId);
+        else if (!source)                                                  // - 소스 없음 경고: 켤 스트림이 없어 화면이 계속 비게 됨 (cameras.json에 없는 ID)
+            qCWarning(lcActiveCamera) << "no video source for camera" << cameraId
+                                       << "-- check cameras.json ids";     // - 경고 로그: 조용히 빈 화면으로 남지 않도록 원인을 남김
         commitCameraSwap(cameraId);                                        // - 전환 확정: 기다릴 이유가 없으므로 바로 반영
         return;
     }
@@ -124,13 +141,13 @@ void ActiveCameraController::commitCameraSwap(QString cameraId)            // - 
 
     attachVideoConnection();                                               // - 영상 연결 수립: 새로 선택된 카메라의 영상 신호 연결
 
-    if (m_warningDevice)                                                   // - 경고 장치 갱신: 현재 카메라의 위험 수치 반영
-        m_warningDevice->setRiskLevel(m_latest.riskLevel());
+    applyRiskToWarningDevice(m_latest);                                    // - 경고 장치 갱신: 현재 카메라의 위험 수치 반영 (두절 시 송신 중단)
 
     emit activeCameraIdChanged();                                          // - 카메라 변경 신호 발생: 활성 카메라 ID 변경 알림
     emit metadataChanged();                                                // - 메타데이터 변경 신호 발생: 위험 정보 변경 알림
 
-    if (m_videoManager && !previousCameraId.isEmpty() && previousCameraId != cameraId) // - 이전 카메라 정리: 바로 끄지 않고 잠시 뒤 정지 예약
+    if (m_videoManager && !previousCameraId.isEmpty() && previousCameraId != cameraId // - 이전 카메라 정리: 바로 끄지 않고 잠시 뒤 정지 예약
+        && m_videoManager->sourceFor(previousCameraId) != m_videoManager->sourceFor(cameraId)) // - 같은 소스 보호: 스트림ID와 카메라ID가 한 소스를 가리키면 방금 켠 영상을 끄게 됨
         m_videoManager->requestStopAfter(previousCameraId, kCameraLingerMs); // - 지연 정지: 곧 되돌아올 경우 재접속 비용을 아끼고, 정지 지연이 전환 경로를 막지 않게 함
 }
 
@@ -211,6 +228,23 @@ void ActiveCameraController::handleWarningDeviceStateChanged()
     }
 }
 
+void ActiveCameraController::applyRiskToWarningDevice(const RiskMetadata &metadata)
+{
+    if (!m_warningDevice)
+        return;
+
+    // - 서버 링크가 끊긴 구간에는 위험도를 아예 보내지 않는다.
+    //   Safe(0)를 계속 보내면 FPGA watchdog이 갱신돼 자율 COMM_ERROR 경고가 영원히 안 걸린다.
+    const bool linkLost =
+        (metadata.exceptionState() == RiskTypes::ExceptionState::NetworkDisconnected);
+
+    // - 순서 주의: 재개 훅이 즉시 1회 송신을 일으키므로, 새 위험도를 먼저 넣어야
+    //   옛 값이 나가지 않는다.
+    if (!linkLost)
+        m_warningDevice->setRiskLevel(metadata.riskLevel());
+    m_warningDevice->setRiskTxSuspended(linkLost);
+}
+
 void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)
 {
     const bool matches = (!metadata.streamId().isEmpty() && metadata.streamId() == m_activeCameraId)
@@ -220,7 +254,6 @@ void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)
         return;
 
     m_latest = metadata;                                                   // - 최신 위험 데이터 갱신: 수신된 메타데이터 저장
-    if (m_warningDevice)                                                   // - 경고 장치 갱신: 수신된 위험 수치 전달
-        m_warningDevice->setRiskLevel(metadata.riskLevel());
+    applyRiskToWarningDevice(metadata);                                    // - 경고 장치 갱신: 수신된 위험 수치 전달 (두절 시 송신 중단)
     emit metadataChanged();                                                // - 메타데이터 변경 신호 발생: UI 표시 정보 알림
 }

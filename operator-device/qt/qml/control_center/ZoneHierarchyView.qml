@@ -19,10 +19,12 @@ Rectangle {
         var rs = {};
         var ds = {};
         for (var i = 0; i < cameraListModel.count; ++i) {
-            var id = cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.CameraIdRole);
-            cs[id] = cameraListModel.videoConnectionStateFor(id);
-            rs[id] = cameraListModel.riskLevelFor(id);
-            ds[id] = cameraListModel.distanceMFor(id);
+            var id = cameraListModel.cameraIdAt(i);
+            if (id && id.length > 0) {
+                cs[id] = cameraListModel.videoConnectionStateFor(id);
+                rs[id] = cameraListModel.riskLevelFor(id);
+                ds[id] = cameraListModel.distanceMFor(id);
+            }
         }
         root.connStates = cs;
         root.riskLevels = rs;
@@ -220,7 +222,7 @@ Rectangle {
                                         Text {
                                             id: badgeText
                                             anchors.centerIn: parent
-                                            text: Theme.riskLevelToString(riskLevel) + (distM > 0 ? " " + distM.toFixed(1) + "m" : "")
+                                            text: Theme.riskLabel(riskLevel) + (distM > 0 ? " " + Math.round(distM * 1000) + " mm" : "")
                                             color: Theme.riskColor(riskLevel)
                                             font.pixelSize: 11
                                             font.weight: Font.Bold

@@ -158,7 +158,7 @@ Rectangle {
                     font.pixelSize: 12
                 }
                 Text {
-                    text: root.distanceValid ? root.distanceM.toFixed(2) + " m" : "측정 불가"
+                    text: root.distanceValid ? Math.round(root.distanceM * 1000) + " mm" : "측정 불가"
                     color: Theme.riskColor(root.riskLevel)
                     font.pixelSize: 13
                     font.weight: Font.DemiBold

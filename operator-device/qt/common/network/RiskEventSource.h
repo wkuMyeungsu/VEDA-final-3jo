@@ -41,5 +41,6 @@ private:
     struct mosquitto *m_mosq = nullptr; // - mosquitto 클라이언트 핸들
     QTimer m_watchdogTimer;           // - 워치독 폴링 타이머
     QElapsedTimer m_lastMessageTimer; // - 마지막 수신 후 경과 시간
-    QString m_lastCameraId;           // - 마지막 수신 카메라 ID
+    bool m_hasReceivedFirstMessage = false; // - 첫 메시지 수신 여부: 기동 유예(5초) 판단용
+    bool m_staleCheckArmed = false; // - stale 검사 활성 여부: 접속 직후 retain 메시지 1건만 대상
 };

@@ -31,6 +31,13 @@ int CameraListModel::rowForCameraId(const QString &cameraId) const
     return -1;
 }
 
+QString CameraListModel::cameraIdAt(int row) const
+{
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).info.effectiveId();
+    return QString();
+}
+
 int CameraListModel::indexForCameraId(const QString &cameraId) const
 {
     return rowForCameraId(cameraId);
@@ -100,6 +107,11 @@ void CameraListModel::updateRisk(const QString &cameraId, RiskTypes::RiskLevel l
         return; // 모델에 없는 cameraId면 조용히 무시 (설정에 없는 카메라에서 이벤트가 온 경우)
 
     Row &target = m_rows[row];
+    if (target.riskLevel == level && target.exceptionState == exception &&
+        qFuzzyCompare(target.distanceM, distanceM) && target.distanceValid == distanceValid) {
+        return; // 값 변경 없음 -> 불필요한 dataChanged emit 방지
+    }
+
     target.riskLevel = level;
     target.exceptionState = exception;
     target.distanceM = distanceM;
@@ -117,6 +129,9 @@ void CameraListModel::updateVideoConnectionState(const QString &cameraId, RiskTy
     const int row = rowForCameraId(cameraId);
     if (row < 0)
         return;
+
+    if (m_rows[row].videoConnectionState == state)
+        return; // 상태 변경 없음 -> 불필요한 emit 방지
 
     m_rows[row].videoConnectionState = state;
     const QModelIndex idx = index(row);

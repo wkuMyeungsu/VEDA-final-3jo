@@ -245,7 +245,7 @@ Rectangle {
                     }
                 }
                 Text {
-                    text: model.distanceValid ? model.distanceM.toFixed(2) + " m" : "측정 불가"
+                    text: model.distanceValid ? Math.round(model.distanceM * 1000) + " mm" : "측정 불가"
                     width: 80
                     color: Theme.colorTextSecondary
                     font.pixelSize: Theme.typeCaption.size

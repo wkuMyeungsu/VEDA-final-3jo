@@ -15,6 +15,7 @@
 class SerialWarningDevice : public IWarningDevice
 {
     Q_OBJECT
+    friend class TestSerialWarningDevice;
 
 public:
     SerialWarningDevice(QString portName, qint32 baudRate, QObject *parent = nullptr); // - 생성자: 포트 이름/보레이트 보관, 실제 연결은 start()에서
@@ -26,6 +27,9 @@ public:
     void setRiskLevel(RiskTypes::RiskLevel level) override;                            // - 위험 단계 값만 갱신 (실제 전송은 100ms 타이머가 전담, PROTOCOL.md 1.2절)
     void sendClearError() override;                                                    // - CLEAR_ERROR 1회 전송
     void sendSelfTest(int mode) override;                                              // - SELF_TEST 1회 전송
+
+protected:
+    void onRiskTxSuspendedChanged(bool suspended) override;                            // - 재개 시 100ms를 기다리지 않고 즉시 1회 송신
 
 private slots:
     void handleReadyRead();                                                            // - 수신 바이트 누적 및 프레임 파싱

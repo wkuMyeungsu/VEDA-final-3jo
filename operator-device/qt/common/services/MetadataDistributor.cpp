@@ -1,14 +1,19 @@
 #include "MetadataDistributor.h"
 
+#include <QDateTime>
+
 #include "../network/IMetadataSource.h"
 
 MetadataDistributor::MetadataDistributor(QVector<CameraInfo> cameras, int eventLogMaxEntries, QObject *parent)
     : QObject(parent)
+    , m_cameras(cameras)
     , m_eventLogModel(eventLogMaxEntries)
 {
     m_cameraListModel.setCameras(cameras);
-    for (const CameraInfo &info : cameras)
+    for (const CameraInfo &info : cameras) {
+        m_cameraNames.insert(info.effectiveId(), info.name);
         m_cameraNames.insert(info.cameraId, info.name);
+    }
 }
 
 // 데이터 출처 교체 지점
@@ -32,6 +37,8 @@ void MetadataDistributor::setSource(IMetadataSource *source)
         // 연결 상태 변화(끊김/연결중/연결됨) 감지 -> 상태바 등에 반영
         connect(m_source, &IMetadataSource::connectionStateChanged, this,
                 &MetadataDistributor::handleSourceConnectionStateChanged);
+        // 워치독 등에 의한 전역 통신 두절 -> 전 채널 NetworkDisconnected 브로드캐스트
+        connect(m_source, &IMetadataSource::linkLost, this, &MetadataDistributor::handleLinkLost);
         // connect는 "이후 변화"만 감지 -> 현재 상태 수동 1회 반영 (안 하면 기본값으로 보임)
         handleSourceConnectionStateChanged(m_source->connectionState());
     }
@@ -82,10 +89,34 @@ RiskMetadata MetadataDistributor::latestFor(const QString &cameraId) const
 // - 로직/로그 추가할 땐 여기가 기준점
 void MetadataDistributor::handleMetadata(const RiskMetadata &metadata)
 {
+    // 전역 통신 두절(linkLost) 상태였다가 정상 패킷 수신으로 복구된 경우
+    // -> 다른 비활성 채널들의 NetworkDisconnected 상태를 Safe/None(대기)으로 복구
+    if (m_linkLostState && metadata.exceptionState() != RiskTypes::ExceptionState::NetworkDisconnected) {
+        m_linkLostState = false;
+        const QString activeTarget = !metadata.streamId().isEmpty() ? metadata.streamId() : metadata.cameraId();
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        for (const CameraInfo &cam : m_cameras) {
+            const QString camEffId = cam.effectiveId();
+            if (camEffId != activeTarget) {
+                RiskMetadata recoveryMeta;
+                recoveryMeta.setStreamId(camEffId);
+                recoveryMeta.setCameraId(cam.cameraId);
+                recoveryMeta.setZone(cam.zone);
+                recoveryMeta.setExceptionState(RiskTypes::ExceptionState::None);
+                recoveryMeta.setRiskLevel(RiskTypes::RiskLevel::Safe);
+                recoveryMeta.setDistanceM(0.0);
+                recoveryMeta.setDistanceValid(false);
+                recoveryMeta.setUtcTime(now);
+                handleMetadata(recoveryMeta);
+            }
+        }
+    }
+
     // 1) 카메라별 마지막 상태 캐시 갱신 (latestFor()가 읽는 곳)
     const QString targetId = !metadata.streamId().isEmpty() ? metadata.streamId() : metadata.cameraId();
     m_latest.insert(targetId, metadata);
-    m_latest.insert(metadata.cameraId(), metadata);
+    if (metadata.streamId().isEmpty())
+        m_latest.insert(metadata.cameraId(), metadata);
 
     // 2) 카메라 그리드/카드 모델 갱신 -> CameraGrid.qml, CameraCard.qml
     m_cameraListModel.updateRisk(targetId, metadata.riskLevel(), metadata.exceptionState(),
@@ -128,4 +159,24 @@ void MetadataDistributor::handleSourceConnectionStateChanged(RiskTypes::Connecti
         return;
     m_connectionState = state;
     emit connectionStateChanged();
+}
+
+void MetadataDistributor::handleLinkLost()
+{
+    if (m_linkLostState)
+        return;
+    m_linkLostState = true;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (const CameraInfo &cam : m_cameras) {
+        RiskMetadata meta;
+        meta.setStreamId(cam.effectiveId());
+        meta.setCameraId(cam.cameraId);
+        meta.setZone(cam.zone);
+        meta.setExceptionState(RiskTypes::ExceptionState::NetworkDisconnected);
+        meta.setRiskLevel(RiskTypes::RiskLevel::Safe);
+        meta.setDistanceM(0.0);
+        meta.setDistanceValid(false);
+        meta.setUtcTime(now);
+        handleMetadata(meta);
+    }
 }

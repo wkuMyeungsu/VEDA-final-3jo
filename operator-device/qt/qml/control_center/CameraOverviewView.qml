@@ -21,10 +21,10 @@ Item {
 
     function isCameraAlert(camId) {
         for (var i = 0; i < cameraListModel.count; ++i) {
-            var id = cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.CameraIdRole);
-            if (id.startsWith(camId)) {
-                var r = cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.RiskLevelRole);
-                var ex = cameraListModel.data(cameraListModel.index(i, 0), CameraListModel.ExceptionStateRole);
+            var id = cameraListModel.cameraIdAt(i);
+            if (id && id.startsWith(camId)) {
+                var r = cameraListModel.riskLevelFor(id);
+                var ex = cameraListModel.exceptionStateFor(id);
                 if (r > 0 || ex > 0) return true;
             }
         }

@@ -50,6 +50,9 @@ void VideoStream::attachToSource()
         return;
     }
 
+    if (manager)                                                               // - 재생 보장: 화면이 붙는 시점에 소스를 구동 (첫 표시 카메라가 꺼진 채 남는 것 방지)
+        manager->requestStart(m_cameraId);                                     // - 정지 예약도 함께 취소됨 (여러 번 불러도 안전)
+
     connect(m_source, &IVideoSource::frameReady, this, &VideoStream::handleFrame, Qt::UniqueConnection); // - 프레임 신호 연결: 새 영상 프레임 수신 신호 연결
     connect(m_source, &IVideoSource::connectionStateChanged, this,
             &VideoStream::handleConnectionStateChanged, Qt::UniqueConnection); // - 상태 신호 연결: 연결 상태 변경 신호 연결

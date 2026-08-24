@@ -22,6 +22,7 @@ public:
 signals:
     void metadataReceived(const RiskMetadata &metadata);                       // - 데이터 수신 알림: 새 위험 감지 이벤트 발생 시 전달
     void connectionStateChanged(RiskTypes::ConnectionState state);             // - 상태 변경 알림: 서버 연결 상태 변경 시 발생
+    void linkLost();                                                          // - 통신 두절 알림: 워치독 무수신 감지 시 전달
 
 protected:
     void setConnectionState(RiskTypes::ConnectionState state)                 // - 연결 상태 갱신: 상태 값 변경 처리 함수

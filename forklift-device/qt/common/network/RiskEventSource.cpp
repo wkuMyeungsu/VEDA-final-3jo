@@ -20,16 +20,13 @@ constexpr int kReconnectDelayBaseSec = 3;                                 // - �
 constexpr int kReconnectDelayMaxSec = 30;                                 // - 재연결 최대 대기 시간(초): 기존 kReconnectMaxDelayMs(30초)와 동일, 지수 백오프 상한
 constexpr int kMqttKeepAliveSec = 60;                                     // - MQTT keepalive 주기(초): PINGREQ 전송 간격
 
-// - 하트비트 5배 마진: 서버가 200ms 주기로 값을 다시 보내므로(2026-08-03 정책
-//   확정, result_dispatcher.hpp), 네트워크 지연을 감안해도 1초 안엔 새 메시지가
-//   와야 정상. 그보다 오래된 메시지는 retain으로 밀려온 백로그로 간주해 버림
-constexpr qint64 kStaleThresholdMs = 1000;                                // - 오래된 메시지 기준 시간 (1초): 지연된 경보 발생 방지 목적
+constexpr qint64 kStaleThresholdMs = 1000;                                // - retain 메시지 허용 나이(1초): 접속 직후 첫 1건에만 적용된다(processPayload 참고)
+constexpr int kStartupGracePeriodMs = 5000;                               // - 기동 유예 시간 (5초): 부팅 직후 네트워크 접속 및 서버 기동 대기 시간
 
-// - 서버 publish 주기(현재 200ms, 2026-08-03 정책 확정)의 3배: 서버가 실험 후
-//   1000~1500ms로 조정하면 이 값도 같이 조정해야 함
+// - 서버 publish 주기(현재 200ms, 2026-08-03 정책 확정)의 5배
 constexpr int kServerHeartbeatMs = 200;                                   // - 서버 하트비트 주기: result_dispatcher.hpp의 확정값과 동일하게 유지
-constexpr int kWatchdogMultiplier = 3;                                    // - 워치독 배수: 하트비트 몇 배 무수신 시 끊김으로 볼지
-constexpr int kWatchdogThresholdMs = kServerHeartbeatMs * kWatchdogMultiplier; // - 워치독 만료 시간: 이 시간 동안 무수신이면 NetworkDisconnected 표시
+constexpr int kWatchdogMultiplier = 5;                                    // - 워치독 배수: 하트비트 몇 배 무수신 시 끊김으로 볼지 (5 * 200ms = 1000ms)
+constexpr int kWatchdogThresholdMs = kServerHeartbeatMs * kWatchdogMultiplier; // - 워치독 만료 시간: 이 시간 동안 무수신이면 linkLost 신호 전달
 constexpr int kWatchdogPollIntervalMs = 100;                              // - 워치독 폴링 주기: MQTT keepalive는 "연결 자체가 끊긴 경우"만 감지하므로,
                                                                            //   "연결은 살아있는데 publish가 멈춘 경우"를 잡기 위해 별도로 100ms마다 점검
 }
@@ -72,7 +69,9 @@ void RiskEventSource::start()
     mosquitto_connect_async(m_mosq, m_brokerHost.toUtf8().constData(), m_brokerPort, kMqttKeepAliveSec); // - 비동기 접속 시도
     mosquitto_loop_start(m_mosq);                                        // - 네트워크 스레드 시작: 이후 접속/재접속/수신을 내부 스레드가 처리
 
-    m_lastMessageTimer.invalidate();                                     // - 수신 기준 시각 초기화: 아직 연결 전이므로 워치독 판단 보류
+    m_hasReceivedFirstMessage = false;
+    m_staleCheckArmed = false;                                           // - 아직 접속 전이라 retain 메시지가 올 수 없다
+    m_lastMessageTimer.start();                                          // - 기동 시점부터 타이머 시작 (첫 기동 시 5초 유예 적용)
     m_watchdogTimer.start();                                             // - 워치독 폴링 시작
 }
 
@@ -103,6 +102,7 @@ void RiskEventSource::onConnect(struct mosquitto *mosq, void *obj, int rc)
         qCInfo(lcRiskEventSource) << "connected to broker, subscribed to" << self->m_topic; // - 정보 로그: 접속 및 구독 완료 기록
         self->setConnectionState(RiskTypes::ConnectionState::Connected); // - 상태 갱신: 연결 상태를 '연결됨'으로 변경
         self->m_lastMessageTimer.start();                                // - 워치독 기준 시각 재설정: 접속 시점부터 무수신 시간 감시
+        self->m_staleCheckArmed = true;                                  // - 구독 직후 도착할 retain 메시지 1건만 나이를 검사한다
     }, Qt::QueuedConnection);
 }
 
@@ -143,42 +143,50 @@ void RiskEventSource::processPayload(const QByteArray &payload)
 
     const RiskMetadata metadata = RiskMetadata::fromJson(doc.object());   // - 데이터 객체 생성: JSON을 RiskMetadata로 변환
 
+    // - stale 검사는 접속 직후 retain 메시지 1건만 대상으로 한다. 아래 어느 경로로
+    //   빠져나가든 여기서 소진하므로, 두 번째 메시지부터는 나이를 보지 않는다.
+    const bool checkStale = m_staleCheckArmed;
+    m_staleCheckArmed = false;
+
     const QDateTime utcTime = metadata.utcTime();                         // - 시간 정보 추출: 메시지 생성 시각 확인
     if (!utcTime.isValid()) {                                             // - 시각 검증: 시간 정보가 없거나 유효하지 않은 경우 처리
         qCWarning(lcRiskEventSource) << "utc_time missing/unparseable, treating as fresh:" << payload; // - 경고 로그: 시간 정보 없음 기록
-        m_lastCameraId = metadata.cameraId();                             // - 마지막 카메라 ID 기록: 워치독 만료 시 표시용
+        m_hasReceivedFirstMessage = true;
         m_lastMessageTimer.start();                                       // - 워치독 기준 시각 재설정: 데이터가 도착했으니 무수신 시계 초기화
         emit metadataReceived(metadata);                                  // - 신호 발생: 시간 확인 불가 데이터 전달 처리
         return;
     }
 
-    const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc());// - 경과 시간 계산: 현재 시간과의 차이(ms) 측정
-    if (ageMs > kStaleThresholdMs) {                                      // - 시간 지연 검증: retain으로 수신된 오래된 값 여부 확인
-        qCInfo(lcRiskEventSource) << "discarding stale retained message, age(ms)=" << ageMs
-                                   << "utc_time=" << utcTime.toString(Qt::ISODateWithMs); // - 정보 로그: 오래된 데이터 폐기 기록
-        return;                                                           // - 데이터 폐기: 지나간 경보 데이터 반영 생략 (워치독 기준 시각도 갱신하지 않음)
+    const qint64 ageMs = utcTime.msecsTo(QDateTime::currentDateTimeUtc());// - 경과 시간 계산: 서버가 찍은 시각과 단말 시계의 차이
+    if (ageMs < 0) {
+        // - 단말 시계가 서버보다 앞선 경우(NTP 미동기 등): 폐기하지 않고 수용
+        qCWarning(lcRiskEventSource) << "utc_time is in the future (NTP skew?), accepting:"
+                                      << utcTime.toString(Qt::ISODateWithMs);
+    } else if (checkStale && ageMs > kStaleThresholdMs) {
+        // - 접속 직후 첫 메시지가 오래됨 = 서버가 멈춘 뒤 브로커에 남아 있던 retain 값일 가능성.
+        //   접속당 최대 1회만 찍히므로 경고 수준으로 남긴다. 매 접속마다 반복된다면
+        //   메시지가 진짜 오래된 게 아니라 단말 시계가 뒤처진 것을 의심해야 한다.
+        qCWarning(lcRiskEventSource) << "discarding stale retained message on connect, age(ms)=" << ageMs
+                                      << "utc_time=" << utcTime.toString(Qt::ISODateWithMs)
+                                      << "-- if this repeats every connect, check clock sync (chronyc tracking)";
+        return;                                                           // - 데이터 폐기: 워치독 기준 시각도 갱신하지 않는다
     }
 
-    m_lastCameraId = metadata.cameraId();                                 // - 마지막 카메라 ID 기록: 워치독 만료 시 표시용
+    m_hasReceivedFirstMessage = true;
     m_lastMessageTimer.start();                                           // - 워치독 기준 시각 재설정: 정상 데이터 수신 시점으로 갱신
     emit metadataReceived(metadata);                                      // - 신호 발생: 정상 위험 이벤트 데이터 전달
 }
 
 void RiskEventSource::handleWatchdogTimeout()
 {
-    if (!m_lastMessageTimer.isValid() || m_lastMessageTimer.elapsed() < kWatchdogThresholdMs) // - 아직 연결 전이거나 기준 시간 이내면 정상 상태로 판단
+    const int threshold = m_hasReceivedFirstMessage ? kWatchdogThresholdMs : kStartupGracePeriodMs;
+    if (!m_lastMessageTimer.isValid() || m_lastMessageTimer.elapsed() < threshold)
         return;
 
-    qCWarning(lcRiskEventSource) << "no data for" << kWatchdogThresholdMs << "ms, reporting NetworkDisconnected"; // - 경고 로그: 무수신 시간 초과 기록
+    qCWarning(lcRiskEventSource) << "no data for" << threshold << "ms, reporting linkLost";
 
-    RiskMetadata metadata;                                                // - 임시 메타데이터 생성: 통신 끊김 표시 전용
-    metadata.setCameraId(m_lastCameraId);                                  // - 카메라 ID 유지: 마지막으로 보던 카드에 표시되도록
-    metadata.setExceptionState(RiskTypes::ExceptionState::NetworkDisconnected); // - 예외 상태 설정: 통신 끊김으로 지정
-    metadata.setUtcTime(QDateTime::currentDateTimeUtc());                  // - 시각 설정: 워치독 발화 시각으로 지정
-    emit metadataReceived(metadata);                                       // - 신호 발생: 통신 끊김 상태를 화면에 전달
+    m_hasReceivedFirstMessage = true;                                      // - 첫 두절 통지 이후에는 정상 주기(1000ms)로 감시
+    emit linkLost();                                                       // - 신호 발생: MetadataDistributor가 전 채널로 팬아웃
 
-    // - 기준 시각을 지금으로 재설정: 계속 무수신이면 kWatchdogThresholdMs 후 다시 통지.
-    //   100ms마다 폴링하되 통지 자체는 기존 워치독과 동일한 주기(600ms)로 유지해
-    //   EventLogModel에 동일 이벤트가 100ms 간격으로 중복 쌓이는 것을 막는다.
     m_lastMessageTimer.start();
 }

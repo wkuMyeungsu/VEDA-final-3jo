@@ -55,14 +55,14 @@ bool EventLogModel::exportToCsv(const QString &filePath) const
 #endif
     // BOM for Excel compatibility
     out << "\xEF\xBB\xBF";
-    out << "Timestamp,Camera ID,Zone,Risk Level,Distance (m),Exception State\n";
+    out << "Timestamp,Camera ID,Zone,Risk Level,Distance (mm),Exception State\n";
 
     for (const RiskMetadata &entry : m_entries) {
         const QString timeStr = entry.utcTime().isValid()
                                     ? entry.utcTime().toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
                                     : QStringLiteral("N/A");
         const QString distStr = entry.distanceValid()
-                                    ? QString::number(entry.distanceM(), 'f', 2)
+                                    ? QString::number(qRound(entry.distanceM() * 1000.0))
                                     : QStringLiteral("N/A");
 
         out << "\"" << timeStr << "\","

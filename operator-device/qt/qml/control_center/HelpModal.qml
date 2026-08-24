@@ -359,7 +359,7 @@ Rectangle {
                                 }
                                 Column {
                                     Layout.fillWidth: true; spacing: 2
-                                    Text { text: "1단계 : 접근 주의 (3 ~ 5m 근접)"; color: Theme.colorCaution; font.pixelSize: 12; font.weight: Font.Bold }
+                                    Text { text: "1단계 : 접근 주의 (3000 ~ 5000 mm 근접)"; color: Theme.colorCaution; font.pixelSize: 12; font.weight: Font.Bold }
                                     Text { text: "현장 경광등 및 음성 경보 정상 송출 확인 / 지게차 운전자 서행 유도"; color: Theme.colorTextSecondary; font.pixelSize: 11 }
                                 }
                             }
@@ -384,7 +384,7 @@ Rectangle {
                                 }
                                 Column {
                                     Layout.fillWidth: true; spacing: 2
-                                    Text { text: "2단계 : 충돌 위험 (< 3m 근접)"; color: Theme.colorDanger; font.pixelSize: 12; font.weight: Font.Bold }
+                                    Text { text: "2단계 : 충돌 위험 (< 3000 mm 근접)"; color: Theme.colorDanger; font.pixelSize: 12; font.weight: Font.Bold }
                                     Text { text: "해당 구역 안내 방송 송출 / 작업자 즉시 이동 유도 및 지게차 일시 정지 지시"; color: Theme.colorTextSecondary; font.pixelSize: 11 }
                                 }
                             }
@@ -447,22 +447,22 @@ Rectangle {
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 60; height: 20; radius: 3; color: Theme.colorSafeBg; Text { anchors.centerIn: parent; text: "SAFE"; color: Theme.colorSafe; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "이격 거리 5.0m 이상 정상 작업 상태 (안전 유지)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "이격 거리 5000 mm 이상 정상 작업 상태 (안전 유지)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 60; height: 20; radius: 3; color: Theme.colorCautionBg; Text { anchors.centerIn: parent; text: "CAUTION"; color: Theme.colorCaution; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "접근 거리 3.0m ~ 5.0m 진입 (서행 및 주의 환기)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "접근 거리 3000 mm ~ 5000 mm 진입 (서행 및 주의 환기)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 60; height: 20; radius: 3; color: Theme.colorDangerBg; Text { anchors.centerIn: parent; text: "DANGER"; color: Theme.colorDanger; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "접근 거리 3.0m 미만 초근접 (충돌 위험 즉각 경보 발령)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "접근 거리 3000 mm 미만 초근접 (충돌 위험 즉각 경보 발령)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 60; height: 20; radius: 3; color: Theme.colorEmergencyBg; Text { anchors.centerIn: parent; text: "EMERGENCY"; color: Theme.colorEmergency; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "1.0m 미만 극단적 근접 또는 충돌 의심 상황 (비상 제동 조치)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "1000 mm 미만 극단적 근접 또는 충돌 의심 상황 (비상 제동 조치)"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                             }
                         }

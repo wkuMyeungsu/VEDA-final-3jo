@@ -60,7 +60,7 @@ Item {
                 }
                 Text {
                     text: Theme.riskLabel(model.riskLevel) + " · "
-                          + (model.distanceValid ? model.distanceM.toFixed(2) + " m" : "측정 불가")
+                          + (model.distanceValid ? Math.round(model.distanceM * 1000) + " mm" : "측정 불가")
                           + (model.exceptionState !== 0 ? " · " + Theme.exceptionLabel(model.exceptionState) : "")
                     color: delegateRoot.dataStale ? Theme.colorUnknown : Theme.riskColor(model.riskLevel)
                     font.pixelSize: Theme.typeCaption.size

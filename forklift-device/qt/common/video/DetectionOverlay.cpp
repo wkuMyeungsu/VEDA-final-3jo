@@ -110,7 +110,7 @@ void DetectionOverlay::paint(QPainter *painter)
         const QRectF personRect = AspectFit::mapNormalizedRect(               // - 사람 픽셀 좌표 변환: 비율 좌표를 화면 픽셀 좌표로 변환
             QRectF(m_personBBox.x(), m_personBBox.y(), m_personBBox.width(), m_personBBox.height()), videoRect);
 
-        const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 m").arg(m_distanceM, 0, 'f', 2)
+        const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 mm").arg(qRound(m_distanceM * 1000.0))
                                                        : QStringLiteral("측정 불가"); // - 거리 텍스트 구성: 유효성에 따른 텍스트 생성
 
         QFont font = painter->font();                                          // - 폰트 가져오기: 그려질 텍스트 폰트 설정

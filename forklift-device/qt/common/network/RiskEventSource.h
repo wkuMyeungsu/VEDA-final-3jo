@@ -16,6 +16,7 @@ struct mosquitto_message;
 class RiskEventSource : public IMetadataSource
 {
     Q_OBJECT
+    friend class TestRiskEventSource;                                        // - 단위 테스트에서 processPayload/stale 상태에 접근
 
 public:
     RiskEventSource(QString brokerHost, quint16 brokerPort, QString terminalId, QObject *parent = nullptr); // - 생성자: 브로커 주소, 포트, 단말 ID, 부모 객체 지정 및 초기화
@@ -41,5 +42,6 @@ private:
     struct mosquitto *m_mosq = nullptr;                                      // - mosquitto 클라이언트 핸들
     QTimer m_watchdogTimer;                                                  // - 무수신 폴링 타이머: 100ms 간격으로 워치독 상태 점검
     QElapsedTimer m_lastMessageTimer;                                        // - 마지막 수신(또는 마지막 워치독 통지) 이후 경과 시간 측정용
-    QString m_lastCameraId;                                                  // - 마지막 수신 카메라 ID: 워치독 만료 시 어느 카드에 표시할지 판단용
+    bool m_hasReceivedFirstMessage = false;                                  // - 첫 메시지 수신 여부: 기동 유예(5초) 판단용
+    bool m_staleCheckArmed = false;                                          // - stale 검사 활성 여부: 접속 직후 retain 메시지 1건만 대상
 };

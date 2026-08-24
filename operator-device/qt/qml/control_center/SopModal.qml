@@ -164,7 +164,7 @@ Rectangle {
                 Layout.fillHeight: true
                 spacing: 10
 
-                // 1단계: 주의 (CAUTION 3~5m)
+                // 1단계: 주의 (CAUTION 3000 ~ 5000 mm)
                 Rectangle {
                     Layout.fillWidth: true
                     height: 76
@@ -189,13 +189,13 @@ Rectangle {
                         Column {
                             Layout.fillWidth: true
                             spacing: 3
-                            Text { text: "1단계 : 접근 주의 (3 ~ 5m 근접)"; color: Theme.colorCaution; font.pixelSize: 13; font.weight: Font.Bold }
+                            Text { text: "1단계 : 접근 주의 (3000 ~ 5000 mm 근접)"; color: Theme.colorCaution; font.pixelSize: 13; font.weight: Font.Bold }
                             Text { text: "• 현장 경광등 및 음성 경보 정상 작동 여부 확인 / 지게차 운전자 서행 유도"; color: Theme.colorTextSecondary; font.pixelSize: 12 }
                         }
                     }
                 }
 
-                // 2단계: 위험 (DANGER <3m)
+                // 2단계: 위험 (DANGER < 3000 mm)
                 Rectangle {
                     Layout.fillWidth: true
                     height: 76
@@ -220,7 +220,7 @@ Rectangle {
                         Column {
                             Layout.fillWidth: true
                             spacing: 3
-                            Text { text: "2단계 : 충돌 위험 (< 3m 근접)"; color: Theme.colorDanger; font.pixelSize: 13; font.weight: Font.Bold }
+                            Text { text: "2단계 : 충돌 위험 (< 3000 mm 근접)"; color: Theme.colorDanger; font.pixelSize: 13; font.weight: Font.Bold }
                             Text { text: "• 구역 안내 방송 송출 / 작업자 즉시 이동 유도 및 지게차 일시 정지 지시"; color: Theme.colorTextSecondary; font.pixelSize: 12 }
                         }
                     }

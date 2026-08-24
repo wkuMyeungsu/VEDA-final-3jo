@@ -10,6 +10,10 @@ Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")                                /
 constexpr int kConnectTimeoutMs = 5000;                                        // - 접속 제한 시간 (5초): 파이 실측상 오픈에 1.1~2초+가 걸려 2초로는 정상 접속도 끊겨서 늘림
 constexpr int kReconnectBaseDelayMs = 1000;                                    // - 재연결 시작 대기 시간 (1초): 첫 재시도 간격
 constexpr int kReconnectMaxDelayMs = 30000;                                    // - 재연결 최대 대기 시간 (30초): 계속 실패하는 채널의 재시도 폭주 방지
+
+// 한 번도 못 붙은 채널에 30초 간격을 주면 앱을 켜고 1분 반이 지나서야 영상이 나온다.
+// 부팅 직후 카메라가 이전 세션을 아직 정리 중인 경우가 많아, 첫 접속까지는 자주 두드리는 편이 낫다.
+constexpr int kInitialReconnectMaxDelayMs = 5000;                              // - 첫 접속 전 대기 상한 (5초): 시작 지연을 짧게 유지
 constexpr int kBusPollMs = 50;                                                 // - 버스 확인 주기 (50ms): 정지 요청에 늦어도 이만큼 안에 반응
 
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
@@ -215,8 +219,9 @@ void RtspVideoSource::scheduleReconnect()
     if (m_reconnectDelayMs <= 0)                                                // - 첫 실패 확인: 대기 시간이 비어 있으면 기본값부터 시작
         m_reconnectDelayMs = kReconnectBaseDelayMs;
 
-    const int delay = m_reconnectDelayMs;                                       // - 이번 대기 시간 확정: 다음 시도용 증가 전 값 사용
-    m_reconnectDelayMs = qMin(m_reconnectDelayMs * 2, kReconnectMaxDelayMs);    // - 다음 대기 시간 증가: 실패할수록 간격을 2배씩 늘림(상한 30초)
+    const int maxDelay = m_everConnected ? kReconnectMaxDelayMs : kInitialReconnectMaxDelayMs; // - 상한 선택: 아직 한 번도 못 붙은 채널은 짧은 상한 적용
+    const int delay = qMin(m_reconnectDelayMs, maxDelay);                       // - 이번 대기 시간 확정: 상한을 넘지 않도록 잘라 씀
+    m_reconnectDelayMs = qMin(m_reconnectDelayMs * 2, maxDelay);                // - 다음 대기 시간 증가: 실패할수록 간격을 2배씩 늘림(상한까지)
 
     qCInfo(lcRtsp) << "camera" << m_cameraId << "reconnecting in" << delay << "ms"; // - 정보 로그: 다음 재시도까지 남은 시간 기록
 
@@ -317,8 +322,10 @@ void RtspVideoSource::busLoop()
                 else if (newState == GST_STATE_NULL)                             // - 정지 상태 비교: NULL 상태 시 '연결 끊김'으로 매핑
                     mapped = RiskTypes::ConnectionState::Disconnected;
                 QMetaObject::invokeMethod(this, [this, mapped]() {               // - 비동기 상태 전달: 메인 스레드로 연결 상태 반영 요청
-                    if (mapped == RiskTypes::ConnectionState::Connected)        // - 접속 성공 확인: 재생이 시작된 경우
+                    if (mapped == RiskTypes::ConnectionState::Connected) {      // - 접속 성공 확인: 재생이 시작된 경우
                         m_reconnectDelayMs = 0;                                 // - 대기 시간 초기화: 다음 실패는 다시 1초부터 시작
+                        m_everConnected = true;                                 // - 접속 이력 기록: 이후 실패부터는 긴 상한(30초) 적용
+                    }
                     setConnectionState(mapped);                                 // - 상태 갱신: 파이프라인 상태를 화면용 연결 상태로 반영
                 }, Qt::QueuedConnection);
             }

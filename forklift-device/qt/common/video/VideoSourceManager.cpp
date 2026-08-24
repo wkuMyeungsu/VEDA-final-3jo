@@ -121,13 +121,15 @@ IVideoSource *VideoSourceManager::sourceFor(const QString &cameraId) const
 
 IVideoSource *VideoSourceManager::createSource(const CameraInfo &info)
 {
+    const QString logId = info.effectiveId();                                  // - 표시용 ID: 채널마다 다른 값이라 로그에서 어느 채널인지 구분됨 (camera_id는 4채널이 같은 값)
+
     switch (info.sourceType) {                                                 // - 소스 유형 분류: 설정 타입에 따른 객체 동적 생성
     case VideoSourceType::Mock:                                                // - 가상 소스 처리: MockVideoSource 객체 생성
-        return new MockVideoSource(info.cameraId, info.zone, this);
+        return new MockVideoSource(logId, info.zone, this);
     case VideoSourceType::LocalFile:                                           // - 파일 소스 처리: LocalFileVideoSource 객체 생성
-        return new LocalFileVideoSource(info.cameraId, QUrl::fromLocalFile(info.localFilePath), this);
+        return new LocalFileVideoSource(logId, QUrl::fromLocalFile(info.localFilePath), this);
     case VideoSourceType::Rtsp:                                                // - RTSP 소스 처리: RtspVideoSource 객체 생성
-        return new RtspVideoSource(info.cameraId, QUrl(info.rtspUrl), this);
+        return new RtspVideoSource(logId, QUrl(info.rtspUrl), this);
     }
 
     qCWarning(lcVideoManager) << "unknown source type for camera" << info.cameraId << "-- falling back to mock"; // - 경고 로그: 정의되지 않은 유형 예외 처리

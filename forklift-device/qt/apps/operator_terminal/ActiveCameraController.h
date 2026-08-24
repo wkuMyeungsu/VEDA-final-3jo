@@ -90,6 +90,7 @@ private:
     void attachVideoConnection();                                                                                 // - 영상 연결 수립: 새로 선택된 카메라의 영상 및 메타데이터 신호 연결
     void commitCameraSwap(QString cameraId);                                                                      // - 전환 확정: 대기 중이던 카메라를 활성 카메라로 승격 (값으로 받음: 실행 중에 원본 대기 ID가 지워짐)
     void cancelPendingSwap();                                                                                     // - 전환 대기 취소: 첫 프레임 대기 연결과 마감 타이머 해제
+    void applyRiskToWarningDevice(const RiskMetadata &metadata);                                                  // - 위험도를 FPGA로 보낼지, 두절이라 멈출지 한 곳에서 판단
 
     QHash<QString, CameraInfo> m_cameras;                                                                         // - 카메라 정보 맵: 카메라 ID 기준 정보 저장소
     QString m_activeCameraId;                                                                                     // - 활성 카메라 ID: 현재 화면 표시 카메라 ID 보관

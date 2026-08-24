@@ -19,6 +19,10 @@ constexpr quint8 kEventEstopActive = 0x07;
 constexpr quint8 kEventEstopCleared = 0x08;
 constexpr quint8 kEventHeartbeat = 0x0E;
 
+// - heartbeat event_detail[2:0] = warning_fsm.v의 현재 상태값
+constexpr quint8 kWarningStateCommError = 4;   // - warning_fsm.v STATE_COMM_ERROR
+constexpr quint8 kWarningStateEstop     = 5;   // - warning_fsm.v STATE_ESTOP
+
 constexpr int kRxFrameSize = 5;
 constexpr int kWatchdogTxIntervalMs = 100;  // - PROTOCOL.md 1.2절: FPGA watchdog 500ms 타임아웃 대비 5배 여유
 constexpr int kHeartbeatPollIntervalMs = 100;
@@ -141,7 +145,21 @@ void SerialWarningDevice::sendSelfTest(int mode)
 
 void SerialWarningDevice::handleWatchdogTxTimer()
 {
+    // - 서버 링크 두절 구간에서는 보내지 않는다.
+    //   여기서 SET_RISK(0)을 계속 보내면 FPGA watchdog이 갱신돼 자율 경고가 안 걸린다.
+    if (riskTxSuspended())
+        return;
     sendFrame(kCmdSetRisk, static_cast<quint8>(m_lastRiskLevel));
+}
+
+void SerialWarningDevice::onRiskTxSuspendedChanged(bool suspended)
+{
+    if (suspended) {
+        qCWarning(lcFpga) << "server link lost -- suspending SET_RISK so the FPGA watchdog can fire";
+        return;                                                   // - 타이머는 계속 돌린다. 재개 시 바로 복귀하기 위함
+    }
+    qCInfo(lcFpga) << "server link restored -- resuming SET_RISK";
+    handleWatchdogTxTimer();                                       // - 다음 100ms 주기를 기다리지 않고 즉시 1회 송신
 }
 
 void SerialWarningDevice::sendFrame(quint8 command, quint8 data)
@@ -222,6 +240,20 @@ void SerialWarningDevice::processFrame(const QByteArray &frame)
         const bool protocolLatched = (eventDetail & 0x40) != 0;
         const bool checksumLatched = (eventDetail & 0x20) != 0;
         setErrorLatches(checksumLatched, protocolLatched, timeoutLatched);
+
+        // - bit[2:0] = warning_fsm 현재 상태. 이벤트(0x07/0x08)를 놓친 뒤에도
+        //   여기서 매 200ms 재동기화되므로, 앱만 재시작해도 래치 상태가 복원된다.
+        const quint8 warningState = eventDetail & 0x07;
+
+        // - ESTOP은 warning_fsm 최우선순위라 "5인가"만으로 켬/끔이 모두 정확하다.
+        setEstopActive(warningState == kWarningStateEstop);
+
+        // - COMM_ERROR는 반대 방향이 성립하지 않는다. ESTOP(5)이면 통신 오류가
+        //   참이어도 5로 덮이므로, 5일 때는 판단을 보류하고 이벤트가 넣은 값을 유지한다.
+        if (warningState == kWarningStateCommError)
+            setCommError(true);
+        else if (warningState != kWarningStateEstop)
+            setCommError(false);
         break;
     }
     default:

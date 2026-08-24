@@ -30,6 +30,8 @@ signals:
     void metadataReceived(const RiskMetadata &metadata);
     // 연결 상태가 바뀔 때마다 emit (setConnectionState가 호출)
     void connectionStateChanged(RiskTypes::ConnectionState state);
+    // 워치독 등에 의해 통신 두절(무수신) 감지 시 emit -- MetadataDistributor가 전 채널로 팬아웃
+    void linkLost();
 
 protected:
     // 값이 바뀐 경우에만 신호를 냄 (중복 emit 방지)

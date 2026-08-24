@@ -10,7 +10,7 @@ Item {
 
     Component.onCompleted: {
         if (cameraListModel.count > 0) {
-            var firstId = cameraListModel.data(cameraListModel.index(0, 0), CameraListModel.CameraIdRole);
+            var firstId = cameraListModel.cameraIdAt(0);
             if (firstId && firstId.length > 0)
                 root.activeCameraId = firstId;
         }

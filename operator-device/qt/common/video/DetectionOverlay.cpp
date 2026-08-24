@@ -114,7 +114,7 @@ void DetectionOverlay::paint(QPainter *painter)
         const QRectF personRect = AspectFit::mapNormalizedRect(
             QRectF(m_personBBox.x(), m_personBBox.y(), m_personBBox.width(), m_personBBox.height()), videoRect);
 
-        const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 m").arg(m_distanceM, 0, 'f', 2)
+        const QString distanceLabel = m_distanceValid ? QStringLiteral("%1 mm").arg(qRound(m_distanceM * 1000.0))
                                                        : QStringLiteral("측정 불가");
 
         QFont font = painter->font();

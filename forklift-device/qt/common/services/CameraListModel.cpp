@@ -21,15 +21,79 @@ void CameraListModel::setCameras(const QVector<CameraInfo> &cameras)
 int CameraListModel::rowForCameraId(const QString &cameraId) const
 {
     for (int i = 0; i < m_rows.size(); ++i) {                                  // - 목록 순회: 등록된 카메라 항목 검색
-        if (m_rows.at(i).info.cameraId == cameraId)                            // - ID 일치 확인: 일치하는 카메라 항목 행 번호 반환
+        const auto &info = m_rows.at(i).info;
+        if (info.effectiveId() == cameraId || info.streamId == cameraId || info.cameraId == cameraId)
             return i;
     }
     return -1;                                                                 // - 검색 실패: 미존재 시 -1 반환
 }
 
+QString CameraListModel::cameraIdAt(int row) const
+{
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).info.effectiveId();
+    return QString();
+}
+
 int CameraListModel::indexForCameraId(const QString &cameraId) const
 {
     return rowForCameraId(cameraId);                                           // - 인덱스 조회: 카메라 ID 기준 행 인덱스 반환
+}
+
+int CameraListModel::videoConnectionStateFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return static_cast<int>(m_rows.at(row).videoConnectionState);
+    return static_cast<int>(RiskTypes::ConnectionState::Disconnected);
+}
+
+int CameraListModel::riskLevelFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return static_cast<int>(m_rows.at(row).riskLevel);
+    return static_cast<int>(RiskTypes::RiskLevel::Safe);
+}
+
+int CameraListModel::exceptionStateFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return static_cast<int>(m_rows.at(row).exceptionState);
+    return static_cast<int>(RiskTypes::ExceptionState::None);
+}
+
+double CameraListModel::distanceMFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).distanceM;
+    return 0.0;
+}
+
+bool CameraListModel::distanceValidFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).distanceValid;
+    return false;
+}
+
+QString CameraListModel::nameFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).info.name;
+    return cameraId;
+}
+
+QString CameraListModel::zoneFor(const QString &cameraId) const
+{
+    const int row = rowForCameraId(cameraId);
+    if (row >= 0 && row < m_rows.size())
+        return m_rows.at(row).info.zone;
+    return QString();
 }
 
 void CameraListModel::updateRisk(const QString &cameraId, RiskTypes::RiskLevel level,
@@ -40,6 +104,11 @@ void CameraListModel::updateRisk(const QString &cameraId, RiskTypes::RiskLevel l
         return;
 
     Row &target = m_rows[row];                                                 // - 참조 획득: 대상 카메라 행 참조
+    if (target.riskLevel == level && target.exceptionState == exception &&
+        qFuzzyCompare(target.distanceM, distanceM) && target.distanceValid == distanceValid) {
+        return;                                                                // - 변경사항 없음: 불필요한 시그널 방출 방지
+    }
+
     target.riskLevel = level;                                                  // - 위험 단계 갱신: 새 위험 수준 저장
     target.exceptionState = exception;                                         // - 예외 상태 갱신: 새 예외 상태 저장
     target.distanceM = distanceM;                                              // - 측정 거리 갱신: 새 거리값 저장
@@ -53,6 +122,9 @@ void CameraListModel::updateVideoConnectionState(const QString &cameraId, RiskTy
 {
     const int row = rowForCameraId(cameraId);                                  // - 행 위치 조회: 대상 카메라 항목의 목록 인덱스 검색
     if (row < 0)                                                               // - 무효 검증: 목록에 없는 카메라 ID인 경우 처리 생략
+        return;
+
+    if (m_rows[row].videoConnectionState == state)
         return;
 
     m_rows[row].videoConnectionState = state;                                  // - 영상 상태 갱신: 새 연결 상태 저장

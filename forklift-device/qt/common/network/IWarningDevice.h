@@ -25,6 +25,18 @@ public:
     bool protocolErrorLatched() const { return m_protocolErrorLatched; }        // - 프로토콜 오류 누적 플래그 조회: CLEAR_ERROR 전까지 유지
     bool timeoutErrorLatched() const { return m_timeoutErrorLatched; }          // - 타임아웃 오류 누적 플래그 조회: CLEAR_ERROR 전까지 유지
     RiskTypes::ConnectionState fpgaConnectionState() const { return m_fpgaConnectionState; } // - FPGA 연결 상태 조회: heartbeat 수신 여부 기반
+    bool riskTxSuspended() const { return m_riskTxSuspended; }                  // - SET_RISK 송신 중단 여부 조회
+
+    // - 서버 링크 두절 구간에서 SET_RISK 송신을 멈춘다.
+    //   FPGA watchdog(500ms)이 갱신되지 않아야 자율 COMM_ERROR 경고가 걸린다.
+    void setRiskTxSuspended(bool suspended)
+    {
+        if (m_riskTxSuspended == suspended)
+            return;
+        m_riskTxSuspended = suspended;
+        onRiskTxSuspendedChanged(suspended);                                    // - 구현체 훅: 재개 시 즉시 1회 송신 등
+        emit riskTxSuspendedChanged(suspended);
+    }
 
 signals:
     void estopActiveChanged(bool active);                                       // - 비상정지 상태 변경 알림
@@ -32,6 +44,10 @@ signals:
     void commErrorChanged(bool active);                                         // - FPGA 통신 오류 상태 변경 알림
     void errorLatchChanged();                                                   // - 오류 누적 플래그 변경 알림 (checksum/protocol/timeout 중 하나라도 변경 시)
     void fpgaConnectionStateChanged(RiskTypes::ConnectionState state);          // - FPGA 연결 상태 변경 알림 (heartbeat 무수신 600ms 등)
+    void riskTxSuspendedChanged(bool suspended);                                // - SET_RISK 송신 중단 상태 변경 알림
+
+protected:
+    virtual void onRiskTxSuspendedChanged(bool suspended) { Q_UNUSED(suspended); } // - 기본 동작 없음
 
 protected:
     // - 아래 setter들은 구현체(SerialWarningDevice 등)가 수신 데이터를 반영할 때만 호출.
@@ -87,4 +103,5 @@ private:
     bool m_protocolErrorLatched = false;                                        // - 프로토콜 오류 누적 플래그 보관
     bool m_timeoutErrorLatched = false;                                         // - 타임아웃 오류 누적 플래그 보관
     RiskTypes::ConnectionState m_fpgaConnectionState = RiskTypes::ConnectionState::Disconnected; // - FPGA 연결 상태 보관
+    bool m_riskTxSuspended = false;                                             // - SET_RISK 송신 중단 상태 보관
 };

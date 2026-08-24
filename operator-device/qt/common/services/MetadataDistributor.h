@@ -60,8 +60,10 @@ private slots:
     // source(IMetadataSource)의 신호에 연결되는 내부 슬롯 -- 외부에서 직접 호출 안 함
     void handleMetadata(const RiskMetadata &metadata);
     void handleSourceConnectionStateChanged(RiskTypes::ConnectionState state);
+    void handleLinkLost();
 
 private:
+    QVector<CameraInfo> m_cameras;
     QHash<QString, QString> m_cameraNames; // cameraId -> display name (for AlertListModel rows)
     QHash<QString, RiskMetadata> m_latest;  // cameraId -> 마지막으로 받은 이벤트 (latestFor()가 읽음)
     CameraListModel m_cameraListModel;
@@ -70,6 +72,7 @@ private:
     IMetadataSource *m_source = nullptr;    // 현재 연결된 데이터 출처 (Mock 또는 실서버 연동체)
     IMetadataSource *m_demoSource = nullptr; // 데모 패널 보조 입력 (mqtt 모드에서만 씀, 없으면 nullptr)
     RiskTypes::ConnectionState m_connectionState = RiskTypes::ConnectionState::Disconnected;
+    bool m_linkLostState = false;
     QHash<QString, RiskTypes::RiskLevel> m_lastLoggedRisk;
     QHash<QString, RiskTypes::ExceptionState> m_lastLoggedException;
 };
