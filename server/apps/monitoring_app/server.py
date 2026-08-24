@@ -4,7 +4,6 @@ import json
 import os
 import socket
 import subprocess
-import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,7 +26,6 @@ MAX_LOG_TAIL_BYTES = 64 * 1024
 RUNTIME_STATUS_MAX_AGE_SECONDS = 3
 PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
 THERMAL_ROOT = Path(os.environ.get("SERVER_MONITORING_THERMAL_ROOT", "/sys/class/thermal"))
-_RESOURCE_SAMPLE_LOCK = threading.Lock()
 _HOST_CPU_SAMPLE = None
 
 
@@ -174,16 +172,15 @@ def _read_host_temperature():
     return None, None
 
 
-def host_resource(sampled_at=None, sampled_utc=None):
+def host_resource():
     """Return whole-Raspberry-Pi CPU and memory usage from procfs."""
     global _HOST_CPU_SAMPLE
-    now = sampled_at if sampled_at is not None else time.monotonic()
-    timestamp = sampled_utc or datetime.now(timezone.utc).isoformat()
+    now = time.monotonic()
+    timestamp = datetime.now(timezone.utc).isoformat()
     cpu_ticks = _read_host_cpu_ticks()
     memory = _read_host_memory()
     if cpu_ticks is None or memory is None:
-        with _RESOURCE_SAMPLE_LOCK:
-            _HOST_CPU_SAMPLE = None
+        _HOST_CPU_SAMPLE = None
         return {
             "state": "unavailable",
             "cpu_percent": None,
@@ -205,27 +202,27 @@ def host_resource(sampled_at=None, sampled_utc=None):
     temperature_c, temperature_source = _read_host_temperature()
     cpu_percent = None
     cpu_cores = []
-    with _RESOURCE_SAMPLE_LOCK:
-        previous = _HOST_CPU_SAMPLE
-        _HOST_CPU_SAMPLE = {
-            "sampled_at": now,
-            "aggregate": cpu_ticks["aggregate"],
-            "cores": cpu_ticks["cores"],
-        }
-        core_ids = sorted(cpu_ticks["cores"])
-        core_set_changed = previous and set(previous["cores"]) != set(core_ids)
-        if previous and not core_set_changed:
-            cpu_percent = _cpu_percent(cpu_ticks["aggregate"], previous["aggregate"])
-            for core in core_ids:
-                core_percent = _cpu_percent(
-                    cpu_ticks["cores"][core], previous["cores"][core]
-                )
-                cpu_cores.append({
-                    "core": core,
-                    "cpu_percent": round(core_percent, 1) if core_percent is not None else None,
-                })
-        else:
-            cpu_cores = [{"core": core, "cpu_percent": None} for core in core_ids]
+    # ponytail: 단일 스레드에서 갱신되는 값이라 락 없이 쓴다. 멀티스레드 샘플러가 생기면 락 추가.
+    previous = _HOST_CPU_SAMPLE
+    _HOST_CPU_SAMPLE = {
+        "sampled_at": now,
+        "aggregate": cpu_ticks["aggregate"],
+        "cores": cpu_ticks["cores"],
+    }
+    core_ids = sorted(cpu_ticks["cores"])
+    core_set_changed = previous and set(previous["cores"]) != set(core_ids)
+    if previous and not core_set_changed:
+        cpu_percent = _cpu_percent(cpu_ticks["aggregate"], previous["aggregate"])
+        for core in core_ids:
+            core_percent = _cpu_percent(
+                cpu_ticks["cores"][core], previous["cores"][core]
+            )
+            cpu_cores.append({
+                "core": core,
+                "cpu_percent": round(core_percent, 1) if core_percent is not None else None,
+            })
+    else:
+        cpu_cores = [{"core": core, "cpu_percent": None} for core in core_ids]
     return {
         "state": "ok",
         "cpu_percent": round(cpu_percent, 1) if cpu_percent is not None else None,
@@ -243,12 +240,11 @@ def host_resource(sampled_at=None, sampled_utc=None):
     }
 
 
-def resource_snapshot(_safety_state=None):
+def resource_snapshot():
     """Collect lightweight CPU and memory metrics for the whole host."""
-    sampled_utc = datetime.now(timezone.utc).isoformat()
     return {
-        "checked_utc": sampled_utc,
-        "host": host_resource(sampled_utc=sampled_utc),
+        "checked_utc": datetime.now(timezone.utc).isoformat(),
+        "host": host_resource(),
     }
 
 
@@ -311,7 +307,7 @@ def status_snapshot():
     mqtt_ok = tcp_reachable(MQTT_HOST, MQTT_PORT)
     runtime_status = read_runtime_status(RUNTIME_STATUS)
     runtime_health = runtime_status_health(runtime_status)
-    resources = resource_snapshot(safety_state)
+    resources = resource_snapshot()
     return {
         "ok": safety_state == "active" and mqtt_ok and runtime_health["fresh"],
         "service": "monitoring-app",

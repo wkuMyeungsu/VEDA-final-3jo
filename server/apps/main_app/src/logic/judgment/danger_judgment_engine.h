@@ -228,8 +228,6 @@ private:
 std::string toString(RiskLevel r);
 std::string toString(ExceptionState e);
 
-// 한 프레임 판정 결과를 콘솔에 한 줄로 (시나리오 이름 + 내부 디버깅 값 포함)
-void printResult(const std::string& scenario, const JudgmentResult& r);
 
 // 현재 UTC 시각을 ISO8601 + 밀리초 문자열로 반환 (예: "2026-07-28T10:15:30.123Z").
 // gmtime_r 사용(POSIX 전용).

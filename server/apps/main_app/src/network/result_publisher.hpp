@@ -168,8 +168,6 @@ public:
 
     LinkState state() const { return state_.load(); }
 
-    void onStateChange(std::function<void(LinkState)> cb) { onStateChange_ = std::move(cb); }
-
     // 이 퍼블리셔가 결과를 내보내는 토픽 ("forklift/risk/<terminal_id>").
     const std::string& topic() const { return topic_; }
 
@@ -220,10 +218,9 @@ private:
                                      : "[" + terminal_id_ + "] 위험 경보";
     }
 
-    // [주의] mosquitto 콜백(네트워크 스레드)에서도 불린다. onStateChange_는 start() 전에
-    //        한 번만 등록하는 규약이라 교체 경쟁은 없다.
+    // [주의] mosquitto 콜백(네트워크 스레드)에서도 불린다.
     void setState(LinkState s) {
-        if (state_.exchange(s) != s && onStateChange_) onStateChange_(s);
+        state_.store(s);
     }
 
     // ── mosquitto 콜백 (네트워크 스레드에서 불린다) ─────────────
@@ -472,7 +469,6 @@ private:
     std::size_t last_logged_drop_total_ = 0;
     std::size_t drop_log_interval_ = 100;
 
-    std::function<void(LinkState)> onStateChange_;
 };
 
 } // namespace risk_transport

@@ -14,6 +14,7 @@
 #include <sqlite3.h>
 
 #include <filesystem>
+#include <set>
 #include <utility>
 
 namespace risk_log {
@@ -26,7 +27,7 @@ namespace {
 //   거리 판정 불가(폐색/사람 미검출 -> distance_mm = -1) 상황을 "값 없음"으로 구분해서 남기기
 //   위함. toJson()이 같은 상황을 JSON null로 내보내는 것과 규칙을 맞췄다.
 // - terminal_id는 CREATE TABLE IF NOT EXISTS라서 기존 events.db 파일에는 자동으로 붙지
-//   않는다 -> start()가 ensureTerminalIdColumn()으로 별도 보강한다.
+//   않는다 -> start()가 ensureSchemaColumns()로 별도 보강한다.
 constexpr const char* kCreateTableSql =
     "CREATE TABLE IF NOT EXISTS events ("
     "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -68,10 +69,7 @@ bool EventLogger::start() {
 
     if (!openDatabase()) return false;
     if (!exec(kCreateTableSql))       { closeDatabase(); return false; }
-    if (!ensureTerminalIdColumn())    { closeDatabase(); return false; }
-    if (!ensureDistanceMmColumn())    { closeDatabase(); return false; }
-    if (!ensureSourceColumns())       { closeDatabase(); return false; }
-    if (!ensureObservabilityColumns()) { closeDatabase(); return false; }
+    if (!ensureSchemaColumns()) { closeDatabase(); return false; }
     if (!prepareStatement())          { closeDatabase(); return false; }
 
     running_.store(true);
@@ -179,108 +177,36 @@ bool EventLogger::openDatabase() {
     return true;
 }
 
-bool EventLogger::ensureTerminalIdColumn() {
-    // PRAGMA table_info는 결과 집합을 돌려주는 쿼리라 sqlite3_exec의 콜백으로는 다루기
-    // 번거로워서 prepare/step으로 직접 훑는다. 컬럼명은 1번 인덱스("name")에 있다.
-    sqlite3_stmt* pragma_stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &pragma_stmt, nullptr) != SQLITE_OK) {
-        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
-        return false;
-    }
-
-    bool has_terminal_id = false;
-    while (sqlite3_step(pragma_stmt) == SQLITE_ROW) {
-        const unsigned char* name = sqlite3_column_text(pragma_stmt, 1);
-        if (name && std::string(reinterpret_cast<const char*>(name)) == "terminal_id") {
-            has_terminal_id = true;
-            break;
-        }
-    }
-    sqlite3_finalize(pragma_stmt);
-
-    if (has_terminal_id) return true;
-
-    // 기존 events.db 파일(CREATE TABLE IF NOT EXISTS 시점에 이미 존재)에는 컬럼이
-    // 자동으로 붙지 않으므로 여기서 한 번 보강한다. 새로 만든 DB는 CREATE TABLE에
-    // 이미 terminal_id가 포함돼 있어 이 분기를 타지 않는다.
-    LOG_INFO("STORAGE", "기존 이벤트 DB 스키마 보강 (terminal_id 컬럼 추가)");
-    if (!exec("ALTER TABLE events ADD COLUMN terminal_id TEXT")) return false;
-    return true;
-}
-
-bool EventLogger::ensureDistanceMmColumn() {
+bool EventLogger::ensureSchemaColumns() {
+    // CREATE TABLE IF NOT EXISTS는 기존 events.db에 새 컬럼을 붙여주지 않는다.
+    // PRAGMA table_info는 결과 집합 쿼리라 sqlite3_exec 콜백 대신 prepare/step으로 훑는다.
     sqlite3_stmt* statement = nullptr;
     if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &statement, nullptr) != SQLITE_OK) {
         setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
         return false;
     }
-    bool found = false;
+    std::set<std::string> present;
     while (sqlite3_step(statement) == SQLITE_ROW) {
         const unsigned char* name = sqlite3_column_text(statement, 1);
-        if (name && std::string(reinterpret_cast<const char*>(name)) == "distance_mm") {
-            found = true;
-            break;
-        }
-    }
-    sqlite3_finalize(statement);
-    if (found) return true;
-    LOG_INFO("STORAGE", "기존 이벤트 DB 스키마 보강 (distance_mm 컬럼 추가)");
-    return exec("ALTER TABLE events ADD COLUMN distance_mm REAL");
-}
-
-bool EventLogger::ensureSourceColumns() {
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &statement, nullptr) != SQLITE_OK) {
-        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
-        return false;
-    }
-    bool has_stream = false;
-    bool has_channel = false;
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        const unsigned char* name = sqlite3_column_text(statement, 1);
-        if (!name) continue;
-        const std::string column(reinterpret_cast<const char*>(name));
-        has_stream = has_stream || column == "stream_id";
-        has_channel = has_channel || column == "channel";
-    }
-    sqlite3_finalize(statement);
-    if (!has_stream && !exec("ALTER TABLE events ADD COLUMN stream_id TEXT")) return false;
-    if (!has_channel && !exec("ALTER TABLE events ADD COLUMN channel INTEGER")) return false;
-    return true;
-}
-
-bool EventLogger::ensureObservabilityColumns() {
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(events)", -1, &statement, nullptr) != SQLITE_OK) {
-        setError(std::string("스키마 조회 실패: ") + sqlite3_errmsg(db_));
-        return false;
-    }
-    std::vector<std::string> missing;
-    const std::vector<std::string> columns{
-        "decision_id", "sensor_message_id", "sensor_producer_run_id",
-        "sensor_sequence", "sensor_ts_ms", "sensor_age_ms"};
-    std::vector<bool> found(columns.size(), false);
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        const unsigned char* name = sqlite3_column_text(statement, 1);
-        if (!name) continue;
-        const std::string current(reinterpret_cast<const char*>(name));
-        for (std::size_t index = 0; index < columns.size(); ++index)
-            found[index] = found[index] || current == columns[index];
+        if (name) present.insert(reinterpret_cast<const char*>(name));
     }
     sqlite3_finalize(statement);
 
-    const std::vector<std::pair<std::string, std::string>> definitions{
+    static const std::vector<std::pair<std::string, std::string>> required{
+        {"terminal_id", "TEXT"},
+        {"distance_mm", "REAL"},
+        {"stream_id", "TEXT"},
+        {"channel", "INTEGER"},
         {"decision_id", "TEXT"},
         {"sensor_message_id", "TEXT"},
         {"sensor_producer_run_id", "TEXT"},
         {"sensor_sequence", "INTEGER"},
         {"sensor_ts_ms", "INTEGER"},
         {"sensor_age_ms", "INTEGER"}};
-    for (std::size_t index = 0; index < definitions.size(); ++index) {
-        if (found[index]) continue;
-        const std::string sql = "ALTER TABLE events ADD COLUMN " + definitions[index].first +
-                                " " + definitions[index].second;
-        if (!exec(sql.c_str())) return false;
+    for (const auto& [name, type] : required) {
+        if (present.count(name)) continue;
+        LOG_INFO("STORAGE", "기존 이벤트 DB 스키마 보강 (" + name + " 컬럼 추가)");
+        if (!exec(("ALTER TABLE events ADD COLUMN " + name + " " + type).c_str())) return false;
     }
     return true;
 }

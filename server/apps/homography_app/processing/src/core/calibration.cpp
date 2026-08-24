@@ -15,15 +15,10 @@
 
 namespace homography {
 
-// 모든 ArUco 픽셀 입력이 이 경로를 통과한다. camera_matrix/dist_coeffs는
-// 후속 렌즈 보정에서 undistortPoints를 삽입하기 위한 자리이며 현재는 비워 둔다.
+// 모든 ArUco 픽셀 입력이 이 경로를 통과한다.
 void detect_marker_corners(const Config& config, const cv::Mat& image,
                            std::vector<std::vector<cv::Point2f>>& corners,
-                           std::vector<int>& ids,
-                           const cv::Mat& camera_matrix,
-                           const cv::Mat& dist_coeffs) {
-    (void)camera_matrix;
-    (void)dist_coeffs;
+                           std::vector<int>& ids) {
     auto parameters = cv::aruco::DetectorParameters::create();
     parameters->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
     parameters->cornerRefinementWinSize = 5;
@@ -114,9 +109,7 @@ cv::Point2d transform_point(const cv::Point2f& point, const cv::Mat& h) {
 std::vector<double> nonlinear_residuals(
         const cv::Mat& params,
         const std::vector<const SquareMarkerObservation*>& markers,
-        double side_mm, const SquareMarkerObservation* reference,
-        const ManualSolveOptions& options) {
-    (void)reference;
+        double side_mm, const ManualSolveOptions& options) {
     const cv::Mat h = params_to_h(params);
     std::vector<double> residuals;
     const double diagonal = side_mm * std::sqrt(2.0);
@@ -168,8 +161,7 @@ double residual_cost(const std::vector<double>& residuals) {
 cv::Mat optimize_homography(
         const cv::Mat& initial,
         const std::vector<const SquareMarkerObservation*>& markers,
-        double side_mm, const SquareMarkerObservation* reference,
-        const ManualSolveOptions& options, int* iterations) {
+        double side_mm, const ManualSolveOptions& options, int* iterations) {
     if (options.axes.enabled) {
         // 세 축 대응점을 정확히 고정하는 호모그래피의 남은 자유도는 2개다.
         // G(g,h)는 (0,0), (Lx,0), (0,Ly)를 항상 자기 자신으로 보내므로
@@ -187,7 +179,7 @@ cv::Mat optimize_homography(
         };
         auto values_for = [&](const cv::Mat& values) {
             return nonlinear_residuals(h_to_params(candidate_h(values)), markers,
-                                       side_mm, reference, options);
+                                       side_mm, options);
         };
         cv::Mat values = cv::Mat::zeros(2, 1, CV_64F);
         std::vector<double> residuals = values_for(values);
@@ -246,7 +238,7 @@ cv::Mat optimize_homography(
     }
     cv::Mat params = h_to_params(initial);
     std::vector<double> residuals = nonlinear_residuals(
-        params, markers, side_mm, reference, options);
+        params, markers, side_mm, options);
     double cost = residual_cost(residuals), lambda = 1e-3;
     const double steps[8] = {1e-6, 1e-6, 1e-3, 1e-6, 1e-6, 1e-3, 1e-9, 1e-9};
     int completed = 0;
@@ -256,7 +248,7 @@ cv::Mat optimize_homography(
             cv::Mat shifted = params.clone();
             shifted.at<double>(parameter) += steps[parameter];
             const auto values = nonlinear_residuals(
-                shifted, markers, side_mm, reference, options);
+                shifted, markers, side_mm, options);
             for (int row = 0; row < static_cast<int>(values.size()); ++row)
                 jacobian.at<double>(row, parameter) =
                     (values[row] - residuals[row]) / steps[parameter];
@@ -272,7 +264,7 @@ cv::Mat optimize_homography(
         if (!cv::solve(normal, -jacobian.t() * residual_matrix, delta, cv::DECOMP_SVD)) break;
         const cv::Mat candidate = params + delta;
         const auto candidate_residuals = nonlinear_residuals(
-            candidate, markers, side_mm, reference, options);
+            candidate, markers, side_mm, options);
         const double candidate_cost = residual_cost(candidate_residuals);
         ++completed;
         if (std::isfinite(candidate_cost) && candidate_cost < cost) {
@@ -360,7 +352,7 @@ ManualSolveResult solve_square_markers(
         h /= h.at<double>(2, 2);
     }
     int nonlinear_iterations = 0;
-    h = optimize_homography(h, used, side_mm, reference, options,
+    h = optimize_homography(h, used, side_mm, options,
                             &nonlinear_iterations);
     result.iterations += nonlinear_iterations;
     result.h_camera_pixels_to_channel_map = h;

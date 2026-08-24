@@ -27,9 +27,11 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
 
 void SafetyFramePipeline::recordArucoObservation(const ArucoFrame& frame) {
     std::lock_guard<std::mutex> lock(localization_mutex_);
+    // 프레임 발생 시각이 없으면 서버 수신 시각으로 대체한다.
+    const std::string& frame_utc =
+        !frame.utcTime.empty() ? frame.utcTime : frame.serverReceivedUtc;
     localization_status_.configured_marker_id = marker_id_;
-    localization_status_.last_aruco_frame_utc =
-        frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+    localization_status_.last_aruco_frame_utc = frame_utc;
     localization_status_.last_aruco_frame_stream_id = frame.stream_id;
     localization_status_.last_aruco_frame_channel = frame.channel;
 
@@ -38,14 +40,12 @@ void SafetyFramePipeline::recordArucoObservation(const ArucoFrame& frame) {
         if (marker.id == marker_id_) target_marker_seen = true;
     }
     if (target_marker_seen) {
-        localization_status_.last_target_marker_seen_utc =
-            frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+        localization_status_.last_target_marker_seen_utc = frame_utc;
         localization_status_.last_target_marker_stream_id = frame.stream_id;
         localization_status_.last_target_marker_channel = frame.channel;
     }
     if (!frame.markers.empty()) {
-        localization_status_.last_observed_markers_utc =
-            frame.utcTime.empty() ? frame.serverReceivedUtc : frame.utcTime;
+        localization_status_.last_observed_markers_utc = frame_utc;
         localization_status_.last_observed_markers_stream_id = frame.stream_id;
         localization_status_.last_observed_markers_channel = frame.channel;
         localization_status_.last_observed_marker_ids.clear();
@@ -70,8 +70,6 @@ void SafetyFramePipeline::updateLocalizationResult(bool localized,
         localization_status_.status = localization_status_.last_aruco_frame_utc.empty()
                                           ? "WAITING_FOR_ARUCO"
                                           : "MARKER_NOT_DETECTED";
-    } else if (!homography_available) {
-        localization_status_.status = "HOMOGRAPHY_UNAVAILABLE";
     } else {
         localization_status_.status = "HOMOGRAPHY_UNAVAILABLE";
     }
@@ -126,13 +124,19 @@ std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const Ar
 SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
     const MetadataFrame& frame, double timestamp_s) {
     ObjectFrameOutput output;
-    if (frame.stream_id.empty() || frame.camera_id.empty() || frame.channel < 1) {
+    if (!frame.stream_id.empty() && !frame.camera_id.empty() && frame.channel >= 1) {
+        processValidObjectFrame(frame, timestamp_s, output);
+    } else {
         output.judgment = judgment_pipeline_.processFrame({}, false, {});
-        output.judgment.result.stream_id = frame.stream_id;
-        output.judgment.result.source_camera_id = frame.camera_id;
-        output.judgment.result.channel = frame.channel;
-        return output;
     }
+    output.judgment.result.stream_id = frame.stream_id;
+    output.judgment.result.source_camera_id = frame.camera_id;
+    output.judgment.result.channel = frame.channel;
+    return output;
+}
+
+void SafetyFramePipeline::processValidObjectFrame(
+    const MetadataFrame& frame, double timestamp_s, ObjectFrameOutput& output) {
 
     std::optional<WorldPoint> forklift_world;
     bool marker_found = false;
@@ -212,10 +216,6 @@ SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
 
     output.judgment = judgment_pipeline_.processFrame(
         output.forklift_world, output.forklift_localized, output.nearest);
-    output.judgment.result.stream_id = frame.stream_id;
-    output.judgment.result.source_camera_id = frame.camera_id;
-    output.judgment.result.channel = frame.channel;
-    return output;
 }
 
 }  // namespace forklift::logic

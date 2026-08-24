@@ -85,6 +85,8 @@ public:
     // 최근 ArUco와 현재 사람 검출을 같은 stream의 H로 변환한 뒤 최근접 선택과
     // 단말별 위험 판정을 수행한다.
     ObjectFrameOutput processObjectFrame(const MetadataFrame& frame, double timestamp_s);
+    void processValidObjectFrame(const MetadataFrame& frame, double timestamp_s,
+                                 ObjectFrameOutput& output);
 
     const std::string& activeCameraId() const { return active_camera_id_; }
     int activeChannel() const { return active_channel_; }

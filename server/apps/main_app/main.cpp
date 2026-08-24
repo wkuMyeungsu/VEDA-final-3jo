@@ -365,6 +365,15 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
          << ", \"latency_written\": " << latency_logger_.writtenCount()
          << ", \"latency_dropped\": " << latency_logger_.droppedCount() << "},\n"
          << "  \"terminals\": [";
+    // 빈 문자열/미유효 숫자는 JSON null로, 값이 있으면 기록한다.
+    auto strOrNull = [&](const std::string& value) {
+        if (!value.empty()) json << jsonString(value);
+        else json << "null";
+    };
+    auto numOrNull = [&](bool valid, long long value) {
+        if (valid) json << value;
+        else json << "null";
+    };
     for (std::size_t index = 0; index < terminals_.size(); ++index) {
         const auto& terminal = *terminals_[index];
         const auto sensor = sensor_receiver_.terminalStatus(
@@ -387,71 +396,52 @@ void CentralServer::writeRuntimeStatus(const std::string& state) {
              << ", \"parse_failures\": " << sensor.parse_failures << "}"
              << ", \"risk\": {\"has_result\": " << (risk.has_real_result ? "true" : "false")
              << ", \"state\": ";
-        if (risk.has_real_result) json << jsonString(toString(risk.result.final_risk));
-        else json << "null";
+        if (risk.has_real_result) strOrNull(toString(risk.result.final_risk)); else json << "null";
         json << ", \"exception\": ";
-        if (risk.has_real_result) json << jsonString(toString(risk.result.exception));
-        else json << "null";
+        if (risk.has_real_result) strOrNull(toString(risk.result.exception)); else json << "null";
         json << ", \"distance_mm\": ";
         if (risk.has_real_result && risk.result.distance_mm >= 0.0) json << risk.result.distance_mm;
         else json << "null";
         json << ", \"camera_id\": ";
-        if (risk.has_real_result && !risk.result.source_camera_id.empty())
-            json << jsonString(risk.result.source_camera_id);
-        else if (risk.has_real_result && !risk.result.camera_id.empty())
-            json << jsonString(risk.result.camera_id);
-        else
-            json << "null";
+        strOrNull(!risk.has_real_result ? std::string()
+                  : !risk.result.source_camera_id.empty() ? risk.result.source_camera_id
+                                                          : risk.result.camera_id);
         json << ", \"stream_id\": ";
-        if (risk.has_real_result && !risk.result.stream_id.empty()) json << jsonString(risk.result.stream_id);
-        else json << "null";
+        if (risk.has_real_result) strOrNull(risk.result.stream_id); else json << "null";
         json << ", \"channel\": ";
-        if (risk.has_real_result && risk.result.channel >= 0) json << risk.result.channel;
-        else json << "null";
+        numOrNull(risk.has_real_result && risk.result.channel >= 0, risk.result.channel);
         json << ", \"last_change_utc\": ";
-        if (!risk.last_change_utc.empty()) json << jsonString(risk.last_change_utc);
-        else json << "null";
+        strOrNull(risk.last_change_utc);
         json << "}"
              << ", " << "\"localization\": {\"status\": "
              << jsonString(localization.status)
              << ", \"configured_marker_id\": " << localization.configured_marker_id
              << ", \"localized\": " << (localization.localized ? "true" : "false")
              << ", \"active_stream_id\": ";
-        if (!localization.active_stream_id.empty()) json << jsonString(localization.active_stream_id);
-        else json << "null";
+        strOrNull(localization.active_stream_id);
         json << ", \"active_camera_id\": ";
-        if (!localization.active_camera_id.empty()) json << jsonString(localization.active_camera_id);
-        else json << "null";
+        strOrNull(localization.active_camera_id);
         json << ", \"active_channel\": ";
-        if (localization.active_channel >= 1) json << localization.active_channel;
-        else json << "null";
+        numOrNull(localization.active_channel >= 1, localization.active_channel);
         json << ", \"last_aruco_frame_utc\": ";
-        if (!localization.last_aruco_frame_utc.empty()) json << jsonString(localization.last_aruco_frame_utc);
-        else json << "null";
+        strOrNull(localization.last_aruco_frame_utc);
         json << ", \"last_aruco_frame_stream_id\": ";
-        if (!localization.last_aruco_frame_stream_id.empty()) json << jsonString(localization.last_aruco_frame_stream_id);
-        else json << "null";
+        strOrNull(localization.last_aruco_frame_stream_id);
         json << ", \"last_aruco_frame_channel\": ";
-        if (localization.last_aruco_frame_channel >= 1) json << localization.last_aruco_frame_channel;
-        else json << "null";
+        numOrNull(localization.last_aruco_frame_channel >= 1, localization.last_aruco_frame_channel);
         json << ", \"last_target_marker_seen_utc\": ";
-        if (!localization.last_target_marker_seen_utc.empty()) json << jsonString(localization.last_target_marker_seen_utc);
-        else json << "null";
+        strOrNull(localization.last_target_marker_seen_utc);
         json << ", \"last_target_marker_stream_id\": ";
-        if (!localization.last_target_marker_stream_id.empty()) json << jsonString(localization.last_target_marker_stream_id);
-        else json << "null";
+        strOrNull(localization.last_target_marker_stream_id);
         json << ", \"last_target_marker_channel\": ";
-        if (localization.last_target_marker_channel >= 1) json << localization.last_target_marker_channel;
-        else json << "null";
+        numOrNull(localization.last_target_marker_channel >= 1, localization.last_target_marker_channel);
         json << ", \"last_observed_markers_utc\": ";
-        if (!localization.last_observed_markers_utc.empty()) json << jsonString(localization.last_observed_markers_utc);
-        else json << "null";
+        strOrNull(localization.last_observed_markers_utc);
         json << ", \"last_observed_markers_stream_id\": ";
-        if (!localization.last_observed_markers_stream_id.empty()) json << jsonString(localization.last_observed_markers_stream_id);
-        else json << "null";
+        strOrNull(localization.last_observed_markers_stream_id);
         json << ", \"last_observed_markers_channel\": ";
-        if (localization.last_observed_markers_channel >= 1) json << localization.last_observed_markers_channel;
-        else json << "null";
+        numOrNull(localization.last_observed_markers_channel >= 1,
+                  localization.last_observed_markers_channel);
         json << ", \"last_observed_marker_ids\": [";
         for (std::size_t marker_index = 0;
              marker_index < localization.last_observed_marker_ids.size(); ++marker_index) {

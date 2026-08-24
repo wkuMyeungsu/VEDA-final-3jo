@@ -140,14 +140,8 @@ private:
     void closeDatabase();
 
     // CREATE TABLE IF NOT EXISTS는 이미 존재하는 기존 events.db 파일에는 새 컬럼을
-    // 붙여주지 않는다. start() 시점에 PRAGMA table_info로 terminal_id 컬럼 유무를 확인하고
-    // 없으면 ALTER TABLE ADD COLUMN으로 보강한다(2026-08-06 terminal_id 추가 시 도입).
-    bool ensureTerminalIdColumn();
-    // 기존 DB에 distance_m만 있어도 신규 mm 계약으로 기록할 수 있게
-    // distance_mm 컬럼을 추가한다. 기존 컬럼은 사후 분석 호환을 위해 삭제하지 않는다.
-    bool ensureDistanceMmColumn();
-    bool ensureSourceColumns();
-    bool ensureObservabilityColumns();
+    // 붙여주지 않는다. start() 시점에 PRAGMA table_info로 없는 컬럼을 ALTER TABLE로 보강한다.
+    bool ensureSchemaColumns();
 
     void run();
     void writeBatch(const std::vector<Row>& rows);

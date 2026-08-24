@@ -231,16 +231,6 @@ std::string toString(ExceptionState e) {
     return "UNKNOWN";
 }
 
-void printResult(const std::string& scenario, const JudgmentResult& r) {
-    std::cout << std::left << std::setw(26) << scenario
-              << "| dist=" << std::fixed << std::setprecision(2) << std::setw(6) << r.distance_mm
-              // 폭 9 = 가장 긴 이름("EMERGENCY") 기준. 좁으면 그 줄만 열이 밀린다.
-              << "| cam=" << std::setw(9) << toString(r.camera_risk)
-              << "| tof=" << std::setw(9) << toString(r.tof_risk)
-              << "| exc=" << std::setw(22) << toString(r.exception)
-              << "| FINAL=" << toString(r.final_risk)
-              << "\n";
-}
 
 std::string nowIso8601Ms() {
     using namespace std::chrono;

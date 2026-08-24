@@ -243,12 +243,6 @@ public:
         cv_.notify_one();   // start()가 먼저 불렸다면 대기 중인 워커를 바로 깨운다
     }
 
-    // 마지막으로 전송한 판정 결과가 있는지 (없으면 하트비트도 나가지 않는다).
-    // primeIdle() 이후에는 실제 판정이 없어도 true다.
-    bool hasResult() const {
-        std::lock_guard<std::mutex> lk(mtx_);
-        return has_last_;
-    }
 
     // 마지막 판정 결과와 마지막 상태 전이 시각을 원자적으로 복사한다.
     // runtime snapshot 작성 중 판정 루프가 결과를 갱신해도 필드가 서로 다른 판정을
@@ -269,7 +263,6 @@ public:
     // 무변화 구간에서 주기 재전송으로 나간 누적 건수
     std::size_t heartbeatSendCount() const { return heartbeat_sends_.load(); }
 
-    std::chrono::milliseconds heartbeatPeriod() const { return period_; }
 
     // "판정 상태가 같은가" 판단 기준.
     //

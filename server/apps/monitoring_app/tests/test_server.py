@@ -175,7 +175,7 @@ class MonitoringStatusTests(unittest.TestCase):
             with mock.patch.object(SERVER, "PROC_ROOT", proc_root), \
                  mock.patch.object(SERVER, "THERMAL_ROOT", thermal_root), \
                  mock.patch.object(SERVER, "_HOST_CPU_SAMPLE", None):
-                first = SERVER.host_resource(sampled_at=10.0, sampled_utc="t1")
+                first = SERVER.host_resource()
                 self.assertIsNone(first["cpu_percent"])
                 self.assertEqual(
                     first["cpu_cores"],
@@ -192,7 +192,7 @@ class MonitoringStatusTests(unittest.TestCase):
                     "cpu1 50 0 50 400 50 0 0 0\n",
                     encoding="utf-8",
                 )
-                second = SERVER.host_resource(sampled_at=11.0, sampled_utc="t2")
+                second = SERVER.host_resource()
                 self.assertEqual(second["cpu_percent"], 66.7)
                 self.assertEqual(
                     second["cpu_cores"],
@@ -207,7 +207,7 @@ class MonitoringStatusTests(unittest.TestCase):
                     "cpu2 0 0 0 0 0 0 0 0\n",
                     encoding="utf-8",
                 )
-                changed_cores = SERVER.host_resource(sampled_at=12.0, sampled_utc="t3")
+                changed_cores = SERVER.host_resource()
                 self.assertIsNone(changed_cores["cpu_percent"])
                 self.assertTrue(all(core["cpu_percent"] is None for core in changed_cores["cpu_cores"]))
 
@@ -220,7 +220,7 @@ class MonitoringStatusTests(unittest.TestCase):
             )
             with mock.patch.object(SERVER, "PROC_ROOT", proc_root), \
                  mock.patch.object(SERVER, "_HOST_CPU_SAMPLE", None):
-                value = SERVER.host_resource(sampled_utc="t1")
+                value = SERVER.host_resource()
             self.assertEqual(value["state"], "unavailable")
             self.assertIsNone(value["cpu_percent"])
             self.assertEqual(value["cpu_cores"], [])
@@ -233,7 +233,7 @@ class MonitoringStatusTests(unittest.TestCase):
             "memory_used_mb": 2000.0,
         }
         with mock.patch.object(SERVER, "host_resource", return_value=sample) as resource:
-            value = SERVER.resource_snapshot("active")
+            value = SERVER.resource_snapshot()
         self.assertIn("checked_utc", value)
         self.assertEqual(value["host"], sample)
         self.assertEqual(value["host"]["cpu_cores"][0]["core"], 0)

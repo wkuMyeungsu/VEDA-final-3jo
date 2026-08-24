@@ -222,7 +222,6 @@ void testReceivesLatestSample() {
         check(s.message_id == "sensor-run-1-m7", "message_id가 센서 샘플에 보존됨");
         check(s.producer_run_id == "sensor-run-1", "producer_run_id가 센서 샘플에 보존됨");
         check(s.sequence == 7, "sequence가 센서 샘플에 보존됨");
-        check(s.payload_bytes > 0, "수신 payload 바이트 수가 계측됨");
         check(s.received_at.time_since_epoch().count() != 0,
               "received_at(서버 수신 시각)이 채워짐");
     }

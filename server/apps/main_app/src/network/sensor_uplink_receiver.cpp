@@ -281,7 +281,6 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
     }
 
     sample.received_at = std::chrono::steady_clock::now();
-    sample.payload_bytes = payload.size();
     {
         std::lock_guard<std::mutex> lk(mtx_);
         latest_by_terminal_[terminal_id] = sample;

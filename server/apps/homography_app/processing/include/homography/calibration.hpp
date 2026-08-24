@@ -11,13 +11,10 @@
 // ArUco 검출과 수동 호모그래피·채널 정합 인터페이스.
 namespace homography {
 
-// 모든 ArUco 검출의 공통 픽셀 입력 경로. 선택 인자는 후속 undistort 연결용이며
-// 이번 버전에서는 계수를 적용하지 않는다.
+// 모든 ArUco 검출의 공통 픽셀 입력 경로.
 void detect_marker_corners(const Config& config, const cv::Mat& image,
                            std::vector<std::vector<cv::Point2f>>& corners,
-                           std::vector<int>& ids,
-                           const cv::Mat& camera_matrix = {},
-                           const cv::Mat& dist_coeffs = {});
+                           std::vector<int>& ids);
 
 // layout의 x_mm/y_mm은 좌상단 위치. marker_size_mm로 네 코너 확장함.
 // overlay가 있으면 입력 영상 크기의 진단 이미지 생성함.

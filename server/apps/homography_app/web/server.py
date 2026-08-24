@@ -11,7 +11,6 @@ import os
 import stat
 import subprocess
 import shutil
-import tempfile
 import threading
 import time
 import uuid
@@ -154,6 +153,12 @@ def configured_output_name(key, fallback):
     """설정된 결과 파일명을 경로 없이 반환함."""
     value = OUTPUTS.get(key, fallback)
     return Path(str(value)).name or fallback
+
+
+def configured_json_name():
+    """manual 산출 JSON 파일명. 설정값에 확장자가 없으면 붙인다."""
+    name = configured_output_name("manual", "homography_manual.json")
+    return name if Path(name).suffix.lower() == ".json" else name + ".json"
 
 
 def configured_camera_id():
@@ -333,8 +338,6 @@ def save_camera_settings(camera_id, camera_model):
         # 새 카메라명·모델 설정으로 다시 연결한다.
         if "CAMERA_STREAM" in globals():
             CAMERA_STREAM.stop()
-        if "CAMERA_DETECTION_STREAM" in globals():
-            CAMERA_DETECTION_STREAM.stop()
 
     return {
         "camera_id": camera_id,
@@ -398,42 +401,18 @@ def make_operational_homography(value):
 
 
 def save_operational_homography(value):
-    """최소 H를 운영 경로에 새로 만들거나 원자적으로 덮어쓴다.
-
-    계산 결과는 먼저 임시 작업 폴더에 생성된다. 이 함수가 최종 저장을
-    전담해, 파일이 없으면 생성하고 이미 있으면 같은 이름으로 교체한다.
-    임시 파일도 같은 폴더에 만들어 중간 상태의 JSON이 노출되지 않게 한다.
-    """
+    """최소 H를 운영 경로에 새로 만들거나 원자적으로 덮어쓴다."""
     operational_value = make_operational_homography(value)
-    stream_id = operational_value["stream_id"]
-    channel = operational_value["channel"]
     camera_homography_dir = HOMOGRAPHY_RESULTS_ROOT / operational_value["camera_id"]
     # 카메라 폴더가 없어도 산출 버튼을 누르면 자동으로 만든다.
     camera_homography_dir.mkdir(parents=True, exist_ok=True)
 
     operational_file = camera_homography_dir / (
         f"homography_result_{camera_id_token(operational_value['camera_id'])}"
-        f"_ch{channel:02d}_mm.json")
+        f"_ch{operational_value['channel']:02d}_mm.json")
     existed = operational_file.is_file()
-    temporary_file = camera_homography_dir / (
-        f".{operational_file.name}.{uuid.uuid4().hex}.tmp")
-    serialized = json.dumps(operational_value, ensure_ascii=False, indent=2) + "\n"
-
-    try:
-        # 최종 파일과 같은 디렉터리에서 교체해야 원자적 덮어쓰기가 보장된다.
-        temporary_file.write_text(serialized, encoding="utf-8")
-        os.replace(temporary_file, operational_file)
-
-        # 저장 직후 실제 파일을 다시 읽어 저장 성공을 확인한다.
-        saved_value = json.loads(operational_file.read_text(encoding="utf-8"))
-        if saved_value != operational_value:
-            raise ValueError(f"저장 후 검증 실패: {operational_file}")
-    finally:
-        try:
-            temporary_file.unlink()
-        except FileNotFoundError:
-            pass
-
+    atomic_write_text(operational_file,
+                      json.dumps(operational_value, ensure_ascii=False, indent=2) + "\n")
     return {
         "path": str(operational_file),
         "created": not existed,
@@ -441,19 +420,6 @@ def save_operational_homography(value):
         "action": "overwrite" if existed else "create",
     }
 
-
-def load_operational_homography(stream_id):
-    """기존 최종 H가 있으면 읽어 세션 중간 계산에만 사용한다."""
-    stream = configured_stream(stream_id=stream_id)
-    path = (HOMOGRAPHY_RESULTS_ROOT / stream["camera_id"] /
-            f"homography_result_{camera_id_token(stream['camera_id'])}"
-            f"_ch{stream['channel']:02d}_mm.json")
-    if not path.is_file():
-        return None
-    try:
-        return make_operational_homography(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
-        raise ValueError(f"기존 최종 H를 읽을 수 없습니다: {path}: {error}") from error
 
 
 def matrix_multiply(left, right):
@@ -466,25 +432,31 @@ def matrix_multiply(left, right):
     return [[value / scale for value in row] for row in result]
 
 
+def gauss_jordan(augmented, singular_message):
+    """부분 피벗팅 가우스-요르단 소거로 확대행렬을 소거한다."""
+    size = len(augmented)
+    for column in range(size):
+        pivot = max(range(column, size), key=lambda row: abs(augmented[row][column]))
+        if abs(augmented[pivot][column]) < 1e-10:
+            raise ValueError(singular_message)
+        augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
+        divisor = augmented[column][column]
+        augmented[column] = [value / divisor for value in augmented[column]]
+        for row in range(size):
+            if row == column:
+                continue
+            factor = augmented[row][column]
+            augmented[row] = [augmented[row][index] - factor * augmented[column][index]
+                              for index in range(len(augmented[row]))]
+    return augmented
+
+
 def invert_matrix(matrix):
     """외부 수치 라이브러리 없이 3×3 행렬을 역행렬로 바꾼다."""
     augmented = [[float(matrix[row][column]) for column in range(3)] +
                  [1.0 if row == column else 0.0 for column in range(3)]
                  for row in range(3)]
-    for column in range(3):
-        pivot = max(range(column, 3), key=lambda row: abs(augmented[row][column]))
-        if abs(augmented[pivot][column]) < 1e-12:
-            raise ValueError("호모그래피 역행렬을 계산할 수 없습니다")
-        augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
-        divisor = augmented[column][column]
-        augmented[column] = [value / divisor for value in augmented[column]]
-        for row in range(3):
-            if row == column: continue
-            factor = augmented[row][column]
-            augmented[row] = [augmented[row][index] - factor * augmented[column][index]
-                              for index in range(6)]
-    inverse = [row[3:] for row in augmented]
-    return inverse
+    return [row[3:] for row in gauss_jordan(augmented, "호모그래피 역행렬을 계산할 수 없습니다")]
 
 
 def transform_point(matrix, point):
@@ -558,20 +530,9 @@ def solve_point_homography(source_points, destination_points):
             target[left] += row[left] * value
             for right in range(8):
                 normal[left][right] += row[left] * row[right]
-    augmented = [normal[row] + [target[row]] for row in range(8)]
-    for column in range(8):
-        pivot = max(range(column, 8), key=lambda row: abs(augmented[row][column]))
-        if abs(augmented[pivot][column]) < 1e-10:
-            raise ValueError("공통 마커가 일직선에 몰려 채널 정합을 계산할 수 없습니다")
-        augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
-        divisor = augmented[column][column]
-        augmented[column] = [value / divisor for value in augmented[column]]
-        for row in range(8):
-            if row == column: continue
-            factor = augmented[row][column]
-            augmented[row] = [augmented[row][index] - factor * augmented[column][index]
-                              for index in range(9)]
-    parameters = [augmented[row][8] for row in range(8)]
+    augmented = gauss_jordan([normal[row] + [target[row]] for row in range(8)],
+                             "공통 마커가 일직선에 몰려 채널 정합을 계산할 수 없습니다")
+    parameters = [row[8] for row in augmented]
     return [[parameters[0], parameters[1], parameters[2]],
             [parameters[3], parameters[4], parameters[5]],
             [parameters[6], parameters[7], 1.0]]
@@ -737,24 +698,9 @@ def solve_linear_system(matrix, vector):
     size = len(vector)
     if len(matrix) != size or any(len(row) != size for row in matrix):
         raise ValueError("전역 정합 선형 시스템의 크기가 올바르지 않습니다")
-    augmented = [[float(value) for value in matrix[row]] + [float(vector[row])]
-                 for row in range(size)]
-    for column in range(size):
-        pivot = max(range(column, size), key=lambda row: abs(augmented[row][column]))
-        if abs(augmented[pivot][column]) < 1e-12:
-            raise ValueError("전역 정합 선형 시스템이 특이합니다")
-        augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
-        divisor = augmented[column][column]
-        augmented[column] = [value / divisor for value in augmented[column]]
-        for row in range(size):
-            if row == column:
-                continue
-            factor = augmented[row][column]
-            if abs(factor) < 1e-18:
-                continue
-            augmented[row] = [augmented[row][index] - factor * augmented[column][index]
-                              for index in range(size + 1)]
-    return [augmented[row][size] for row in range(size)]
+    augmented = gauss_jordan([[float(value) for value in matrix[row]] + [float(vector[row])]
+                              for row in range(size)], "전역 정합 선형 시스템이 특이합니다")
+    return [row[size] for row in augmented]
 
 
 def homography_parameters(matrix):
@@ -780,15 +726,9 @@ def parameters_homography(parameters):
 
 
 def project_numeric(matrix, point):
-    """숫자 배열 H로 mm 점을 변환한다. 최적화 루프에서 사용한다."""
-    x, y = float(point["x"]), float(point["y"])
-    denominator = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2]
-    if abs(denominator) < 1e-12:
-        raise ValueError("전역 정합 중 H 변환 분모가 0에 가깝습니다")
-    return (
-        (matrix[0][0] * x + matrix[0][1] * y + matrix[0][2]) / denominator,
-        (matrix[1][0] * x + matrix[1][1] * y + matrix[1][2]) / denominator,
-    )
+    """숫자 배열 H로 mm 점을 변환해 (x, y) 튜플로 반환한다."""
+    projected = transform_point(matrix, point)
+    return projected["x"], projected["y"]
 
 
 def global_alignment_residuals(parameters_by_stream, variable_streams, edges):
@@ -1290,115 +1230,9 @@ class CameraStream:
                 self.condition.wait(remaining)
             return self.sequences[stream_id], self.frames[stream_id]
 
-    def latest(self, stream_id, camera_entry=None, timeout=10):
-        return self.latest_packet(stream_id, camera_entry, timeout)[1]
-
 
 CAMERA_STREAM = CameraStream()
 
-
-class CameraDetectionStream:
-    """수신 중인 최신 프레임을 C++ 엔진으로 검출하고 오버레이를 갱신함."""
-
-    def __init__(self, source):
-        self.source = source
-        self.condition = threading.Condition()
-        self.frames = {}
-        self.sequences = {}
-        self.results = {}
-        self.active_stream_id = None
-        self.worker = None
-        self.stop_event = None
-
-    def ensure_worker(self, stream_id, camera_entry=None):
-        stream_id = str(stream_id)
-        with self.condition:
-            if self.active_stream_id == stream_id and self.worker and self.worker.is_alive():
-                return
-            if self.stop_event:
-                self.stop_event.set()
-            self.active_stream_id = stream_id
-            self.frames.pop(stream_id, None)
-            self.sequences.pop(stream_id, None)
-            self.results.pop(stream_id, None)
-            self.stop_event = threading.Event()
-            self.worker = threading.Thread(target=self._detect,
-                                           args=(stream_id, camera_entry, self.stop_event), daemon=True)
-            self.worker.start()
-            self.condition.notify_all()
-
-    def stop(self, channel_id=None):
-        with self.condition:
-            if channel_id is not None and self.active_stream_id != channel_id:
-                return
-            if self.stop_event:
-                self.stop_event.set()
-            self.active_stream_id = None
-            self.frames.clear()
-            self.sequences.clear()
-            self.results.clear()
-            self.condition.notify_all()
-
-    def _detect(self, stream_id, camera_entry, stop_event):
-        previous_sequence = None
-        safe_name = stream_id.replace("/", "_")
-        input_path = LIVE_CAMERA_ROOT / f"{safe_name}.jpg"
-        output_path = LIVE_CAMERA_ROOT / f"{safe_name}-overlay.jpg"
-        metadata_path = LIVE_CAMERA_ROOT / f"{safe_name}.json"
-        self.source.ensure_worker(stream_id, camera_entry)
-        while not stop_event.is_set():
-            try:
-                previous_sequence, frame = self.source.latest_packet(
-                    stream_id, camera_entry=camera_entry, previous_sequence=previous_sequence,
-                    stop_event=stop_event,
-                    activate=False)
-                input_path.write_bytes(frame)
-                result = run_tool(["detect-markers", "--config", str(CONFIG),
-                                   "--input", str(input_path), "--output", str(metadata_path),
-                                   "--overlay", str(output_path)])
-                if result["ok"] and output_path.is_file():
-                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-                    self._set_result(stream_id, metadata, output_path.read_bytes())
-                elif not result["ok"]:
-                    time.sleep(CAMERA_RETRY_DELAY_SEC)
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-                time.sleep(CAMERA_RETRY_DELAY_SEC)
-
-    def _set_result(self, stream_id, metadata, frame):
-        with self.condition:
-            if self.active_stream_id != stream_id:
-                return
-            self.results[stream_id] = metadata
-            self.frames[stream_id] = frame
-            self.sequences[stream_id] = self.sequences.get(stream_id, 0) + 1
-            self.condition.notify_all()
-
-    def current_result(self, stream_id, camera_entry=None):
-        self.ensure_worker(stream_id, camera_entry)
-        with self.condition:
-            return self.results.get(stream_id, {"ids": [], "corners": [], "image_size": {}})
-
-    def latest_packet(self, stream_id, timeout=10, previous_sequence=None, activate=True):
-        stream_id = str(stream_id)
-        if activate:
-            self.ensure_worker(stream_id)
-        deadline = time.monotonic() + timeout
-        with self.condition:
-            while (self.active_stream_id != stream_id or stream_id not in self.frames or
-                   self.sequences[stream_id] == previous_sequence):
-                if self.active_stream_id != stream_id:
-                    raise RuntimeError("detected camera stream switched")
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise RuntimeError("detected camera frame unavailable")
-                self.condition.wait(remaining)
-            return self.sequences[stream_id], self.frames[stream_id]
-
-    def latest(self, stream_id, timeout=10):
-        return self.latest_packet(stream_id, timeout)[1]
-
-
-CAMERA_DETECTION_STREAM = CameraDetectionStream(CAMERA_STREAM)
 
 
 def run_tool(args):
@@ -1438,24 +1272,12 @@ def capture_directory(capture_id):
     return directory
 
 
-def multiply_homographies(left, right):
-    """중간 라이브러리 없이 3×3 호모그래피를 합성하고 정규화함."""
-    matrix = [[sum(float(left[row][k]) * float(right[k][column]) for k in range(3))
-               for column in range(3)] for row in range(3)]
-    scale = matrix[2][2]
-    if abs(scale) < 1e-12:
-        raise ValueError("invalid composed homography")
-    return [[value / scale for value in row] for row in matrix]
 
 
 def requested_stream(value):
-    """HTTP 요청의 전역 stream_id를 우선 해석하고 구버전 channel 요청도 임시 호환한다."""
-    if isinstance(value, dict):
-        stream_id = value.get("stream_id")
-        if stream_id:
-            return configured_stream(stream_id=str(stream_id))
-        return configured_stream(channel=value.get("channel"))
-    return configured_stream(stream_id=value)
+    """HTTP 요청의 전역 stream_id를 해석한다."""
+    stream_id = value.get("stream_id") if isinstance(value, dict) else value
+    return configured_stream(stream_id=str(stream_id))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1488,75 +1310,12 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_file(candidate)
             return
         if path == "/api/status":
-            self.send_json({"ok": True, "server_monitoring": "placeholder",
+            self.send_json({"ok": True,
                             "homography_tool": TOOL, "port": PORT,
-                            "camera_id": configured_camera_id(),
-                            "camera_model": CAMERA_MODEL,
-                            "channel_count": MAX_SUPPORTED_CHANNELS,
                             "camera_list": camera_status_entries(),
                             "streams": stream_status_entries(),
                             "camera_models": CAMERA_MODELS.get("models", []),
-                            "max_channels": MAX_SUPPORTED_CHANNELS,
-                            "min_common_markers": MIN_COMMON_MARKERS,
-                            "max_verification_streams": MAX_VERIFICATION_STREAMS,
-                            "global_alignment": True})
-            return
-        if path == "/api/camera/frame":
-            try:
-                query = urlparse(self.path).query
-                stream = requested_stream(parse_qs(query).get("stream_id", [None])[0]
-                                          or {"channel": parse_qs(query).get("channel", [1])[0]})
-                body = CAMERA_STREAM.latest(stream["stream_id"], stream)
-                self.send_response(200)
-                self.send_header("Content-Type", "image/jpeg")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            except (OSError, urllib.error.URLError, subprocess.SubprocessError, RuntimeError, ValueError) as error:
-                self.send_json({"ok": False, "error": str(error)}, 502)
-            return
-        if path == "/api/camera/video":
-            stream_started = False
-            try:
-                query = urlparse(self.path).query
-                params = parse_qs(query)
-                stream_entry = requested_stream(params.get("stream_id", [None])[0]
-                                                or {"channel": params.get("channel", [1])[0]})
-                stream_id = stream_entry["stream_id"]
-                stream = CAMERA_DETECTION_STREAM if params.get("overlay", ["0"])[0] == "1" else CAMERA_STREAM
-                camera_urls(stream_entry["channel"], camera_entry=stream_entry["camera"])
-                stream.ensure_worker(stream_id, stream_entry)
-                sequence, frame = stream.latest_packet(stream_id, activate=False)
-                self.send_response(200)
-                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                stream_started = True
-                while True:
-                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
-                                     str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n")
-                    self.wfile.flush()
-                    sequence, frame = stream.latest_packet(stream_id, previous_sequence=sequence,
-                                                            activate=False)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            except (OSError, ValueError, RuntimeError) as error:
-                if not stream_started and not self.wfile.closed:
-                    self.send_json({"ok": False, "error": str(error)}, 502)
-            return
-        if path == "/api/camera/detections":
-            try:
-                query = urlparse(self.path).query
-                params = parse_qs(query)
-                stream_entry = requested_stream(params.get("stream_id", [None])[0]
-                                                or {"channel": params.get("channel", [1])[0]})
-                camera_urls(stream_entry["channel"], camera_entry=stream_entry["camera"])
-                self.send_json(CAMERA_DETECTION_STREAM.current_result(
-                    stream_entry["stream_id"], stream_entry))
-            except (OSError, RuntimeError, ValueError) as error:
-                self.send_json({"ok": False, "error": str(error)}, 502)
+                            "max_verification_streams": MAX_VERIFICATION_STREAMS})
             return
         if path == "/" or path == "/index.html":
             self.serve_file(STATIC / "index.html", "text/html; charset=utf-8")
@@ -1604,17 +1363,11 @@ class Handler(BaseHTTPRequestHandler):
                 camera_entry = stream_entry["camera"]
                 image_path = job_dir / "capture.jpg"
                 CAMERA_STREAM.ensure_worker(stream_id, stream_entry)
-                preview_connection, _, _, _ = camera_urls(
+                connection, _, _, _ = camera_urls(
                     channel_id, camera_entry=camera_entry)
-                capture_timeout = float(preview_connection.get("timeout_sec", 10))
-                _, preview_frame = CAMERA_STREAM.latest_packet(stream_id, camera_entry=stream_entry,
-                                                                timeout=capture_timeout,
-                                                                activate=False)
-                preview_path = job_dir / "rtsp-capture.jpg"
-                preview_path.write_bytes(preview_frame)
+                capture_timeout = float(connection.get("timeout_sec", 10))
                 frame = capture_high_resolution_frame(channel_id, capture_timeout, camera_entry)
                 image_path.write_bytes(frame)
-                CAMERA_DETECTION_STREAM.stop(stream_id)
                 CAMERA_STREAM.stop(stream_id)
                 output_path = job_dir / "markers.json"
                 overlay_path = job_dir / "markers-overlay.png"
@@ -1624,37 +1377,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not result["ok"]:
                     raise RuntimeError(result["stderr"] or "marker detection failed")
                 detected = json.loads(output_path.read_text(encoding="utf-8"))
-                rtsp_output_path = job_dir / "rtsp-markers.json"
-                rtsp_result = run_tool(["detect-markers", "--config", str(CONFIG),
-                                        "--input", str(preview_path), "--output", str(rtsp_output_path)])
-                if not rtsp_result["ok"]:
-                    raise RuntimeError(rtsp_result["stderr"] or "RTSP marker detection failed")
-                rtsp_detected = json.loads(rtsp_output_path.read_text(encoding="utf-8"))
-                alignment_path = job_dir / "rtsp-alignment.json"
-                alignment_result = run_tool(["align-markers", "--config", str(CONFIG),
-                    "--source", str(preview_path), "--destination", str(image_path),
-                    "--output", str(alignment_path)])
-                alignment = None
-                alignment_error = ""
-                if alignment_result["ok"]:
-                    alignment = json.loads(alignment_path.read_text(encoding="utf-8"))
-                else:
-                    alignment_error = alignment_result["stderr"].strip() or "공통 마커가 부족합니다."
                 detected["overlay_url"] = f"/artifacts/{job_id}/markers-overlay.png"
                 detected["image_url"] = f"/artifacts/{job_id}/capture.jpg"
                 detected["capture_id"] = job_id
                 detected["stream_id"] = stream_id
                 detected["camera_id"] = stream_entry["camera_id"]
                 detected["channel"] = channel_id
-                detected["rtsp_detection"] = rtsp_detected
-                detected["rtsp_image_url"] = f"/artifacts/{job_id}/rtsp-capture.jpg"
-                detected["rtsp_alignment"] = alignment
-                detected["rtsp_alignment_error"] = alignment_error
                 (job_dir / "capture-meta.json").write_text(json.dumps({
                     "capture_id": job_id, "stream_id": stream_id,
                     "camera_id": stream_entry["camera_id"], "channel": channel_id,
-                    "capture_image_size": detected.get("image_size", {}),
-                    "rtsp_image_size": rtsp_detected.get("image_size", {})
+                    "capture_image_size": detected.get("image_size", {})
                 }, ensure_ascii=False, indent=2), encoding="utf-8")
                 self.send_json({"ok": True, "result": detected})
             except (OSError, urllib.error.URLError, subprocess.SubprocessError, RuntimeError,
@@ -1677,9 +1409,7 @@ class Handler(BaseHTTPRequestHandler):
                           "corner_overrides": payload.get("corner_overrides", {})}
                 layout_file = job_dir / "layout.json"
                 layout_file.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
-                output_name = configured_output_name("manual", "homography_manual.json")
-                if Path(output_name).suffix.lower() != ".json":
-                    output_name += ".json"
+                output_name = configured_json_name()
                 output_file = job_dir / output_name
                 overlay_name = "homography-overlay.png"
                 result = run_tool(["solve-manual", "--config", str(CONFIG),
@@ -1689,38 +1419,21 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(result, 422)
                     return
                 value = json.loads(output_file.read_text(encoding="utf-8"))
-                alignment_file = job_dir / "rtsp-alignment.json"
-                if alignment_file.is_file():
-                    alignment = json.loads(alignment_file.read_text(encoding="utf-8"))
-                    value["H_rtsp_pixel_to_capture"] = alignment["H_source_camera_pixels_to_destination_camera_pixels"]
-                    value["H_rtsp_pixel_to_channel_map"] = multiply_homographies(
-                        value["H_camera_pixels_to_channel_map"], alignment["H_source_camera_pixels_to_destination_camera_pixels"])
-                    value["rtsp_image_size"] = alignment["source_size"]
-                    value["rtsp_alignment_rmse_px"] = alignment["rmse_px"]
-                    value["rtsp_common_ids"] = alignment["common_ids"]
-                else:
-                    value["H_rtsp_pixel_to_channel_map"] = None
-                    value["rtsp_alignment_error"] = "캡처 시 공통 마커가 부족해 RTSP 정합을 만들지 못했습니다."
                 value["capture_id"] = capture_id
                 capture_meta = json.loads((job_dir / "capture-meta.json").read_text(
                     encoding="utf-8")) if (job_dir / "capture-meta.json").is_file() else {}
                 value["stream_id"] = capture_meta.get("stream_id")
                 value["camera_id"] = capture_meta.get("camera_id")
                 value["channel"] = capture_meta.get("channel")
-                value.setdefault("verification_region_world", None)
                 output_file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
                                        encoding="utf-8")
                 # 카메라 화면 펴기 단계에서는 운영 파일을 만들지 않는다.
                 # 전체 스트림 정합이 끝난 최종 H만 /api/homography/global-align에서 저장한다.
-                storage = None
-                # 저장 함수에서 최소 운영 파일의 필수 필드를 이미 검증했다.
                 if value.get("map_unit") != "mm":
                     raise ValueError("호모그래피 map_unit은 mm여야 합니다")
                 self.send_json({"ok": True, "result": value,
-                    "artifact_url": f"/artifacts/{capture_id}/{output_name}",
-                    "overlay_url": f"/artifacts/{capture_id}/{overlay_name}",
-                    "operational_path": storage["path"] if storage else None,
-                    "storage": storage})
+                    "artifact_url": f"/artifacts/{capture_id}/{configured_json_name()}",
+                    "overlay_url": f"/artifacts/{capture_id}/{overlay_name}"})
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
                 self.send_json({"ok": False, "error": str(error)}, 400)
             return
@@ -1746,10 +1459,7 @@ class Handler(BaseHTTPRequestHandler):
                 for stream_id in stream_ids:
                     capture_id = capture_ids.get(stream_id)
                     job_dir = capture_directory(capture_id)
-                    output_name = configured_output_name("manual", "homography_manual.json")
-                    if Path(output_name).suffix.lower() != ".json":
-                        output_name += ".json"
-                    result_file = job_dir / output_name
+                    result_file = job_dir / configured_json_name()
                     if not result_file.is_file():
                         raise ValueError(f"{stream_id}의 카메라 화면 펴기 결과가 없습니다")
                     result = json.loads(result_file.read_text(encoding="utf-8"))
@@ -1830,72 +1540,6 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
                 self.send_json({"ok": False, "error": str(error)}, 400)
-            return
-        if path == "/api/homography/region":
-            try:
-                job_dir = capture_directory(payload.get("capture_id"))
-                region = payload.get("verification_region_world")
-                if not isinstance(region, list) or len(region) != 4 or any(
-                        not isinstance(point, list) or len(point) != 2 for point in region):
-                    raise ValueError("verification_region_world must contain four [x,y] points")
-                region = [[float(value) for value in point] for point in region]
-                output_name = configured_output_name("manual", "homography_manual.json")
-                if Path(output_name).suffix.lower() != ".json": output_name += ".json"
-                output_file = job_dir / output_name
-                value = json.loads(output_file.read_text(encoding="utf-8"))
-                value["verification_region_world"] = region
-                output_file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
-                                       encoding="utf-8")
-                self.send_json({"ok": True, "result": value})
-            except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
-                self.send_json({"ok": False, "error": str(error)}, 400)
-            return
-        if path == "/api/homography/solve-manual":
-            layout = payload.get("layout")
-            if not isinstance(layout, dict):
-                self.send_json({"ok": False, "error": "layout is required"}, 400)
-                return
-            image_data = payload.get("image_data", "")
-            input_path = payload.get("input", "")
-            cleanup_results()
-            job_id = uuid.uuid4().hex
-            job_dir = RESULT_ROOT / job_id
-            job_dir.mkdir(parents=True)
-            if isinstance(image_data, str) and image_data.startswith("data:") and "," in image_data:
-                try:
-                    image_bytes = base64.b64decode(image_data.split(",", 1)[1], validate=True)
-                except (ValueError, base64.binascii.Error):
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                    self.send_json({"ok": False, "error": "invalid image_data"}, 400)
-                    return
-                input_file = job_dir / "input-image"
-                input_file.write_bytes(image_bytes)
-            elif isinstance(input_path, str) and input_path:
-                input_file = Path(input_path)
-                if not input_file.is_file():
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                    self.send_json({"ok": False, "error": "input image not found"}, 400)
-                    return
-            else:
-                shutil.rmtree(job_dir, ignore_errors=True)
-                self.send_json({"ok": False, "error": "image_data or input is required"}, 400)
-                return
-            layout_file = job_dir / "layout.json"
-            layout_file.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
-            manual_name = configured_output_name("manual", "homography_manual.json")
-            if Path(manual_name).suffix.lower() != ".json": manual_name += ".json"
-            overlay_name = "homography-overlay.png"
-            result = run_tool(["solve-manual", "--config", str(CONFIG), "--input", str(input_file),
-                               "--layout", str(layout_file), "--output", str(job_dir / manual_name),
-                               "--overlay", str(job_dir / overlay_name)])
-            if result["ok"]:
-                result["artifact_url"] = f"/artifacts/{job_id}/{manual_name}"
-                result["overlay_url"] = f"/artifacts/{job_id}/{overlay_name}"
-                result["result"] = json.loads((job_dir / manual_name).read_text(encoding="utf-8"))
-                result["note"] = "호모그래피 JSON과 검증용 오버레이를 생성했습니다. 결과는 임시 파일입니다."
-            else:
-                shutil.rmtree(job_dir, ignore_errors=True)
-            self.send_json(result, 200 if result["ok"] else 500)
             return
         self.send_json({"ok": False, "error": "unknown endpoint"}, 404)
 

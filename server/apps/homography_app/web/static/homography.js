@@ -26,9 +26,6 @@ const state = {
   verificationGl: null,
   verificationView: {scale: 1, x: 0, y: 0},
   verificationPointer: null,
-  blinkTimer: null,
-  blinkPhase: 0,
-  blinkEnabled: false,
 };
 
 const MIN_LOCAL_MARKERS = 3;
@@ -36,6 +33,15 @@ const VERIFICATION_COLORS = ['#3e9bff', '#ff9d3e', '#51d88b', '#d36cff', '#f15b8
 
 function verificationColor(index) {
   return VERIFICATION_COLORS[index % VERIFICATION_COLORS.length];
+}
+
+function sizeCanvas(target) {
+  const rect = $('#verification-viewport').getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  target.width = Math.max(1, Math.round(rect.width * ratio));
+  target.height = Math.max(1, Math.round(rect.height * ratio));
+  target.style.width = `${rect.width}px`;
+  target.style.height = `${rect.height}px`;
 }
 
 function applyVerificationView() {
@@ -454,26 +460,6 @@ function loadImage(url) {
   });
 }
 
-async function loadCapturedMarkers(stream) {
-  if (stream.markers || !stream.capture_id) return stream;
-  const detected = await getJson(`/artifacts/${stream.capture_id}/markers.json`);
-  let layout = {};
-  try {
-    layout = await getJson(`/artifacts/${stream.capture_id}/layout.json`);
-  } catch (_) {
-    // 예전 캡처에는 layout.json이 없을 수 있다. 자동 검출 코너를 그대로 사용한다.
-  }
-  const overrides = layout.corner_overrides || {};
-  const excluded = new Set((layout.excluded_ids || []).map(Number));
-  const markers = {};
-  (detected.ids || []).forEach((id, index) => {
-    const numericId = Number(id);
-    if (excluded.has(numericId)) return;
-    markers[String(numericId)] = overrides[String(numericId)] || detected.corners[index];
-  });
-  return {...stream, markers};
-}
-
 function compileShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -572,15 +558,12 @@ function drawVerificationGuides() {
   if (!state.verification) return;
   const overlay = $('#verification-overlay');
   const rect = $('#verification-viewport').getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  overlay.width = Math.max(1, Math.round(rect.width * ratio));
-  overlay.height = Math.max(1, Math.round(rect.height * ratio));
-  overlay.style.width = `${rect.width}px`;
-  overlay.style.height = `${rect.height}px`;
+  sizeCanvas(overlay);
   const drawing = overlay.getContext('2d');
   const bounds = state.verification.bounds;
   const mapWidth = bounds.max_x - bounds.min_x || 1;
   const mapHeight = bounds.max_y - bounds.min_y || 1;
+  const ratio = window.devicePixelRatio || 1;
   drawing.setTransform(ratio, 0, 0, ratio, 0, 0);
   drawing.clearRect(0, 0, rect.width, rect.height);
 
@@ -613,9 +596,7 @@ function drawVerificationGuides() {
   }
   drawing.restore();
 
-  const visibleIndex = state.blinkPhase % Math.max(1, state.verification.streams.length);
   state.verification.streams.forEach((stream, index) => {
-    if (state.blinkEnabled && index !== visibleIndex) return;
     const corners = projectedStreamCorners(stream).map((value) =>
       worldToVerificationScreen(value.x, value.y, bounds, rect));
     if (corners.length !== 4) return;
@@ -684,12 +665,9 @@ function drawVerificationGuides() {
 function drawVerificationFallback() {
   const target = $('#verification-canvas');
   const rect = $('#verification-viewport').getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  target.width = Math.max(1, Math.round(rect.width * ratio));
-  target.height = Math.max(1, Math.round(rect.height * ratio));
-  target.style.width = `${rect.width}px`;
-  target.style.height = `${rect.height}px`;
+  sizeCanvas(target);
   const drawing = target.getContext('2d');
+  const ratio = window.devicePixelRatio || 1;
   drawing.setTransform(ratio, 0, 0, ratio, 0, 0);
   drawing.fillStyle = '#05080b';
   drawing.fillRect(0, 0, rect.width, rect.height);
@@ -697,129 +675,8 @@ function drawVerificationFallback() {
   $('#verification-status').textContent = 'WebGL을 사용할 수 없어 정합 가이드만 표시합니다.';
 }
 
-function drawMarkerVerificationGuides(markerId, streams) {
-  const overlay = $('#verification-overlay');
-  const rect = $('#verification-viewport').getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  overlay.width = Math.max(1, Math.round(rect.width * ratio));
-  overlay.height = Math.max(1, Math.round(rect.height * ratio));
-  overlay.style.width = `${rect.width}px`;
-  overlay.style.height = `${rect.height}px`;
-  const drawing = overlay.getContext('2d');
-  drawing.setTransform(ratio, 0, 0, ratio, 0, 0);
-  drawing.clearRect(0, 0, rect.width, rect.height);
-  const left = rect.width * 0.16;
-  const top = rect.height * 0.08;
-  const size = Math.min(rect.width * 0.68, rect.height * 0.78);
-
-  drawing.fillStyle = 'rgba(0, 0, 0, 0.78)';
-  drawing.fillRect(left - 5, top - 5, size + 10, size + 10);
-  drawing.strokeStyle = '#fff';
-  drawing.lineWidth = 2;
-  drawing.strokeRect(left, top, size, size);
-  drawing.fillStyle = '#fff';
-  drawing.font = '700 14px system-ui, sans-serif';
-  drawing.fillText(`공통 마커 ID ${markerId}`, left, Math.max(20, top - 12));
-
-  streams.forEach((stream, index) => {
-    const color = verificationColor(index);
-    const label = stream.stream_id;
-    const y = Math.min(rect.height - 18, top + size + 18 + index * 20);
-    drawing.fillStyle = color;
-    drawing.beginPath();
-    drawing.arc(left + 5, y - 4, 4, 0, Math.PI * 2);
-    drawing.fill();
-    drawing.fillStyle = '#e7eff8';
-    drawing.font = '12px system-ui, sans-serif';
-    drawing.fillText(label, left + 15, y);
-  });
-}
-
-/* 선택한 같은 ID의 마커 사각형만 동일한 화면 사각형에 겹쳐 그린다. */
-function drawMarkerVerification() {
-  const markerId = Number(state.verification.marker_id);
-  const streams = state.verification.streams.filter((stream) =>
-    stream.markers?.[String(markerId)] && stream.image);
-  if (!streams.length) return;
-
-  let renderer;
-  try { renderer = createVerificationGl(); } catch (error) {
-    $('#verification-status').textContent = error.message;
-    drawMarkerVerificationGuides(markerId, streams);
-    return;
-  }
-  if (!renderer) {
-    drawMarkerVerificationGuides(markerId, streams);
-    $('#verification-status').textContent = 'WebGL을 사용할 수 없어 마커 가이드만 표시합니다.';
-    return;
-  }
-
-  const {gl, program} = renderer;
-  const target = $('#verification-canvas');
-  const rect = $('#verification-viewport').getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  target.width = Math.max(1, Math.round(rect.width * ratio));
-  target.height = Math.max(1, Math.round(rect.height * ratio));
-  target.style.width = `${rect.width}px`;
-  target.style.height = `${rect.height}px`;
-  gl.viewport(0, 0, target.width, target.height);
-  gl.clearColor(0.02, 0.04, 0.07, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.useProgram(program);
-
-  // 영상의 H나 전체 맵 크기는 사용하지 않는다.
-  // 모든 입력 마커를 이 하나의 기준 정사각형에 직접 워핑한다.
-  const bounds = {min_x: -1.1, min_y: -1.1, max_x: 1.1, max_y: 1.1};
-  const markerSquare = [[-0.86, -0.86, 1], [0.86, -0.86, 1],
-    [0.86, 0.86, 1], [-0.86, 0.86, 1]];
-  streams.forEach((stream) => {
-    const corners = stream.markers[String(markerId)];
-    const width = stream.image_size.width;
-    const height = stream.image_size.height;
-    const worldBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, worldBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(markerSquare.flat()), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(renderer.world);
-    gl.vertexAttribPointer(renderer.world, 3, gl.FLOAT, false, 0, 0);
-
-    const texcoordBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners.flatMap((corner) =>
-      [Number(corner.x) / width, Number(corner.y) / height])), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(renderer.texcoord);
-    gl.vertexAttribPointer(renderer.texcoord, 2, gl.FLOAT, false, 0, 0);
-
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, stream.image);
-    gl.uniform4f(renderer.bounds, bounds.min_x, bounds.min_y,
-      bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
-    // 조작 가능한 투명도는 없애고, 고정된 반투명으로 모든 채널을 동시에 보인다.
-    gl.uniform1f(renderer.opacity, 0.5);
-    gl.uniform1f(renderer.feather, 0);
-    gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
-    gl.deleteBuffer(worldBuffer);
-    gl.deleteBuffer(texcoordBuffer);
-    gl.deleteTexture(texture);
-  });
-  drawMarkerVerificationGuides(markerId, streams);
-  $('#verification-status').textContent =
-    `ID ${markerId} · ${streams.length}개 채널의 마커 이미지를 같은 정사각형에 포개는 중`;
-}
-
 function drawVerification() {
   if (!state.verification) return;
-  if (state.verification.mode === 'marker') {
-    drawMarkerVerification();
-    return;
-  }
   let renderer;
   try { renderer = createVerificationGl(); } catch (error) {
     $('#verification-status').textContent = error.message;
@@ -830,11 +687,7 @@ function drawVerification() {
   const {gl, program} = renderer;
   const target = $('#verification-canvas');
   const rect = $('#verification-viewport').getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  target.width = Math.max(1, Math.round(rect.width * ratio));
-  target.height = Math.max(1, Math.round(rect.height * ratio));
-  target.style.width = `${rect.width}px`;
-  target.style.height = `${rect.height}px`;
+  sizeCanvas(target);
   gl.viewport(0, 0, target.width, target.height);
   gl.clearColor(0.02, 0.04, 0.07, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
@@ -842,9 +695,7 @@ function drawVerification() {
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.useProgram(program);
   const bounds = state.verification.bounds;
-  const visibleIndex = state.blinkPhase % Math.max(1, state.verification.streams.length);
   state.verification.streams.forEach((stream, index) => {
-    if (state.blinkEnabled && index !== visibleIndex) return;
     if (!stream.image) return;
     const width = stream.image_size.width;
     const height = stream.image_size.height;
@@ -872,20 +723,16 @@ function drawVerification() {
     gl.uniform4f(renderer.bounds, bounds.min_x, bounds.min_y,
                  bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
     // 기준 스트림은 선명하게 한 장으로 깔고, 나머지는 가장자리만 부드럽게 섞는다.
-    // 모든 영상을 동일한 50%로 겹치던 기존 방식보다 실제 합쳐진 맵이 훨씬 자연스럽다.
-    const opacity = state.blinkEnabled || index === 0
-      ? 1 : Number($('#verification-opacity').value);
-    gl.uniform1f(renderer.opacity, opacity);
-    gl.uniform1f(renderer.feather, state.blinkEnabled || index === 0 ? 0 : 1);
+    gl.uniform1f(renderer.opacity, index === 0 ? 1 : 0.5);
+    gl.uniform1f(renderer.feather, index === 0 ? 0 : 1);
     gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
     gl.deleteBuffer(worldBuffer);
     gl.deleteBuffer(texcoordBuffer);
     gl.deleteTexture(texture);
   });
   drawVerificationGuides();
-  $('#verification-status').textContent = state.blinkEnabled
-    ? `깜빡임 비교 · ${state.verification.streams[visibleIndex]?.stream_id || ''}`
-    : `${state.verification.streams.length}개 스트림을 마커 기준 전체 맵으로 합성 중`;
+  $('#verification-status').textContent =
+    `${state.verification.streams.length}개 스트림을 마커 기준 전체 맵으로 합성 중`;
 }
 
 function escapeHtml(value) {
@@ -1009,96 +856,14 @@ function renderVerificationValues(payload) {
     `수치 검증 완료 · 공통 마커 ${markers.length}개 · 적합 오차와 일반화 오차를 구분해 확인하세요.`;
 }
 
-function buildClientVerificationMarkers(payload, streams) {
-  const grouped = new Map();
-  streams.forEach((stream) => {
-    // verification.streams의 H는 이미 합성된 카메라 픽셀→공유 지도 H다.
-    const globalH = stream.H_camera_pixels_to_shared_map;
-    Object.entries(stream.markers || {}).forEach(([markerId, corners]) => {
-      const worldCorners = corners.map((corner) => {
-        const global = homographyWorldPoint(globalH, corner.x, corner.y);
-        return {x: global.x / global.w, y: global.y / global.w};
-      });
-      const center = {
-        x: worldCorners.reduce((sum, value) => sum + value.x, 0) / 4,
-        y: worldCorners.reduce((sum, value) => sum + value.y, 0) / 4,
-      };
-      if (!grouped.has(markerId)) grouped.set(markerId, []);
-      grouped.get(markerId).push({stream_id: stream.stream_id,
-        corners: worldCorners, center});
-    });
-  });
-  return [...grouped.entries()].filter(([, values]) => values.length >= 2)
-    .map(([id, values]) => {
-      const consensusCorners = [0, 1, 2, 3].map((corner) => ({
-        x: values.reduce((sum, value) => sum + value.corners[corner].x, 0) / values.length,
-        y: values.reduce((sum, value) => sum + value.corners[corner].y, 0) / values.length,
-      }));
-      const consensusCenter = {
-        x: consensusCorners.reduce((sum, value) => sum + value.x, 0) / 4,
-        y: consensusCorners.reduce((sum, value) => sum + value.y, 0) / 4,
-      };
-      let totalSquared = 0;
-      let maximumError = 0;
-      const detail = values.map((value) => {
-        const cornerErrors = value.corners.map((actual, corner) => {
-          const error = Math.hypot(actual.x - consensusCorners[corner].x,
-            actual.y - consensusCorners[corner].y);
-          totalSquared += error * error;
-          maximumError = Math.max(maximumError, error);
-          return error;
-        });
-        const edgeLengths = [0, 1, 2, 3].map((corner) => Math.hypot(
-          value.corners[(corner + 1) % 4].x - value.corners[corner].x,
-          value.corners[(corner + 1) % 4].y - value.corners[corner].y));
-        return {
-          stream_id: value.stream_id,
-          center_mm: value.center,
-          corner_errors_mm: cornerErrors,
-          corner_rmse_mm: Math.sqrt(cornerErrors.reduce((sum, error) => sum + error * error, 0) / 4),
-          edge_lengths_mm: edgeLengths,
-          orientation_deg: Math.atan2(value.corners[1].y - value.corners[0].y,
-            value.corners[1].x - value.corners[0].x) * 180 / Math.PI,
-          center_error_mm: Math.hypot(value.center.x - consensusCenter.x,
-            value.center.y - consensusCenter.y),
-        };
-      });
-      return {
-        id: Number(id),
-        stream_count: values.length,
-        consensus_center_mm: consensusCenter,
-        consensus_corners_mm: consensusCorners,
-        corner_rmse_mm: Math.sqrt(totalSquared / (values.length * 4)),
-        max_corner_error_mm: maximumError,
-        streams: detail,
-      };
-    });
-}
-
 async function prepareVerification(payload) {
   const verification = payload.verification;
   if (!verification || !verification.streams || !verification.common_markers) {
     throw new Error('서버가 공통 마커 검증 수치를 반환하지 않았습니다.');
   }
-  let normalizedPayload = payload;
-  const hasDetails = verification.common_markers.some((marker) =>
-    Array.isArray(marker.streams));
-  if (!hasDetails) {
-    const streams = await Promise.all(Object.values(verification.streams).map(
-      (stream) => loadCapturedMarkers(stream)));
-    const detailedMarkers = buildClientVerificationMarkers(payload, streams);
-    normalizedPayload = {
-      ...payload,
-      verification: {
-        ...verification,
-        streams: Object.fromEntries(streams.map((stream) => [stream.stream_id, stream])),
-        common_markers: detailedMarkers,
-      },
-    };
-  }
-  state.verification = {...normalizedPayload.verification, mode: 'values'};
+  state.verification = verification;
   $('#verification-panel').hidden = false;
-  renderVerificationValues(normalizedPayload);
+  renderVerificationValues(payload);
 }
 
 function setupVerificationPointerControls() {

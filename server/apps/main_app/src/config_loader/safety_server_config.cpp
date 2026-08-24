@@ -4,7 +4,6 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <set>
 #include <unistd.h>
@@ -83,8 +82,6 @@ std::string resolveConfigDirectory() {
         "config/safety",
         "../config/safety",
         "../../config/safety",
-        "01_Workspace/server/config/safety",
-        "server/01_main/config",
     };
     for (const char* candidate : candidates) {
         if (std::filesystem::is_directory(candidate)) return candidate;
@@ -118,7 +115,6 @@ std::string resolveCommonConfigDirectory(const std::string& config_dir) {
         "config",
         "../config",
         "../../config",
-        "01_Workspace/server/config",
     };
     for (const char* candidate : candidates) {
         if (std::filesystem::is_directory(candidate)) return candidate;

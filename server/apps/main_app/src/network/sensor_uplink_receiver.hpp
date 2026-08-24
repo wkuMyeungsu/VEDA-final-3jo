@@ -76,7 +76,6 @@ struct SensorUplinkSample {
     std::string message_id;
     std::string producer_run_id;
     int64_t     sequence = -1;
-    std::size_t payload_bytes = 0;
 
     // 서버가 이 메시지를 실제로 파싱한 시각. steady_clock이라 시스템 시각이 조정돼도
     // 경과 시간 계산이 뒤로 가지 않는다 -> isStale() 판단의 유일한 기준.
