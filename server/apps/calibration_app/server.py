@@ -61,6 +61,11 @@ PAGE = """<!doctype html>
  보드 인식 대상: <span id="count">0</span>장 <span id="status"></span>
 </p>
 <img id="preview" alt="마지막 캡처">
+<p class="hint" id="compare-title" hidden>왼쪽: 캡처 원본 · 오른쪽: 왜곡 보정 결과</p>
+<div style="display:flex;gap:8px">
+ <img id="original" alt="" style="width:50%" hidden>
+ <img id="undistorted" alt="왜곡 보정 미리보기" style="width:50%">
+</div>
 <pre id="result">결과가 여기 표시됩니다.</pre>
 <script>
 const $ = (sel) => document.querySelector(sel);
@@ -81,6 +86,8 @@ $('#shot').onclick = async () => {
 $('#reset').onclick = async () => {
   await fetch('/api/frames', {method: 'DELETE'});
   $('#preview').src = '';
+  $('#original').hidden = true;
+  $('#compare-title').hidden = true;
   $('#status').textContent = '';
   await refresh();
 };
@@ -94,6 +101,12 @@ $('#run').onclick = async () => {
     const r = value.result;
     $('#status').textContent = `완료 · 재투영 RMSE ${Number(r.reprojection_rmse_px).toFixed(3)} px`;
     $('#result').textContent = JSON.stringify(r, null, 2);
+    if (value.undistorted_image) {
+      $('#undistorted').src = 'data:image/jpeg;base64,' + value.undistorted_image;
+      const lastShot = $('#preview').src;
+      if (lastShot) { $('#original').src = lastShot; $('#original').hidden = false; }
+      $('#compare-title').hidden = false;
+    }
   } catch (error) {
     $('#status').textContent = '실패';
     $('#result').textContent = String(error);
@@ -162,7 +175,13 @@ class Handler(BaseHTTPRequestHandler):
                 if captured == 0:
                     raise RuntimeError("캡처한 사진이 없습니다. 먼저 캡처하세요")
                 output_file = SESSION_DIR / "intrinsics.json"
+                preview_file = SESSION_DIR / "undistorted.jpg"
+                first_frame = min(SESSION_DIR.glob("*.jpg"),
+                                  key=lambda path: path.name, default=None)
                 result = subprocess.run(
+                    [str(TOOL), "calibrate-intrinsics", "--config", str(CONFIG),
+                     "--images", str(SESSION_DIR), "--output", str(output_file),
+                     "--preview", str(preview_file)] if first_frame else
                     [str(TOOL), "calibrate-intrinsics", "--config", str(CONFIG),
                      "--images", str(SESSION_DIR), "--output", str(output_file)],
                     capture_output=True, text=True, timeout=300, check=False)
@@ -172,8 +191,13 @@ class Handler(BaseHTTPRequestHandler):
                 temporary = OUTPUT_PATH.with_name(f".{OUTPUT_PATH.name}.{os.urandom(8).hex()}.tmp")
                 shutil.copyfile(output_file, temporary)
                 os.replace(temporary, OUTPUT_PATH)
-                self.send_json({"ok": True, "result": value,
-                                "saved_to": str(OUTPUT_PATH)})
+                response = {"ok": True, "result": value,
+                            "saved_to": str(OUTPUT_PATH)}
+                if preview_file.is_file():
+                    # 왜곡 보정 전후를 나란히 비교해 사용자가 결과를 눈으로 검증하게 한다.
+                    response["undistorted_image"] = base64.b64encode(
+                        preview_file.read_bytes()).decode()
+                self.send_json(response)
             else:
                 self.send_json({"ok": False, "error": "unknown endpoint"}, 404)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError,

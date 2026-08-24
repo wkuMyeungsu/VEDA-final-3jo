@@ -6,6 +6,7 @@
 
 #include <opencv2/aruco.hpp>
 #include <opencv2/aruco/charuco.hpp>
+#include <opencv2/calib3d.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
@@ -148,6 +149,7 @@ int calibrate_intrinsics_command(int argc, char** argv) {
     const Config config = read_config(argument(argc, argv, "--config"));
     const std::string images_dir = argument(argc, argv, "--images");
     const std::string output = argument(argc, argv, "--output");
+    const std::string preview_path = argument(argc, argv, "--preview");
     if (images_dir.empty() || output.empty())
         throw std::runtime_error("calibrate-intrinsics requires --images and --output");
 
@@ -161,6 +163,15 @@ int calibrate_intrinsics_command(int argc, char** argv) {
     }
     std::sort(files.begin(), files.end());
     const CameraIntrinsics result = calibrate_camera(config, files);
+
+    // 사용자가 결과를 눈으로 검증할 수 있도록 첫 사진의 왜곡 보정 견본을 남긴다.
+    if (!preview_path.empty() && !files.empty()) {
+        const cv::Mat original = cv::imread(files.front());
+        cv::Mat undistorted;
+        cv::undistort(original, undistorted, result.camera_matrix, result.dist_coeffs);
+        if (!cv::imwrite(preview_path, undistorted))
+            throw std::runtime_error("cannot write preview: " + preview_path);
+    }
 
     json matrix = json::array();
     for (int row = 0; row < result.camera_matrix.rows; ++row)
