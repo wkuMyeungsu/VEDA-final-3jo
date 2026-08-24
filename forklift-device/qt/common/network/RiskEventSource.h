@@ -28,6 +28,7 @@ public:
 private:
     void processPayload(const QByteArray &payload);                          // - 수신 데이터 해석(메인 스레드): JSON 파싱, 오래된/retain 데이터 필터링 및 신호 전달
     void handleWatchdogTimeout();                                            // - 무수신 폴링 처리: 100ms마다 마지막 수신 이후 경과 시간 확인
+    bool evaluateWatchdog(qint64 elapsedMs);                                 // - 워치독 임계값 평가 및 linkLost 신호 발생 (단위 테스트에서 정밀 검증 지원)
 
     // - mosquitto 콜백: libmosquitto 내부 네트워크 스레드에서 호출되므로 여기서 직접
     //   Qt 상태를 건드리지 않고 QMetaObject::invokeMethod로 메인 스레드에 위임한다.

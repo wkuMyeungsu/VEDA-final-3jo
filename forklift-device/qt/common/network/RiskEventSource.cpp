@@ -1,4 +1,5 @@
 #include "RiskEventSource.h"
+#include "services/LatencyTracker.h"
 
 #if __has_include(<mosquitto/libmosquitto.h>)
 #include <mosquitto/libmosquitto.h>
