@@ -3,7 +3,7 @@
 // 이 화면은 한 가지 흐름만 사용한다.
 // 1) CCTV·채널을 선택하고 캡처한다.
 // 2) 검출된 ArUco 꼭짓점을 필요할 때만 드래그해 보정한다.
-// 3) 마커 크기(mm)로 해당 스트림의 로컬 H를 산출한다.
+// 3) 마커 크기(mm)로 해당 스트림의 카메라 화면 펴기 H를 산출한다.
 // 4) 준비된 모든 스트림을 공통 마커로 한 번에 전체 맵에 정합한다.
 // X/Y 기준선, 자로 잰 거리, 별도 프리뷰 단계는 사용하지 않는다.
 
@@ -329,7 +329,7 @@ function updateLocalResult() {
   const markerSize = Number($('#marker-size-mm').value);
   button.disabled = usable < MIN_LOCAL_MARKERS || !Number.isFinite(markerSize) || markerSize <= 0;
   if (capture.localResult) {
-    result.innerHTML = `<strong>로컬 H 산출 완료</strong><br>사용 마커 ${capture.localResult.used_marker_count ?? usable}개 · RMSE ${Number(capture.localResult.reproj_rmse_mm ?? 0).toFixed(2)} mm<br><small>전체 정합 전까지 임시 결과입니다.</small>`;
+    result.innerHTML = `<strong>카메라 화면 펴기 완료</strong><br>사용 마커 ${capture.localResult.used_marker_count ?? usable}개 · 마커 모양 오차 ${Number(capture.localResult.marker_shape_rmse_mm ?? 0).toFixed(2)} mm<br><small>겹침 구간 연결 전까지 임시 결과입니다.</small>`;
   } else {
     result.textContent = `${usable}개 사용 가능 · 최소 ${MIN_LOCAL_MARKERS}개가 필요합니다.`;
   }
@@ -381,7 +381,7 @@ async function solveLocal() {
   if (usableMarkerIds(capture).length < MIN_LOCAL_MARKERS || !capture.referenceMarkerId) return;
   const button = $('#solve-homography');
   button.disabled = true;
-  $('#camera-status').textContent = `${capture.stream.stream_id} 로컬 H 산출 중…`;
+  $('#camera-status').textContent = `${capture.stream.stream_id} 카메라 화면 펴기 중…`;
   try {
     const payload = await post('/api/homography/solve', {
       capture_id: capture.capture.capture_id,
@@ -393,11 +393,11 @@ async function solveLocal() {
     capture.localResult = payload.result;
     updateLocalResult();
     updateGlobalState();
-    $('#camera-status').textContent = `${capture.stream.stream_id} 로컬 H 완료 · RMSE ${Number(payload.result.reproj_rmse_mm ?? 0).toFixed(2)} mm`;
-    log({stream_id: capture.stream.stream_id, local_h: payload.result,
-      note: '전체 스트림 정합을 완료해야 운영 H에 저장됩니다.'});
+    $('#camera-status').textContent = `${capture.stream.stream_id} 카메라 화면 펴기 완료 · 마커 모양 오차 ${Number(payload.result.marker_shape_rmse_mm ?? 0).toFixed(2)} mm`;
+    log({stream_id: capture.stream.stream_id, camera_pixels_to_channel_map: payload.result,
+      note: '겹침 구간 연결을 완료해야 운영 H에 저장됩니다.'});
   } catch (error) {
-    $('#camera-status').textContent = `로컬 H 산출 실패: ${error.message}`;
+    $('#camera-status').textContent = `카메라 화면 펴기 실패: ${error.message}`;
     log(error.message);
     updateLocalResult();
   }
@@ -407,8 +407,8 @@ function updateGlobalState() {
   const ready = state.streams.filter((stream) => state.captures.get(stream.stream_id)?.localResult);
   const missing = state.streams.length - ready.length;
   $('#common-marker-summary').textContent = ready.length < 2
-    ? `로컬 H 준비 ${ready.length}개 · 최소 2개 스트림이 필요합니다.`
-    : `로컬 H 준비 ${ready.length}/${state.streams.length}개 · 준비된 스트림 전체를 정합합니다.${missing ? ` 미준비 ${missing}개는 제외됩니다.` : ''}`;
+    ? `카메라 화면 펴기 준비 ${ready.length}개 · 최소 2개 스트림이 필요합니다.`
+    : `카메라 화면 펴기 준비 ${ready.length}/${state.streams.length}개 · 준비된 스트림의 겹침 구간을 연결합니다.${missing ? ` 미준비 ${missing}개는 제외됩니다.` : ''}`;
   $('#global-align-channels').disabled = ready.length < 2;
   const anchor = $('#global-anchor-stream');
   const previous = anchor.value;
@@ -426,18 +426,18 @@ async function alignAllStreams() {
   ready.forEach((stream) => { captureIds[stream.stream_id] = state.captures.get(stream.stream_id).capture.capture_id; });
   const button = $('#global-align-channels');
   button.disabled = true;
-  $('#stitch-result').textContent = '전체 스트림 정합 중…';
+  $('#stitch-result').textContent = '겹침 구간 연결 중…';
   try {
     const payload = await post('/api/homography/global-align', {
       stream_ids: ready.map((stream) => stream.stream_id),
       anchor_stream_id: anchor,
       capture_ids: captureIds,
     });
-    $('#stitch-result').innerHTML = `<strong>전체 정합 완료</strong><br>기준 ${payload.anchor_stream_id} · RMSE ${Number(payload.global_rmse_mm ?? 0).toFixed(2)} mm<br>저장 스트림 ${payload.stream_ids.length}개`;
+    $('#stitch-result').innerHTML = `<strong>겹침 구간 연결 완료</strong><br>기준 ${payload.anchor_stream_id} · 겹침 맞춤 오차 ${Number(payload.shared_map_overlap_rmse_mm ?? 0).toFixed(2)} mm<br>저장 스트림 ${payload.stream_ids.length}개`;
     log(payload);
     await prepareVerification(payload);
   } catch (error) {
-    $('#stitch-result').textContent = `전체 정합 실패: ${error.message}`;
+    $('#stitch-result').textContent = `겹침 구간 연결 실패: ${error.message}`;
     $('#verification-status').textContent = `마커 포개기 준비 실패: ${error.message}`;
     log(error.message);
   } finally {
@@ -546,7 +546,7 @@ function homographyWorldPoint(matrix, x, y) {
 function projectedStreamCorners(stream) {
   return [[0, 0], [stream.image_size.width, 0],
     [stream.image_size.width, stream.image_size.height], [0, stream.image_size.height]]
-    .map(([x, y]) => homographyWorldPoint(stream.H_pixel_to_world, x, y))
+    .map(([x, y]) => homographyWorldPoint(stream.H_camera_pixels_to_shared_map, x, y))
     .map((value) => ({x: value.x / value.w, y: value.y / value.w}))
     .filter((value) => Number.isFinite(value.x) && Number.isFinite(value.y));
 }
@@ -849,7 +849,7 @@ function drawVerification() {
     const width = stream.image_size.width;
     const height = stream.image_size.height;
     const corners = [[0, 0], [width, 0], [width, height], [0, height]]
-      .map(([x, y]) => homographyWorldPoint(stream.H_pixel_to_world, x, y));
+      .map(([x, y]) => homographyWorldPoint(stream.H_camera_pixels_to_shared_map, x, y));
     const worldBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, worldBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners.flatMap((value) =>
@@ -905,28 +905,28 @@ function formatPoint(value) {
 
 function renderVerificationValues(payload) {
   const verification = payload.verification;
-  const markers = verification.common_markers || [];
+  const markers = verification.overlap_marker_consistency || [];
   const markerWorst = markers.reduce((worst, marker) =>
-    Number(marker.max_corner_error_mm) > Number(worst?.max_corner_error_mm ?? -1)
+    Number(marker.max_corner_disagreement_mm) > Number(worst?.max_corner_disagreement_mm ?? -1)
       ? marker : worst, null);
   const streamCount = Object.keys(verification.streams || {}).length;
   $('#verification-summary').innerHTML = [
     `<div>기준 스트림<strong>${escapeHtml(payload.anchor_stream_id)}</strong></div>`,
     `<div>검증 스트림<strong>${streamCount}개</strong></div>`,
     `<div>공통 마커<strong>${markers.length}개</strong></div>`,
-    `<div>전체 꼭짓점 RMSE<strong>${formatMm(payload.global_rmse_mm)}</strong></div>`,
-    `<div>최대 오차 마커<strong>${markerWorst ? `ID ${escapeHtml(markerWorst.id)} · ${formatMm(markerWorst.max_corner_error_mm)}` : '—'}</strong></div>`,
+    `<div>겹침 맞춤 오차<strong>${formatMm(payload.shared_map_overlap_rmse_mm)}</strong></div>`,
+    `<div>최대 불일치 마커<strong>${markerWorst ? `ID ${escapeHtml(markerWorst.id)} · ${formatMm(markerWorst.max_corner_disagreement_mm)}` : '—'}</strong></div>`,
   ].join('');
 
   $('#verification-marker-table').innerHTML = markers.map((marker) => {
     const streams = marker.streams || [];
     const centerMax = streams.reduce((max, stream) =>
-      Math.max(max, Number(stream.center_error_mm) || 0), 0);
+      Math.max(max, Number(stream.center_disagreement_mm) || 0), 0);
     const detailRows = streams.map((stream) => `<tr>
       <td>${escapeHtml(stream.stream_id)}</td>
       <td>${formatPoint(stream.center_mm)}</td>
-      <td>${formatMm(stream.center_error_mm)}</td>
-      <td>${formatMm(stream.corner_rmse_mm)}</td>
+      <td>${formatMm(stream.center_disagreement_mm)}</td>
+      <td>${formatMm(stream.corner_disagreement_rmse_mm)}</td>
       <td>${(stream.edge_lengths_mm || []).map((value) => Number(value).toFixed(2)).join(' / ')} mm</td>
       <td>${Number(stream.orientation_deg).toFixed(2)}°</td>
     </tr>`).join('');
@@ -934,68 +934,68 @@ function renderVerificationValues(payload) {
       <td><strong>ID ${escapeHtml(marker.id)}</strong></td>
       <td>${escapeHtml(streams.map((stream) => stream.stream_id).join(', '))}</td>
       <td>${formatMm(centerMax)}</td>
-      <td>${formatMm(marker.corner_rmse_mm)}</td>
-      <td>${formatMm(marker.max_corner_error_mm)}</td>
+      <td>${formatMm(marker.corner_disagreement_rmse_mm)}</td>
+      <td>${formatMm(marker.max_corner_disagreement_mm)}</td>
       <td><details><summary>채널별 수치 보기</summary>
         <table class="verification-detail-table">
-          <thead><tr><th>스트림</th><th>중심 좌표(mm)</th><th>중심 오차</th><th>꼭짓점 RMSE</th><th>변 길이(mm)</th><th>방향</th></tr></thead>
+          <thead><tr><th>스트림</th><th>중심 좌표(mm)</th><th>중심 불일치</th><th>꼭짓점 불일치</th><th>변 길이(mm)</th><th>방향</th></tr></thead>
           <tbody>${detailRows}</tbody>
         </table>
       </details></td>
     </tr>`;
   }).join('') || '<tr><td colspan="6">공통 마커 수치가 없습니다.</td></tr>';
 
-  const cross = payload.cross_validation;
+  const heldOutCheck = payload.held_out_overlap_check;
   const crossBox = $('#verification-cross-validation');
   if (!crossBox) return;
-  if (!cross) {
+  if (!heldOutCheck) {
     crossBox.innerHTML = `
-      <h3>맵 전체 일반화 오차</h3>
-      <p class="verification-note">이전 서버 응답에는 교차검증 값이 없습니다. 다시 전체 정합을 실행하세요.</p>`;
-  } else if (!cross.available) {
+      <h3>겹침 마커 하나 제외 확인</h3>
+      <p class="verification-note">서버 응답에 제외 확인 값이 없습니다. 다시 겹침 구간 연결을 실행하세요.</p>`;
+  } else if (!heldOutCheck.available) {
     crossBox.innerHTML = `
-      <h3>맵 전체 일반화 오차</h3>
+      <h3>겹침 마커 하나 제외 확인</h3>
       <div class="verification-cross-unavailable">
-        <strong>교차검증을 계산할 수 없습니다.</strong>
-        <span>${escapeHtml(cross.reason || '공통 마커가 부족합니다.')}</span>
+        <strong>제외 확인을 계산할 수 없습니다.</strong>
+        <span>${escapeHtml(heldOutCheck.reason || '공통 마커가 부족합니다.')}</span>
       </div>
       <p class="verification-note">공통 마커를 최소 4개 이상 확보해야 마커 하나를 제외하고 나머지로 예측할 수 있습니다.</p>`;
   } else {
-    const edgeRows = (cross.edges || []).map((edge) => {
+    const edgeRows = (heldOutCheck.edges || []).map((edge) => {
       const heldOut = (edge.held_out || []).filter((item) => item.available);
       const values = heldOut.length
         ? heldOut.map((item) =>
-          `ID ${escapeHtml(item.marker_id)} · RMSE ${formatMm(item.rmse_mm)} · 최대 ${formatMm(item.max_error_mm)}`
+          `ID ${escapeHtml(item.marker_id)} · 예측 오차 ${formatMm(item.prediction_rmse_mm)} · 최대 ${formatMm(item.max_prediction_error_mm)}`
         ).join('<br>')
         : escapeHtml(edge.reason || '계산된 제외 마커가 없습니다.');
       return `<tr>
         <td>${escapeHtml((edge.stream_ids || []).join(' ↔ '))}</td>
         <td>${escapeHtml((edge.common_marker_ids || []).join(', '))}</td>
-        <td>${formatMm(edge.rmse_mm)}</td>
-        <td>${formatMm(edge.max_error_mm)}</td>
+        <td>${formatMm(edge.prediction_rmse_mm)}</td>
+        <td>${formatMm(edge.max_prediction_error_mm)}</td>
         <td>${values}</td>
       </tr>`;
     }).join('');
     crossBox.innerHTML = `
       <div class="verification-cross-heading">
         <div>
-          <h3>맵 전체 일반화 오차 추정</h3>
+          <h3>겹침 마커 하나 제외 확인</h3>
           <p>공통 마커를 하나씩 숨기고, 나머지 마커만으로 숨긴 마커 위치를 다시 예측했습니다.</p>
         </div>
-        <span class="verification-cross-badge">독립 위치 예측</span>
+        <span class="verification-cross-badge">겹침 마커 하나 제외 확인</span>
       </div>
       <div class="verification-cross-summary">
-        <div>교차검증 RMSE<strong>${formatMm(cross.rmse_mm)}</strong></div>
-        <div>최대 예측 오차<strong>${formatMm(cross.max_error_mm)}</strong></div>
-        <div>검증한 마커-연결<strong>${escapeHtml(cross.tested_case_count)}건</strong></div>
+        <div>숨긴 겹침 마커 예측 오차<strong>${formatMm(heldOutCheck.prediction_rmse_mm)}</strong></div>
+        <div>최대 예측 오차<strong>${formatMm(heldOutCheck.max_prediction_error_mm)}</strong></div>
+        <div>확인한 마커-연결<strong>${escapeHtml(heldOutCheck.tested_case_count)}건</strong></div>
       </div>
       <div class="verification-table-wrap">
         <table class="verification-table verification-cross-table">
           <thead><tr>
-            <th>스트림 연결</th><th>공통 마커</th><th>예측 RMSE</th>
+            <th>스트림 연결</th><th>공통 마커</th><th>숨긴 겹침 마커 예측 오차</th>
             <th>최대 예측 오차</th><th>제외 마커별 상세</th>
           </tr></thead>
-          <tbody>${edgeRows || '<tr><td colspan="5">교차검증 상세가 없습니다.</td></tr>'}</tbody>
+          <tbody>${edgeRows || '<tr><td colspan="5">제외 확인 상세가 없습니다.</td></tr>'}</tbody>
         </table>
       </div>
       <p class="verification-note">
@@ -1012,10 +1012,8 @@ function renderVerificationValues(payload) {
 function buildClientVerificationMarkers(payload, streams) {
   const grouped = new Map();
   streams.forEach((stream) => {
-    // 구형 global-align 응답도 verification.streams의 H는 이미
-    // local_to_global이 합성된 최종 pixel→global H다. 이 경로에서는
-    // local_to_global을 다시 적용하면 안 된다.
-    const globalH = stream.H_pixel_to_world;
+    // verification.streams의 H는 이미 합성된 카메라 픽셀→공유 지도 H다.
+    const globalH = stream.H_camera_pixels_to_shared_map;
     Object.entries(stream.markers || {}).forEach(([markerId, corners]) => {
       const worldCorners = corners.map((corner) => {
         const global = homographyWorldPoint(globalH, corner.x, corner.y);

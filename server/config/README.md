@@ -13,7 +13,7 @@
 - `forklift_device_config.json`: 등록된 단말의 `terminal_id`, ArUco marker,
   지게차 충돌 반경을 기록한다.
 - `homography/<camera_id>/...`: 호모그래피 앱이 산출하고 main이 그대로 읽는
-  최종 `H_pixel_to_world` 파일이다.
+  최종 `H_camera_pixels_to_shared_map` 파일이다.
 
 ## 경로 기준
 

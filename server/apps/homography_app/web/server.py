@@ -362,16 +362,16 @@ def make_operational_homography(value):
     stream = configured_stream(stream_id=stream_id)
     if stream["camera_id"] != camera_id or stream["channel"] != channel:
         raise ValueError("호모그래피 결과의 camera_id/stream_id/channel 조합이 camera_list와 다릅니다")
-    if str(value.get("world_unit")) != "mm":
-        raise ValueError("호모그래피 world_unit은 mm이어야 합니다")
+    if str(value.get("map_unit")) != "mm":
+        raise ValueError("호모그래피 map_unit은 mm이어야 합니다")
 
-    matrix = value.get("H_pixel_to_world")
+    matrix = value.get("H_camera_pixels_to_shared_map")
     if not isinstance(matrix, list) or len(matrix) != 3 or any(
             not isinstance(row, list) or len(row) != 3 for row in matrix):
-        raise ValueError("H_pixel_to_world는 3x3 행렬이어야 합니다")
+        raise ValueError("H_camera_pixels_to_shared_map는 3x3 행렬이어야 합니다")
     if any(not isinstance(cell, (int, float)) or isinstance(cell, bool) or
            not math.isfinite(float(cell)) for row in matrix for cell in row):
-        raise ValueError("H_pixel_to_world에 유효하지 않은 숫자가 있습니다")
+        raise ValueError("H_camera_pixels_to_shared_map에 유효하지 않은 숫자가 있습니다")
 
     image_size = value.get("image_size")
     if not isinstance(image_size, dict):
@@ -388,11 +388,11 @@ def make_operational_homography(value):
     # 정보는 작업 결과 파일에는 남지만 안전 서버 운영 파일에는 넣지 않는다.
     return {
         "schema_version": int(value.get("schema_version", 2)),
-        "world_unit": "mm",
+        "map_unit": "mm",
         "camera_id": camera_id,
         "stream_id": stream_id,
         "channel": channel,
-        "H_pixel_to_world": matrix,
+        "H_camera_pixels_to_shared_map": matrix,
         "image_size": {"width": image_width, "height": image_height},
     }
 
@@ -612,8 +612,8 @@ def align_local_channel(source_result, source_corners, destination_result, desti
         raise ValueError(
             f"공통 마커가 {len(common_ids)}개입니다. "
             f"채널 정합에는 {MIN_COMMON_MARKERS}개 이상 필요합니다")
-    source_h = source_result.get("H_pixel_to_world")
-    destination_h = destination_result.get("H_pixel_to_world")
+    source_h = source_result.get("H_camera_pixels_to_channel_map")
+    destination_h = destination_result.get("H_camera_pixels_to_channel_map")
     if source_h is None or destination_h is None:
         raise ValueError("채널 로컬 호모그래피가 없습니다")
     source_points, destination_points = [], []
@@ -674,14 +674,14 @@ def align_local_channel(source_result, source_corners, destination_result, desti
     return transform, common_ids, rmse
 
 
-def cross_validate_marker_alignment(source_result, source_corners,
-                                    destination_result, destination_corners,
-                                    common_ids):
+def held_out_overlap_check(source_result, source_corners,
+                           destination_result, destination_corners,
+                           common_ids):
     """공통 마커를 하나씩 빼고 남은 마커로 위치를 예측해 일반화 오차를 구한다."""
     if len(common_ids) < 4:
         return {
             "available": False,
-            "reason": "교차검증에는 공통 마커가 최소 4개 필요합니다",
+            "reason": "겹침 마커 하나 제외 확인에는 공통 마커가 최소 4개 필요합니다",
             "held_out": [],
         }
 
@@ -704,8 +704,8 @@ def cross_validate_marker_alignment(source_result, source_corners,
         squared = 0.0
         errors = []
         for source, destination in zip(source_corners[held_id], destination_corners[held_id]):
-            source_local = transform_point(source_result["H_pixel_to_world"], source)
-            destination_local = transform_point(destination_result["H_pixel_to_world"], destination)
+            source_local = transform_point(source_result["H_camera_pixels_to_channel_map"], source)
+            destination_local = transform_point(destination_result["H_camera_pixels_to_channel_map"], destination)
             predicted = transform_point(transform, source_local)
             error = math.hypot(predicted["x"] - destination_local["x"],
                                predicted["y"] - destination_local["y"])
@@ -717,18 +717,18 @@ def cross_validate_marker_alignment(source_result, source_corners,
         held_out.append({
             "marker_id": held_id,
             "available": True,
-            "rmse_mm": math.sqrt(squared / 4.0),
-            "max_error_mm": max(errors),
+            "prediction_rmse_mm": math.sqrt(squared / 4.0),
+            "max_prediction_error_mm": max(errors),
         })
 
     if not total_count:
-        return {"available": False, "reason": "교차검증 계산에 성공한 마커가 없습니다",
+        return {"available": False, "reason": "겹침 마커 하나 제외 확인 계산에 성공한 마커가 없습니다",
                 "held_out": held_out}
     return {
         "available": True,
         "held_out": held_out,
-        "rmse_mm": math.sqrt(total_squared / total_count),
-        "max_error_mm": maximum_error,
+        "prediction_rmse_mm": math.sqrt(total_squared / total_count),
+        "max_prediction_error_mm": maximum_error,
     }
 
 
@@ -901,7 +901,7 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
     for source_index, source_stream_id in enumerate(streams):
         for destination_stream_id in streams[source_index + 1:]:
             try:
-                transform, common_ids, pair_rmse = align_local_channel(
+                transform, common_ids, overlap_join_rmse = align_local_channel(
                     stream_results[source_stream_id], stream_corners[source_stream_id],
                     stream_results[destination_stream_id], stream_corners[destination_stream_id])
             except ValueError as error:
@@ -917,21 +917,21 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
                         stream_corners[source_stream_id][marker_id],
                         stream_corners[destination_stream_id][marker_id]):
                     source_points.append(transform_point(
-                        stream_results[source_stream_id]["H_pixel_to_world"], source))
+                        stream_results[source_stream_id]["H_camera_pixels_to_channel_map"], source))
                     destination_points.append(transform_point(
-                        stream_results[destination_stream_id]["H_pixel_to_world"], destination))
+                        stream_results[destination_stream_id]["H_camera_pixels_to_channel_map"], destination))
             edge = {
                 "source_stream_id": source_stream_id,
                 "destination_stream_id": destination_stream_id,
-                "transform_source_to_destination": transform,
+                "H_source_channel_map_to_destination_channel_map": transform,
                 "common_ids": common_ids,
                 "source_points": source_points,
                 "destination_points": destination_points,
-                "pair_rmse_mm": pair_rmse,
+                "overlap_join_rmse_mm": overlap_join_rmse,
                 # 모든 공통 마커를 맞춘 뒤, 마커 하나를 번갈아 제외해
                 # 그 위치를 예측하는 오차다. 정합 지점의 단순 적합 오차와
                 # 분리해 두어 맵 전체 일반화 상태를 따로 볼 수 있게 한다.
-                "cross_validation": cross_validate_marker_alignment(
+                "held_out_overlap_check": held_out_overlap_check(
                     stream_results[source_stream_id], stream_corners[source_stream_id],
                     stream_results[destination_stream_id], stream_corners[destination_stream_id],
                     common_ids),
@@ -964,13 +964,13 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
             ". 공통 마커가 충분한 연결을 추가하세요.")
 
     transforms = optimize_global_transforms(transforms, anchor_stream_id, edges)
-    global_squared = 0.0
-    global_count = 0
+    shared_map_squared = 0.0
+    shared_map_count = 0
     edge_results = []
-    cross_validation_edges = []
-    cross_validation_squared = 0.0
-    cross_validation_count = 0
-    cross_validation_maximum = 0.0
+    held_out_edges = []
+    held_out_squared = 0.0
+    held_out_count = 0
+    held_out_maximum = 0.0
     for edge in edges:
         squared = 0.0
         for source, destination in zip(edge["source_points"], edge["destination_points"]):
@@ -979,59 +979,60 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
             squared += ((source_world["x"] - destination_world["x"]) ** 2 +
                         (source_world["y"] - destination_world["y"]) ** 2)
         edge_rmse = math.sqrt(squared / len(edge["source_points"]))
-        global_squared += squared
-        global_count += len(edge["source_points"])
+        shared_map_squared += squared
+        shared_map_count += len(edge["source_points"])
         edge_results.append({
             "stream_ids": [edge["source_stream_id"], edge["destination_stream_id"]],
+            "H_source_channel_map_to_destination_channel_map": edge["H_source_channel_map_to_destination_channel_map"],
             "common_marker_ids": edge["common_ids"],
-            "pair_rmse_mm": edge["pair_rmse_mm"],
-            "global_rmse_mm": edge_rmse,
-            "cross_validation": edge["cross_validation"],
+            "overlap_join_rmse_mm": edge["overlap_join_rmse_mm"],
+            "shared_map_overlap_rmse_mm": edge_rmse,
+            "held_out_overlap_check": edge["held_out_overlap_check"],
         })
-        cross_validation = edge["cross_validation"]
-        cross_validation_edges.append({
+        held_out = edge["held_out_overlap_check"]
+        held_out_edges.append({
             "stream_ids": [edge["source_stream_id"], edge["destination_stream_id"]],
             "common_marker_ids": edge["common_ids"],
-            "available": cross_validation.get("available", False),
-            "reason": cross_validation.get("reason"),
-            "held_out": cross_validation.get("held_out", []),
-            "rmse_mm": cross_validation.get("rmse_mm"),
-            "max_error_mm": cross_validation.get("max_error_mm"),
+            "available": held_out.get("available", False),
+            "reason": held_out.get("reason"),
+            "held_out": held_out.get("held_out", []),
+            "prediction_rmse_mm": held_out.get("prediction_rmse_mm"),
+            "max_prediction_error_mm": held_out.get("max_prediction_error_mm"),
         })
-        for held_out in cross_validation.get("held_out", []):
-            if not held_out.get("available"):
+        for held_out_marker in held_out.get("held_out", []):
+            if not held_out_marker.get("available"):
                 continue
-            # held_out.rmse_mm은 해당 마커 네 꼭짓점의 RMSE이므로,
+            # held_out_marker.prediction_rmse_mm은 해당 마커 네 꼭짓점의 RMSE이므로,
             # 전체 값으로 합칠 때 꼭짓점 4개를 다시 반영한다.
-            cross_validation_squared += float(held_out["rmse_mm"]) ** 2 * 4.0
-            cross_validation_count += 4
-            cross_validation_maximum = max(
-                cross_validation_maximum, float(held_out["max_error_mm"]))
+            held_out_squared += float(held_out_marker["prediction_rmse_mm"]) ** 2 * 4.0
+            held_out_count += 4
+            held_out_maximum = max(
+                held_out_maximum, float(held_out_marker["max_prediction_error_mm"]))
 
-    cross_validation_summary = {
-        "available": cross_validation_count > 0,
+    held_out_overlap_check_summary = {
+        "available": held_out_count > 0,
         "method": "leave_one_common_marker_out",
         # 여러 스트림 연결에 같은 ID가 반복되므로, 고유 ID 수가 아니라
         # '연결 × 제외 마커' 검증 사례 수로 명시한다.
-        "tested_case_count": cross_validation_count // 4,
-        "edge_count": len(cross_validation_edges),
-        "rmse_mm": math.sqrt(cross_validation_squared / cross_validation_count)
-        if cross_validation_count else None,
-        "max_error_mm": cross_validation_maximum if cross_validation_count else None,
-        "edges": cross_validation_edges,
+        "tested_case_count": held_out_count // 4,
+        "edge_count": len(held_out_edges),
+        "prediction_rmse_mm": math.sqrt(held_out_squared / held_out_count)
+        if held_out_count else None,
+        "max_prediction_error_mm": held_out_maximum if held_out_count else None,
+        "edges": held_out_edges,
         "meaning": "공통 마커 하나를 제외하고 나머지 마커로 제외된 위치를 예측한 오차입니다.",
         "limitation": "마커가 없는 맵 영역의 실제 오차를 직접 보증하지 않습니다. 전체 맵 검증에는 별도 체크 마커가 필요합니다.",
     }
-    if not cross_validation_count:
-        cross_validation_summary["reason"] = (
-            "교차검증을 계산할 수 있는 연결이 없습니다. "
+    if not held_out_count:
+        held_out_overlap_check_summary["reason"] = (
+            "겹침 마커 하나 제외 확인을 계산할 수 있는 연결이 없습니다. "
             "연결마다 공통 마커가 최소 4개 필요합니다.")
 
     # 모든 스트림에서 같은 ID의 네 꼭짓점이 전체 맵에서 얼마나 일치하는지
     # 수치로 검증할 수 있도록 마커별 상세 오차를 만든다.
     marker_world_points = {}
     for stream_id in streams:
-        local_h = stream_results[stream_id]["H_pixel_to_world"]
+        local_h = stream_results[stream_id]["H_camera_pixels_to_channel_map"]
         for marker_id, corners in stream_corners[stream_id].items():
             world_corners = [transform_point(transforms[stream_id],
                                               transform_point(local_h, point))
@@ -1078,13 +1079,13 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
                 "stream_id": value["stream_id"],
                 "center_mm": value["center"],
                 "corners_mm": value["corners"],
-                "corner_errors_mm": corner_errors,
-                "corner_rmse_mm": math.sqrt(corner_squared / 4.0),
+                "corner_disagreements_mm": corner_errors,
+                "corner_disagreement_rmse_mm": math.sqrt(corner_squared / 4.0),
                 "edge_lengths_mm": edge_lengths,
                 "orientation_deg": math.degrees(math.atan2(
                     value["corners"][1]["y"] - value["corners"][0]["y"],
                     value["corners"][1]["x"] - value["corners"][0]["x"])),
-                "center_error_mm": math.hypot(
+                "center_disagreement_mm": math.hypot(
                     value["center"]["x"] - consensus_center["x"],
                     value["center"]["y"] - consensus_center["y"]),
             })
@@ -1093,12 +1094,12 @@ def align_all_streams(stream_results, stream_corners, anchor_stream_id):
             "consensus_center_mm": consensus_center,
             "consensus_corners_mm": consensus_corners,
             "stream_count": len(values),
-            "corner_rmse_mm": math.sqrt(marker_squared / (len(values) * 4)),
-            "max_corner_error_mm": maximum_error,
+            "corner_disagreement_rmse_mm": math.sqrt(marker_squared / (len(values) * 4)),
+            "max_corner_disagreement_mm": maximum_error,
             "streams": stream_values,
         })
     return transforms, edge_results, skipped_pairs, (
-        math.sqrt(global_squared / global_count) if global_count else 0.0), verification_markers, cross_validation_summary
+        math.sqrt(shared_map_squared / shared_map_count) if shared_map_count else 0.0), verification_markers, held_out_overlap_check_summary
 
 
 def camera_urls(channel_id=1, profile_override=None, camera_entry=None):
@@ -1691,14 +1692,14 @@ class Handler(BaseHTTPRequestHandler):
                 alignment_file = job_dir / "rtsp-alignment.json"
                 if alignment_file.is_file():
                     alignment = json.loads(alignment_file.read_text(encoding="utf-8"))
-                    value["H_rtsp_pixel_to_capture"] = alignment["H_source_to_destination"]
-                    value["H_rtsp_pixel_to_world"] = multiply_homographies(
-                        value["H_capture_pixel_to_world"], alignment["H_source_to_destination"])
+                    value["H_rtsp_pixel_to_capture"] = alignment["H_source_camera_pixels_to_destination_camera_pixels"]
+                    value["H_rtsp_pixel_to_channel_map"] = multiply_homographies(
+                        value["H_camera_pixels_to_channel_map"], alignment["H_source_camera_pixels_to_destination_camera_pixels"])
                     value["rtsp_image_size"] = alignment["source_size"]
                     value["rtsp_alignment_rmse_px"] = alignment["rmse_px"]
                     value["rtsp_common_ids"] = alignment["common_ids"]
                 else:
-                    value["H_rtsp_pixel_to_world"] = None
+                    value["H_rtsp_pixel_to_channel_map"] = None
                     value["rtsp_alignment_error"] = "캡처 시 공통 마커가 부족해 RTSP 정합을 만들지 못했습니다."
                 value["capture_id"] = capture_id
                 capture_meta = json.loads((job_dir / "capture-meta.json").read_text(
@@ -1709,12 +1710,12 @@ class Handler(BaseHTTPRequestHandler):
                 value.setdefault("verification_region_world", None)
                 output_file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
                                        encoding="utf-8")
-                # 로컬 H 산출 단계에서는 운영 파일을 만들지 않는다.
+                # 카메라 화면 펴기 단계에서는 운영 파일을 만들지 않는다.
                 # 전체 스트림 정합이 끝난 최종 H만 /api/homography/global-align에서 저장한다.
                 storage = None
                 # 저장 함수에서 최소 운영 파일의 필수 필드를 이미 검증했다.
-                if value.get("world_unit") != "mm":
-                    raise ValueError("호모그래피 world_unit은 mm여야 합니다")
+                if value.get("map_unit") != "mm":
+                    raise ValueError("호모그래피 map_unit은 mm여야 합니다")
                 self.send_json({"ok": True, "result": value,
                     "artifact_url": f"/artifacts/{capture_id}/{output_name}",
                     "overlay_url": f"/artifacts/{capture_id}/{overlay_name}",
@@ -1725,7 +1726,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/homography/global-align":
             try:
-                # 캡처·로컬 H가 있는 모든 CCTV×채널을 한 번에 전체 맵에 올린다.
+                # 캡처·카메라 화면 펴기 결과가 있는 모든 CCTV×채널을 한 번에 전체 맵에 올린다.
                 stream_ids = sorted(set(str(value) for value in payload.get("stream_ids", [])))
                 if len(stream_ids) < 2:
                     raise ValueError("전체 스트림 정합에는 최소 두 스트림이 필요합니다")
@@ -1750,11 +1751,11 @@ class Handler(BaseHTTPRequestHandler):
                         output_name += ".json"
                     result_file = job_dir / output_name
                     if not result_file.is_file():
-                        raise ValueError(f"{stream_id}의 로컬 호모그래피가 없습니다")
+                        raise ValueError(f"{stream_id}의 카메라 화면 펴기 결과가 없습니다")
                     result = json.loads(result_file.read_text(encoding="utf-8"))
                     if result.get("capture_id") != capture_id:
                         raise ValueError(
-                            f"{stream_id} 캡처와 로컬 호모그래피의 capture_id가 다릅니다")
+                            f"{stream_id} 캡처와 카메라 화면 펴기 결과의 capture_id가 다릅니다")
                     if str(result.get("stream_id", "")) != stream_id:
                         raise ValueError(f"{stream_id} 캡처와 보정 결과의 stream_id가 다릅니다")
                     if result.get("camera_id") != configured[stream_id]["camera_id"] or \
@@ -1763,11 +1764,11 @@ class Handler(BaseHTTPRequestHandler):
                     stream_results[stream_id] = result
                     stream_corners[stream_id] = capture_marker_corners(job_dir, result)
 
-                transforms, edge_results, skipped_pairs, global_rmse, verification_markers, cross_validation = \
+                transforms, edge_results, skipped_pairs, shared_map_overlap_rmse, verification_markers, held_out_overlap_check = \
                     align_all_streams(stream_results, stream_corners, anchor_stream_id)
                 global_h = {
                     channel: matrix_multiply(
-                        transforms[channel], stream_results[channel]["H_pixel_to_world"])
+                        transforms[channel], stream_results[channel]["H_camera_pixels_to_channel_map"])
                     for channel in stream_ids
                 }
 
@@ -1776,11 +1777,11 @@ class Handler(BaseHTTPRequestHandler):
                     entry = configured[stream_id]
                     final_value = {
                         "schema_version": 2,
-                        "world_unit": "mm",
+                        "map_unit": "mm",
                         "camera_id": entry["camera_id"],
                         "stream_id": stream_id,
                         "channel": entry["channel"],
-                        "H_pixel_to_world": global_h[stream_id],
+                        "H_camera_pixels_to_shared_map": global_h[stream_id],
                         "image_size": stream_results[stream_id]["image_size"],
                     }
                     storage[stream_id] = save_operational_homography(final_value)
@@ -1800,7 +1801,7 @@ class Handler(BaseHTTPRequestHandler):
                         "capture_id": capture_id,
                         "image_url": f"/artifacts/{capture_id}/capture.jpg",
                         "image_size": stream_results[stream_id]["image_size"],
-                        "H_pixel_to_world": global_h[stream_id],
+                        "H_camera_pixels_to_shared_map": global_h[stream_id],
                         # 선택한 공통 마커를 원본 영상에서 같은 정사각형으로
                         # 다시 워핑할 수 있도록 보정된 픽셀 꼭짓점을 함께 전달한다.
                         "markers": {
@@ -1814,17 +1815,17 @@ class Handler(BaseHTTPRequestHandler):
                     "stream_ids": stream_ids,
                     "edge_results": edge_results,
                     "skipped_pairs": skipped_pairs,
-                    "global_rmse_mm": global_rmse,
-                    "cross_validation": cross_validation,
+                    "shared_map_overlap_rmse_mm": shared_map_overlap_rmse,
+                    "held_out_overlap_check": held_out_overlap_check,
                     "storage": storage,
-                    "local_to_global": {
+                    "H_channel_map_to_shared_map": {
                         stream_id: transforms[stream_id] for stream_id in stream_ids
                     },
                     "verification": {
                         "coordinate_frame": "BOARD_GLOBAL_MM",
                         "bounds_mm": verification_bounds,
                         "streams": verification_channels,
-                        "common_markers": verification_markers,
+                        "overlap_marker_consistency": verification_markers,
                     },
                 })
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:

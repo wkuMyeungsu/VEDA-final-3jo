@@ -52,7 +52,7 @@
     │   └── monitoring_app/                # :8000 운영 화면 placeholder
     ├── config/
     │   ├── safety/                        # 위험판정·MQTT·추적·출력 정책
-    │   ├── homography/                    # 보정 정책·카메라별 최종 H
+    │   ├── homography/                    # 보정 정책·카메라별 좌표계 변환 결과
     │   ├── camera_model.json              # 모델별 채널 수
     │   ├── camera_list.json               # 실제 CCTV 목록·RTSP 정보
     │   └── forklift_device_config.json    # 실제 단말 목록·marker 정보
@@ -102,7 +102,8 @@ CCTV RTSP application track
 ```text
 객체 메타데이터
   → stream_id별 픽셀 좌표
-  → H_pixel_to_world 변환(mm)
+  → 카메라 화면 → 전체 지도 변환
+    (`H_camera_pixels_to_shared_map`, mm)
   → 다중 카메라 사람 track
   → 단말별 최근접 사람 선택
   → CCTV·ToF·IMU 위험도 결합
@@ -248,7 +249,7 @@ CCTV 연결·복구:
 
 debug CSV의 기본 컬럼은 다음과 같다.
 
-- `detections.csv`: 수신 시각, 지연, 객체 ID·class·likelihood, bbox, world 좌표,
+- `detections.csv`: 수신 시각, 지연, 객체 ID·class·likelihood, bbox, shared map 좌표,
   `stream_id`, `camera_id`, `channel`
 - `aruco_markers.csv`: 수신 시각, 지연, channel, marker ID, `stream_id`,
   `camera_id`, 네 꼭짓점 좌표
@@ -396,7 +397,7 @@ python3 server/apps/main_app/tools/fake_sensor_uplink_sender.py \
 - 안전 정책: `config/safety/danger_judgment_config.json`
 - 시스템 정책: `config/safety/system_config.json`
 - 호모그래피 정책: `config/homography/homography_config.json`
-- 최종 H 결과: `config/homography/<camera_id>/`
+- 좌표계 변환 결과: `config/homography/<camera_id>/`
 - 샘플: 각 운영 JSON 옆의 `*.sample.json`
 
 ### 파일 역할
@@ -404,12 +405,12 @@ python3 server/apps/main_app/tools/fake_sensor_uplink_sender.py \
 | 영역 | 파일 | 주요 내용 |
 | --- | --- | --- |
 | 공통 | `camera_model.json` | 카메라 모델별 지원 채널 수 |
-| 공통 | `camera_list.json` | `camera_id`, model, RTSP·HTTP 주소, 채널·해상도·H 경로 |
+| 공통 | `camera_list.json` | `camera_id`, model, RTSP·HTTP 주소, 채널·해상도·좌표계 변환 결과 경로 |
 | 공통 | `forklift_device_config.json` | `terminal_id`, ArUco `marker_id`, 충돌 반경 |
 | 안전 | `danger_judgment_config.json` | 거리 임계값, 위험 단계, 센서 결합 정책 |
 | 안전 | `system_config.json` | MQTT, handover, tracking, sensor, stream, 저장 경로 |
-| 호모그래피 | `homography_config.json` | 마커 사전, 산출 정책, 전체 정합 정책 |
-| 호모그래피 | `homography/<camera_id>/*.json` | `H_pixel_to_world`, 단위 mm, 영상 해상도 |
+| 호모그래피 | `homography_config.json` | 마커 사전, 산출 정책, 겹침 구간 연결 정책 |
+| 호모그래피 | `homography/<camera_id>/*.json` | `H_camera_pixels_to_channel_map`, `H_channel_map_to_shared_map`, `H_camera_pixels_to_shared_map`, `H_channel_map_to_camera_pixels`, 단위 mm, 영상 해상도 |
 
 실제 장비 주소·비밀번호·운영 단말 목록은 샘플과 분리한다. 실제 CCTV·안전 정책
 JSON은 Git에 넣지 않고, 배포 대상에 별도로 설치한다.
@@ -418,7 +419,7 @@ JSON은 Git에 넣지 않고, 배포 대상에 별도로 설치한다.
 
 ```text
 --config-dir         server/config/safety   # 안전 정책·시스템 정책
---common-config-dir  server/config          # 카메라·단말·공통 H 경로
+--common-config-dir  server/config          # 카메라·단말·공통 좌표계 변환 결과 경로
 ```
 
 `forklift_device_config.json`은 `camera_list.json`과 같은 `server/config/` 레벨에
@@ -564,7 +565,7 @@ cmake --build server/apps/homography_app/processing/build -j2
 ctest --test-dir server/apps/homography_app/processing/build --output-on-failure
 ```
 
-전체 CCTV×채널 정합에 대한 Python 전역 정합 테스트는 서버 CMake configure 시
+전체 CCTV×채널의 공유 지도 정합에 대한 Python 테스트는 서버 CMake configure 시
 Python interpreter가 발견되면 기본 CTest에 포함된다.
 
 ## 운영
@@ -576,7 +577,7 @@ Python interpreter가 발견되면 기본 CTest에 포함된다.
 - 브로커·서버·웹 앱 상태 확인
 - 로그·DB·CSV 보관 정책
 - 운영 설정 권한
-- 카메라·H 파일·단말 등록 점검
+- 카메라·좌표계 변환 파일·단말 등록 점검
 
 ### 배포
 
@@ -629,7 +630,7 @@ sudo systemctl status monitoring-app.service --no-pager
 
 서버 기동 직후 다음 항목을 순서대로 확인한다.
 
-- `CONFIG`: 카메라·채널·H·단말이 제외되지 않았는지
+- `CONFIG`: 카메라·채널·좌표계 변환·단말이 제외되지 않았는지
 - `STORAGE`: `events.db`와 `server.log`가 열렸는지
 - `SENSOR`: `forklift/sensor/+` 구독이 완료됐는지
 - `CCTV`: 각 `stream_id` 최초 연결이 성공했는지
@@ -639,7 +640,7 @@ sudo systemctl status monitoring-app.service --no-pager
 ### 운영 점검
 
 - 실제 JSON과 카메라 비밀번호는 샘플 파일과 분리하고 권한을 제한한다.
-- `camera_list.json`의 모든 활성 채널에 유효한 RTSP URL과 H 파일이 있어야 한다.
+- `camera_list.json`의 모든 활성 채널에 유효한 RTSP URL과 좌표계 변환 파일이 있어야 한다.
 - `camera_model.json`의 채널 수와 `camera_list.json`의 채널 목록을 일치시킨다.
 - `forklift_device_config.json`의 `terminal_id`와 단말이 발행하는 센서 토픽 suffix를
   일치시킨다.

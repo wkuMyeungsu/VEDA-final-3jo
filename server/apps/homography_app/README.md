@@ -48,7 +48,7 @@ apps/homography_app/
 브라우저
   → web/ HTTP UI·API
   → processing/ homography_tool
-  → ArUco 검출·local H·전체 정합
+  → ArUco 검출·카메라 화면 펴기·겹침 구간 연결
   → server/config/homography/CAM_*/ 운영 H
   → main safety server
 ```
@@ -60,21 +60,21 @@ apps/homography_app/
 - 스트림 선택: `camera_id`와 `channel`을 조합한 `stream_id`
 - 캡처: RTSP preview와 고해상도 snapshot을 함께 확보
 - marker 검출: ID·꼭짓점·영상 크기 저장
-- local H: 실제 marker 크기와 방향을 이용한 pixel→world 변환
-- 전체 정합: 공통 marker 연결 그래프를 이용한 CCTV×채널 정합
-- 검증: global RMSE, 공통 marker, 교차검증 결과 확인
-- 운영 반영: 전체 정합 완료 시에만 최종 H를 원자적으로 저장
+- 카메라 화면 펴기: 실제 marker 크기와 방향을 이용한 카메라 픽셀→채널 지도 변환
+- 겹침 구간 연결: 공통 marker 연결 그래프를 이용한 채널 지도→공유 지도 변환
+- 검증: 마커 모양 오차, 겹침 맞춤 오차, 겹침 마커 하나 제외 확인
+- 운영 반영: 겹침 구간 연결 완료 시에만 최종 H를 원자적으로 저장
 
 ### 상세
 
 1. `CCTV · CH` 스트림을 선택하고 캡처한다.
 2. 검출된 ArUco 꼭짓점을 확인하고 필요한 경우 화면에서 보정한다.
-3. marker 한 변의 실제 길이(mm)를 입력해 해당 채널의 local H를 산출한다.
+3. marker 한 변의 실제 길이(mm)를 입력해 해당 채널의 카메라 화면을 편다.
 4. 모든 참여 스트림에 대해 같은 작업을 반복한다.
 5. 공통 marker가 최소 개수 이상이고 전체 스트림이 연결되어 있는지 확인한다.
-6. anchor stream을 선택해 전체 정합을 실행한다.
-7. global RMSE와 교차검증 결과를 확인한다.
-8. 전체 정합이 성공한 경우에만 운영 H 파일이 갱신된다.
+6. anchor stream을 선택해 겹침 구간 연결을 실행한다.
+7. 마커 모양 오차, 겹침 맞춤 오차, 겹침 마커 하나 제외 확인을 확인한다.
+8. 겹침 구간 연결이 성공한 경우에만 운영 H 파일이 갱신된다.
 
 고정 격자 좌표, X/Y 기준선, 보드의 사전 좌표는 사용하지 않는다. marker ID,
 검출된 네 꼭짓점, 실제 크기와 방향을 대응점으로 사용한다. 공통 marker가 한
@@ -119,16 +119,16 @@ server/config/homography/CAM_01/homography_result_cam01_ch03_mm.json
 ```json
 {
   "schema_version": 2,
-  "world_unit": "mm",
+  "map_unit": "mm",
   "camera_id": "CAM_01",
   "stream_id": "CAM_01_CH_03",
   "channel": 3,
-  "H_pixel_to_world": [[...], [...], [...]],
+  "H_camera_pixels_to_shared_map": [[...], [...], [...]],
   "image_size": {"width": 2592, "height": 1520}
 }
 ```
 
-local H, marker 검출 결과, RMSE와 capture ID는 작업 디렉터리에 임시 보관한다.
+카메라 화면 펴기 결과, marker 검출 결과, 마커 모양 오차와 capture ID는 작업 디렉터리에 임시 보관한다.
 최종 H만 공용 `config/homography/CAM_*`에 저장하며, 안전 서버는 이 파일을
 직접 읽어 실시간 좌표를 변환한다.
 
@@ -168,8 +168,8 @@ systemd unit의 `User`, `WorkingDirectory`, `HOMOGRAPHY_TOOL`, 설정 경로는
 
 ### 목록
 
-- 전역 정합: 연결 그래프, 공통 marker, global RMSE, 교차검증
-- 처리 엔진 단위 테스트: marker·local H·정합 계산
+- 겹침 구간 연결: 연결 그래프, 공통 marker, 겹침 맞춤 오차, 겹침 마커 하나 제외 확인
+- 처리 엔진 단위 테스트: marker·카메라 화면 펴기·정합 계산
 - 웹 통합 테스트: 임시 설정·capture 결과·운영 H 저장
 
 ### 명령
@@ -195,7 +195,7 @@ QT_QPA_PLATFORM=offscreen \
 
 - 자유 배치 ArUco marker 지원
 - CCTV×채널 전체 정합 지원
-- 최종 H의 `world_unit=mm` 검증
+- 최종 H의 `map_unit=mm` 검증
 - 독립 체크포인트 기반 전역 정합 테스트
 - 렌즈 왜곡 보정: 미적용
 

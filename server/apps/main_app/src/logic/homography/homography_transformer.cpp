@@ -15,21 +15,21 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path, int exp
     if (!input) throw std::runtime_error("파일을 찾을 수 없음");
     json root;
     input >> root;
-    if (root.at("world_unit").get<std::string>() != "mm") throw std::runtime_error("world_unit은 mm여야 함");
+    if (root.at("map_unit").get<std::string>() != "mm") throw std::runtime_error("map_unit은 mm여야 함");
     const auto& size = root.at("image_size");
     const int width = size.at("width").get<int>();
     const int height = size.at("height").get<int>();
     if (width != expected_width || height != expected_height) throw std::runtime_error("보정 해상도와 설정 해상도가 다름");
-    const auto& matrix = root.at("H_pixel_to_world");
-    if (!matrix.is_array() || matrix.size() != 3) throw std::runtime_error("H_pixel_to_world는 3x3 행렬이어야 함");
+    const auto& matrix = root.at("H_camera_pixels_to_shared_map");
+    if (!matrix.is_array() || matrix.size() != 3) throw std::runtime_error("H_camera_pixels_to_shared_map는 3x3 행렬이어야 함");
     HomographyTransformer::StreamHomography result;
     result.image_width_px = width;
     result.image_height_px = height;
     for (int row = 0; row < 3; ++row) {
-        if (!matrix.at(row).is_array() || matrix.at(row).size() != 3) throw std::runtime_error("H_pixel_to_world는 3x3 행렬이어야 함");
+        if (!matrix.at(row).is_array() || matrix.at(row).size() != 3) throw std::runtime_error("H_camera_pixels_to_shared_map는 3x3 행렬이어야 함");
         for (int col = 0; col < 3; ++col) {
             const double v = matrix.at(row).at(col).get<double>();
-            if (!std::isfinite(v)) throw std::runtime_error("H_pixel_to_world에 NaN 또는 Inf가 포함됨");
+            if (!std::isfinite(v)) throw std::runtime_error("H_camera_pixels_to_shared_map에 NaN 또는 Inf가 포함됨");
             result.h[row * 3 + col] = v;
         }
     }

@@ -269,21 +269,21 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             try {
                 std::ifstream h_input(h_path);
                 json h; h_input >> h;
-                if (h.at("world_unit").get<std::string>() != "mm")
-                    schema(h_path.string(), "world_unit은 mm여야 함");
+                if (h.at("map_unit").get<std::string>() != "mm")
+                    schema(h_path.string(), "map_unit은 mm여야 함");
                 if (h.contains("channel") && h.at("channel").get<int>() != s.channel)
                     schema(h_path.string(), "H 파일 내부 channel이 camera_list와 다름");
                 const auto& size = h.at("image_size");
                 if (size.at("width").get<int>() != s.image_width_px ||
                     size.at("height").get<int>() != s.image_height_px)
                     schema(h_path.string(), "H 해상도가 camera_list와 다름");
-                const auto& matrix = h.at("H_pixel_to_world");
+                const auto& matrix = h.at("H_camera_pixels_to_shared_map");
                 if (!matrix.is_array() || matrix.size() != 3)
-                    schema(h_path.string(), "H_pixel_to_world는 3x3이어야 함");
+                    schema(h_path.string(), "H_camera_pixels_to_shared_map는 3x3이어야 함");
                 for (const auto& row : matrix) {
-                    if (!row.is_array() || row.size() != 3) schema(h_path.string(), "H_pixel_to_world는 3x3이어야 함");
+                    if (!row.is_array() || row.size() != 3) schema(h_path.string(), "H_camera_pixels_to_shared_map는 3x3이어야 함");
                     for (const auto& cell : row) if (!cell.is_number() || !std::isfinite(cell.get<double>()))
-                        schema(h_path.string(), "H_pixel_to_world에 유효하지 않은 수가 있음");
+                        schema(h_path.string(), "H_camera_pixels_to_shared_map에 유효하지 않은 수가 있음");
                 }
             } catch (const SafetyServerConfigError& error) {
                 LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 규격 오류 - " + error.what() + ")");

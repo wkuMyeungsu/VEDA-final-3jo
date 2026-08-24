@@ -25,7 +25,7 @@ int main() {
     const auto write = [](const std::filesystem::path& path, const std::string& text) {
         std::ofstream(path) << text;
     };
-    const std::string h = R"({"world_unit":"mm","image_size":{"width":640,"height":480},"H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,1]]})";
+    const std::string h = R"({"map_unit":"mm","image_size":{"width":640,"height":480},"H_camera_pixels_to_shared_map":[[1,0,0],[0,1,0],[0,0,1]]})";
     write(multi_dir / "homography/CAM_01/homography_result_cam01_ch01_mm.json", h);
     write(multi_dir / "homography/CAM_02/homography_result_cam02_ch01_mm.json", h);
     write(multi_dir / "homography/CAM_02/homography_result_cam02_ch02_mm.json", h);

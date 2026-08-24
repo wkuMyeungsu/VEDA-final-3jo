@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "world_unit": "mm",
+  "map_unit": "mm",
   "channel": 3,
   "source_artifact": "/tmp/homography-results/5f312b193f984a65987fb2911cfd85d6/homography_manual.json",
-  "H_pixel_to_world": [
+  "H_camera_pixels_to_shared_map": [
     [0.3660082962662228, 0.028254535934075793, -651.4810663073883],
     [-0.0077259655544824205, -0.40175409356616903, 488.25114065028424],
     [-0.00008805736388571837, -0.00012439536054048328, 1.0]
@@ -12,7 +12,7 @@
     "width": 2592,
     "height": 1520
   },
-  "reproj_rmse_mm": 18.962528653156955,
+  "marker_shape_rmse_mm": 18.962528653156955,
   "reference_marker_id": 3,
   "used_ids": [10, 3, 14, 7, 11, 4, 15, 8, 1, 12, 5, 16, 9, 2, 13, 6, 0]
 }

@@ -5,7 +5,7 @@
 정합이 끝난 카메라별 최종 결과도 이 폴더 아래 `CAM_*` 디렉터리에 저장한다.
 
 현재 보정 방식은 마커를 격자에 맞춰 배치하지 않는다. 각 채널에서 검출한
-마커의 실제 정사각형 크기와 꼭짓점을 이용해 로컬 H를 만들고, 겹치는 공통
+마커의 실제 정사각형 크기와 꼭짓점을 이용해 카메라 화면을 펴고, 겹치는 공통
 마커의 ID와 방향으로 모든 CCTV×채널 스트림을 하나의 전체 맵 좌표계에 연결한다.
 
 ## 설정 파일
@@ -86,5 +86,5 @@
 server/config/homography/CAM_01/homography_result_cam01_ch<channel>_mm.json
 ```
 
-main 서버는 이 파일의 `H_pixel_to_world`, `image_size`, `stream_id`, `channel`을 읽어
+main 서버는 이 파일의 `H_camera_pixels_to_shared_map`, `image_size`, `stream_id`, `channel`을 읽어
 실시간 객체 좌표를 전체 맵 mm 좌표로 변환한다.

@@ -27,10 +27,10 @@ struct Config {
     } manual_solve;
 };
 
-// 수동 산출 결과. world와 rmse는 mm 단위.
+// 수동 산출 결과. 채널 지도와 오차는 mm 단위.
 struct ManualSolveResult {
-    cv::Mat h_pixel_to_world;
-    cv::Mat h_world_to_pixel;
+    cv::Mat h_camera_pixels_to_channel_map;
+    cv::Mat h_channel_map_to_camera_pixels;
     int detected = 0;
     int used = 0;
     int inliers = 0;
@@ -50,7 +50,7 @@ struct ManualSolveResult {
         double x_mm = 0.0;
         double y_mm = 0.0;
         double rotation_deg = 0.0;
-        double square_error_mm = 0.0;
+        double marker_shape_error_mm = 0.0;
     };
     std::vector<MarkerPose> markers;
 };

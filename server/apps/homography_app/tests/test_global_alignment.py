@@ -121,7 +121,7 @@ def _make_stream_fixture():
         5: (500, 350),
         6: (180, 1120),
     }
-    # global -> 각 스트림의 로컬 평면 좌표. 실제 카메라별 로컬 H가
+    # shared map -> 각 스트림의 채널 평면 지도 좌표. 실제 카메라별 채널 지도 H가
     # 서로 다른 원점·방향을 갖는 상황을 의도적으로 만든다.
     local_frames = {
         "STREAM_A": _identity(),
@@ -170,7 +170,7 @@ def _make_stream_fixture():
             "stream_id": stream_id,
             "camera_id": "CAM_TEST",
             "channel": 1,
-            "H_pixel_to_world": local_from_pixel,
+            "H_camera_pixels_to_channel_map": local_from_pixel,
             "image_size": {"width": 2400, "height": 1600},
         }
         corners = {}
@@ -194,7 +194,7 @@ class GlobalAlignmentTests(unittest.TestCase):
         """사용 마커 밖의 체크 포인트도 BOARD 좌표로 돌아와야 한다."""
         stream_results, stream_corners, _, local_frames, pixel_frames = \
             _make_stream_fixture()
-        transforms, edge_results, skipped_pairs, global_rmse, _, cross_validation = \
+        transforms, edge_results, skipped_pairs, shared_map_overlap_rmse, _, held_out_overlap_check = \
             SERVER.align_all_streams(stream_results, stream_corners, "STREAM_A")
 
         self.assertEqual(len(transforms), 3)
@@ -203,8 +203,8 @@ class GlobalAlignmentTests(unittest.TestCase):
         self.assertTrue(any(set(edge["stream_ids"]) == {"STREAM_B", "STREAM_C"}
                             for edge in edge_results))
         self.assertTrue(skipped_pairs, "직접 연결되지 않은 A-C 쌍이 기록되어야 함")
-        self.assertLess(global_rmse, 0.01)
-        self.assertTrue(cross_validation["available"])
+        self.assertLess(shared_map_overlap_rmse, 0.01)
+        self.assertTrue(held_out_overlap_check["available"])
 
         # 이 점들은 어떤 마커의 네 꼭짓점에도 포함되지 않는다.
         check_points = [
@@ -214,7 +214,7 @@ class GlobalAlignmentTests(unittest.TestCase):
         for stream_id in stream_results:
             global_h = SERVER.matrix_multiply(
                 transforms[stream_id],
-                stream_results[stream_id]["H_pixel_to_world"],
+                stream_results[stream_id]["H_camera_pixels_to_channel_map"],
             )
             for expected in check_points:
                 local = _apply(local_frames[stream_id], expected)
@@ -254,7 +254,7 @@ class GlobalAlignmentTests(unittest.TestCase):
         for stream_id in stream_results:
             global_h = SERVER.matrix_multiply(
                 transforms[stream_id],
-                stream_results[stream_id]["H_pixel_to_world"],
+                stream_results[stream_id]["H_camera_pixels_to_channel_map"],
             )
             for expected in check_points:
                 local = _apply(local_frames[stream_id], expected)
@@ -267,19 +267,19 @@ class GlobalAlignmentTests(unittest.TestCase):
                     f"{stream_id} 노이즈 상황 체크 포인트 오차가 큼: {expected}",
                 )
 
-    def test_bad_common_marker_is_exposed_by_cross_validation(self):
-        """잘못된 공통 마커는 낮은 적합 RMSE와 달리 교차검증에서 드러난다."""
+    def test_bad_common_marker_is_exposed_by_held_out_overlap_check(self):
+        """잘못된 공통 마커는 낮은 적합 RMSE와 달리 제외 확인에서 드러난다."""
         stream_results, stream_corners, _, _, _ = _make_stream_fixture()
         for point in stream_corners["STREAM_B"][2]:
             point["x"] += 80.0
             point["y"] -= 55.0
 
-        _, _, _, global_rmse, _, cross_validation = SERVER.align_all_streams(
+        _, _, _, shared_map_overlap_rmse, _, held_out_overlap_check = SERVER.align_all_streams(
             stream_results, stream_corners, "STREAM_A")
         # 모든 점을 억지로 맞춘 적합 RMSE만 보면 오차가 작아 보일 수 있다.
-        self.assertLess(global_rmse, 10.0)
-        self.assertTrue(cross_validation["available"])
-        self.assertGreater(cross_validation["max_error_mm"], 20.0)
+        self.assertLess(shared_map_overlap_rmse, 10.0)
+        self.assertTrue(held_out_overlap_check["available"])
+        self.assertGreater(held_out_overlap_check["max_prediction_error_mm"], 20.0)
 
     def test_collinear_common_markers_are_rejected(self):
         """공통 마커가 한 직선이면 projective 정합을 허용하지 않는다."""
@@ -293,7 +293,7 @@ class GlobalAlignmentTests(unittest.TestCase):
         results = {
             stream_id: {
                 "stream_id": stream_id,
-                "H_pixel_to_world": _identity(),
+                "H_camera_pixels_to_channel_map": _identity(),
                 "image_size": {"width": 2000, "height": 1200},
             }
             for stream_id in corners
@@ -317,13 +317,13 @@ class GlobalAlignmentTests(unittest.TestCase):
             for stream_id, values in stream_corners.items()
         }
         # A-B는 1,2,3만 남아도 연결되지만, B-C는 3,4,5,6으로 연결된다.
-        transforms, _, _, global_rmse, _, _ = SERVER.align_all_streams(
+        transforms, _, _, shared_map_overlap_rmse, _, _ = SERVER.align_all_streams(
             stream_results, fit_corners, "STREAM_A")
-        self.assertLess(global_rmse, 0.1)
+        self.assertLess(shared_map_overlap_rmse, 0.1)
 
         for stream_id in ("STREAM_A", "STREAM_B"):
             global_h = SERVER.matrix_multiply(
-                transforms[stream_id], stream_results[stream_id]["H_pixel_to_world"])
+                transforms[stream_id], stream_results[stream_id]["H_camera_pixels_to_channel_map"])
             world_corners = [_square(markers[held_out_id])[index]
                              for index in range(4)]
             for expected_point in world_corners:

@@ -363,8 +363,8 @@ ManualSolveResult solve_square_markers(
     h = optimize_homography(h, used, side_mm, reference, options,
                             &nonlinear_iterations);
     result.iterations += nonlinear_iterations;
-    result.h_pixel_to_world = h;
-    result.h_world_to_pixel = h.inv();
+    result.h_camera_pixels_to_channel_map = h;
+    result.h_channel_map_to_camera_pixels = h.inv();
     result.used = static_cast<int>(used.size());
     result.inliers = result.used * 4;
     double total = 0.0;
@@ -402,7 +402,7 @@ ManualSolveResult solve_square_markers(
         std::sqrt(measurement_sum / options.measurements.size());
     const double suspect_gate = std::max(2.0, side_mm * 0.03);
     for (const auto& marker : result.markers)
-        if (marker.square_error_mm > suspect_gate) result.suspicious_ids.push_back(marker.id);
+        if (marker.marker_shape_error_mm > suspect_gate) result.suspicious_ids.push_back(marker.id);
     return result;
 }
 

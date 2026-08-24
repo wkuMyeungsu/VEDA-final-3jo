@@ -76,16 +76,16 @@ void test_irregular_square_calibration() {
     for (const auto& marker : result.markers) {
         const auto found = std::find_if(observations.begin(), observations.end(),
             [&](const auto& value) { return value.id == marker.id; });
-        const auto recovered = project(found->corners, result.h_pixel_to_world);
+        const auto recovered = project(found->corners, result.h_camera_pixels_to_channel_map);
         for (int edge = 0; edge < 4; ++edge)
             expect_near(cv::norm(recovered[(edge + 1) % 4] - recovered[edge]), side,
                         1.5, "recovered marker side");
     }
     const auto changed_reference = homography::solve_square_markers(observations, side, 22, {});
-    const cv::Point2f a = project(observations[1].corners, result.h_pixel_to_world)[0];
-    const cv::Point2f b = project(observations[3].corners, result.h_pixel_to_world)[0];
-    const cv::Point2f c = project(observations[1].corners, changed_reference.h_pixel_to_world)[0];
-    const cv::Point2f d = project(observations[3].corners, changed_reference.h_pixel_to_world)[0];
+    const cv::Point2f a = project(observations[1].corners, result.h_camera_pixels_to_channel_map)[0];
+    const cv::Point2f b = project(observations[3].corners, result.h_camera_pixels_to_channel_map)[0];
+    const cv::Point2f c = project(observations[1].corners, changed_reference.h_camera_pixels_to_channel_map)[0];
+    const cv::Point2f d = project(observations[3].corners, changed_reference.h_camera_pixels_to_channel_map)[0];
     expect_near(cv::norm(a - b), cv::norm(c - d), 1.0,
                 "changing reference must preserve relative distance");
     const auto excluded = homography::solve_square_markers(observations, side, 20, {22});
@@ -138,7 +138,7 @@ void test_free_markers_with_axis_and_distance_constraints() {
     expect(result.rmse_mm < 0.5,
            "free marker rotations must retain low square error (actual=" +
            std::to_string(result.rmse_mm) + ")");
-    const auto mapped_axes = project(axis_pixels, result.h_pixel_to_world);
+    const auto mapped_axes = project(axis_pixels, result.h_camera_pixels_to_channel_map);
     expect_near(cv::norm(mapped_axes[0]), 0.0, 0.05, "axis origin mapping");
     expect_near(cv::norm(mapped_axes[1] - cv::Point2f(360, 0)), 0.0, 0.05,
                 "X axis endpoint mapping");
@@ -217,7 +217,7 @@ void test_mirrored_axis_frame_is_reflection_invariant() {
     options.axes = {true, axis_pixels[0], axis_pixels[2], axis_pixels[1], 300.0, 360.0};
     const auto result = homography::solve_square_markers(
         observations, side, 40, {}, options);
-    const cv::Mat& h = result.h_pixel_to_world;
+    const cv::Mat& h = result.h_camera_pixels_to_channel_map;
     const double det = h.at<double>(0, 0) * h.at<double>(1, 1) -
                        h.at<double>(0, 1) * h.at<double>(1, 0);
     expect(det < 0.0,

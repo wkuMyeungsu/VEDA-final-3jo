@@ -61,9 +61,9 @@ CAM_02 + channel 1 → CAM_02_CH_01
 - preview·고해상도 캡처
 - ArUco marker 검출
 - marker 꼭짓점 보정
-- 채널별 local H 산출
-- 전체 CCTV×채널 global alignment
-- global RMSE·교차검증 확인
+- 채널별 카메라 화면 펴기
+- 전체 CCTV×채널 겹침 구간 연결
+- 겹침 맞춤 오차·겹침 마커 하나 제외 확인
 - verification region 저장
 
 ### 상세
@@ -72,13 +72,13 @@ CAM_02 + channel 1 → CAM_02_CH_01
 2. `선택 스트림 캡처`로 RTSP preview와 고해상도 이미지를 만든다.
 3. 검출된 marker ID와 네 꼭짓점을 확인한다.
 4. 오검출 코너가 있으면 화면에서 보정한다.
-5. marker 한 변의 실제 길이(mm)를 입력하고 local H를 산출한다.
-6. 참여하는 모든 스트림의 local H를 준비한다.
-7. anchor stream과 capture ID 목록을 선택해 전체 정합을 실행한다.
-8. global RMSE와 교차검증 결과를 확인한다.
-9. 전체 정합이 성공하면 `config/homography/<camera_id>/`에 최종 H가 저장된다.
+5. marker 한 변의 실제 길이(mm)를 입력하고 카메라 화면을 편다.
+6. 참여하는 모든 스트림의 카메라 화면 펴기 결과를 준비한다.
+7. anchor stream과 capture ID 목록을 선택해 겹침 구간 연결을 실행한다.
+8. 마커 모양 오차, 겹침 맞춤 오차, 겹침 마커 하나 제외 확인을 확인한다.
+9. 겹침 구간 연결이 성공하면 `config/homography/<camera_id>/`에 최종 H가 저장된다.
 
-local solve 단계에서는 운영 H를 갱신하지 않는다. 운영 파일은
+카메라 화면 펴기 단계에서는 운영 H를 갱신하지 않는다. 운영 파일은
 `/api/homography/global-align` 성공 시에만 저장된다.
 
 ## API
@@ -169,16 +169,16 @@ chmod 600 server/config/camera_list.json
 ```json
 {
   "schema_version": 2,
-  "world_unit": "mm",
+  "map_unit": "mm",
   "camera_id": "CAM_01",
   "stream_id": "CAM_01_CH_03",
   "channel": 3,
-  "H_pixel_to_world": [[...], [...], [...]],
+  "H_camera_pixels_to_shared_map": [[...], [...], [...]],
   "image_size": {"width": 2592, "height": 1520}
 }
 ```
 
-작업 결과는 임시 파일이며, TTL 정리 대상이다. 최종 H에 포함되지 않는 RMSE,
+작업 결과는 임시 파일이며, TTL 정리 대상이다. 최종 H에 포함되지 않는 마커 모양 오차,
 사용 marker, capture ID 등의 상세 결과도 작업 디렉터리와 API 응답에서 확인한다.
 
 ## 실행
@@ -225,7 +225,7 @@ unit 파일은 `server/deploy/systemd/homography-app.service`에 있다. 이 앱
 - C++ 처리 엔진 단위 테스트
 - 웹 전역 정합 테스트
 - 연결 그래프 단절·공통 marker 부족 검증
-- global RMSE·교차검증 검증
+- 겹침 맞춤 오차·겹침 마커 하나 제외 확인 검증
 
 ### 명령
 

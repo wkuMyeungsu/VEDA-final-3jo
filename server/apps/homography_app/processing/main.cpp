@@ -111,18 +111,17 @@ int solve_manual_command(int argc, char** argv) {
     for (const auto& marker : result.markers)
         marker_results.push_back({{"id", marker.id}, {"x_mm", marker.x_mm},
             {"y_mm", marker.y_mm}, {"rotation_deg", marker.rotation_deg},
-            {"square_error_mm", marker.square_error_mm}});
+            {"marker_shape_rmse_mm", marker.marker_shape_error_mm}});
     const json output_value = {
-        {"schema_version", 2}, {"ok", true}, {"world_unit", "mm"},
+        {"schema_version", 2}, {"ok", true}, {"map_unit", "mm"},
         {"marker_size_mm", layout.value("marker_size_mm", config.manual_solve.marker_size_mm)},
-        {"H_pixel_to_world", matrix_to_json(result.h_pixel_to_world)},
-        {"H_capture_pixel_to_world", matrix_to_json(result.h_pixel_to_world)},
-        {"H_world_to_pixel", matrix_to_json(result.h_world_to_pixel)},
+        {"H_camera_pixels_to_channel_map", matrix_to_json(result.h_camera_pixels_to_channel_map)},
+        {"H_channel_map_to_camera_pixels", matrix_to_json(result.h_channel_map_to_camera_pixels)},
         {"image_size", {{"width", image.cols}, {"height", image.rows}}},
         {"detected_marker_count", result.detected},
         {"used_marker_count", result.used},
         {"inlier_corner_count", result.inliers},
-        {"reproj_rmse_mm", result.rmse_mm},
+        {"marker_shape_rmse_mm", result.rmse_mm},
         {"axis_max_error_mm", result.axis_max_error_mm},
         {"measurement_rmse_mm", result.measurement_rmse_mm},
         {"measurement_errors_mm", result.measurement_errors_mm},
@@ -138,7 +137,7 @@ int solve_manual_command(int argc, char** argv) {
     if (!overlay_path.empty() && !cv::imwrite(overlay_path, overlay))
         throw std::runtime_error("cannot write overlay: " + overlay_path);
     std::cout << "solved markers=" << result.used
-              << ", RMSE=" << result.rmse_mm << " mm\n";
+              << ", marker-shape RMSE=" << result.rmse_mm << " mm\n";
     return 0;
 }
 
@@ -155,7 +154,7 @@ int align_markers_command(int argc, char** argv) {
     std::vector<int> common_ids;
     double rmse_px = 0.0;
     const cv::Mat h = align_marker_images(config, source, destination, &common_ids, &rmse_px);
-    const json value = {{"H_source_to_destination", matrix_to_json(h)},
+    const json value = {{"H_source_camera_pixels_to_destination_camera_pixels", matrix_to_json(h)},
         {"source_size", {{"width", source.cols}, {"height", source.rows}}},
         {"destination_size", {{"width", destination.cols}, {"height", destination.rows}}},
         {"common_ids", common_ids}, {"rmse_px", rmse_px}};

@@ -34,7 +34,7 @@ forklift::config::SafetyServerConfig configFor(const std::string& path) {
 
 int main() {
     TempFile valid("test_homography_mm.json",
-        R"({"world_unit":"mm","H_pixel_to_world":[[2,0,10],[0,3,20],[0,0,1]],"image_size":{"width":2592,"height":1520}})");
+        R"({"map_unit":"mm","H_camera_pixels_to_shared_map":[[2,0,10],[0,3,20],[0,0,1]],"image_size":{"width":2592,"height":1520}})");
     forklift::logic::HomographyTransformer transformer(configFor(valid.path()));
     const auto point = transformer.pixelToWorld("CAM_02_CH_01", {5.0, 7.0});
     check(point && point->x == 20.0 && point->y == 41.0, "정상 H로 좌표를 변환함");
@@ -43,17 +43,17 @@ int main() {
           "무한대 입력을 거부함");
 
     TempFile wrongUnit("test_homography_cm.json",
-        R"({"world_unit":"cm","H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,1]],"image_size":{"width":2592,"height":1520}})");
+        R"({"map_unit":"cm","H_camera_pixels_to_shared_map":[[1,0,0],[0,1,0],[0,0,1]],"image_size":{"width":2592,"height":1520}})");
     forklift::logic::HomographyTransformer unitRejected(configFor(wrongUnit.path()));
     check(!unitRejected.hasStream("CAM_02_CH_01") && !unitRejected.streamLoadErrors().empty(), "mm가 아닌 H를 거부함");
 
     TempFile wrongSize("test_homography_size.json",
-        R"({"world_unit":"mm","H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,1]],"image_size":{"width":800,"height":600}})");
+        R"({"map_unit":"mm","H_camera_pixels_to_shared_map":[[1,0,0],[0,1,0],[0,0,1]],"image_size":{"width":800,"height":600}})");
     forklift::logic::HomographyTransformer sizeRejected(configFor(wrongSize.path()));
     check(!sizeRejected.hasStream("CAM_02_CH_01"), "보정 해상도가 다른 H를 거부함");
 
     TempFile singular("test_homography_denominator.json",
-        R"({"world_unit":"mm","H_pixel_to_world":[[1,0,0],[0,1,0],[0,0,0]],"image_size":{"width":2592,"height":1520}})");
+        R"({"map_unit":"mm","H_camera_pixels_to_shared_map":[[1,0,0],[0,1,0],[0,0,0]],"image_size":{"width":2592,"height":1520}})");
     forklift::logic::HomographyTransformer denominatorGuard(configFor(singular.path()));
     check(!denominatorGuard.pixelToWorld("CAM_02_CH_01", {5.0, 7.0}), "동차좌표 분모가 0인 변환을 거부함");
 
