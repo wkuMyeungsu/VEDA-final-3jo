@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set "PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\Tools\mingw1310_64\bin;C:\Qt\6.11.0\mingw_64\bin;%PATH%"
+set "PATH=C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\Ninja;C:\Qt\Tools\mingw1310_64\bin;C:\Qt\6.11.0\mingw_64\bin;C:\Program Files\Mosquitto;C:\Program Files\gstreamer\1.0\mingw_x86_64\bin;%PATH%"
 
 cd /d "%~dp0forklift-device\qt"
 

@@ -2,7 +2,8 @@
 param(
     [switch]$BuildOnly,
     [string]$Camera = "CAM_01_CH_01",
-    [switch]$NoDemo
+    [switch]$NoDemo,
+    [switch]$Mock
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +41,9 @@ if (!(Test-Path $ExePath) -or $BuildOnly) {
 $ArgsList = @()
 if (!$NoDemo) {
     $ArgsList += "--demo"
+}
+if ($Mock) {
+    $ArgsList += "--mock"
 }
 if ($Camera) {
     $ArgsList += "--camera"
