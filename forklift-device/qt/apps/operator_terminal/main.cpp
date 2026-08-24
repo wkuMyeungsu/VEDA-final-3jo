@@ -131,7 +131,10 @@ int main(int argc, char *argv[])
                                            QStringLiteral("dir"));               // - 설정 디렉토리 옵션 생성: 설정 경로 변경 파라미터 지정
     const QCommandLineOption cameraOption(QStringLiteral("camera"), QStringLiteral("Override the initial camera_id."),
                                            QStringLiteral("id"));                // - 초기 카메라 옵션 생성: 기본 카메라 ID 변경 파라미터 지정
+    const QCommandLineOption mockOption(QStringLiteral("mock"),
+                                         QStringLiteral("Use mock metadata source instead of MQTT.")); // - Mock 옵션 생성: 로컬 테스트용 모의 데이터 강제 지정
     parser.addOption(demoOption);                                                // - 데모 옵션 등록: 파서에 옵션 추가
+    parser.addOption(mockOption);                                                // - Mock 옵션 등록: 파서에 옵션 추가
     parser.addOption(configOption);                                              // - 설정 경로 옵션 등록: 파서에 옵션 추가
     parser.addOption(cameraOption);                                              // - 초기 카메라 옵션 등록: 파서에 옵션 추가
     parser.process(app);                                                         // - 명령줄 해석: 전달된 실행 옵션 분석
