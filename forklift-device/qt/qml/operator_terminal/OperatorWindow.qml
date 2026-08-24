@@ -35,7 +35,6 @@ ApplicationWindow {
         anchors.fill: parent
         cameraId: activeCamera.activeCameraId
         personBBox: activeCamera.personBBox
-        forkliftBBox: activeCamera.forkliftBBox
         distanceM: activeCamera.distanceM
         distanceValid: activeCamera.distanceValid
     }
@@ -43,6 +42,9 @@ ApplicationWindow {
     EdgeWarningFrame {
         anchors.fill: parent
         riskLevel: activeCamera.riskLevel
+        exceptionState: activeCamera.exceptionState
+        estopActive: activeCamera.estopActive
+        movementCutoffActive: activeCamera.movementCutoffActive
     }
 
     TopBar {

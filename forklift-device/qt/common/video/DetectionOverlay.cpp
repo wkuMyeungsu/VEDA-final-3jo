@@ -100,8 +100,7 @@ void DetectionOverlay::paint(QPainter *painter)
 
     if (m_personBBox.isValid())                                                // - 사람 검출 영역 확인: 유효한 사람 BBox 영역 그리기
         drawBox(painter, videoRect, m_personBBox, m_personColor, QStringLiteral("PERSON"));
-    if (m_forkliftBBox.isValid())                                              // - 지게차 검출 영역 확인: 유효한 지게차 BBox 영역 그리기
-        drawBox(painter, videoRect, m_forkliftBBox, m_forkliftColor, QStringLiteral("FORKLIFT"));
+    // - 지게차 운전자 단말에서는 운전자가 탑승 중이므로 지게차 BBox는 표시하지 않고 보행자(PERSON)만 표시함
 
     // 거리 라벨은 personBBox만 있으면 표시 -- forkliftBBox는 ArUco 연동을 안 하기로
     // 결정되어 앞으로도 계속 invalid라 조건에서 뺌. distanceM/distanceValid는 서버에서

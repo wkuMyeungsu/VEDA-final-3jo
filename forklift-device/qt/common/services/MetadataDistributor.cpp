@@ -135,6 +135,8 @@ void MetadataDistributor::handleSourceConnectionStateChanged(RiskTypes::Connecti
 
 void MetadataDistributor::handleLinkLost()
 {
+    if (m_demoSource != nullptr)                                               // - 데모 보호: 데모 패널(모의 주입) 활성 시 MQTT 무수신 타이머가 수동 조작을 덮어쓰지 않음
+        return;
     if (m_linkLostState)                                                       // - 이미 두절 상태면 팬아웃을 반복하지 않는다
         return;
     m_linkLostState = true;
