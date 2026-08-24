@@ -1324,11 +1324,19 @@ class Handler(BaseHTTPRequestHandler):
             # 외부 앱(캘리브레이션 등)이 최신 원본 프레임 한 장을 가져가는 경로다.
             try:
                 query = urlparse(self.path).query
-                stream_id = parse_qs(query).get("stream_id", [None])[0]
+                params = parse_qs(query)
+                stream_id = params.get("stream_id", [None])[0]
                 if not stream_id:
                     stream_id = next(iter(configured_stream_entries()))["stream_id"]
                 stream = requested_stream(stream_id)
-                body = CAMERA_STREAM.latest(stream["stream_id"], stream)
+                if params.get("snapshot", ["0"])[0] == "1":
+                    # 캘리브레이션 등 정밀 산출용: HTTP 스냅샷(profile1)의 원본 해상도 JPEG.
+                    connection, _, _, _ = camera_urls(stream["channel"], camera_entry=stream["camera"])
+                    timeout = float(connection.get("timeout_sec", 10))
+                    body = capture_high_resolution_frame(stream["channel"], timeout,
+                                                         camera_entry=stream["camera"])
+                else:
+                    body = CAMERA_STREAM.latest(stream["stream_id"], stream)
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
                 self.send_header("Cache-Control", "no-store")

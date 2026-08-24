@@ -80,7 +80,8 @@ $('#run').onclick = async () => {
 
 def grab_frame(job_dir, index):
     """호모그래피 앱 미리보기 경로에서 원본 프레임 한 장을 받는다."""
-    request = urllib.request.Request(f"{HOMOGRAPHY_BASE}/api/camera/frame")
+    # snapshot=1: RTSP 미리보기(800x600) 대신 HTTP 스냅샷(profile1)의 원본 2592x1520 JPEG.
+    request = urllib.request.Request(f"{HOMOGRAPHY_BASE}/api/camera/frame?snapshot=1")
     with urllib.request.urlopen(request, timeout=FRAME_TIMEOUT_SEC) as response:
         body = response.read()
     if len(body) < 1000:
