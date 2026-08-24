@@ -3,13 +3,29 @@ import Safety.Common
 
 // High-Intensity Soft Ambient Edge Light Glow:
 // Radiates a vivid, deep cinematic warning glow inward from all 4 edges of the screen.
-// Deep 80px gradient falloff with breathing pulse on Danger/Emergency for unmissable peripheral awareness.
+// Deep 80px gradient falloff with breathing pulse on Danger and high-intensity strobe on Emergency.
 Item {
     id: root
     property int riskLevel: 0
+    property int exceptionState: 0
+    property bool estopActive: false
+    property bool movementCutoffActive: false
 
-    readonly property color accent: Theme.riskColor(riskLevel)
-    readonly property bool isAlert: riskLevel > 0
+    readonly property bool isEmergency: riskLevel >= 3 || estopActive || movementCutoffActive || exceptionState === 3 /* EmergencyImpact */
+    readonly property bool isDanger: !isEmergency && (riskLevel === 2 || exceptionState === 4 /* NetworkDisconnected */ || exceptionState === 5 /* CameraDisconnected */)
+    readonly property bool isCaution: !isEmergency && !isDanger && (riskLevel === 1 || exceptionState > 0)
+    readonly property bool isAlert: isEmergency || isDanger || isCaution
+
+    readonly property color accent: {
+        if (isEmergency)
+            return Theme.colorEmergency
+        if (isDanger)
+            return Theme.colorDanger
+        if (isCaution)
+            return Theme.colorCaution
+        return Theme.colorSafe
+    }
+
     property real pulseFactor: 1.0
 
     visible: opacity > 0
@@ -18,7 +34,7 @@ Item {
     Behavior on opacity { NumberAnimation { duration: 200 } }
 
     readonly property int glowDepth: 80
-    readonly property real maxAlpha: riskLevel >= 2 ? 0.90 : 0.65
+    readonly property real maxAlpha: isEmergency ? 0.95 : (isDanger ? 0.85 : 0.65)
 
     // 1) 외곽 최외선 2px 네온 액센트 라인 (선명한 빛 테두리)
     Rectangle {
@@ -86,13 +102,25 @@ Item {
         }
     }
 
-    // Danger / Emergency 부드러운 숨쉬기(Breathing Light) 펄스 애니메이션
+    // Danger / Emergency 부드러운 숨쉬기 및 비상 점멸(Pulse) 애니메이션
     SequentialAnimation {
-        running: root.riskLevel >= 2
+        running: root.isDanger || root.isEmergency
         loops: Animation.Infinite
         onStopped: root.pulseFactor = 1.0
 
-        NumberAnimation { target: root; property: "pulseFactor"; to: 0.40; duration: 380; easing.type: Easing.InOutSine }
-        NumberAnimation { target: root; property: "pulseFactor"; to: 1.0; duration: 380; easing.type: Easing.InOutSine }
+        NumberAnimation {
+            target: root
+            property: "pulseFactor"
+            to: root.isEmergency ? 0.20 : 0.40
+            duration: root.isEmergency ? 220 : 380
+            easing.type: Easing.InOutSine
+        }
+        NumberAnimation {
+            target: root
+            property: "pulseFactor"
+            to: 1.0
+            duration: root.isEmergency ? 220 : 380
+            easing.type: Easing.InOutSine
+        }
     }
 }
