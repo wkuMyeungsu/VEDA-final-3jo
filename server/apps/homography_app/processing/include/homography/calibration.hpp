@@ -16,6 +16,17 @@ void detect_marker_corners(const Config& config, const cv::Mat& image,
                            std::vector<std::vector<cv::Point2f>>& corners,
                            std::vector<int>& ids);
 
+// ChArUco 보드 사진 여러 장에서 카메라 내부 파라미터(K, 왜곡계수)를 산출함.
+struct CameraIntrinsics {
+    cv::Mat camera_matrix;
+    cv::Mat dist_coeffs;
+    double reprojection_rmse_px = 0.0;
+    int frames_used = 0;
+};
+
+CameraIntrinsics calibrate_camera(const Config& config,
+                                  const std::vector<std::string>& image_paths);
+
 // layout의 x_mm/y_mm은 좌상단 위치. marker_size_mm로 네 코너 확장함.
 // overlay가 있으면 입력 영상 크기의 진단 이미지 생성함.
 ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,

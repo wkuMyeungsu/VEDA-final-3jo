@@ -3,10 +3,16 @@
 #include "homography/json.hpp"
 #include "homography/render.hpp"
 
+#include <opencv2/aruco.hpp>
+#include <opencv2/aruco/charuco.hpp>
 #include <opencv2/calib3d.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <unistd.h>
+
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -229,7 +235,68 @@ void test_mirrored_axis_frame_is_reflection_invariant() {
            "mirrored frame must not flag every marker as suspicious");
 }
 
+// ChArUco 보드 평면을 여러 자세로 원근 왜곡해 촬영한 것처럼 만들고,
+// 알고 있는 내부 파라미터가 회수되는지 검증한다 (캘리브레이션의 핵심 계약).
+void test_calibrate_camera_recovers_known_intrinsics() {
+    auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+    auto board = cv::aruco::CharucoBoard::create(7, 5, 0.038f, 0.019f, dictionary);
+    cv::Mat flat;
+    board->draw(cv::Size(1120, 800), flat);
+
+    const cv::Mat k_true = (cv::Mat_<double>(3, 3) <<
+        2200.0, 0, 1296.0, 0, 2200.0, 760.0, 0, 0, 1);
+    const cv::Size view_size(2592, 1520);
+
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() /
+                                      ("charuco-calib-test-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(dir);
+    for (int pose = 0; pose < 9; ++pose) {
+        // 보드 평면(z=0)에 대한 자세: 거리와 기울기를 조금씩 바꿔 다양하게 둔다.
+        const double angle_x = -0.35 + 0.09 * pose;
+        const double angle_y = 0.30 - 0.075 * pose;
+        const double distance = 0.55 + 0.03 * (pose % 4);
+        cv::Mat rvec = (cv::Mat_<double>(3, 1) << angle_x, angle_y, 0.05 * pose);
+        cv::Mat tvec = (cv::Mat_<double>(3, 1) << 0.02 * pose - 0.06, -0.01 * pose,
+                        distance);
+
+        // 평면 호모그래피 H = K [r1 r2 t] 로 정면 이미지를 촬영 시점으로 눌러 담는다.
+        cv::Mat rotation;
+        cv::Rodrigues(rvec, rotation);
+        cv::Mat columns = (cv::Mat_<double>(3, 3) <<
+            rotation.at<double>(0, 0), rotation.at<double>(0, 1), tvec.at<double>(0),
+            rotation.at<double>(1, 0), rotation.at<double>(1, 1), tvec.at<double>(1),
+            rotation.at<double>(2, 0), rotation.at<double>(2, 1), tvec.at<double>(2));
+        // 보드 이미지 픽셀 -> 물리 좌표(m) 스케일을 곱해야 warpPerspective 입력이 된다.
+        const double pixel_per_m =
+            static_cast<double>(flat.cols) / (7 * 0.038);
+        cv::Mat meter_to_pixel = (cv::Mat_<double>(3, 3) <<
+            1.0 / pixel_per_m, 0, 0, 0, 1.0 / pixel_per_m, 0, 0, 0, 1);
+        cv::Mat homography = k_true * columns * meter_to_pixel;
+        cv::Mat view;
+        cv::warpPerspective(flat, view, homography, view_size,
+                            cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255, 255, 255));
+        cv::imwrite((dir / ("view-" + std::to_string(pose) + ".jpg")).string(), view);
+    }
+
+    std::vector<std::string> paths;
+    for (const auto& entry : std::filesystem::directory_iterator(dir))
+        paths.push_back(entry.path().string());
+    const homography::CameraIntrinsics result =
+        homography::calibrate_camera(test_config(), paths);
+    std::filesystem::remove_all(dir);
+
+    expect(result.frames_used >= 6, "합성 화면 대부분에서 보드 코너가 검출되어야 함");
+    expect(result.reprojection_rmse_px < 1.5, "재투영 오차가 픽셀 미만 수준");
+    expect_near(result.camera_matrix.at<double>(0, 0), 2200.0, 2200.0 * 0.05,
+                "초점거리 fx 회수");
+    expect_near(result.camera_matrix.at<double>(1, 1), 2200.0, 2200.0 * 0.05,
+                "초점거리 fy 회수");
+    expect_near(result.camera_matrix.at<double>(0, 2), 1296.0, 120.0, "주점 cx 회수");
+    expect_near(result.camera_matrix.at<double>(1, 2), 760.0, 120.0, "주점 cy 회수");
+}
+
 }  // namespace
+
 
 int main() {
     try {
@@ -238,7 +305,8 @@ int main() {
         test_free_markers_with_axis_and_distance_constraints();
         test_rtsp_capture_alignment();
         test_mirrored_axis_frame_is_reflection_invariant();
-        std::cout << "homography_unit_tests: 5 tests passed\n";
+        test_calibrate_camera_recovers_known_intrinsics();
+        std::cout << "homography_unit_tests: 6 tests passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "homography_unit_tests: FAILED: " << error.what() << '\n';

@@ -1209,6 +1209,9 @@ class CameraStream:
             self.sequences[stream_id] = self.sequences.get(stream_id, 0) + 1
             self.condition.notify_all()
 
+    def latest(self, stream_id, camera_entry=None, timeout=10):
+        return self.latest_packet(stream_id, camera_entry, timeout)[1]
+
     def latest_packet(self, stream_id, camera_entry=None, timeout=10, previous_sequence=None,
                       stop_event=None, activate=True):
         stream_id = str(stream_id)
@@ -1316,6 +1319,25 @@ class Handler(BaseHTTPRequestHandler):
                             "streams": stream_status_entries(),
                             "camera_models": CAMERA_MODELS.get("models", []),
                             "max_verification_streams": MAX_VERIFICATION_STREAMS})
+            return
+        if path == "/api/camera/frame":
+            # 외부 앱(캘리브레이션 등)이 최신 원본 프레임 한 장을 가져가는 경로다.
+            try:
+                query = urlparse(self.path).query
+                stream_id = parse_qs(query).get("stream_id", [None])[0]
+                if not stream_id:
+                    stream_id = next(iter(configured_stream_entries()))["stream_id"]
+                stream = requested_stream(stream_id)
+                body = CAMERA_STREAM.latest(stream["stream_id"], stream)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (OSError, urllib.error.URLError, subprocess.SubprocessError,
+                    RuntimeError, ValueError) as error:
+                self.send_json({"ok": False, "error": str(error)}, 502)
             return
         if path == "/" or path == "/index.html":
             self.serve_file(STATIC / "index.html", "text/html; charset=utf-8")

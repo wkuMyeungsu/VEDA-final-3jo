@@ -5,6 +5,7 @@
 #include "homography/render.hpp"
 
 #include <opencv2/aruco.hpp>
+#include <opencv2/aruco/charuco.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
@@ -141,6 +142,50 @@ int solve_manual_command(int argc, char** argv) {
     return 0;
 }
 
+// calibrate-intrinsics 명령으로 ChArUco 보드 사진들에서 카메라 내부 파라미터 산출함.
+// 산출물(K, 왜곡계수)은 호모그래피 앱의 undistort 전처리로 이어진다(후속 단계에서 연결).
+int calibrate_intrinsics_command(int argc, char** argv) {
+    const Config config = read_config(argument(argc, argv, "--config"));
+    const std::string images_dir = argument(argc, argv, "--images");
+    const std::string output = argument(argc, argv, "--output");
+    if (images_dir.empty() || output.empty())
+        throw std::runtime_error("calibrate-intrinsics requires --images and --output");
+
+    std::vector<std::string> files;
+    for (const auto& entry : fs::directory_iterator(images_dir)) {
+        std::string extension = entry.path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        if (extension == ".jpg" || extension == ".jpeg" || extension == ".png")
+            files.push_back(entry.path().string());
+    }
+    std::sort(files.begin(), files.end());
+    const CameraIntrinsics result = calibrate_camera(config, files);
+
+    json matrix = json::array();
+    for (int row = 0; row < result.camera_matrix.rows; ++row)
+        matrix.push_back({result.camera_matrix.at<double>(row, 0),
+                          result.camera_matrix.at<double>(row, 1),
+                          result.camera_matrix.at<double>(row, 2)});
+    json coefficients = json::array();
+    for (int index = 0; index < result.dist_coeffs.total(); ++index)
+        coefficients.push_back(result.dist_coeffs.at<double>(index));
+    const json value = {
+        {"schema_version", 1}, {"ok", true},
+        {"board", {{"dictionary", config.dictionary},
+                   {"squares", {7, 5}}, {"square_mm", 38.0}, {"marker_mm", 19.0}}},
+        {"frames_used", result.frames_used},
+        {"reprojection_rmse_px", result.reprojection_rmse_px},
+        {"camera_matrix", matrix}, {"dist_coeffs", coefficients},
+        {"created_utc", utc_now()}};
+    std::ofstream output_file(output);
+    if (!output_file) throw std::runtime_error("cannot write output: " + output);
+    output_file << std::setw(2) << value << '\n';
+    std::cout << "calibrated views=" << result.frames_used
+              << ", reprojection RMSE=" << result.reprojection_rmse_px << " px\n";
+    return 0;
+}
+
 int align_markers_command(int argc, char** argv) {
     const Config config = read_config(argument(argc, argv, "--config"));
     const std::string source_path = argument(argc, argv, "--source");
@@ -180,6 +225,7 @@ int main(int argc, char** argv) {
         if (command == "gen-marker") return generate_marker(argc, argv);
         if (command == "solve-manual") return solve_manual_command(argc, argv);
         if (command == "align-markers") return align_markers_command(argc, argv);
+        if (command == "calibrate-intrinsics") return calibrate_intrinsics_command(argc, argv);
         print_usage();
         return 1;
     } catch (const std::exception& error) {

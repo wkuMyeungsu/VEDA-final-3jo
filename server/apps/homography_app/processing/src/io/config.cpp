@@ -22,6 +22,7 @@ commands:
                [--overlay IMAGE]
   align-markers --config CONFIG --source IMAGE --destination IMAGE
                 --output JSON
+  calibrate-intrinsics --config CONFIG --images DIR --output JSON
 )";
 }
 

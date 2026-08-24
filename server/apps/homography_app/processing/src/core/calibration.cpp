@@ -4,6 +4,8 @@
 #include "homography/json.hpp"
 
 #include <opencv2/aruco.hpp>
+#include <opencv2/aruco/charuco.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -395,6 +397,50 @@ ManualSolveResult solve_square_markers(
     const double suspect_gate = std::max(2.0, side_mm * 0.03);
     for (const auto& marker : result.markers)
         if (marker.marker_shape_error_mm > suspect_gate) result.suspicious_ids.push_back(marker.id);
+    return result;
+}
+
+CameraIntrinsics calibrate_camera(const Config& config,
+                                  const std::vector<std::string>& image_paths) {
+    // ponytail: 보드 규격은 지급된 실물 한 종(사전만 설정에서, 격자/크기는 상수).
+    // 다른 보드가 들어오면 그때 인자로 뽑아낸다.
+    constexpr int squares_x = 7, squares_y = 5;
+    constexpr float square_m = 0.038f, marker_m = 0.019f;
+    constexpr std::size_t kMinViews = 6;   // 그 아래는 왜곡 추정이 흔들린다.
+
+    auto board = cv::aruco::CharucoBoard::create(
+        squares_x, squares_y, square_m, marker_m, dictionary(config));
+
+    CameraIntrinsics result;
+    cv::Size image_size;
+    std::vector<std::vector<cv::Point2f>> all_corners;
+    std::vector<std::vector<int>> all_ids;
+    for (const auto& path : image_paths) {
+        const cv::Mat image = cv::imread(path);
+        if (image.empty()) throw std::runtime_error("cannot read image: " + path);
+        image_size = image.size();
+        std::vector<int> marker_ids;
+        std::vector<std::vector<cv::Point2f>> marker_corners, rejected;
+        cv::aruco::detectMarkers(image, board->dictionary, marker_corners, marker_ids);
+        if (marker_ids.empty()) continue;
+        std::vector<cv::Point2f> charuco_corners;
+        std::vector<int> charuco_ids;
+        if (cv::aruco::interpolateCornersCharuco(marker_corners, marker_ids, image, board,
+                                                 charuco_corners, charuco_ids) < 8)
+            continue;   // 코너가 너무 적으면 보드가 잘렸거나 흐릿한 화면이다.
+        all_corners.push_back(charuco_corners);
+        all_ids.push_back(charuco_ids);
+    }
+    if (all_corners.size() < kMinViews)
+        throw std::runtime_error("사용 가능한 보드 화면이 " +
+                                 std::to_string(all_corners.size()) + "장뿐입니다. 최소 " +
+                                 std::to_string(kMinViews) + "장을 모으고 다시 시도하세요");
+
+    std::vector<cv::Mat> rvecs, tvecs;
+    result.reprojection_rmse_px = cv::aruco::calibrateCameraCharuco(
+        all_corners, all_ids, board, image_size, result.camera_matrix,
+        result.dist_coeffs, rvecs, tvecs);
+    result.frames_used = static_cast<int>(all_corners.size());
     return result;
 }
 
