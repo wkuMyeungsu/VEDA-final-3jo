@@ -51,8 +51,13 @@ option(ENABLE_NETWORK_INTEGRATION_TESTS
        OFF)
 add_executable(test_sensor_uplink_receiver test_sensor_uplink_receiver.cpp)
 target_link_libraries(test_sensor_uplink_receiver PRIVATE server_network Threads::Threads)
+
+# 수신기(MQTT 캐시) -> SensorInput 융합 접착부. 브로커 필요 조건은 위와 동일.
+add_executable(test_network_sensor_reader test_network_sensor_reader.cpp)
+target_link_libraries(test_network_sensor_reader PRIVATE server_network Threads::Threads)
 if(ENABLE_NETWORK_INTEGRATION_TESTS)
     add_test(NAME sensor_uplink_receiver_integration_test COMMAND test_sensor_uplink_receiver)
+    add_test(NAME network_sensor_reader_integration_test COMMAND test_network_sensor_reader)
 endif()
 
 add_executable(test_assignment_publisher test_assignment_publisher.cpp)

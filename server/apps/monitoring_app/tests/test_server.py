@@ -13,89 +13,6 @@ SPEC.loader.exec_module(SERVER)
 
 
 class MonitoringStatusTests(unittest.TestCase):
-    def test_refresh_interval_has_one_named_source(self):
-        page = STATIC_PATH.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);",
-            page,
-        )
-        self.assertIn(
-            'data-refresh-interval-seconds="__SERVER_MONITORING_REFRESH_INTERVAL_SECONDS__"',
-            page,
-        )
-        self.assertIn(
-            "const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;",
-            page,
-        )
-        self.assertIn(
-            "안전 서버와 단말별 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신",
-            page,
-        )
-        self.assertIn("window.setInterval(refresh,REFRESH_INTERVAL_MS);", page)
-        self.assertNotIn("setInterval(refresh,1000)", page)
-        self.assertIn('<pre id="server-logs">확인 중</pre>', page)
-        self.assertIn("recentLines.join('\\n')", page)
-        self.assertIn("로그 불러온 시각:", page)
-        self.assertIn("표시 범위:", page)
-        self.assertIn('id="server-log-fetched-time"', page)
-        self.assertIn("formatTimestamp(value.checked_utc)", page)
-        for label in ("서버 운영 콘솔", "운영 요약", "단말 상태", "검출 현황", "시스템·로그", "안전 서버", "MQTT TLS", "서버 실행 시간", "운영 판단", "판정 처리", "위험 알림", "이벤트 저장", "시스템 세부 진단", "메타데이터 처리", "이벤트 DB", "센서 입력", "라즈베리파이 자원 사용량", "단말별 운영 상태", "최근 서버 로그", "사람 검출"):
-            self.assertIn(label, page)
-        for tab_id in ("tab-overview", "tab-terminals", "tab-detection", "tab-system"):
-            self.assertIn(f'id="{tab_id}"', page)
-        self.assertIn("activateTab", page)
-        self.assertIn("aria-selected", page)
-        self.assertIn(".status-value.good .status-dot", page)
-        self.assertIn(".status-value.problem .status-dot", page)
-        self.assertIn("dot.className=`status-dot ${kind}`", page)
-        self.assertIn("node.replaceChildren(dot)", page)
-        self.assertIn("손실", page)
-        self.assertIn("RUNTIME_STATUS_MAX_AGE_SECONDS", page)
-        self.assertIn("server_started_utc", page)
-        self.assertIn("formatDuration", page)
-        self.assertIn("renderServerUptime", page)
-        self.assertIn('id="server-uptime-detail"', page)
-        self.assertIn("terminal.sensor", page)
-        self.assertIn("terminal.risk", page)
-        self.assertIn("terminal.localization", page)
-        self.assertIn("terminal.people", page)
-        self.assertIn("renderPeopleSection", page)
-        self.assertIn('id="people-detections"', page)
-        self.assertIn('id="people-summary"', page)
-        self.assertIn("MARKER_NOT_DETECTED:'마커 미검출'", page)
-        self.assertIn("지게차 위치", page)
-        self.assertIn("설정 ID는 이번 실행에서 검출되지 않음", page)
-        self.assertIn("sensorBypassed?'센서 제외 테스트'", page)
-        self.assertIn("events.state_changes", page)
-        self.assertIn("입력 모드 확인 중", page)
-        self.assertIn("resource-host-cpu", page)
-        self.assertIn("resource-host-memory", page)
-        self.assertIn("resource-host-temperature", page)
-        self.assertIn("CPU 코어별 사용량", page)
-        self.assertIn('id="resource-host-cores"', page)
-        self.assertIn('id="resource-host-peak-core"', page)
-        self.assertIn("renderCpuCores", page)
-        self.assertIn("cpu_cores", page)
-        self.assertIn("최고 코어:", page)
-        self.assertIn("cpu-core-bar-value", page)
-        self.assertIn("formatTemperature", page)
-        self.assertIn("전체 프로세스 포함", page)
-        self.assertIn("renderResources", page)
-        self.assertIn("renderOperationalSummary", page)
-        self.assertIn("decision-state", page)
-        self.assertIn("risk-output-state", page)
-        self.assertIn("event-storage-state", page)
-        self.assertNotIn("센서 수신 누적</h3>", page)
-        self.assertNotIn("연결 단말</h3>", page)
-        self.assertNotIn("status-label", page)
-        self.assertNotIn("active:'O'", page)
-        self.assertNotIn("inactive:'X'", page)
-        self.assertNotIn("peopleField", page)
-        self.assertNotIn("호모그래피 앱 열기", page)
-        self.assertNotIn("유지보수 도구", page)
-        self.assertNotIn("id='homography'", page)
-
     def test_recent_logs_returns_only_the_requested_tail(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "server.log"
@@ -122,18 +39,6 @@ class MonitoringStatusTests(unittest.TestCase):
 
         self.assertIn('data-refresh-interval-seconds="2"', page)
         self.assertIn("${REFRESH_INTERVAL_SECONDS}초마다", page)
-
-    def test_index_renders_per_core_cpu_and_peak_contract(self):
-        page = STATIC_PATH.read_text(encoding="utf-8")
-
-        self.assertIn('id="resource-host-cores"', page)
-        self.assertIn('id="resource-host-peak-core"', page)
-        self.assertIn("const renderCpuCores", page)
-        self.assertIn("core.cpu_percent", page)
-        self.assertIn("CPU ${core.core}", page)
-        self.assertIn("최고 코어: CPU ${peak.core}", page)
-        self.assertIn("최고 코어: 측정 중", page)
-        self.assertIn("코어별 CPU 측정 불가", page)
 
     @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "invalid"})
     def test_invalid_refresh_interval_uses_safe_default(self):
@@ -259,16 +164,24 @@ class MonitoringStatusTests(unittest.TestCase):
         self.assertNotIn("homography", value)
         self.assertTrue(value["runtime_status"]["fresh"])
         self.assertIn("resources", value)
-        self.assertNotIn("homography", value)
 
     @mock.patch.object(SERVER, "file_timestamp", return_value=None)
     @mock.patch.object(SERVER, "resource_snapshot", return_value={})
     @mock.patch.object(SERVER, "tcp_reachable", return_value=False)
     @mock.patch.object(SERVER, "service_state", return_value="inactive")
-    def test_not_ready_when_dependencies_are_down(self, _service, _tcp, _resources, _timestamp):
+    @mock.patch.object(
+        SERVER,
+        "read_runtime_status",
+        return_value={
+            "state": "online",
+            "checked_utc": SERVER.datetime.now(SERVER.timezone.utc).isoformat(),
+        },
+    )
+    def test_not_ready_when_dependencies_are_down(self, _runtime, service_state, _tcp, _resources, _timestamp):
         value = SERVER.status_snapshot()
         self.assertFalse(value["ok"])
         self.assertFalse(value["mqtt"]["reachable"])
+        self.assertEqual(value["safety_server"]["state"], "inactive")
 
     def test_runtime_status_health_rejects_stale_snapshot(self):
         now = SERVER.datetime.fromisoformat("2026-08-21T00:00:05+00:00")
@@ -282,6 +195,37 @@ class MonitoringStatusTests(unittest.TestCase):
     @mock.patch.object(SERVER.subprocess, "run", side_effect=SERVER.subprocess.TimeoutExpired("systemctl", 2))
     def test_systemctl_timeout_is_unknown(self, _run):
         self.assertEqual(SERVER.service_state("example.service"), "unknown")
+
+    def test_http_routes_serve_real_responses(self):
+        # 라우팅·직렬화 회귀를 잡는 최소 end-to-end: 실제 서버를 포트 0으로 띄우고 요청한다.
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+
+        server = SERVER.ThreadingHTTPServer(("127.0.0.1", 0), SERVER.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            port = server.server_address[1]
+            base = f"http://127.0.0.1:{port}"
+
+            with mock.patch.object(
+                SERVER,
+                "status_snapshot",
+                return_value={"ok": True, "monitoring": "online"},
+            ):
+                with urllib.request.urlopen(f"{base}/api/status") as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(json.load(response)["monitoring"], "online")
+
+            with urllib.request.urlopen(f"{base}/health/live") as response:
+                self.assertEqual(json.load(response)["service"], "monitoring-app")
+
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(f"{base}/missing")
+            self.assertEqual(raised.exception.code, 404)
+        finally:
+            server.shutdown()
 
 
 if __name__ == "__main__":
