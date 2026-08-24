@@ -72,6 +72,10 @@ public:
     bool protocolErrorLatched() const { return m_protocolErrorLatched; }                                          // - 프로토콜 오류 누적 상태 조회
     bool timeoutErrorLatched() const { return m_timeoutErrorLatched; }                                            // - 타임아웃 오류 누적 상태 조회
 
+    Q_INVOKABLE void clearFpgaError();                                                                            // - FPGA 통신 오류(Sticky 플래그) 해제 명령
+    Q_INVOKABLE void runFpgaSelfTest(int mode);                                                                   // - FPGA 자가진단(0=STOP/1=LED/2=BUZZER/3=ALL) 실행 명령
+
+
 signals:
     void activeCameraIdChanged();                                                                                 // - 카메라 변경 알림: 활성 카메라 ID 변경 시 발생
     void metadataChanged();                                                                                       // - 메타데이터 변경 알림: 위험 수치 또는 영역 좌표 변경 시 발생

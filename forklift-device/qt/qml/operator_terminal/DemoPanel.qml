@@ -238,6 +238,86 @@ Rectangle {
                     }
                 }
             }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: Theme.colorBorder
+            }
+
+            Text {
+                text: "FPGA 안전 보드 점검 & 진단"
+                color: Theme.colorTextPrimary
+                font.pixelSize: Theme.typeSubheading.size
+                font.bold: true
+            }
+
+            Rectangle {
+                width: parent.width
+                implicitHeight: warningCol.implicitHeight + Theme.spacingSm * 2
+                color: Qt.rgba(1.0, 0.2, 0.2, 0.1)
+                border.color: Theme.colorDanger
+                border.width: Theme.borderWidthHairline
+                radius: Theme.radiusSm
+
+                Column {
+                    id: warningCol
+                    anchors.fill: parent
+                    anchors.margins: Theme.spacingSm
+                    spacing: Theme.spacingXs
+
+                    Text {
+                        text: "⚠️ 안전 주의"
+                        color: Theme.colorDanger
+                        font.bold: true
+                        font.pixelSize: Theme.typeCaption.size
+                    }
+                    Text {
+                        width: parent.width
+                        text: "비상정지(E-Stop) 및 전진 차단 래치는 FPGA 물리 리셋 버튼으로만 해제됩니다. (본 소프트웨어 기능으로 해제 불가)"
+                        color: Theme.colorTextSecondary
+                        font.pixelSize: Theme.typeCaption.size
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+
+            StyledButton {
+                width: parent.width
+                text: "FPGA 오류 플래그 해제 (CLEAR_ERROR)"
+                onClicked: activeCamera.clearFpgaError()
+            }
+
+            Text {
+                text: "FPGA 하드웨어 자가진단 (SELF_TEST)"
+                color: Theme.colorTextSecondary
+                font.pixelSize: Theme.typeCaption.size
+            }
+
+            StyledComboBox {
+                id: selfTestCombo
+                width: parent.width
+                model: ["0 = 정지 (STOP)", "1 = LED 패턴 점검", "2 = 부저 점검", "3 = 전체 점검 (ALL)"]
+                currentIndex: 3
+            }
+
+            Row {
+                width: parent.width
+                spacing: Theme.spacingXs
+
+                StyledButton {
+                    width: (parent.width - Theme.spacingXs) / 2
+                    text: "자가진단 시작"
+                    onClicked: activeCamera.runFpgaSelfTest(selfTestCombo.currentIndex)
+                }
+
+                StyledButton {
+                    width: (parent.width - Theme.spacingXs) / 2
+                    text: "진단 즉시 중지"
+                    onClicked: activeCamera.runFpgaSelfTest(0)
+                }
+            }
         }
     }
 }
+

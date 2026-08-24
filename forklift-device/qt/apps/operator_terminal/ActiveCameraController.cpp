@@ -9,6 +9,7 @@
 #include <QTimer>
 namespace {
 Q_LOGGING_CATEGORY(lcActiveCamera, "safety.activecamera")                  // - 로깅 카테고리 정의: 활성 카메라 제어 로그 분류용 이름 지정
+Q_LOGGING_CATEGORY(lcFpga, "safety.network.fpga")                          // - 로깅 카테고리 정의: FPGA 제어 및 진단 로그 분류용 이름 지정
 
 constexpr int kCameraLingerMs = 15000;                                     // - 이전 카메라 유예 시간: 바로 끄지 않고 이만큼 남겨둠 (파이 실측 오픈 1.1~1.5초라 되돌아올 때 재접속 비용이 커서 길게 잡음)
 
@@ -257,3 +258,24 @@ void ActiveCameraController::handleMetadataUpdated(const RiskMetadata &metadata)
     applyRiskToWarningDevice(metadata);                                    // - 경고 장치 갱신: 수신된 위험 수치 전달 (두절 시 송신 중단)
     emit metadataChanged();                                                // - 메타데이터 변경 신호 발생: UI 표시 정보 알림
 }
+
+void ActiveCameraController::clearFpgaError()
+{
+    if (m_warningDevice) {
+        qCInfo(lcFpga) << "clearing FPGA error latches via UI request";
+        m_warningDevice->sendClearError();
+    } else {
+        qCWarning(lcFpga) << "cannot clear FPGA error: warning device is null";
+    }
+}
+
+void ActiveCameraController::runFpgaSelfTest(int mode)
+{
+    if (m_warningDevice) {
+        qCInfo(lcFpga) << "running FPGA self-test mode" << mode << "via UI request";
+        m_warningDevice->sendSelfTest(mode);
+    } else {
+        qCWarning(lcFpga) << "cannot run FPGA self-test: warning device is null";
+    }
+}
+
