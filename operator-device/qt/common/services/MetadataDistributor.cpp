@@ -163,6 +163,8 @@ void MetadataDistributor::handleSourceConnectionStateChanged(RiskTypes::Connecti
 
 void MetadataDistributor::handleLinkLost()
 {
+    if (m_demoSource != nullptr)
+        return;
     if (m_linkLostState)
         return;
     m_linkLostState = true;

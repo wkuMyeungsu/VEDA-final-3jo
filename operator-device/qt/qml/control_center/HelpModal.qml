@@ -409,8 +409,8 @@ Rectangle {
                                 }
                                 Column {
                                     Layout.fillWidth: true; spacing: 2
-                                    Text { text: "3단계 : 비상 제동 및 구호 조치"; color: Theme.colorEmergency; font.pixelSize: 12; font.weight: Font.Bold }
-                                    Text { text: "지게차 비상정지(E-Stop) 발령 / 119 신고 및 사고 현장 화면 즉시 캡처 증적 보관"; color: Theme.colorTextSecondary; font.pixelSize: 11 }
+                                    Text { text: "3단계 : 비상 제동 확인 및 구호 조치"; color: Theme.colorEmergency; font.pixelSize: 12; font.weight: Font.Bold }
+                                    Text { text: "지게차 자동 비상제동 작동 확인 / 119 긴급 신고 및 사고 현장 화면 즉시 캡처 증적 보관"; color: Theme.colorTextSecondary; font.pixelSize: 11 }
                                 }
                             }
                         }
@@ -467,11 +467,11 @@ Rectangle {
                             }
                         }
 
-                        Text { text: "[시스템 및 센서 예외 상태 코드]"; color: Theme.colorAccent; font.pixelSize: 13; font.weight: Font.Bold }
+                        Text { text: "[시스템 및 센서 상태 코드]"; color: Theme.colorAccent; font.pixelSize: 13; font.weight: Font.Bold }
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 160
+                            height: 130
                             radius: Theme.radiusSm
                             color: Theme.colorSurface
                             border.width: 1
@@ -485,27 +485,22 @@ Rectangle {
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 140; height: 20; radius: 3; color: Qt.rgba(1, 1, 1, 0.05); Text { anchors.centerIn: parent; text: "DEAD_RECKONING"; color: Theme.colorAccent; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "네트워크/카메라 마커 음영 발생 시, 지게차 센서(IMU 추측항법)로 위치 추정"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "사각지대 진입 시 지게차 자체 센서로 위치 추정 중"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 140; height: 20; radius: 3; color: Qt.rgba(1, 1, 1, 0.05); Text { anchors.centerIn: parent; text: "SENSOR_FAULT"; color: Theme.colorCaution; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "지게차의 거리 센서(ToF/LiDAR) 또는 IMU 하드웨어 통신/신호 이상"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
-                                }
-                                RowLayout {
-                                    spacing: 8
-                                    Rectangle { width: 140; height: 20; radius: 3; color: Qt.rgba(1, 1, 1, 0.05); Text { anchors.centerIn: parent; text: "EMERGENCY_IMPACT"; color: Theme.colorDanger; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "지게차 가속도 센서에서 충돌 또는 급격한 충격 이벤트 감지"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "현장 센서 장치 일시적 신호 확인 필요"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 140; height: 20; radius: 3; color: Qt.rgba(1, 1, 1, 0.05); Text { anchors.centerIn: parent; text: "NETWORK_LOST"; color: Theme.colorDanger; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "지게차 단말기(TERM_01)와 MQTT 브로커 간 무선 네트워크 단절"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "지게차 단말기 무선 통신 일시 단절"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                                 RowLayout {
                                     spacing: 8
                                     Rectangle { width: 140; height: 20; radius: 3; color: Qt.rgba(1, 1, 1, 0.05); Text { anchors.centerIn: parent; text: "CAMERA_DISCONNECTED"; color: Theme.colorCaution; font.pixelSize: 10; font.weight: Font.Bold } }
-                                    Text { text: "CCTV RTSP 비디오 스트림 연결 실패 또는 영상 디코딩 중단"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
+                                    Text { text: "해당 채널 CCTV 영상 스트림 점검 필요"; color: Theme.colorTextPrimary; font.pixelSize: 11 }
                                 }
                             }
                         }
@@ -522,7 +517,7 @@ Rectangle {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 220
+                        height: 180
                         radius: Theme.radiusSm
                         color: Theme.colorSurface
                         border.width: 1
@@ -552,11 +547,6 @@ Rectangle {
                                 spacing: 12
                                 Rectangle { width: 80; height: 24; radius: 4; color: Qt.rgba(1, 1, 1, 0.08); border.color: Theme.colorBorderStrong; border.width: 1; Text { anchors.centerIn: parent; text: "Esc"; color: Theme.colorTextPrimary; font.weight: Font.Bold; font.pixelSize: 11 } }
                                 Text { text: "이전 단계 화면으로 뒤로가기"; color: Theme.colorTextPrimary; font.pixelSize: 12 }
-                            }
-                            RowLayout {
-                                spacing: 12
-                                Rectangle { width: 80; height: 24; radius: 4; color: Qt.rgba(1, 1, 1, 0.08); border.color: Theme.colorBorderStrong; border.width: 1; Text { anchors.centerIn: parent; text: "Ctrl+Shift+D"; color: Theme.colorAccent; font.weight: Font.Bold; font.pixelSize: 10 } }
-                                Text { text: "데모 시뮬레이터 패널 토글 (모의 위험 주입 및 테스트용)"; color: Theme.colorTextSecondary; font.pixelSize: 12 }
                             }
                         }
                     }

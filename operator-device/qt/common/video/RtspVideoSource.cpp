@@ -1,5 +1,6 @@
 #include "RtspVideoSource.h"
 #include <QLoggingCategory>
+#include <QRegularExpression>
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 #include <QTimer>
@@ -7,7 +8,14 @@
 namespace {
 Q_LOGGING_CATEGORY(lcRtsp, "safety.video.rtsp")
 
+QString maskPipelineString(const QString &text)
+{
+    static const QRegularExpression regex(QStringLiteral("rtsp://([^:@/\\s]+):([^@/\\s]+)@"));
+    return QString(text).replace(regex, QStringLiteral("rtsp://\\1:***@"));
+}
+
 // appsink("sink")에 새 프레임 도착 시 GStreamer가 호출 (GStreamer 스트리밍 스레드에서 실행)
+
 // 익명 네임스페이스의 자유 함수라 RtspVideoSource의 private 멤버에 직접 접근할 수 없어서,
 // 복사한 프레임을 public 진입점인 pushFrame()에 그대로 넘긴다. 큐잉/배압 처리는 그 안에서 담당.
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
@@ -74,8 +82,9 @@ void RtspVideoSource::start()
     GError *error = nullptr;
     m_pipeline = gst_parse_launch(description.constData(), &error);
     if (!m_pipeline || error) {
+        const QString errMsg = error ? QString::fromUtf8(error->message) : QStringLiteral("unknown error");
         qCWarning(lcRtsp) << "camera" << m_cameraId << "failed to build pipeline:"
-                           << (error ? error->message : "unknown error");
+                           << maskPipelineString(errMsg);
         if (error)
             g_error_free(error);
         m_pipeline = nullptr;

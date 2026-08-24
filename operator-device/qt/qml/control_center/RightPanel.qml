@@ -47,7 +47,7 @@ Rectangle {
 
                 Text {
                     anchors.centerIn: parent
-                    text: root.navDepth === 1 ? "SITE" : (root.navDepth === 2 ? "ZONE" : (root.navDepth === 3 ? "CAM" : "CH-AI"))
+                    text: root.navDepth === 1 ? "SITE" : (root.navDepth === 2 ? "ZONE" : (root.navDepth === 3 ? "CAM" : "STATUS"))
                     color: Theme.colorAccent
                     font.pixelSize: 10
                     font.weight: Font.Bold
@@ -62,7 +62,7 @@ Rectangle {
                     text: root.navDepth === 1 ? "사업장 전체 관제" 
                         : (root.navDepth === 2 ? root.selectedZoneId + " 구역 상세"
                         : (root.navDepth === 3 ? root.selectedCameraId + " 카메라 상세"
-                        : "채널 실시간 AI 정밀 분석"))
+                        : "채널 실시간 위험 상태"))
                     color: Theme.colorTextPrimary
                     font.pixelSize: 14
                     font.weight: Font.Bold
@@ -518,53 +518,7 @@ Rectangle {
                 }
             }
 
-            // 2) AI 객체 감지 실시간 상태
-            Rectangle {
-                Layout.fillWidth: true
-                height: 72
-                radius: Theme.radiusSm
-                color: Theme.colorSurface
-                border.width: 1
-                border.color: Theme.colorBorder
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 8
-
-                    // 보행자 상태
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: Theme.radiusXs
-                        color: Qt.rgba(1, 1, 1, 0.03)
-
-                        Column {
-                            anchors.centerIn: parent
-                            spacing: 3
-                            Text { text: "[작업자]"; color: Theme.colorTextSecondary; font.pixelSize: 11; anchors.horizontalCenter: parent.horizontalCenter }
-                            Text { text: "실시간 감지 중"; color: Theme.colorPersonBox; font.pixelSize: 12; font.weight: Font.Bold; anchors.horizontalCenter: parent.horizontalCenter }
-                        }
-                    }
-
-                    // 지게차 상태
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: Theme.radiusXs
-                        color: Qt.rgba(1, 1, 1, 0.03)
-
-                        Column {
-                            anchors.centerIn: parent
-                            spacing: 3
-                            Text { text: "[지게차]"; color: Theme.colorTextSecondary; font.pixelSize: 11; anchors.horizontalCenter: parent.horizontalCenter }
-                            Text { text: "동선 추적 중"; color: Theme.colorForkliftBox; font.pixelSize: 12; font.weight: Font.Bold; anchors.horizontalCenter: parent.horizontalCenter }
-                        }
-                    }
-                }
-            }
-
-            // 3) 최근 발생 이벤트 타임라인
+            // 2) 최근 발생 이벤트 타임라인
             Text {
                 text: "최근 이벤트 타임라인"
                 color: Theme.colorTextPrimary
