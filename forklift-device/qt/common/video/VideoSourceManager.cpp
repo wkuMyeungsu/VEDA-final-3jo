@@ -129,7 +129,7 @@ IVideoSource *VideoSourceManager::createSource(const CameraInfo &info)
     case VideoSourceType::LocalFile:                                           // - 파일 소스 처리: LocalFileVideoSource 객체 생성
         return new LocalFileVideoSource(logId, QUrl::fromLocalFile(info.localFilePath), this);
     case VideoSourceType::Rtsp:                                                // - RTSP 소스 처리: RtspVideoSource 객체 생성
-        return new RtspVideoSource(logId, QUrl(info.rtspUrl), this);
+        return new RtspVideoSource(logId, QUrl(info.rtspUrl), info.rtspLatencyMs, info.rtspProtocols, info.rtspDecoder, this);
     }
 
     qCWarning(lcVideoManager) << "unknown source type for camera" << info.cameraId << "-- falling back to mock"; // - 경고 로그: 정의되지 않은 유형 예외 처리

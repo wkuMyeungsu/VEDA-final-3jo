@@ -1,5 +1,6 @@
 #include "RtspVideoSource.h"
 #include <QLoggingCategory>
+#include <QRegularExpression>
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 #include <QTimer>
@@ -15,6 +16,12 @@ constexpr int kReconnectMaxDelayMs = 30000;                                    /
 // 부팅 직후 카메라가 이전 세션을 아직 정리 중인 경우가 많아, 첫 접속까지는 자주 두드리는 편이 낫다.
 constexpr int kInitialReconnectMaxDelayMs = 5000;                              // - 첫 접속 전 대기 상한 (5초): 시작 지연을 짧게 유지
 constexpr int kBusPollMs = 50;                                                 // - 버스 확인 주기 (50ms): 정지 요청에 늦어도 이만큼 안에 반응
+
+QString maskPipelineString(const QString &text)
+{
+    static const QRegularExpression regex(QStringLiteral("rtsp://([^:@/\\s]+):([^@/\\s]+)@"));
+    return QString(text).replace(regex, QStringLiteral("rtsp://\\1:***@"));
+}
 
 GstFlowReturn onNewSample(GstElement *appsink, gpointer userData)
 {
@@ -69,10 +76,18 @@ GstFlowReturn onNewMetadataSample(GstElement *appsink, gpointer userData)
 
 }
 
-RtspVideoSource::RtspVideoSource(QString cameraId, QUrl rtspUrl, QObject *parent)
+RtspVideoSource::RtspVideoSource(QString cameraId,
+                                 QUrl rtspUrl,
+                                 int latencyMs,
+                                 QString protocols,
+                                 QString decoder,
+                                 QObject *parent)
     : IVideoSource(parent)
     , m_cameraId(std::move(cameraId))                                           // - 카메라 ID 저장: 카메라 식별 문자열 보관
     , m_rtspUrl(std::move(rtspUrl))                                             // - RTSP URL 저장: 스트리밍 접속 주소 보관
+    , m_latencyMs(latencyMs)                                                    // - RTSP 지터버퍼 저장
+    , m_protocols(std::move(protocols))                                         // - RTSP 프로토콜 저장
+    , m_decoder(std::move(decoder))                                             // - RTSP 디코더 저장
 {
     // - 타이머를 멤버로 소유하면 start()를 다시 불러도 새로 생기지 않고 다시 시작될 뿐이라
     // - "타이머 1개 = 예약 최대 1건"이 보장됨 (기존 singleShot은 부를 때마다 예약이 쌓였음)
@@ -99,11 +114,46 @@ void RtspVideoSource::start()
     m_openClock.start();                                                        // - 오픈 시간 측정 시작: 첫 프레임까지 걸린 시간을 재기 위한 기준점
     m_firstFrameLogged = false;                                                 // - 기록 표시 초기화: 이번 구동의 첫 프레임 로그를 다시 남기도록 설정
 
+    // 파라미터 유효성 검증 및 기본값 폴백
+    QString effectiveProtocols = m_protocols.toLower();
+    if (effectiveProtocols != QStringLiteral("tcp") && effectiveProtocols != QStringLiteral("udp")) {
+        qCWarning(lcRtsp) << "camera" << m_cameraId << "invalid rtsp_protocols:" << m_protocols
+                          << "-- falling back to 'tcp'";
+        effectiveProtocols = QStringLiteral("tcp");
+    }
+
+    int effectiveLatency = m_latencyMs;
+    if (effectiveLatency < 0 || effectiveLatency > 10000) {
+        qCWarning(lcRtsp) << "camera" << m_cameraId << "invalid rtsp_latency_ms:" << m_latencyMs
+                          << "-- falling back to 100";
+        effectiveLatency = 100;
+    }
+
+    QString effectiveDecoder = m_decoder.trimmed();
+    if (effectiveDecoder.isEmpty()) {
+        effectiveDecoder = QStringLiteral("avdec_h264");
+    } else {
+        GstElementFactory *decFactory = gst_element_factory_find(effectiveDecoder.toUtf8().constData());
+        if (!decFactory) {
+            qCWarning(lcRtsp) << "camera" << m_cameraId << "decoder element" << effectiveDecoder
+                              << "not available -- falling back to 'avdec_h264'";
+            effectiveDecoder = QStringLiteral("avdec_h264");
+        } else {
+            gst_object_unref(decFactory);
+        }
+    }
+
     const QByteArray url = m_rtspUrl.toString().toUtf8();                       // - URL 문자열 변환: UTF-8 바이너리로 변환
-    QByteArray description = "rtspsrc name=src protocols=tcp latency=100 location=\"" + url + "\""
-        + " src. ! application/x-rtp,media=video,encoding-name=H264 !"
-          " rtph264depay ! h264parse ! avdec_h264 ! videoconvert !"
-          " video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true"; // - 파이프라인 문자열 생성: RTSP 영상 파이프라인 구성 (영상 브랜치는 항상 포함)
+    QByteArray description = QStringLiteral(
+        "rtspsrc name=src protocols=%1 latency=%2 location=\"%3\" "
+        "src. ! application/x-rtp,media=video,encoding-name=H264 ! "
+        "rtph264depay ! h264parse ! %4 ! videoconvert ! "
+        "video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true")
+        .arg(effectiveProtocols)
+        .arg(effectiveLatency)
+        .arg(QString::fromUtf8(url))
+        .arg(effectiveDecoder)
+        .toUtf8();                                                              // - 파이프라인 문자열 생성: RTSP 영상 파이프라인 구성
 
     // - 일부 배포판(라즈베리파이 OS 등)에 rtponvifmetadatadepay 미포함
     // - 없는 엘리먼트를 문자열에 넣으면 파싱 실패로 영상 브랜치까지 같이 죽음
@@ -117,17 +167,22 @@ void RtspVideoSource::start()
                            << "rtponvifmetadatadepay not available, ONVIF metadata disabled (video unaffected)"; // - 경고 로그: 메타데이터 비활성 기록, 영상은 정상 구동
     }
 
+    // 기동 시 실제 구성된 파이프라인 문자열 1회 정보 로그 출력 (자격증명 마스킹 적용)
+    qCInfo(lcRtsp) << "camera" << m_cameraId << "pipeline initialized:" << maskPipelineString(QString::fromUtf8(description));
+
     GError *error = nullptr;                                                    // - 에러 객체 생성: 파이프라인 생성 에러 보관용
     m_pipeline = gst_parse_launch(description.constData(), &error);             // - 파이프라인 생성: 문자열 기반 GStreamer 파이프라인 수립
     if (!m_pipeline || error) {                                                 // - 생성 검증: 파이프라인 생성 실패 시 에러 로그 출력 및 상태 변경
+        const QString errMsg = error ? QString::fromUtf8(error->message) : QStringLiteral("unknown error");
         qCWarning(lcRtsp) << "camera" << m_cameraId << "failed to build pipeline:"
-                           << (error ? error->message : "unknown error");
+                           << maskPipelineString(errMsg);
         if (error)
             g_error_free(error);                                                // - 에러 해제: 생성된 에러 메모리 반환
         m_pipeline = nullptr;                                                   // - 포인터 초기화: 파이프라인 포인터 해제
         setConnectionState(RiskTypes::ConnectionState::Disconnected);           // - 상태 갱신: 연결 상태를 '연결 끊김'으로 변경
         return;
     }
+
 
     GstElement *appsink = gst_bin_get_by_name(GST_BIN(m_pipeline), "sink");     // - 엘리먼트 추출: 영상 디코딩 출력용 appsink 획득
     g_signal_connect(appsink, "new-sample", G_CALLBACK(onNewSample), this);     // - 신호 연결: 새 프레임 도착 콜백 함수 연결

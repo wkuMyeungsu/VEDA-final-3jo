@@ -45,6 +45,9 @@ QVector<CameraInfo> ConfigLoader::parseCamerasJson(const QByteArray &jsonData)
         info.sourceType = videoSourceTypeFromString(obj.value(QStringLiteral("source_type")).toString());
         info.rtspUrl = obj.value(QStringLiteral("rtsp_url")).toString();
         info.localFilePath = obj.value(QStringLiteral("local_file_path")).toString();
+        info.rtspLatencyMs = obj.value(QStringLiteral("rtsp_latency_ms")).toInt(100);
+        info.rtspProtocols = obj.value(QStringLiteral("rtsp_protocols")).toString(QStringLiteral("tcp"));
+        info.rtspDecoder = obj.value(QStringLiteral("rtsp_decoder")).toString(QStringLiteral("avdec_h264"));
 
         if (info.cameraId.isEmpty() && !info.streamId.isEmpty()) {
             info.cameraId = info.streamId;

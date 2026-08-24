@@ -22,6 +22,10 @@ struct CameraInfo {
     VideoSourceType sourceType = VideoSourceType::Mock;                         // - 영상 소스 유형: 연결 방식 (기본값: Mock)
     QString rtspUrl;                                                            // - RTSP 주소: 네트워크 영상 스트리밍 URL
     QString localFilePath;                                                      // - 비디오 파일 경로: 로컬 영상 파일 저장 경로
+    int rtspLatencyMs = 100;                                                    // - RTSP 지터버퍼 (ms, 기본값: 100)
+    QString rtspProtocols = QStringLiteral("tcp");                             // - RTSP 전송 프로토콜 (tcp / udp, 기본값: tcp)
+    QString rtspDecoder = QStringLiteral("avdec_h264");                         // - RTSP 디코더 엘리먼트 (avdec_h264 / v4l2h264dec 등, 기본값: avdec_h264)
 
     QString effectiveId() const { return streamId.isEmpty() ? cameraId : streamId; }
 };
+

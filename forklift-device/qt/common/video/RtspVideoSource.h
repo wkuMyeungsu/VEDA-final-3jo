@@ -20,7 +20,12 @@ class RtspVideoSource : public IVideoSource
     Q_OBJECT
 
 public:
-    RtspVideoSource(QString cameraId, QUrl rtspUrl, QObject *parent = nullptr); // - 생성자: 카메라 ID, RTSP 주소, 부모 객체 지정 및 초기화
+    RtspVideoSource(QString cameraId,
+                    QUrl rtspUrl,
+                    int latencyMs = 100,
+                    QString protocols = QStringLiteral("tcp"),
+                    QString decoder = QStringLiteral("avdec_h264"),
+                    QObject *parent = nullptr); // - 생성자: 카메라 ID, RTSP 주소, 지터버퍼, 프로토콜, 디코더 지정
     ~RtspVideoSource() override;                                              // - 소멸자: 스레드 정지 및 파이프라인 리소스 해제
 
     void start() override;                                                     // - 재생 시작: 파이프라인 수립, 스트리밍 구동 및 감시 스레드 시작
@@ -40,9 +45,13 @@ private:
 
     QString m_cameraId;                                                        // - 카메라 ID: 카메라 식별자 보관
     QUrl m_rtspUrl;                                                            // - RTSP 주소: 스트리밍 접속 URL 보관
+    int m_latencyMs = 100;                                                     // - RTSP 지터버퍼 (ms)
+    QString m_protocols = QStringLiteral("tcp");                               // - RTSP 전송 프로토콜 (tcp / udp)
+    QString m_decoder = QStringLiteral("avdec_h264");                          // - RTSP 비디오 디코더 엘리먼트
 
     GstElement *m_pipeline = nullptr;                                          // - 파이프라인 포인터: GStreamer 파이프라인 객체 참조
     GstBus *m_bus = nullptr;                                                   // - 버스 포인터: GStreamer 이벤트 버스 객체 참조
+
 
     std::thread m_busThread;                                                   // - 감시 스레드: 상태 메시지 모니터링 전용 스레드
     std::atomic_bool m_stopRequested{false};                                   // - 루프 종료 신호: 버스 스레드에게만 쓰는 종료 플래그
