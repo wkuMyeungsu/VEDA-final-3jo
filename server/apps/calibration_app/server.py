@@ -11,6 +11,7 @@
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -53,12 +54,21 @@ PAGE = """<!doctype html>
 <html lang="ko"><meta charset="utf-8">
 <title>카메라 캘리브레이션</title>
 <style>
- body{font-family:system-ui,sans-serif;max-width:860px;margin:32px auto;padding:0 16px}
+ body{font-family:system-ui,sans-serif;max-width:960px;margin:32px auto;padding:0 16px}
  button{font-size:1rem;padding:10px 22px;margin-right:8px}
  button:disabled{opacity:.4}
  pre{background:#0b1724;color:#d7e5f2;padding:12px;overflow:auto;white-space:pre-wrap}
- img{max-width:100%;border:1px solid #ccd6e0;background:#eee;min-height:40px}
  .hint{color:#556} #count{font-weight:700}
+ .viewers{display:flex;gap:8px;margin-top:12px}
+ .viewer{flex:1;background:#000;border:1px solid #333;aspect-ratio:2592/1520;
+         display:flex;align-items:center;justify-content:center;position:relative}
+ .viewer img{max-width:100%;max-height:100%}
+ .viewer span{color:#5a6a7a;font-size:.9rem}
+ .viewer b{position:absolute;top:6px;left:8px;color:#cfe0f0;font-size:.85rem;z-index:1}
+ .thumbs{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+ .thumbs img{width:110px;height:64px;object-fit:cover;background:#000;
+             border:1px solid #444;cursor:pointer}
+ .thumbs img:hover{border-color:#8ab4e0}
 </style>
 <h1>카메라 캘리브레이션</h1>
 <p>
@@ -73,17 +83,15 @@ PAGE = """<!doctype html>
  <button id="run">캘리브레이션 실행</button>
  보드 인식 대상: <span id="count">0</span>장 <span id="status"></span>
 </p>
-<img id="preview" alt="마지막 캡처">
-<p class="hint" id="compare-title" hidden>왼쪽: 캡처 원본 · 오른쪽: 왜곡 보정 결과</p>
-<div style="display:flex;gap:8px">
- <img id="original" alt="" style="width:50%" hidden>
- <img id="undistorted" alt="왜곡 보정 미리보기" style="width:50%">
+<div class="viewers">
+ <div class="viewer"><b>마지막 캡처</b><img id="preview" alt=""><span id="preview-empty"></span></div>
+ <div class="viewer"><b>왜곡 보정 미리보기</b><img id="undistorted" alt=""><span>산출 후 결과가 표시됩니다</span></div>
 </div>
+<div class="thumbs" id="thumbs"></div>
 <pre id="result">결과가 여기 표시됩니다.</pre>
 <script>
 const $ = (sel) => document.querySelector(sel);
 const streamId = () => $('#stream').value;
-let loadedStream = null;   // 프리뷰/카운트를 어떤 스트림 기준으로 보여줬는지
 
 async function loadStreams() {
   const value = await (await fetch('/api/streams')).json();
@@ -91,14 +99,23 @@ async function loadStreams() {
     `<option value="${s.stream_id}">채널 ${s.channel} · ${s.camera_id} (${s.image_width_px}×${s.image_height_px})</option>`).join('');
   await refresh();
 }
-const refresh = async () => {
+
+async function refresh() {
   const sid = streamId();
   if (!sid) return;
   const value = await (await fetch(`/api/frames?stream_id=${encodeURIComponent(sid)}`)).json();
-  loadedStream = sid;
   $('#count').textContent = value.count;
+  // 수집 히스토리 썸네일. 사진을 클릭하면 마지막 캡처 뷰어로 크게 볼 수 있다.
+  $('#thumbs').innerHTML = (value.files || []).map((name) =>
+    `<img loading="lazy" src="/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(name)}"
+          title="${name}" onclick="$('#preview').src=this.src">`).join('');
+}
+
+$('#stream').onchange = async () => {
+  $('#preview').src = '';
+  await refresh();
 };
-$('#stream').onchange = refresh;
+
 $('#shot').onclick = async () => {
   $('#shot').disabled = true;
   try {
@@ -106,19 +123,19 @@ $('#shot').onclick = async () => {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({stream_id: streamId()})})).json();
     if (!value.ok) throw new Error(value.error || 'HTTP 오류');
-    $('#preview').src = 'data:image/jpeg;base64,' + value.image;
     await refresh();
   } catch (error) { $('#status').textContent = String(error); }
   finally { $('#shot').disabled = false; }
 };
+
 $('#reset').onclick = async () => {
   await fetch(`/api/frames?stream_id=${encodeURIComponent(streamId())}`, {method: 'DELETE'});
   $('#preview').src = '';
-  $('#original').hidden = true;
-  $('#compare-title').hidden = true;
+  $('#undistorted').src = '';
   $('#status').textContent = '';
   await refresh();
 };
+
 $('#run').onclick = async () => {
   $('#run').disabled = true;
   $('#status').textContent = '산출 중…';
@@ -133,9 +150,6 @@ $('#run').onclick = async () => {
     $('#result').textContent = JSON.stringify(r, null, 2);
     if (value.undistorted_image) {
       $('#undistorted').src = 'data:image/jpeg;base64,' + value.undistorted_image;
-      const lastShot = $('#preview').src;
-      if (lastShot) { $('#original').src = lastShot; $('#original').hidden = false; }
-      $('#compare-title').hidden = false;
     }
   } catch (error) {
     $('#status').textContent = '실패';
@@ -143,8 +157,7 @@ $('#run').onclick = async () => {
   } finally { $('#run').disabled = false; }
 };
 loadStreams();
-</script>
-"""
+</script>"""
 
 
 def grab_frame(stream_id):
@@ -199,7 +212,28 @@ class Handler(BaseHTTPRequestHandler):
             query = urlparse(self.path).query
             stream_id = parse_qs(query).get("stream_id", [""])[0]
             job_dir = session_dir(stream_id)
-            self.send_json({"ok": True, "count": len(list(job_dir.glob('*.jpg')))})
+            files = sorted(path.name for path in job_dir.glob("frame-*.jpg"))
+            self.send_json({"ok": True, "files": files})
+            return
+        if path == "/api/frames/photo":
+            query = parse_qs(urlparse(self.path).query)
+            stream_id = query.get("stream_id", [""])[0]
+            name = query.get("name", [""])[0]
+            # 경로 순회 방지: 수집기가 만든 frame-XXXX.jpg 이름만 허용한다.
+            if not re.fullmatch(r"frame-\d{3}\.jpg", name):
+                self.send_error(404)
+                return
+            photo = session_dir(stream_id) / name
+            if not photo.is_file():
+                self.send_error(404)
+                return
+            body = photo.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
             return
         self.send_error(404)
 
@@ -214,9 +248,9 @@ class Handler(BaseHTTPRequestHandler):
             job_dir = session_dir(stream_id)
             if action == "/api/frames":
                 image = grab_frame(stream_id)
+                del image
                 self.send_json({"ok": True,
-                                "count": len(list(job_dir.glob('*.jpg'))),
-                                "image": base64.b64encode(image).decode()})
+                                "count": len(list(job_dir.glob('*.jpg')))})
             elif action == "/api/calibrate":
                 captured = len(list(job_dir.glob('*.jpg')))
                 if captured == 0:
