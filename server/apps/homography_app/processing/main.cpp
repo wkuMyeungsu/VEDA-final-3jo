@@ -232,9 +232,15 @@ int main(int argc, char** argv) {
         return 1;
     }
     try {
-        // 설정 파일 옆의 camera_intrinsics.json이 있으면 렌즈 왜곡 보정을 켠다.
-        const fs::path intrinsics_path =
-            fs::path(argument(argc, argv, "--config")).parent_path() / "camera_intrinsics.json";
+        // 설정 파일 옆의 캘리브레이션 산출물이 있으면 렌즈 왜곡 보정을 켠다.
+        // 스트림 전용(camera_intrinsics_<stream_id>.json)을 우선하고 공용으로 폴백한다.
+        const std::string config_dir =
+            fs::path(argument(argc, argv, "--config")).parent_path().string();
+        const std::string stream_id = argument(argc, argv, "--stream-id");
+        fs::path intrinsics_path = fs::path(config_dir) / "camera_intrinsics.json";
+        if (!stream_id.empty() && fs::exists(fs::path(config_dir) /
+                                             ("camera_intrinsics_" + stream_id + ".json")))
+            intrinsics_path = fs::path(config_dir) / ("camera_intrinsics_" + stream_id + ".json");
         std::ifstream intrinsics_input(intrinsics_path);
         if (intrinsics_input) {
             const json value = json::parse(intrinsics_input);

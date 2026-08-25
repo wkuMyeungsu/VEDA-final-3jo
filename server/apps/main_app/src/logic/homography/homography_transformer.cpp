@@ -11,7 +11,42 @@ namespace forklift::logic {
 namespace {
 using nlohmann::json;
 
-HomographyTransformer::StreamHomography loadOne(const std::string& path, int expected_width, int expected_height) {
+std::pair<std::string, bool> findIntrinsicsFile(const std::string& stream_id,
+                                                const std::filesystem::path& homography_root) {
+    const std::string per_stream =
+        (homography_root / ("camera_intrinsics_" + stream_id + ".json")).string();
+    if (std::filesystem::exists(per_stream)) return {per_stream, true};
+    const std::string common = (homography_root / "camera_intrinsics.json").string();
+    if (std::filesystem::exists(common)) return {common, false};
+    return {};
+}
+
+bool loadIntrinsics(const std::string& path, HomographyTransformer::StreamHomography::Intrinsics& out) {
+    std::ifstream input(path);
+    if (!input) return false;
+    try {
+        const json value = json::parse(input);
+        out.fx = value.at("camera_matrix").at(0).at(0).get<double>();
+        out.fy = value.at("camera_matrix").at(1).at(1).get<double>();
+        out.cx = value.at("camera_matrix").at(0).at(2).get<double>();
+        out.cy = value.at("camera_matrix").at(1).at(2).get<double>();
+        const auto& coefficients = value.at("dist_coeffs");
+        out.k1 = coefficients.at(0).get<double>();
+        out.k2 = coefficients.at(1).get<double>();
+        out.p1 = coefficients.size() > 2 ? coefficients.at(2).get<double>() : 0.0;
+        out.p2 = coefficients.size() > 3 ? coefficients.at(3).get<double>() : 0.0;
+        out.k3 = coefficients.size() > 4 ? coefficients.at(4).get<double>() : 0.0;
+        out.valid = true;
+    } catch (const std::exception&) {
+        out.valid = false;
+    }
+    return out.valid;
+}
+
+HomographyTransformer::StreamHomography loadOne(const std::string& path,
+                                                int expected_width, int expected_height,
+                                                const std::filesystem::path& homography_root,
+                                                const std::string& stream_id) {
     std::ifstream input(path);
     if (!input) throw std::runtime_error("파일을 찾을 수 없음");
     json root;
@@ -27,6 +62,11 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path, int exp
     result.image_width_px = width;
     result.image_height_px = height;
     result.lens_undistorted = root.value("lens_undistorted", false);
+    if (result.lens_undistorted) {
+        // 스트림 전용 산출물을 우선하고 공용 파일로 폴백한다.
+        const auto [intrinsics_path, is_per_stream] = findIntrinsicsFile(stream_id, homography_root);
+        result.intrinsics.valid = !intrinsics_path.empty() && loadIntrinsics(intrinsics_path, result.intrinsics);
+    }
     for (int row = 0; row < 3; ++row) {
         if (!matrix.at(row).is_array() || matrix.at(row).size() != 3) throw std::runtime_error("H_camera_pixels_to_shared_map는 3x3 행렬이어야 함");
         for (int col = 0; col < 3; ++col) {
@@ -56,32 +96,9 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path, int exp
 }  // namespace
 
 HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& config) {
-    // 캘리브레이션 산출물 로드(선택). 경로는 첫 H 파일의 상위 상위 폴더(homography 루트).
-    if (!config.homography.stream_files.empty()) {
-        const auto& first_path = config.homography.stream_files.begin()->second;
-        const auto homography_root =
-            std::filesystem::path(first_path).parent_path().parent_path() / "camera_intrinsics.json";
-        std::ifstream input(homography_root);
-        if (input) {
-            try {
-                const json value = json::parse(input);
-                intrinsics_.fx = value.at("camera_matrix").at(0).at(0).get<double>();
-                intrinsics_.fy = value.at("camera_matrix").at(1).at(1).get<double>();
-                intrinsics_.cx = value.at("camera_matrix").at(0).at(2).get<double>();
-                intrinsics_.cy = value.at("camera_matrix").at(1).at(2).get<double>();
-                const auto& coefficients = value.at("dist_coeffs");
-                intrinsics_.k1 = coefficients.at(0).get<double>();
-                intrinsics_.k2 = coefficients.at(1).get<double>();
-                intrinsics_.p1 = coefficients.size() > 2 ? coefficients.at(2).get<double>() : 0.0;
-                intrinsics_.p2 = coefficients.size() > 3 ? coefficients.at(3).get<double>() : 0.0;
-                intrinsics_.k3 = coefficients.size() > 4 ? coefficients.at(4).get<double>() : 0.0;
-                intrinsics_.valid = true;
-            } catch (const std::exception&) {
-                intrinsics_ = {};
-            }
-        }
-    }
     for (const auto& [stream_id, configured_path] : config.homography.stream_files) {
+        const auto homography_root =
+            std::filesystem::path(configured_path).parent_path().parent_path();
         const auto size_it = config.homography.stream_image_sizes.find(stream_id);
         if (size_it == config.homography.stream_image_sizes.end()) {
             stream_load_errors_[stream_id] = "이미지 해상도 설정 누락";
@@ -89,7 +106,8 @@ HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& c
         }
         try {
             streams_.emplace(stream_id, loadOne(configured_path, size_it->second.first,
-                                                size_it->second.second));
+                                                size_it->second.second, homography_root,
+                                                stream_id));
         } catch (const std::exception& e) {
             stream_load_errors_[stream_id] = configured_path + ": " + e.what();
         }
@@ -106,22 +124,23 @@ std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(
     if (it == streams_.end() || !std::isfinite(pixel.x) || !std::isfinite(pixel.y)) return std::nullopt;
     double px = pixel.x, py = pixel.y;
     // 무왜곡 계약 H: 렌즈 왜곡 역산(뉴턴 반복) 후 변환한다. 플래그 없는 구버전 H는 통과.
-    if (it->second.lens_undistorted && intrinsics_.valid) {
-        double xn = (px - intrinsics_.cx) / intrinsics_.fx;
-        double yn = (py - intrinsics_.cy) / intrinsics_.fy;
+    const auto& intrinsics = it->second.intrinsics;
+    if (it->second.lens_undistorted && intrinsics.valid) {
+        double xn = (px - intrinsics.cx) / intrinsics.fx;
+        double yn = (py - intrinsics.cy) / intrinsics.fy;
         for (int iteration = 0; iteration < 10; ++iteration) {
             const double r2 = xn * xn + yn * yn;
-            const double radial = 1.0 + intrinsics_.k1 * r2 + intrinsics_.k2 * r2 * r2 +
-                                  intrinsics_.k3 * r2 * r2 * r2;
-            const double dx = 2.0 * intrinsics_.p1 * xn * yn +
-                              intrinsics_.p2 * (r2 + 2.0 * xn * xn);
-            const double dy = intrinsics_.p1 * (r2 + 2.0 * yn * yn) +
-                              2.0 * intrinsics_.p2 * xn * yn;
+            const double radial = 1.0 + intrinsics.k1 * r2 + intrinsics.k2 * r2 * r2 +
+                                  intrinsics.k3 * r2 * r2 * r2;
+            const double dx = 2.0 * intrinsics.p1 * xn * yn +
+                              intrinsics.p2 * (r2 + 2.0 * xn * xn);
+            const double dy = intrinsics.p1 * (r2 + 2.0 * yn * yn) +
+                              2.0 * intrinsics.p2 * xn * yn;
             xn = (xn - dx) / radial;
             yn = (yn - dy) / radial;
         }
-        px = xn * intrinsics_.fx + intrinsics_.cx;
-        py = yn * intrinsics_.fy + intrinsics_.cy;
+        px = xn * intrinsics.fx + intrinsics.cx;
+        py = yn * intrinsics.fy + intrinsics.cy;
     }
     const auto& h = it->second.h;
     const double denominator = h[6] * px + h[7] * py + h[8];

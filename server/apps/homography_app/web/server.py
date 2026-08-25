@@ -52,27 +52,61 @@ HOMOGRAPHY_RESULTS_ROOT = Path(os.environ.get(
     "SAFETY_SERVER_HOMOGRAPHY_DIR",
     str(COMMON_CONFIG_DIR / "homography")))
 MIN_COMMON_MARKERS = int(CONFIG_VALUE.get("map", {}).get("min_common_markers", 3))
-# 캘리브레이션 산출물이 있으면 렌즈 왜곡 보정을 켠다: 이후 산출되는 H는
-# '무왜곡 카메라 픽셀 -> 지도' 계약이 되고, 모든 픽셀 입력은 transform_point에서
-# 무왜곡 좌표로 바꿔 넣는다. 파일을 치우면 즉시 기존 동작(왜곡 좌표 직접 사용).
-CAMERA_INTRINSICS_PATH = HOMOGRAPHY_RESULTS_ROOT / "camera_intrinsics.json"
-CAMERA_INTRINSICS = None
-if CAMERA_INTRINSICS_PATH.is_file():
-    try:
-        _intrinsics_value = json.loads(CAMERA_INTRINSICS_PATH.read_text(encoding="utf-8"))
-        CAMERA_INTRINSICS = {
-            "fx": float(_intrinsics_value["camera_matrix"][0][0]),
-            "fy": float(_intrinsics_value["camera_matrix"][1][1]),
-            "cx": float(_intrinsics_value["camera_matrix"][0][2]),
-            "cy": float(_intrinsics_value["camera_matrix"][1][2]),
-            "k1": float(_intrinsics_value["dist_coeffs"][0]),
-            "k2": float(_intrinsics_value["dist_coeffs"][1]),
-            "p1": float(_intrinsics_value["dist_coeffs"][2]) if len(_intrinsics_value["dist_coeffs"]) > 2 else 0.0,
-            "p2": float(_intrinsics_value["dist_coeffs"][3]) if len(_intrinsics_value["dist_coeffs"]) > 3 else 0.0,
-            "k3": float(_intrinsics_value["dist_coeffs"][4]) if len(_intrinsics_value["dist_coeffs"]) > 4 else 0.0,
-        }
-    except (OSError, ValueError, KeyError, IndexError, json.JSONDecodeError):
-        CAMERA_INTRINSICS = None
+# 캘리브레이션 산출물(채널별: camera_intrinsics_<stream_id>.json, 공용:
+# camera_intrinsics.json)이 있으면 해당 스트림의 H는 '무왜곡 카메라 픽셀 -> 지도'
+# 계약이다. 픽셀 입력은 pixel_to_map에서 왜곡 역산 후 변환한다. 파일을 치우면
+# 즉시 기존 동작(왜곡 좌표 직접 사용).
+_INTRINSICS_CACHE = {}
+
+
+def camera_intrinsics_for(stream_id):
+    """stream_id 우선, 없으면 공용 파일 순으로 내부파라미터를 찾아 캐싱한다."""
+    if stream_id in _INTRINSICS_CACHE:
+        return _INTRINSICS_CACHE[stream_id]
+    value = None
+    for name in (f"camera_intrinsics_{stream_id}.json", "camera_intrinsics.json"):
+        path = HOMOGRAPHY_RESULTS_ROOT / name
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            matrix = raw["camera_matrix"]
+            coefficients = raw["dist_coeffs"]
+            value = {
+                "fx": float(matrix[0][0]), "fy": float(matrix[1][1]),
+                "cx": float(matrix[0][2]), "cy": float(matrix[1][2]),
+                "k1": float(coefficients[0]), "k2": float(coefficients[1]),
+                "p1": float(coefficients[2]) if len(coefficients) > 2 else 0.0,
+                "p2": float(coefficients[3]) if len(coefficients) > 3 else 0.0,
+                "k3": float(coefficients[4]) if len(coefficients) > 4 else 0.0,
+            }
+            break
+        except (OSError, ValueError, KeyError, IndexError, json.JSONDecodeError):
+            value = None
+    _INTRINSICS_CACHE[stream_id] = value
+    return value
+
+
+def undistort_pixel(stream_id, point):
+    """렌즈 왜곡 역산(뉴턴 반복). 내부파라미터가 없으면 그대로 통과한다."""
+    c = camera_intrinsics_for(stream_id)
+    if not c:
+        return point
+    x, y = (float(point["x"]) - c["cx"]) / c["fx"], (float(point["y"]) - c["cy"]) / c["fy"]
+    for _ in range(10):
+        radius_sq = x * x + y * y
+        radial = 1.0 + c["k1"] * radius_sq + c["k2"] * radius_sq ** 2 + c["k3"] * radius_sq ** 3
+        dx = 2.0 * c["p1"] * x * y + c["p2"] * (radius_sq + 2.0 * x * x)
+        dy = c["p1"] * (radius_sq + 2.0 * y * y) + 2.0 * c["p2"] * x * y
+        x, y = (x - dx) / radial, (y - dy) / radial
+    return {"x": x * c["fx"] + c["cx"], "y": y * c["fy"] + c["cy"]}
+
+
+def pixel_to_map(stream_id, matrix, point):
+    """스트림의 카메라 픽셀 한 점을 지도(mm) 좌표로 변환한다."""
+    return transform_point(matrix, undistort_pixel(stream_id, point))
+
+
 MAX_VERIFICATION_STREAMS = int(STREAM_CONFIG_VALUE.get("verification", {}).get("max_streams", 0))
 if MAX_VERIFICATION_STREAMS < 2 or MAX_VERIFICATION_STREAMS > 32:
     raise ValueError(f"{STREAM_CONFIG}의 verification.max_streams는 2~32 범위여야 합니다")
@@ -484,17 +518,6 @@ def invert_matrix(matrix):
 def transform_point(matrix, point):
     """3×3 호모그래피로 한 점을 변환한다."""
     x, y = float(point["x"]), float(point["y"])
-    if CAMERA_INTRINSICS:
-        # 렌즈 왜곡 역산(뉴턴 반복). 산출된 H는 무왜곡 픽셀 기준이므로 입력점을 먼저 되돌린다.
-        c = CAMERA_INTRINSICS
-        x, y = (x - c["cx"]) / c["fx"], (y - c["cy"]) / c["fy"]
-        for _ in range(10):
-            radius_sq = x * x + y * y
-            radial = 1.0 + c["k1"] * radius_sq + c["k2"] * radius_sq ** 2 + c["k3"] * radius_sq ** 3
-            dx = 2.0 * c["p1"] * x * y + c["p2"] * (radius_sq + 2.0 * x * x)
-            dy = c["p1"] * (radius_sq + 2.0 * y * y) + 2.0 * c["p2"] * x * y
-            x, y = (x - dx) / radial, (y - dy) / radial
-        x, y = x * c["fx"] + c["cx"], y * c["fy"] + c["cy"]
     denominator = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2]
     if abs(denominator) < 1e-12:
         raise ValueError("호모그래피 변환 분모가 0에 가깝습니다")
@@ -504,18 +527,20 @@ def transform_point(matrix, point):
     }
 
 
-def image_world_bounds(matrix, image_size):
+def image_world_bounds(matrix, image_size, stream_id=None):
     """한 채널의 네 영상 모서리를 전체 맵 mm 좌표로 바꿔 범위를 구한다."""
+    pixel_to_map_for = (lambda p: pixel_to_map(stream_id, matrix, p)) if stream_id \
+        else (lambda p: transform_point(matrix, p))
     try:
         width = float(image_size["width"])
         height = float(image_size["height"])
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("정합 검증용 image_size가 올바르지 않습니다") from error
     corners = [
-        transform_point(matrix, {"x": 0, "y": 0}),
-        transform_point(matrix, {"x": width, "y": 0}),
-        transform_point(matrix, {"x": width, "y": height}),
-        transform_point(matrix, {"x": 0, "y": height}),
+        pixel_to_map_for({"x": 0, "y": 0}),
+        pixel_to_map_for({"x": width, "y": 0}),
+        pixel_to_map_for({"x": width, "y": height}),
+        pixel_to_map_for({"x": 0, "y": height}),
     ]
     return {
         "min_x": min(point["x"] for point in corners),
@@ -613,16 +638,18 @@ def align_local_channel(source_result, source_corners, destination_result, desti
     source_points, destination_points = [], []
     for marker_id in common_ids:
         for source, destination in zip(source_corners[marker_id], destination_corners[marker_id]):
-            source_points.append(transform_point(source_h, source))
-            destination_points.append(transform_point(destination_h, destination))
+            source_points.append(pixel_to_map(source_result["stream_id"], source_h, source))
+            destination_points.append(pixel_to_map(destination_result["stream_id"], destination_h, destination))
     # 공통 마커가 한 직선에만 놓이면 화면상으로는 여러 개여도
     # 회전·기울기·원근을 안정적으로 결정할 수 없다. 중심점 삼각형의
     # 최대 면적을 확인해 방향 정보가 충분히 퍼져 있는지 먼저 검사한다.
     source_centers = []
     destination_centers = []
     for marker_id in common_ids:
-        source_world = [transform_point(source_h, point) for point in source_corners[marker_id]]
-        destination_world = [transform_point(destination_h, point) for point in destination_corners[marker_id]]
+        source_world = [pixel_to_map(source_result["stream_id"], source_h, point)
+                        for point in source_corners[marker_id]]
+        destination_world = [pixel_to_map(destination_result["stream_id"], destination_h, point)
+                             for point in destination_corners[marker_id]]
         source_centers.append({
             "x": sum(point["x"] for point in source_world) / 4.0,
             "y": sum(point["y"] for point in source_world) / 4.0,
@@ -698,8 +725,10 @@ def held_out_overlap_check(source_result, source_corners,
         squared = 0.0
         errors = []
         for source, destination in zip(source_corners[held_id], destination_corners[held_id]):
-            source_local = transform_point(source_result["H_camera_pixels_to_channel_map"], source)
-            destination_local = transform_point(destination_result["H_camera_pixels_to_channel_map"], destination)
+            source_local = pixel_to_map(source_result["stream_id"],
+                                        source_result["H_camera_pixels_to_channel_map"], source)
+            destination_local = pixel_to_map(destination_result["stream_id"],
+                                             destination_result["H_camera_pixels_to_channel_map"], destination)
             predicted = transform_point(transform, source_local)
             error = math.hypot(predicted["x"] - destination_local["x"],
                                predicted["y"] - destination_local["y"])
@@ -1475,7 +1504,10 @@ class Handler(BaseHTTPRequestHandler):
                 output_name = configured_json_name()
                 output_file = job_dir / output_name
                 overlay_name = "homography-overlay.png"
+                capture_meta = json.loads((job_dir / "capture-meta.json").read_text(
+                    encoding="utf-8")) if (job_dir / "capture-meta.json").is_file() else {}
                 result = run_tool(["solve-manual", "--config", str(CONFIG),
+                    "--stream-id", str(capture_meta.get("stream_id") or ""),
                     "--input", str(job_dir / "capture.jpg"), "--layout", str(layout_file),
                     "--output", str(output_file), "--overlay", str(job_dir / overlay_name)])
                 if not result["ok"]:
@@ -1483,8 +1515,6 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 value = json.loads(output_file.read_text(encoding="utf-8"))
                 value["capture_id"] = capture_id
-                capture_meta = json.loads((job_dir / "capture-meta.json").read_text(
-                    encoding="utf-8")) if (job_dir / "capture-meta.json").is_file() else {}
                 value["stream_id"] = capture_meta.get("stream_id")
                 value["camera_id"] = capture_meta.get("camera_id")
                 value["channel"] = capture_meta.get("channel")
@@ -1561,7 +1591,8 @@ class Handler(BaseHTTPRequestHandler):
                     storage[stream_id] = save_operational_homography(final_value)
 
                 verification_bounds = union_world_bounds([
-                    image_world_bounds(global_h[stream_id], stream_results[stream_id]["image_size"])
+                    image_world_bounds(global_h[stream_id],
+                                       stream_results[stream_id]["image_size"], stream_id)
                     for stream_id in stream_ids
                 ])
                 verification_channels = {}

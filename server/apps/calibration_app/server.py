@@ -16,7 +16,7 @@ import subprocess
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "homography_app"
 CONFIG = Path(os.environ.get(
@@ -31,14 +31,23 @@ PORT = int(os.environ.get("CALIBRATION_APP_PORT", "8002"))
 FRAME_TIMEOUT_SEC = 20
 
 RESULT_ROOT = Path(os.environ.get("CALIBRATION_RESULT_DIR", "/tmp/calibration-results"))
-# 산출물 보관 위치. 호모그래피 앱의 운영 H와 같은 루트를 공유한다.
-OUTPUT_PATH = Path(os.environ.get(
-    "CAMERA_INTRINSICS_PATH",
-    str(Path(os.environ.get("SAFETY_SERVER_HOMOGRAPHY_DIR",
-                            "/etc/forklift_safety/homography")) / "camera_intrinsics.json")))
+# 산출물 보관 위치. 호모그래피 앱의 운영 H와 같은 루트를 공유하며,
+# 채널별 파일(camera_intrinsics_<stream_id>.json)로 저장한다.
+INTRINSICS_ROOT = Path(os.environ.get(
+    "SAFETY_SERVER_HOMOGRAPHY_DIR", "/etc/forklift_safety/homography"))
 RESULT_ROOT.mkdir(parents=True, exist_ok=True)
-SESSION_DIR = RESULT_ROOT / "session"
-OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+SESSION_ROOT = RESULT_ROOT / "session"
+SESSION_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def session_dir(stream_id):
+    path = SESSION_ROOT / stream_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def output_path(stream_id):
+    return INTRINSICS_ROOT / f"camera_intrinsics_{stream_id}.json" 
 
 PAGE = """<!doctype html>
 <html lang="ko"><meta charset="utf-8">
@@ -52,8 +61,12 @@ PAGE = """<!doctype html>
  .hint{color:#556} #count{font-weight:700}
 </style>
 <h1>카메라 캘리브레이션</h1>
+<p>
+ <label>채널 <select id="stream"></select></label>
+</p>
 <p class="hint">ChArUco 보드(DICT_4X4_50 · 7×5 · 정사각 38mm · 마커 19mm)를 다양한 각도·위치로
-두고 한 장씩 캡처하세요. 잘린 장은 자동으로 무시됩니다. 최소 6장, 권장 12장 이상.</p>
+두고 한 장씩 캡처하세요. 잘린 장은 자동으로 무시됩니다. 최소 6장, 권장 12장 이상.
+채널별로 캘리브레이션 결과가 따로 저장됩니다.</p>
 <p>
  <button id="shot">📷 캡처</button>
  <button id="reset">수집 초기화</button>
@@ -69,14 +82,29 @@ PAGE = """<!doctype html>
 <pre id="result">결과가 여기 표시됩니다.</pre>
 <script>
 const $ = (sel) => document.querySelector(sel);
+const streamId = () => $('#stream').value;
+let loadedStream = null;   // 프리뷰/카운트를 어떤 스트림 기준으로 보여줬는지
+
+async function loadStreams() {
+  const value = await (await fetch('/api/streams')).json();
+  $('#stream').innerHTML = (value.streams || []).map((s) =>
+    `<option value="${s.stream_id}">채널 ${s.channel} · ${s.camera_id} (${s.image_width_px}×${s.image_height_px})</option>`).join('');
+  await refresh();
+}
 const refresh = async () => {
-  const value = await (await fetch('/api/frames')).json();
+  const sid = streamId();
+  if (!sid) return;
+  const value = await (await fetch(`/api/frames?stream_id=${encodeURIComponent(sid)}`)).json();
+  loadedStream = sid;
   $('#count').textContent = value.count;
 };
+$('#stream').onchange = refresh;
 $('#shot').onclick = async () => {
   $('#shot').disabled = true;
   try {
-    const value = await (await fetch('/api/frames', {method: 'POST'})).json();
+    const value = await (await fetch('/api/frames', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({stream_id: streamId()})})).json();
     if (!value.ok) throw new Error(value.error || 'HTTP 오류');
     $('#preview').src = 'data:image/jpeg;base64,' + value.image;
     await refresh();
@@ -84,7 +112,7 @@ $('#shot').onclick = async () => {
   finally { $('#shot').disabled = false; }
 };
 $('#reset').onclick = async () => {
-  await fetch('/api/frames', {method: 'DELETE'});
+  await fetch(`/api/frames?stream_id=${encodeURIComponent(streamId())}`, {method: 'DELETE'});
   $('#preview').src = '';
   $('#original').hidden = true;
   $('#compare-title').hidden = true;
@@ -95,7 +123,9 @@ $('#run').onclick = async () => {
   $('#run').disabled = true;
   $('#status').textContent = '산출 중…';
   try {
-    const response = await fetch('/api/calibrate', {method: 'POST'});
+    const response = await fetch('/api/calibrate', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({stream_id: streamId()})});
     const value = await response.json();
     if (!value.ok) throw new Error(value.error || 'HTTP ' + response.status);
     const r = value.result;
@@ -112,26 +142,27 @@ $('#run').onclick = async () => {
     $('#result').textContent = String(error);
   } finally { $('#run').disabled = false; }
 };
-refresh();
+loadStreams();
 </script>
 """
 
 
-def grab_frame():
-    """스냅샷(profile1)에서 원본(2592x1520) JPEG 한 장을 받아 세션 폴더에 쌓는다."""
-    request = urllib.request.Request(f"{HOMOGRAPHY_BASE}/api/camera/frame?snapshot=1")
+def grab_frame(stream_id):
+    """스냅샷(profile1)에서 원본 JPEG 한 장을 받아 해당 스트림 세션 폴더에 쌓는다."""
+    request = urllib.request.Request(
+        f"{HOMOGRAPHY_BASE}/api/camera/frame?snapshot=1&stream_id={stream_id}")
     with urllib.request.urlopen(request, timeout=FRAME_TIMEOUT_SEC) as response:
         body = response.read()
     if len(body) < 1000:
         raise ValueError("프레임 응답이 비어 있습니다")
-    path = SESSION_DIR / f"frame-{len(list(SESSION_DIR.glob('*.jpg'))):03d}.jpg"
-    path.write_bytes(body)
+    job_dir = session_dir(stream_id)
+    (job_dir / f"frame-{len(list(job_dir.glob('*.jpg'))):03d}.jpg").write_bytes(body)
     return body
 
 
-def reset_session():
-    shutil.rmtree(SESSION_DIR, ignore_errors=True)
-    SESSION_DIR.mkdir(parents=True)
+def reset_session(stream_id):
+    shutil.rmtree(session_dir(stream_id), ignore_errors=True)
+    session_dir(stream_id)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -157,42 +188,59 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/api/streams":
+            # 호모그래피 앱 상태의 스트림 목록을 그대로 중계한다(채널 선택용).
+            with urllib.request.urlopen(f"{HOMOGRAPHY_BASE}/api/status",
+                                        timeout=FRAME_TIMEOUT_SEC) as response:
+                status = json.loads(response.read())
+            self.send_json({"ok": True, "streams": status.get("streams", [])})
+            return
         if path == "/api/frames":
-            self.send_json({"ok": True, "count": len(list(SESSION_DIR.glob('*.jpg')))})
+            query = urlparse(self.path).query
+            stream_id = parse_qs(query).get("stream_id", [""])[0]
+            job_dir = session_dir(stream_id)
+            self.send_json({"ok": True, "count": len(list(job_dir.glob('*.jpg')))})
             return
         self.send_error(404)
 
     def do_POST(self):
         action = urlparse(self.path).path
         try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            stream_id = str(payload.get("stream_id") or "")
+            if action in ("/api/frames", "/api/calibrate") and not stream_id:
+                raise ValueError("stream_id가 필요합니다")
+            job_dir = session_dir(stream_id)
             if action == "/api/frames":
-                image = grab_frame()
+                image = grab_frame(stream_id)
                 self.send_json({"ok": True,
-                                "count": len(list(SESSION_DIR.glob('*.jpg'))),
+                                "count": len(list(job_dir.glob('*.jpg'))),
                                 "image": base64.b64encode(image).decode()})
             elif action == "/api/calibrate":
-                captured = len(list(SESSION_DIR.glob('*.jpg')))
+                captured = len(list(job_dir.glob('*.jpg')))
                 if captured == 0:
                     raise RuntimeError("캡처한 사진이 없습니다. 먼저 캡처하세요")
-                output_file = SESSION_DIR / "intrinsics.json"
-                preview_file = SESSION_DIR / "undistorted.jpg"
-                first_frame = min(SESSION_DIR.glob("*.jpg"),
+                output_file = job_dir / "intrinsics.json"
+                preview_file = job_dir / "undistorted.jpg"
+                first_frame = min(job_dir.glob("*.jpg"),
                                   key=lambda path: path.name, default=None)
                 result = subprocess.run(
                     [str(TOOL), "calibrate-intrinsics", "--config", str(CONFIG),
-                     "--images", str(SESSION_DIR), "--output", str(output_file),
+                     "--images", str(job_dir), "--output", str(output_file),
                      "--preview", str(preview_file)] if first_frame else
                     [str(TOOL), "calibrate-intrinsics", "--config", str(CONFIG),
-                     "--images", str(SESSION_DIR), "--output", str(output_file)],
+                     "--images", str(job_dir), "--output", str(output_file)],
                     capture_output=True, text=True, timeout=300, check=False)
                 if result.returncode != 0:
                     raise RuntimeError(result.stderr.strip() or "캘리브레이션 실패")
                 value = json.loads(output_file.read_text(encoding="utf-8"))
-                temporary = OUTPUT_PATH.with_name(f".{OUTPUT_PATH.name}.{os.urandom(8).hex()}.tmp")
+                destination = output_path(stream_id)
+                temporary = destination.with_name(f".{destination.name}.{os.urandom(8).hex()}.tmp")
                 shutil.copyfile(output_file, temporary)
-                os.replace(temporary, OUTPUT_PATH)
-                response = {"ok": True, "result": value,
-                            "saved_to": str(OUTPUT_PATH)}
+                os.replace(temporary, destination)
+                response = {"ok": True, "result": value, "stream_id": stream_id,
+                            "saved_to": str(destination)}
                 if preview_file.is_file():
                     # 왜곡 보정 전후를 나란히 비교해 사용자가 결과를 눈으로 검증하게 한다.
                     response["undistorted_image"] = base64.b64encode(
@@ -206,13 +254,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         if urlparse(self.path).path == "/api/frames":
-            reset_session()
+            query = urlparse(self.path).query
+            stream_id = parse_qs(query).get("stream_id", [""])[0]
+            reset_session(stream_id)
             self.send_json({"ok": True})
             return
         self.send_error(404)
 
 
 if __name__ == "__main__":
-    reset_session()   # 서버 시작마다 깨끗한 세션
+    print(f"calibration-app listening on {HOST}:{PORT}")
     print(f"calibration-app listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
