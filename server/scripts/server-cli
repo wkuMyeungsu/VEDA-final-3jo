@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# server - 포크리프트 안전 시스템 전용 서비스 관리 CLI
+#
+# 사용법:
+#   server status [앱|all]     상태 조회 (기본: 전체)
+#   server start  [앱|all]     시작
+#   server stop   [앱|all]     중지
+#   server restart [앱|all]    재시작
+#   server logs <앱> [줄수]    최근 저널 로그 (기본 30줄)
+#
+# 앱 이름: mqtt | safety | homography | monitoring | calibration | all
+# (실제 systemd 유닛은 아래 APPS 표 참고)
+set -euo pipefail
+
+# root가 아니면 스스로를 sudo로 재실행한다(sudoers에서 이 스크립트만 NOPASSWD 허용).
+if [[ ${EUID} -ne 0 ]]; then
+    exec sudo -n -- "$0" "$@"
+fi
+
+declare -A APPS=(
+    ["mqtt"]="mosquitto"
+    ["safety"]="forklift_safety_server"
+    ["homography"]="homography-app"
+    ["monitoring"]="monitoring-app"
+    ["calibration"]="calibration-app"
+)
+ORDER=(mqtt safety homography monitoring calibration)
+
+resolve() {  # 앱 별칭 -> 유닛명. all이면 전체 목록.
+    local target="${1:-all}"
+    if [[ "$target" == "all" || -z "$target" ]]; then
+        local units=()
+        for key in "${ORDER[@]}"; do units+=("${APPS[$key]}"); done
+        printf '%s\n' "${units[@]}"
+        return
+    fi
+    [[ -v APPS["$target"] ]] || { echo "server: 알 수 없는 앱 '$target' (mqtt|safety|homography|monitoring|calibration|all)" >&2; exit 2; }
+    echo "${APPS[$target]}"
+}
+
+cmd="${1:-status}"; shift || true
+
+case "$cmd" in
+    status)
+        units=$(resolve "${1:-all}") || exit 2
+        printf '%-24s %-9s %s\n' "UNIT" "STATE" "ENABLED"
+        for unit in $units; do
+            printf '%-24s %-9s %s\n' "$unit" "$(systemctl is-active "$unit")" "$(systemctl is-enabled "$unit" 2>/dev/null || echo '-')"
+        done
+        ;;
+    start|stop|restart)
+        units=$(resolve "${1:-all}")
+        systemctl "$cmd" $units
+        echo "OK: $cmd $(echo $units)"
+        ;;
+    enable|disable)
+        units=$(resolve "${1:-all}")
+        systemctl "$cmd" $units
+        echo "OK: $cmd $(echo $units)"
+        ;;
+    logs)
+        [[ $# -ge 1 ]] || { echo "server logs <앱> [줄수]" >&2; exit 2; }
+        unit=$(resolve "$1"); lines="${2:-30}"
+        journalctl -u "$unit" -n "$lines" --no-pager
+        ;;
+    *)
+        grep '^#' "$0" | sed -n '/사용법:/,/^#$/p' | sed 's/^# \{0,2\}//'
+        exit 2
+        ;;
+esac
