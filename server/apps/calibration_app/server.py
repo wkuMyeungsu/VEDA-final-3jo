@@ -65,6 +65,9 @@ PAGE = """<!doctype html>
  .viewer img{max-width:100%;max-height:100%}
  .viewer span{color:#5a6a7a;font-size:.9rem}
  .viewer b{position:absolute;top:6px;left:8px;color:#cfe0f0;font-size:.85rem;z-index:1}
+ .viewer em{position:absolute;bottom:6px;left:8px;color:#cfe0f0;font-size:.85rem;font-style:normal;z-index:1}
+ .viewer.warn{border:3px solid #d64545}   /* 왜곡 미적용 */
+ .viewer.ok{border:3px solid #2e9e5b}     /* 왜곡 보정 적용 */
  .thumbs{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
  .thumbs img{width:110px;height:64px;object-fit:cover;background:#000;
              border:1px solid #444;cursor:pointer}
@@ -84,8 +87,8 @@ PAGE = """<!doctype html>
  보드 인식 대상: <span id="count">0</span>장 <span id="status"></span>
 </p>
 <div class="viewers">
- <div class="viewer"><b>마지막 캡처</b><img id="preview" alt=""><span id="preview-empty"></span></div>
- <div class="viewer"><b>왜곡 보정 미리보기</b><img id="undistorted" alt=""><span>산출 후 결과가 표시됩니다</span></div>
+ <div class="viewer" id="raw-box"><b>마지막 캡처 (원본)</b><img id="preview" alt=""><span id="raw-empty">캡처하면 표시됩니다</span><em id="raw-rate"></em></div>
+ <div class="viewer" id="calib-box"><b>왜곡 보정 미리보기</b><img id="undistorted" alt=""><span>산출 후 결과가 표시됩니다</span><em id="calib-rate"></em></div>
 </div>
 <div class="thumbs" id="thumbs"></div>
 <pre id="result">결과가 여기 표시됩니다.</pre>
@@ -104,15 +107,28 @@ async function refresh() {
   const sid = streamId();
   if (!sid) return;
   const value = await (await fetch(`/api/frames?stream_id=${encodeURIComponent(sid)}`)).json();
-  $('#count').textContent = value.count;
+  const files = value.files || [];
+  $('#count').textContent = files.length;
   // 수집 히스토리 썸네일. 사진을 클릭하면 마지막 캡처 뷰어로 크게 볼 수 있다.
-  $('#thumbs').innerHTML = (value.files || []).map((name) =>
+  $('#thumbs').innerHTML = files.map((name) =>
     `<img loading="lazy" src="/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(name)}"
           title="${name}" onclick="$('#preview').src=this.src">`).join('');
+  // 큰 뷰어(마지막 캡처)는 항상 마지막 사진으로 자동 갱신한다. 검정 배경 박스는 유지.
+  if (files.length > 0) {
+    const last = files[files.length - 1];
+    $('#preview').src = `/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(last)}`;
+  } else {
+    $('#preview').src = '';
+  }
 }
 
 $('#stream').onchange = async () => {
   $('#preview').src = '';
+  $('#undistorted').src = '';
+  $('#raw-box').classList.remove('warn', 'ok');
+  $('#calib-box').classList.remove('warn', 'ok');
+  $('#raw-rate').textContent = '';
+  $('#calib-rate').textContent = '';
   await refresh();
 };
 
@@ -132,6 +148,10 @@ $('#reset').onclick = async () => {
   await fetch(`/api/frames?stream_id=${encodeURIComponent(streamId())}`, {method: 'DELETE'});
   $('#preview').src = '';
   $('#undistorted').src = '';
+  $('#raw-box').classList.remove('warn', 'ok');
+  $('#calib-box').classList.remove('warn', 'ok');
+  $('#raw-rate').textContent = '';
+  $('#calib-rate').textContent = '';
   $('#status').textContent = '';
   await refresh();
 };
@@ -150,6 +170,15 @@ $('#run').onclick = async () => {
     $('#result').textContent = JSON.stringify(r, null, 2);
     if (value.undistorted_image) {
       $('#undistorted').src = 'data:image/jpeg;base64,' + value.undistorted_image;
+      // 테두리 색으로 보정 적용 여부를 표시한다. 빨강=왜곡 원본, 초록=보정 적용.
+      $('#raw-box').classList.add('warn');
+      $('#calib-box').classList.remove('warn');
+      $('#calib-box').classList.add('ok');
+      const d = r.detection || {};
+      $('#raw-rate').textContent =
+        d.board_markers ? `마커 검출 ${d.before}/${d.board_markers}개` : '';
+      $('#calib-rate').textContent =
+        d.board_markers ? `마커 검출 ${d.after}/${d.board_markers}개` : '';
     }
   } catch (error) {
     $('#status').textContent = '실패';
@@ -213,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             stream_id = parse_qs(query).get("stream_id", [""])[0]
             job_dir = session_dir(stream_id)
             files = sorted(path.name for path in job_dir.glob("frame-*.jpg"))
-            self.send_json({"ok": True, "files": files})
+            self.send_json({"ok": True, "count": len(files), "files": files})
             return
         if path == "/api/frames/photo":
             query = parse_qs(urlparse(self.path).query)
@@ -297,6 +326,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"calibration-app listening on {HOST}:{PORT}")
     print(f"calibration-app listening on {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

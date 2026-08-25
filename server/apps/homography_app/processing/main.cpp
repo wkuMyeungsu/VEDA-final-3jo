@@ -166,12 +166,32 @@ int calibrate_intrinsics_command(int argc, char** argv) {
     const CameraIntrinsics result = calibrate_camera(config, files);
 
     // 사용자가 결과를 눈으로 검증할 수 있도록 첫 사진의 왜곡 보정 견본을 남긴다.
+    // 보정 전/후 각각에서 DICT_4X4_50(보드 17개) 마커 검출 수를 함께 재서,
+    // 왜곡 보정이 검출률을 실제로 올렸는지 숫자로 비교하게 한다.
+    json detection = json::object();
     if (!preview_path.empty() && !files.empty()) {
-        const cv::Mat original = cv::imread(files.front());
+        const int kBoardMarkers = (7 * 5 - 1) / 2;   // ChArUco 7x5 = 17개
+        cv::Mat original = cv::imread(files.front());
+        std::vector<int> ids;
+        std::vector<std::vector<cv::Point2f>> corners, rejected;
+        detect_marker_corners(config, original, corners, ids);
+        const int before = static_cast<int>(ids.size());
+
         cv::Mat undistorted;
         cv::undistort(original, undistorted, result.camera_matrix, result.dist_coeffs);
+        std::vector<int> undistorted_ids;
+        std::vector<std::vector<cv::Point2f>> undistorted_corners;
+        detect_marker_corners(config, undistorted, undistorted_corners, undistorted_ids);
+        const int after = static_cast<int>(undistorted_ids.size());
+
+        // 검출된 마커를 이미지 위에 그려 어떤 마커가 잡혔는지 보여준다.
+        cv::Mat original_annotated = original.clone();
+        cv::aruco::drawDetectedMarkers(original_annotated, corners, ids);
+        cv::aruco::drawDetectedMarkers(undistorted, undistorted_corners, undistorted_ids);
         if (!cv::imwrite(preview_path, undistorted))
             throw std::runtime_error("cannot write preview: " + preview_path);
+        detection = {{"board_markers", kBoardMarkers},
+                     {"before", before}, {"after", after}};
     }
 
     json matrix = json::array();
@@ -184,6 +204,7 @@ int calibrate_intrinsics_command(int argc, char** argv) {
         coefficients.push_back(result.dist_coeffs.at<double>(index));
     const json value = {
         {"schema_version", 1}, {"ok", true},
+        {"detection", detection},
         {"board", {{"dictionary", config.dictionary},
                    {"squares", {7, 5}}, {"square_mm", 38.0}, {"marker_mm", 19.0}}},
         {"frames_used", result.frames_used},
