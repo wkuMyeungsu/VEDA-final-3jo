@@ -128,28 +128,6 @@ void testLoggerFormatAndDebugGate() {
           "진단 모드에서 DEBUG 로그를 활성화할 수 있음");
 }
 
-void testLoggerFlushesStartupBuffer() {
-    std::cout << "\n[공통 Logger 기동 전 버퍼 정책]\n";
-    const auto path = std::filesystem::temp_directory_path() / "forklift_logger_startup_test.log";
-    std::error_code ec;
-    std::filesystem::remove(path, ec);
-
-    auto& logger = forklift::logging::Logger::instance();
-    logger.setLogFile("");
-    logger.setDebugEnabled(false);
-    LOG_INFO("TEST", "파일 연결 전 기동 로그");
-
-    check(logger.setLogFile(path.string()), "로그 파일 연결 성공");
-    std::ifstream file(path);
-    const std::string contents((std::istreambuf_iterator<char>(file)),
-                               std::istreambuf_iterator<char>());
-    check(contents.find("파일 연결 전 기동 로그") != std::string::npos,
-          "파일 경로 확정 전 로그가 server.log로 flush됨");
-
-    logger.setLogFile("");
-    std::filesystem::remove(path, ec);
-}
-
 }  // namespace
 
 int main() {
@@ -158,7 +136,6 @@ int main() {
     testOverflowDropsOldestAndRateLimitsLogs();
     testTopicsAreSelectedByRole();
     testLoggerFormatAndDebugGate();
-    testLoggerFlushesStartupBuffer();
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";
     return failures == 0 ? 0 : 1;

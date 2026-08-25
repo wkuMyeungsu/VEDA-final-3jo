@@ -857,19 +857,8 @@ int main(int argc, char* argv[]) {
         config.output_storage.enable_raw_csv_logging ||
         risk_transport::ResultDispatcher::sendLogEnabled());
 
-    const auto storage_parent = std::filesystem::path(config.output_storage.server_log).parent_path();
-    if (!storage_parent.empty()) {
-        std::filesystem::create_directories(storage_parent);
-        const auto server_log_path = config.output_storage.server_log;
-        if (!forklift::logging::Logger::instance().setLogFile(server_log_path)) {
-            LOG_WARN("STORAGE", "서버 로그 파일 열기 실패 (경로: " + server_log_path +
-                                  " -> 콘솔 출력 유지)");
-        }
-    }
-
     for (const auto* path : {&config.output_storage.object_csv, &config.output_storage.aruco_csv,
                              &config.output_storage.event_db, &config.output_storage.latency_csv,
-                             &config.output_storage.server_log,
                              &config.output_storage.runtime_status}) {
         const auto parent = std::filesystem::path(*path).parent_path();
         if (!parent.empty()) std::filesystem::create_directories(parent);

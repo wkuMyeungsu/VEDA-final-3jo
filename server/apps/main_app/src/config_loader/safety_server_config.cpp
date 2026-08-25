@@ -380,23 +380,12 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     if (out.contains("enable_raw_csv_logging") && out.at("enable_raw_csv_logging").is_boolean()) {
         c.output_storage.enable_raw_csv_logging = out.at("enable_raw_csv_logging").get<bool>();
     }
-    if (out.contains("server_log") && !out.at("server_log").is_string())
-        schema(system_path.string(), "output_storage.server_log는 문자열이어야 함");
     if (out.contains("runtime_status") && !out.at("runtime_status").is_string())
         schema(system_path.string(), "output_storage.runtime_status는 문자열이어야 함");
     c.output_storage.object_csv = (storage_dir / value<std::string>(out,"output_storage","object_csv",system_path.string())).lexically_normal().string();
     c.output_storage.aruco_csv = (storage_dir / value<std::string>(out,"output_storage","aruco_csv",system_path.string())).lexically_normal().string();
     c.output_storage.event_db = (storage_dir / value<std::string>(out,"output_storage","event_db",system_path.string())).lexically_normal().string();
     c.output_storage.latency_csv = (storage_dir / value<std::string>(out,"output_storage","latency_csv",system_path.string())).lexically_normal().string();
-    const std::string configured_server_log = out.value("server_log", std::string{});
-    const std::filesystem::path server_log_path = configured_server_log.empty()
-        // 기존 운영 배치의 server.log는 event_db 상위 디렉터리에 있었다. 키를
-        // 생략한 설정은 그 위치를 유지해 설치된 파일을 갑자기 옮기지 않는다.
-        ? (std::filesystem::path(c.output_storage.event_db).parent_path() / "server.log")
-        : std::filesystem::path(configured_server_log);
-    c.output_storage.server_log = (server_log_path.is_absolute()
-        ? server_log_path
-        : (storage_dir / server_log_path)).lexically_normal().string();
     const std::string configured_runtime_status = out.value("runtime_status", std::string{});
     const std::filesystem::path runtime_status_path = configured_runtime_status.empty()
         ? (storage_dir / "runtime/runtime-status.json")
@@ -404,7 +393,7 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     c.output_storage.runtime_status = (runtime_status_path.is_absolute()
         ? runtime_status_path
         : (storage_dir / runtime_status_path)).lexically_normal().string();
-    for (const auto* p : {&c.output_storage.server_log,&c.output_storage.runtime_status,
+    for (const auto* p : {&c.output_storage.runtime_status,
                           &c.output_storage.object_csv,
                           &c.output_storage.aruco_csv,&c.output_storage.event_db,&c.output_storage.latency_csv})
         if (p->empty()) schema(system_path.string(), "출력 경로가 비어 있음");

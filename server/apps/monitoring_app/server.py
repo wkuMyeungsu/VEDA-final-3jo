@@ -16,13 +16,12 @@ PORT = int(os.environ.get("SERVER_MONITORING_PORT", "8000"))
 SYSTEMCTL = os.environ.get("SERVER_MONITORING_SYSTEMCTL", "/bin/systemctl")
 MQTT_HOST = os.environ.get("SERVER_MONITORING_MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("SERVER_MONITORING_MQTT_PORT", "8883"))
-SERVER_LOG = Path(os.environ.get(
-    "SERVER_MONITORING_LOG", "/var/log/forklift_safety/storage/server.log"))
+SAFETY_UNIT = os.environ.get("SERVER_MONITORING_SAFETY_UNIT",
+                             "forklift_safety_server.service")
 RUNTIME_STATUS = Path(os.environ.get(
     "SERVER_MONITORING_STATUS", "/var/log/forklift_safety/runtime/runtime-status.json"))
 DEFAULT_REFRESH_INTERVAL_SECONDS = 1
 DEFAULT_RECENT_LOG_LINES = 50
-MAX_LOG_TAIL_BYTES = 64 * 1024
 RUNTIME_STATUS_MAX_AGE_SECONDS = 3
 PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
 THERMAL_ROOT = Path(os.environ.get("SERVER_MONITORING_THERMAL_ROOT", "/sys/class/thermal"))
@@ -284,22 +283,20 @@ def runtime_status_health(snapshot, now=None):
     }
 
 
-def read_recent_logs(path, limit=DEFAULT_RECENT_LOG_LINES):
-    """Read a bounded tail of the server log without scanning the whole file."""
-    try:
-        with path.open("rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            end_offset = handle.tell()
-            start_offset = max(0, end_offset - MAX_LOG_TAIL_BYTES)
-            handle.seek(start_offset)
-            content = handle.read().decode("utf-8", errors="replace")
-    except OSError:
-        return []
+def read_recent_logs(limit=DEFAULT_RECENT_LOG_LINES):
+    """판정 서버의 최근 로그를 journald에서 읽는다.
 
-    lines = content.splitlines()
-    if start_offset > 0 and lines:
-        lines = lines[1:]
-    return lines[-limit:]
+    server.log 파일 이중 기록은 폐기됐다. 단일 출처(journald)만 보므로
+    `server logs safety` CLI와 항상 동일한 내용이 표시된다.
+    """
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", SAFETY_UNIT, "-n", str(limit),
+             "-o", "short-iso", "--no-pager"],
+            capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [line for line in result.stdout.splitlines() if line][-limit:]
 
 
 def status_snapshot():
@@ -320,9 +317,8 @@ def status_snapshot():
             "port": MQTT_PORT,
         },
         "server_log": {
-            "path": str(SERVER_LOG),
-            "modified_utc": file_timestamp(SERVER_LOG),
-            "recent_lines": read_recent_logs(SERVER_LOG),
+            "unit": SAFETY_UNIT,
+            "recent_lines": read_recent_logs(),
         },
         "runtime_status": {
             "path": str(RUNTIME_STATUS),

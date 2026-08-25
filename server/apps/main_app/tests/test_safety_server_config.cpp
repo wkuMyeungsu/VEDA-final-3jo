@@ -38,7 +38,7 @@ int main() {
     ]})");
     write(multi_dir / "forklift_device_config.json", R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
     write(multi_dir / "danger_judgment_config.json", R"({"units":{"world":"mm","distance":"mm"},"danger_judgment":{"caution_threshold_mm":3000,"danger_threshold_mm":1500,"emergency_threshold_mm":400,"emergency_release_margin_mm":100,"tof_caution_mm":1000,"tof_danger_mm":500,"impact_accel_threshold_g":2}})");
-    write(multi_dir / "system_config.json", R"({"network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"result_heartbeat_ms":200,"tls_enabled":false},"handover":{"confirm_frames":2,"lost_grace_ms":500},"tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"track_freshness_ms":200,"track_timeout_ms":500},"sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},"stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":2,"retry_delay_s":1},"output_storage":{"server_log":"runtime/server.log","object_csv":"storage/objects.csv","aruco_csv":"storage/aruco.csv","event_db":"storage/events.db","latency_csv":"storage/latency.csv"}})");
+    write(multi_dir / "system_config.json", R"({"network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"result_heartbeat_ms":200,"tls_enabled":false},"handover":{"confirm_frames":2,"lost_grace_ms":500},"tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"track_freshness_ms":200,"track_timeout_ms":500},"sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},"stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":2,"retry_delay_s":1},"output_storage":{"object_csv":"storage/objects.csv","aruco_csv":"storage/aruco.csv","event_db":"storage/events.db","latency_csv":"storage/latency.csv"}})");
     try {
         const auto multi = loadMultiCameraServerConfig(multi_dir.string());
         const auto endsWith = [](const std::string& value, const std::string& suffix) {
@@ -64,9 +64,6 @@ int main() {
         check(multi.output_storage.object_csv ==
                   (multi_dir.parent_path() / "var/main_app/storage/objects.csv").lexically_normal().string(),
               "런타임 출력은 config와 분리된 var/main_app에 저장함");
-        check(multi.output_storage.server_log ==
-                  (multi_dir.parent_path() / "var/main_app/runtime/server.log").lexically_normal().string(),
-              "server.log를 event_db와 분리된 runtime 경로로 읽음");
         check(multi.output_storage.runtime_status ==
                   (multi_dir.parent_path() / "var/main_app/runtime/runtime-status.json").lexically_normal().string(),
               "runtime 상태 snapshot 경로에 안전한 기본값을 사용함");

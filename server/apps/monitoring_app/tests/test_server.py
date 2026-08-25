@@ -13,25 +13,18 @@ SPEC.loader.exec_module(SERVER)
 
 
 class MonitoringStatusTests(unittest.TestCase):
-    def test_recent_logs_returns_only_the_requested_tail(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = pathlib.Path(directory) / "server.log"
-            path.write_text(
-                "\n".join(f"line-{index}" for index in range(5)) + "\n",
-                encoding="utf-8",
-            )
+    @mock.patch.object(SERVER.subprocess, "run",
+                       return_value=mock.Mock(returncode=0, stdout="line-0\nline-1\nline-2\n"))
+    def test_recent_logs_reads_safety_unit_journal(self, run):
+        self.assertEqual(SERVER.read_recent_logs(3), ["line-0", "line-1", "line-2"])
+        args = run.call_args.args[0]
+        self.assertIn("forklift_safety_server.service", args)
+        self.assertIn("-n", args)
 
-            self.assertEqual(
-                SERVER.read_recent_logs(path, limit=3),
-                ["line-2", "line-3", "line-4"],
-            )
-
-    def test_recent_logs_returns_empty_for_missing_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            self.assertEqual(
-                SERVER.read_recent_logs(pathlib.Path(directory) / "missing.log"),
-                [],
-            )
+    def test_recent_logs_survives_journalctl_failure(self):
+        with mock.patch.object(SERVER.subprocess, "run",
+                               side_effect=SERVER.subprocess.SubprocessError("boom")):
+            self.assertEqual(SERVER.read_recent_logs(), [])
 
     @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "2"})
     def test_index_uses_configured_refresh_interval(self):
