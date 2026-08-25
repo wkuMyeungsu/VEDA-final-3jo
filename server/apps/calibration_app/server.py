@@ -86,6 +86,7 @@ PAGE = """<!doctype html>
  <button id="run">캘리브레이션 실행</button>
  보드 인식 대상: <span id="count">0</span>장 <span id="status"></span>
 </p>
+<div class="viewer" id="live-box" style="aspect-ratio:800/600; margin-bottom:8px"><b>실시간 스트리밍</b><img id="live" alt=""><span id="live-empty">채널 선택 시 해당 채널만 표시됩니다</span></div>
 <div class="viewers">
  <div class="viewer" id="raw-box"><b>마지막 캡처 (원본)</b><img id="preview" alt=""><span id="raw-empty">캡처하면 표시됩니다</span><em id="raw-rate"></em></div>
  <div class="viewer" id="calib-box"><b>왜곡 보정 미리보기</b><img id="undistorted" alt=""><span>산출 후 결과가 표시됩니다</span><em id="calib-rate"></em></div>
@@ -101,6 +102,20 @@ async function loadStreams() {
   $('#stream').innerHTML = (value.streams || []).map((s) =>
     `<option value="${s.stream_id}">채널 ${s.channel} · ${s.camera_id} (${s.image_width_px}×${s.image_height_px})</option>`).join('');
   await refresh();
+  startLivePreview();
+}
+
+let liveTimer = null;
+function startLivePreview() {
+  if (liveTimer) clearInterval(liveTimer);
+  const sid = streamId();
+  if (!sid) return;
+  const tick = () => {
+    // ponytail: 폴링 간격 700ms — MJPEG/WebSocket 대비 최소 구현, 해당 채널만 갱신
+    $('#live').src = `/api/preview?stream_id=${encodeURIComponent(sid)}&t=${Date.now()}`;
+  };
+  tick();
+  liveTimer = setInterval(tick, 700);
 }
 
 async function refresh() {
@@ -130,6 +145,7 @@ $('#stream').onchange = async () => {
   $('#raw-rate').textContent = '';
   $('#calib-rate').textContent = '';
   await refresh();
+  startLivePreview();
 };
 
 $('#shot').onclick = async () => {
@@ -278,6 +294,29 @@ class Handler(BaseHTTPRequestHandler):
             job_dir = session_dir(stream_id)
             files = sorted(path.name for path in job_dir.glob("frame-[0-9][0-9][0-9].jpg"))
             self.send_json({"ok": True, "count": len(files), "files": files})
+            return
+        if path == "/api/preview":
+            # ponytail: MJPEG 대신 스냅샷 폴링으로 실시간 미리보기. 800x600 RTSP 프레임이라 가볍고,
+            # 채널별로 해당 스트림만 보여준다. SSE/WebSocket까지 갈 필요 없음.
+            query = parse_qs(urlparse(self.path).query)
+            stream_id = query.get("stream_id", [""])[0]
+            if not stream_id:
+                self.send_error(404)
+                return
+            try:
+                with urllib.request.urlopen(
+                        f"{HOMOGRAPHY_BASE}/api/camera/frame?stream_id={stream_id}",
+                        timeout=FRAME_TIMEOUT_SEC) as upstream:
+                    body = upstream.read()
+            except (OSError, ValueError) as error:
+                self.send_json({"ok": False, "error": str(error)}, 502)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
             return
         if path == "/api/frames/photo":
             query = parse_qs(urlparse(self.path).query)
