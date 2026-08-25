@@ -156,6 +156,9 @@ int calibrate_intrinsics_command(int argc, char** argv) {
 
     std::vector<std::string> files;
     for (const auto& entry : fs::directory_iterator(images_dir)) {
+        const std::string filename = entry.path().filename().string();
+        // ponytail: _annot 파일은 캡처 시 미리보기용 오버레이, 캘리브레이션 입력에서 제외
+        if (filename.find("_annot") != std::string::npos) continue;
         std::string extension = entry.path().extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
                        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });

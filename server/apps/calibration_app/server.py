@@ -139,6 +139,9 @@ $('#shot').onclick = async () => {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({stream_id: streamId()})})).json();
     if (!value.ok) throw new Error(value.error || 'HTTP 오류');
+    if (value.detected !== undefined && value.detected >= 0) {
+      $('#status').textContent = `마커 ${value.detected}/17 검출 — 초록 실선으로 표시됨`;
+    }
     await refresh();
   } catch (error) { $('#status').textContent = String(error); }
   finally { $('#shot').disabled = false; }
@@ -198,8 +201,40 @@ def grab_frame(stream_id):
     if len(body) < 1000:
         raise ValueError("프레임 응답이 비어 있습니다")
     job_dir = session_dir(stream_id)
-    (job_dir / f"frame-{len(list(job_dir.glob('*.jpg'))):03d}.jpg").write_bytes(body)
-    return body
+    # ponytail: _annot 제외하고 카운트 - 오버레이 파일이 캘리브레이션 입력으로 섞이지 않게
+    raw_count = len(list(job_dir.glob("frame-[0-9][0-9][0-9].jpg")))
+    raw_path = job_dir / f"frame-{raw_count:03d}.jpg"
+    raw_path.write_bytes(body)
+
+    # 캡처 즉시 초록 실선 오버레이 생성 + 검출 부족 시 자동 폐기
+    # ponytail: 4/17 미만이면 보드가 잘리거나 흐려 캘리브레이션에 해로움, 임계값은 현장에서 조정
+    annot_path = job_dir / f"frame-{raw_count:03d}_annot.jpg"
+    tmp_json = job_dir / f".tmp-{raw_count:03d}.json"
+    try:
+        result = subprocess.run(
+            [str(TOOL), "detect-markers", "--config", str(CONFIG),
+             "--input", str(raw_path), "--output", str(tmp_json),
+             "--overlay", str(annot_path)],
+            capture_output=True, text=True, timeout=10, check=False)
+        if tmp_json.is_file():
+            data = json.loads(tmp_json.read_text(encoding="utf-8"))
+            count = len(data.get("ids", []))
+            tmp_json.unlink(missing_ok=True)
+            if count < 4:
+                raw_path.unlink(missing_ok=True)
+                annot_path.unlink(missing_ok=True)
+                raise ValueError(f"마커 검출 부족 ({count}/17) - 보드가 잘 보이게 다시 찍으세요")
+            return {"count": count, "annot": annot_path.name}
+        # JSON 없으면 원본 유지
+        tmp_json.unlink(missing_ok=True)
+    except ValueError:
+        raise
+    except Exception:
+        # 검출 실패해도 원본은 유지 (도구 오류 시 캡처 자체는 살림)
+        if tmp_json.is_file():
+            try: tmp_json.unlink()
+            except: pass
+    return {"count": -1, "annot": None}
 
 
 def reset_session(stream_id):
@@ -241,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             query = urlparse(self.path).query
             stream_id = parse_qs(query).get("stream_id", [""])[0]
             job_dir = session_dir(stream_id)
-            files = sorted(path.name for path in job_dir.glob("frame-*.jpg"))
+            files = sorted(path.name for path in job_dir.glob("frame-[0-9][0-9][0-9].jpg"))
             self.send_json({"ok": True, "count": len(files), "files": files})
             return
         if path == "/api/frames/photo":
@@ -252,7 +287,10 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"frame-\d{3}\.jpg", name):
                 self.send_error(404)
                 return
-            photo = session_dir(stream_id) / name
+            # 초록 실선 오버레이가 있으면 그것을, 없으면 원본을 보여준다.
+            annot_name = name.replace(".jpg", "_annot.jpg")
+            annot = session_dir(stream_id) / annot_name
+            photo = annot if annot.is_file() else session_dir(stream_id) / name
             if not photo.is_file():
                 self.send_error(404)
                 return
@@ -276,12 +314,14 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("stream_id가 필요합니다")
             job_dir = session_dir(stream_id)
             if action == "/api/frames":
-                image = grab_frame(stream_id)
-                del image
-                self.send_json({"ok": True,
-                                "count": len(list(job_dir.glob('*.jpg')))})
+                result = grab_frame(stream_id)
+                files = sorted(p.name for p in job_dir.glob("frame-[0-9][0-9][0-9].jpg"))
+                response = {"ok": True, "count": len(files), "files": files}
+                if isinstance(result, dict) and result.get("count", -1) >= 0:
+                    response["detected"] = result["count"]
+                self.send_json(response)
             elif action == "/api/calibrate":
-                captured = len(list(job_dir.glob('*.jpg')))
+                captured = len(list(job_dir.glob("frame-[0-9][0-9][0-9].jpg")))
                 if captured == 0:
                     raise RuntimeError("캡처한 사진이 없습니다. 먼저 캡처하세요")
                 output_file = job_dir / "intrinsics.json"
