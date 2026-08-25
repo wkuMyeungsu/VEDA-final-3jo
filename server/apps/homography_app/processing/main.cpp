@@ -184,9 +184,7 @@ int calibrate_intrinsics_command(int argc, char** argv) {
         detect_marker_corners(config, undistorted, undistorted_corners, undistorted_ids);
         const int after = static_cast<int>(undistorted_ids.size());
 
-        // 검출된 마커를 이미지 위에 그려 어떤 마커가 잡혔는지 보여준다.
-        cv::Mat original_annotated = original.clone();
-        cv::aruco::drawDetectedMarkers(original_annotated, corners, ids);
+        // 보정된 이미지에 검출된 마커를 그려 미리보기로 사용한다.
         cv::aruco::drawDetectedMarkers(undistorted, undistorted_corners, undistorted_ids);
         if (!cv::imwrite(preview_path, undistorted))
             throw std::runtime_error("cannot write preview: " + preview_path);
