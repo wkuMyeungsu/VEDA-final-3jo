@@ -12,8 +12,8 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
                                          bool ignore_sensor_input)
     : marker_id_(device.marker_id),
       homography_(config),
-      marker_tracker_(device.marker_id, config.handover.confirm_frames,
-                      config.handover.lostGrace()),
+      fov_grace_(std::max(std::chrono::milliseconds(0), config.handover.lostGrace())),
+      activation_confirm_(std::max(1, config.handover.confirm_frames)),
       track_freshness_sec_(config.tracking.track_freshness_ms / 1000.0),
       people_timeout_sec_(config.tracking.track_timeout_ms / 1000.0),
       cross_camera_tracker_(config.tracking.iou_threshold,
@@ -23,6 +23,8 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
                          device.collision_radius_mm, config.handover.lostGrace(),
                          ignore_sensor_input) {
     localization_status_.configured_marker_id = marker_id_;
+    for (const auto& stream : config.streams)
+        stream_identity_[stream.stream_id] = {stream.camera_id, stream.channel};
 }
 
 void SafetyFramePipeline::recordArucoObservation(const ArucoFrame& frame) {
@@ -96,30 +98,98 @@ SafetyFramePipeline::PeopleStatus SafetyFramePipeline::peopleStatus(double now_s
 std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const ArucoFrame& frame) {
     if (frame.stream_id.empty() || frame.camera_id.empty() || frame.channel < 1) return std::nullopt;
     recordArucoObservation(frame);
-    const auto changed = marker_tracker_.onArucoFrame(frame);
-    const auto active = marker_tracker_.activeStream();
-    if (!active) return std::nullopt;
+    const auto now = std::chrono::steady_clock::now();
 
-    if (*active == frame.stream_id) {
-        // 마커가 없는 프레임도 저장한다. 다음 객체 프레임에서 이전 마커를
-        // 현재 검출값으로 잘못 재사용하지 않도록 하기 위해서다.
+    // 1) 이 화면의 지게차 마커 중심을 월드 좌표로 바꿔 단일 추적점을 갱신한다.
+    //    어느 스트림의 관측이든 같은 지게차이므로 하나의 위치로 융합된다.
+    bool marker_here = false;
+    for (const auto& marker : frame.markers) {
+        if (marker.id != marker_id_) continue;
+        marker_here = true;
+        common::PixelPoint center;
+        for (const auto& corner : marker.corners) {
+            center.x += corner.x;
+            center.y += corner.y;
+        }
+        center.x /= static_cast<float>(marker.corners.size());
+        center.y /= static_cast<float>(marker.corners.size());
+        if (auto world = homography_.pixelToWorld(frame.stream_id, center))
+            forklift_sighting_ = WorldSighting{*world, now, frame.stream_id};
+        break;
+    }
+
+    // 2) 활성 스트림이 없으면: 같은 화면에서 연속 확정된 뒤 채택한다(오검출 방지).
+    if (!active_stream_) {
+        if (marker_here && forklift_sighting_ && forklift_sighting_->stream_id == frame.stream_id) {
+            if (activation_streak_stream_ != frame.stream_id) {
+                activation_streak_stream_ = frame.stream_id;
+                activation_streak_ = 0;
+            }
+            ++activation_streak_;
+            if (activation_streak_ >= activation_confirm_) {
+                activateStream(frame.stream_id, frame.camera_id, frame.channel, &frame);
+                return active_stream_;
+            }
+        } else {
+            activation_streak_ = 0;
+            activation_streak_stream_.clear();
+        }
+        return std::nullopt;
+    }
+
+    // 3) 액티브 유지 판단: 직접 보이거나, 추적 위치가 액티브 화면 안에 있으면 유지.
+    //    "같은 마커가 여러 화면에 동시 잡힘"은 여기서 전환 사유가 되지 않는다.
+    bool in_fov = false;
+    if (frame.stream_id == *active_stream_) {
+        if (marker_here) in_fov = true;
         last_aruco_ = frame;
     }
-    if (!changed) return std::nullopt;
-
-    active_stream_ = *changed;
-    active_camera_id_ = frame.camera_id;
-    active_channel_ = frame.channel;
-    judgment_pipeline_.setActiveStream(frame.stream_id, frame.camera_id, frame.channel);
-    last_aruco_ = frame;
-    {
-        std::lock_guard<std::mutex> lock(localization_mutex_);
-        localization_status_.active_stream_id = active_stream_.value_or("");
-        localization_status_.active_camera_id = active_camera_id_;
-        localization_status_.active_channel = active_channel_;
+    if (!in_fov && forklift_sighting_) {
+        const auto size = homography_.imageSize(*active_stream_);
+        if (auto pixel = homography_.worldToPixel(*active_stream_, forklift_sighting_->pos)) {
+            in_fov = size.has_value() && pixel->x >= 0.0f && pixel->y >= 0.0f &&
+                     pixel->x < static_cast<float>(size->first) &&
+                     pixel->y < static_cast<float>(size->second);
+        }
     }
+    if (in_fov) {
+        out_of_fov_since_.reset();
+        return std::nullopt;
+    }
+
+    // 4) FOV 이탈 유예 시간 경과 후에만 전환한다.
+    if (!out_of_fov_since_) out_of_fov_since_ = now;
+    if (now - *out_of_fov_since_ < fov_grace_) return std::nullopt;
+
+    std::string target;
+    if (marker_here && frame.stream_id != *active_stream_) target = frame.stream_id;
+    else if (forklift_sighting_ && forklift_sighting_->stream_id != *active_stream_)
+        target = forklift_sighting_->stream_id;
+    const auto identity = stream_identity_.find(target);
+    if (target.empty() || target == *active_stream_ || identity == stream_identity_.end())
+        return std::nullopt;
+
+    activateStream(target, identity->second.first, identity->second.second, nullptr);
     return active_stream_;
 }
+
+void SafetyFramePipeline::activateStream(const std::string& stream_id,
+                                         const std::string& camera_id, int channel,
+                                         const ArucoFrame* triggering_frame) {
+    active_stream_ = stream_id;
+    active_camera_id_ = camera_id;
+    active_channel_ = channel;
+    out_of_fov_since_.reset();
+    activation_streak_ = 0;
+    activation_streak_stream_.clear();
+    judgment_pipeline_.setActiveStream(stream_id, camera_id, channel);
+    if (triggering_frame) last_aruco_ = *triggering_frame;
+    std::lock_guard<std::mutex> lock(localization_mutex_);
+    localization_status_.active_stream_id = active_stream_.value_or("");
+    localization_status_.active_camera_id = active_camera_id_;
+    localization_status_.active_channel = active_channel_;
+}
+
 
 SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processObjectFrame(
     const MetadataFrame& frame, double timestamp_s) {

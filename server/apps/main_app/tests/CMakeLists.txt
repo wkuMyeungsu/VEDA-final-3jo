@@ -90,10 +90,20 @@ target_link_libraries(test_channel3_safety_pipeline_integration PRIVATE
 add_test(NAME channel3_safety_pipeline_integration_test
          COMMAND test_channel3_safety_pipeline_integration)
 
+# FOV 기반 핸드오버(마커 world 위치가 활성 화면 밖으로 나갔을 때만 전환).
+# 유예 시간 경과 확인에 실제 sleep이 2회 들어간다(~1.5초).
+add_executable(test_fov_handover
+    test_fov_handover.cpp
+)
+target_compile_definitions(test_fov_handover PRIVATE
+    CHANNEL3_HOMOGRAPHY_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/homography_channel_3_pipeline.json"
+)
+target_link_libraries(test_fov_handover PRIVATE
+    server_frame_pipeline server_logging server_network SQLite::SQLite3 Threads::Threads
+)
+add_test(NAME fov_handover_test COMMAND test_fov_handover)
+
 # 시간 주입(update(..., now))으로 검증하므로 lost_grace 만큼 실제로 기다리지 않는다.
-add_executable(test_marker_stream_tracker test_marker_channel_tracker.cpp)
-target_link_libraries(test_marker_stream_tracker PRIVATE server_tracking)
-add_test(NAME marker_stream_tracker_test COMMAND test_marker_stream_tracker)
 
 add_executable(test_nearest_person_selector test_nearest_person_selector.cpp)
 target_link_libraries(test_nearest_person_selector PRIVATE server_tracking)
@@ -112,7 +122,6 @@ set_tests_properties(
     result_publisher_test
     safety_server_config_test
     homography_transformer_test
-    marker_stream_tracker_test
     nearest_person_selector_test
     PROPERTIES
         LABELS "unit"

@@ -35,6 +35,22 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path, int exp
             result.h[row * 3 + col] = v;
         }
     }
+    const auto& h = result.h;
+    const double determinant =
+        h[0] * (h[4] * h[8] - h[5] * h[7]) -
+        h[1] * (h[3] * h[8] - h[5] * h[6]) +
+        h[2] * (h[3] * h[7] - h[4] * h[6]);
+    if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12)
+        throw std::runtime_error("H 역행렬을 계산할 수 없음");
+    result.h_inv = {(h[4] * h[8] - h[5] * h[7]) / determinant,
+                    (h[2] * h[7] - h[1] * h[8]) / determinant,
+                    (h[1] * h[5] - h[2] * h[4]) / determinant,
+                    (h[5] * h[6] - h[3] * h[8]) / determinant,
+                    (h[0] * h[8] - h[2] * h[6]) / determinant,
+                    (h[2] * h[3] - h[0] * h[5]) / determinant,
+                    (h[3] * h[7] - h[4] * h[6]) / determinant,
+                    (h[1] * h[6] - h[0] * h[7]) / determinant,
+                    (h[0] * h[4] - h[1] * h[3]) / determinant};
     return result;
 }
 }  // namespace
@@ -114,6 +130,26 @@ std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(
     const double y = (h[3] * px + h[4] * py + h[5]) / denominator;
     if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
     return common::WorldPoint{x, y};
+}
+
+std::optional<common::PixelPoint> HomographyTransformer::worldToPixel(
+    const std::string& stream_id, const common::WorldPoint& world) const {
+    const auto it = streams_.find(stream_id);
+    if (it == streams_.end()) return std::nullopt;
+    const auto& hi = it->second.h_inv;
+    const double denominator = hi[6] * world.x + hi[7] * world.y + hi[8];
+    if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;
+    const double x = (hi[0] * world.x + hi[1] * world.y + hi[2]) / denominator;
+    const double y = (hi[3] * world.x + hi[4] * world.y + hi[5]) / denominator;
+    if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
+    return common::PixelPoint{static_cast<float>(x), static_cast<float>(y)};
+}
+
+std::optional<std::pair<int, int>> HomographyTransformer::imageSize(
+    const std::string& stream_id) const {
+    const auto it = streams_.find(stream_id);
+    if (it == streams_.end()) return std::nullopt;
+    return std::make_pair(it->second.image_width_px, it->second.image_height_px);
 }
 
 }  // namespace forklift::logic

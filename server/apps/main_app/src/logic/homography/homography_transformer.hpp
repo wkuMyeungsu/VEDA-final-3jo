@@ -16,7 +16,8 @@ namespace forklift::logic {
 class HomographyTransformer {
 public:
     struct StreamHomography {
-        std::array<double, 9> h{};
+        std::array<double, 9> h{};      // 카메라 픽셀 -> 지도(mm)
+        std::array<double, 9> h_inv{};  // 지도(mm) -> 카메라 픽셀 (FOV 판정용)
         int image_width_px = 0;
         int image_height_px = 0;
         bool lens_undistorted = false;   // true면 pixelToWorld 입력에 왜곡 역산 적용
@@ -27,6 +28,10 @@ public:
     // 동차좌표 분모가 0에 가깝거나 계산 결과가 NaN/Inf이면 위치 미확정을 반환한다.
     std::optional<common::WorldPoint> pixelToWorld(const std::string& stream_id,
                                                    const common::PixelPoint& pixel) const;
+    // 지도(mm) 좌표를 해당 스트림의 카메라 픽셀로 되돌린다(핸드오버 FOV 판정용).
+    std::optional<common::PixelPoint> worldToPixel(const std::string& stream_id,
+                                                   const common::WorldPoint& world) const;
+    std::optional<std::pair<int, int>> imageSize(const std::string& stream_id) const;
     const std::map<std::string, std::string>& streamLoadErrors() const { return stream_load_errors_; }
 
 private:

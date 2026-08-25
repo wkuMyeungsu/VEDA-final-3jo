@@ -59,7 +59,6 @@ target_link_libraries(server_logging PUBLIC SQLite::SQLite3 Threads::Threads)
 add_library(server_tracking STATIC
     src/logic/tracking/nearest_person_selector.cpp
     src/logic/tracking/cross_camera_reid.cpp
-    src/logic/tracking/marker_channel_tracker.cpp
 )
 target_include_directories(server_tracking PUBLIC ${SERVER_SRC_DIR})
 target_link_libraries(server_tracking PUBLIC Threads::Threads)

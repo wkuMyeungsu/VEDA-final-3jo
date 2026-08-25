@@ -13,7 +13,6 @@
 #include "logic/homography/homography_transformer.hpp"
 #include "logic/judgment/judgment_pipeline.h"
 #include "logic/tracking/cross_camera_reid.h"
-#include "logic/tracking/marker_channel_tracker.hpp"
 
 namespace forklift::logic {
 
@@ -78,8 +77,9 @@ public:
                         ISensorReader& sensors,
                         bool ignore_sensor_input = false);
 
-    // 설정된 지게차 marker_id가 연속 검출돼 활성 stream이 바뀐 순간에만
-    // 새 stream_id를 반환한다.
+    // 지게차 마커의 world 좌표를 추적하고, 그 위치가 활성 stream의 화면 범위(FOV)를
+    // 벗어난 채 유예 시간을 넘겼을 때만 새 stream_id를 반환한다. 같은 마커가 여러
+    // 화면에 동시 잡혀도 위치가 활성 FOV 안인 한 전환이 일어나지 않는다.
     std::optional<std::string> processArucoStreamFrame(const ArucoFrame& frame);
 
     // 최근 ArUco와 현재 사람 검출을 같은 stream의 H로 변환한 뒤 최근접 선택과
@@ -103,11 +103,27 @@ private:
     void updateLocalizationResult(bool localized,
                                   bool marker_found,
                                   bool homography_available);
+    void activateStream(const std::string& stream_id, const std::string& camera_id,
+                        int channel, const ArucoFrame* triggering_frame);
+
+    // 지게차 마커의 최근 월드 관측. 어느 스트림이 봤든 하나의 위치로 융합한다
+    // (단말당 지게차 1대 가정 - forklifts 설정이 단일 마커 ID 기준).
+    struct WorldSighting {
+        WorldPoint pos{};
+        std::chrono::steady_clock::time_point seen{};
+        std::string stream_id;
+    };
 
     int marker_id_;
     std::optional<ArucoFrame> last_aruco_;
     HomographyTransformer homography_;
-    MarkerStreamTracker marker_tracker_;
+    std::chrono::milliseconds fov_grace_{};
+    int activation_confirm_ = 1;
+    std::optional<WorldSighting> forklift_sighting_;
+    std::optional<std::chrono::steady_clock::time_point> out_of_fov_since_;
+    int activation_streak_ = 0;
+    std::string activation_streak_stream_;
+    std::map<std::string, std::pair<std::string, int>> stream_identity_;  // stream_id -> (camera_id, channel)
     std::optional<std::string> active_stream_;
     std::string active_camera_id_;
     int active_channel_ = -1;
