@@ -118,16 +118,27 @@ function startLivePreview() {
   liveTimer = setInterval(tick, 700);
 }
 
+async function deleteOne(name) {
+  const sid = streamId();
+  await fetch(`/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(name)}`, {method: 'DELETE'});
+  await refresh();
+}
 async function refresh() {
   const sid = streamId();
   if (!sid) return;
   const value = await (await fetch(`/api/frames?stream_id=${encodeURIComponent(sid)}`)).json();
   const files = value.files || [];
   $('#count').textContent = files.length;
-  // 수집 히스토리 썸네일. 사진을 클릭하면 마지막 캡처 뷰어로 크게 볼 수 있다.
+  // 수집 히스토리 썸네일. 사진을 클릭하면 마지막 캡처 뷰어로 크게 볼 수 있다. ×로 개별 삭제.
   $('#thumbs').innerHTML = files.map((name) =>
-    `<img loading="lazy" src="/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(name)}"
-          title="${name}" onclick="$('#preview').src=this.src">`).join('');
+    `<div style="position:relative;display:inline-block">
+       <img loading="lazy" src="/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(name)}"
+            title="${name}" onclick="$('#preview').src=this.src">
+       <button onclick="deleteOne('${name}')" title="삭제"
+               style="position:absolute;top:2px;right:2px;width:20px;height:20px;padding:0;
+                      background:rgba(0,0,0,0.7);color:#fff;border:1px solid #666;
+                      border-radius:50%;cursor:pointer;font-size:14px;line-height:1">×</button>
+     </div>`).join('');
   // 큰 뷰어(마지막 캡처)는 항상 마지막 사진으로 자동 갱신한다. 검정 배경 박스는 유지.
   if (files.length > 0) {
     const last = files[files.length - 1];
@@ -218,14 +229,16 @@ def grab_frame(stream_id):
         raise ValueError("프레임 응답이 비어 있습니다")
     job_dir = session_dir(stream_id)
     # ponytail: _annot 제외하고 카운트 - 오버레이 파일이 캘리브레이션 입력으로 섞이지 않게
-    raw_count = len(list(job_dir.glob("frame-[0-9][0-9][0-9].jpg")))
-    raw_path = job_dir / f"frame-{raw_count:03d}.jpg"
+    # 개별 삭제 후에도 번호가 겹치지 않게 기존 최대값+1로 부여
+    existing = sorted(p.name for p in job_dir.glob("frame-[0-9][0-9][0-9].jpg"))
+    next_idx = (max(int(n[6:9]) for n in existing) + 1) if existing else 0
+    raw_path = job_dir / f"frame-{next_idx:03d}.jpg"
     raw_path.write_bytes(body)
 
     # 캡처 즉시 초록 실선 오버레이 생성 + 검출 부족 시 자동 폐기
     # ponytail: 4/17 미만이면 보드가 잘리거나 흐려 캘리브레이션에 해로움, 임계값은 현장에서 조정
-    annot_path = job_dir / f"frame-{raw_count:03d}_annot.jpg"
-    tmp_json = job_dir / f".tmp-{raw_count:03d}.json"
+    annot_path = job_dir / f"frame-{next_idx:03d}_annot.jpg"
+    tmp_json = job_dir / f".tmp-{next_idx:03d}.json"
     try:
         result = subprocess.run(
             [str(TOOL), "detect-markers", "--config", str(CONFIG),
@@ -395,10 +408,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": str(error)}, 502)
 
     def do_DELETE(self):
-        if urlparse(self.path).path == "/api/frames":
+        path = urlparse(self.path).path
+        if path == "/api/frames":
             query = urlparse(self.path).query
             stream_id = parse_qs(query).get("stream_id", [""])[0]
             reset_session(stream_id)
+            self.send_json({"ok": True})
+            return
+        if path == "/api/frames/photo":
+            query = parse_qs(urlparse(self.path).query)
+            stream_id = query.get("stream_id", [""])[0]
+            name = query.get("name", [""])[0]
+            if not re.fullmatch(r"frame-\d{3}\.jpg", name):
+                self.send_error(404)
+                return
+            raw = session_dir(stream_id) / name
+            annot = session_dir(stream_id) / name.replace(".jpg", "_annot.jpg")
+            raw.unlink(missing_ok=True)
+            annot.unlink(missing_ok=True)
             self.send_json({"ok": True})
             return
         self.send_error(404)
