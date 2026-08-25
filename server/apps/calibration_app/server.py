@@ -296,8 +296,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True, "count": len(files), "files": files})
             return
         if path == "/api/preview":
-            # ponytail: MJPEG 대신 스냅샷 폴링으로 실시간 미리보기. 800x600 RTSP 프레임이라 가볍고,
-            # 채널별로 해당 스트림만 보여준다. SSE/WebSocket까지 갈 필요 없음.
+            # ponytail: 2592x1520 고화질 스냅샷 폴링으로 실시간 미리보기. 검출도 동일 해상도에서 수행.
+            # 800x600 RTSP보다 무겁지만(250KB/장) 보드 검출률이 체감으로 높고, 채널별로 해당 스트림만 갱신.
             query = parse_qs(urlparse(self.path).query)
             stream_id = query.get("stream_id", [""])[0]
             if not stream_id:
@@ -305,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 with urllib.request.urlopen(
-                        f"{HOMOGRAPHY_BASE}/api/camera/frame?stream_id={stream_id}",
+                        f"{HOMOGRAPHY_BASE}/api/camera/frame?snapshot=1&stream_id={stream_id}",
                         timeout=FRAME_TIMEOUT_SEC) as upstream:
                     body = upstream.read()
             except (OSError, ValueError) as error:
