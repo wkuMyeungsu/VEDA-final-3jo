@@ -68,6 +68,7 @@ JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const Sens
         // 예외 상태(DEAD_RECKONING/SENSOR_FAULT)가 최소 CAUTION을 보장하는 기존 설계에 맡긴다.
         // -> DANGER도 같은 이유로 유지되지 않으므로 EMERGENCY만 예외를 두지 않는다.
         in_emergency_ = false;
+        last_camera_level_ = RiskLevel::SAFE;
     }
     result.distance_mm = dist;
 
@@ -151,9 +152,28 @@ RiskLevel DangerJudgmentEngine::classifyByDistance(double dist_mm) const {
         return RiskLevel::EMERGENCY;
     }
 
-    if (dist_mm <= danger_threshold_mm)  return RiskLevel::DANGER;
-    if (dist_mm <= caution_threshold_mm) return RiskLevel::CAUTION;
-    return RiskLevel::SAFE;
+    // ── SAFE/CAUTION/DANGER 경계 히스테리시스 ────────────────────
+    // [2026-08-25] 두 카메라의 사람 거리가 임계값 근처를 오갈 때 SAFE<->CAUTION
+    // 전환 로그가 수 초 간격으로 반복되는 운영 문제를 EMERGENCY와 같은 방식으로
+    // 해결한다. 위험 상승은 즉시, 하락은 여유 마진(emergency_release_margin_mm)을
+    // 넘겼을 때만 한 단계 내려간다.
+    const double caution_release_mm = caution_threshold_mm + emergency_release_margin_mm;
+    const double danger_release_mm  = danger_threshold_mm + emergency_release_margin_mm;
+
+    RiskLevel level;
+    if (dist_mm <= danger_threshold_mm) {
+        level = RiskLevel::DANGER;
+    } else if (dist_mm <= danger_release_mm && last_camera_level_ == RiskLevel::DANGER) {
+        level = RiskLevel::DANGER;   // DANGER 해제 유예
+    } else if (dist_mm <= caution_threshold_mm) {
+        level = RiskLevel::CAUTION;
+    } else if (dist_mm <= caution_release_mm && last_camera_level_ == RiskLevel::CAUTION) {
+        level = RiskLevel::CAUTION;  // CAUTION 해제 유예
+    } else {
+        level = RiskLevel::SAFE;
+    }
+    last_camera_level_ = level;
+    return level;
 }
 
 RiskLevel DangerJudgmentEngine::classifyByTof(double dist_mm) const {

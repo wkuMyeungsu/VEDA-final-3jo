@@ -36,6 +36,11 @@ add_executable(test_judgment_engine test_exception_trigger.cpp)
 target_link_libraries(test_judgment_engine PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_engine_test COMMAND test_judgment_engine)
 
+# 거리 경계 히스테리시스(SAFE<->CAUTION 진동 억제).
+add_executable(test_distance_hysteresis test_distance_hysteresis.cpp)
+target_link_libraries(test_distance_hysteresis PRIVATE server_judgment Threads::Threads)
+add_test(NAME distance_hysteresis_test COMMAND test_distance_hysteresis)
+
 add_executable(test_judgment_pipeline test_judgment_pipeline.cpp)
 target_link_libraries(test_judgment_pipeline PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_pipeline_test COMMAND test_judgment_pipeline)

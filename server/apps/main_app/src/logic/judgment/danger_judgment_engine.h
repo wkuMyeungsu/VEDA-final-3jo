@@ -167,7 +167,11 @@ public:
     // 판정 대상이 바뀌거나(카메라 전환 등) 테스트에서 이전 프레임 영향을 지울 때 쓴다.
     // dead_reckoning_active_도 같이 지우는 이유는 in_emergency_와 같다 - 직전 카메라 기준으로
     // 걸린 상태를 시야도 좌표계도 다른 새 카메라의 첫 프레임에 그대로 물려주면 안 된다.
-    void resetHysteresis() { in_emergency_ = false; dead_reckoning_active_ = false; }
+    void resetHysteresis() {
+        in_emergency_ = false;
+        dead_reckoning_active_ = false;
+        last_camera_level_ = RiskLevel::SAFE;
+    }
 
     // 지금 EMERGENCY 래치가 걸려 있는지 (디버깅·테스트용)
     bool inEmergencyLatch() const { return in_emergency_; }
@@ -206,6 +210,10 @@ private:
     // danger_judgment_engine.cpp의 evaluate() 주석 참고.
     // evaluate()가 const라 mutable로 둔다(위 evaluate() 주석의 스레드 주의사항과 한 쌍).
     mutable bool in_emergency_ = false;
+
+    // SAFE/CAUTION/DANGER 경계 히스테리시스용 직전 카메라 판정 단계. 하락(안전 방향)
+    // 은 release margin을 넘겼을 때만 한 단계 내려간다. in_emergency_와 같은 이유로 mutable.
+    mutable RiskLevel last_camera_level_ = RiskLevel::SAFE;
 
     // DEAD_RECKONING 해제 히스테리시스 래치. 진입(raw 조건 참)은 즉시 걸리고,
     // 해제는 raw 조건이 거짓으로 돌아온 뒤에도 dead_reckoning_release_grace_ms만큼
