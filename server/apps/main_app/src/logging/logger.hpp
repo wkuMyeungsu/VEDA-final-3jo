@@ -59,10 +59,11 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (level == LogLevel::Error) {
             std::cerr << log_line;
+            std::cerr.flush();
         } else {
             std::cout << log_line;
+            std::cout.flush();
         }
-        std::cout.flush();
     }
 
 private:

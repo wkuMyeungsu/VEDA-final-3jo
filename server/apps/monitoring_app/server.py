@@ -292,7 +292,7 @@ def read_recent_logs(limit=DEFAULT_RECENT_LOG_LINES):
     try:
         result = subprocess.run(
             ["journalctl", "-u", SAFETY_UNIT, "-n", str(limit),
-             "-o", "short-iso", "--no-pager"],
+             "-o", "cat", "--no-pager"],
             capture_output=True, text=True, timeout=5, check=False)
     except (OSError, subprocess.SubprocessError):
         return []
