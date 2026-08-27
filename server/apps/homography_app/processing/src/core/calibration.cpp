@@ -467,8 +467,16 @@ cv::Point2f undistort_point(cv::Point2f pixel) {
             static_cast<float>(g_camera_matrix.at<double>(1, 2))};
 }
 
+cv::Mat undistort_image(const cv::Mat& image) {
+    if (!has_active_intrinsics()) return image.clone();
+    cv::Mat undistorted;
+    cv::undistort(image, undistorted, g_camera_matrix, g_dist_coeffs);
+    return undistorted;
+}
+
 ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
-                                     const json& layout, cv::Mat* overlay) {
+                                     const json& layout, cv::Mat* overlay,
+                                     bool pixels_already_undistorted) {
     const double side_mm = layout.value("marker_size_mm", config.manual_solve.marker_size_mm);
     std::vector<int> ids;
     std::vector<std::vector<cv::Point2f>> corners, rejected;
@@ -495,8 +503,10 @@ ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
     // 캘리브레이션 산출물 사용 시: 관측·사용자 보정 꼭짓점 모두 무왜곡 좌표로 바꾼다.
     // 산출된 H는 '무왜곡 카메라 픽셀 -> 지도' 계약이 되며 운영 파일에
     // lens_undistorted=true로 새겨진다.
-    for (size_t i = 0; i < ids.size(); ++i)
-        for (auto& point : corners[i]) point = undistort_point(point);
+    if (!pixels_already_undistorted) {
+        for (size_t i = 0; i < ids.size(); ++i)
+            for (auto& point : corners[i]) point = undistort_point(point);
+    }
 
     std::vector<SquareMarkerObservation> observations;
     for (size_t i = 0; i < ids.size(); ++i) {

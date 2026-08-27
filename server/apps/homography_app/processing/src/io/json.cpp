@@ -1,4 +1,5 @@
 #include "homography/json.hpp"
+#include "common/platform.hpp"
 
 #include <chrono>
 #include <iomanip>
@@ -36,7 +37,7 @@ std::string utc_now() {
     const auto now = std::chrono::system_clock::to_time_t(
         std::chrono::system_clock::now());
     std::tm time{};
-    gmtime_r(&now, &time);
+    forklift::platform::gmtimeUtc(&now, &time);
     std::ostringstream output;
     output << std::put_time(&time, "%Y-%m-%dT%H:%M:%SZ");
     return output.str();

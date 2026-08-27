@@ -26,6 +26,8 @@ const state = {
   verificationGl: null,
   verificationView: {scale: 1, x: 0, y: 0},
   verificationPointer: null,
+  mapPoints: new Map(), // stream_id -> [{x,y}×0..2]
+  siteMap: {widthMm: null, heightMm: null, previewPoints: null},
 };
 
 const MIN_LOCAL_MARKERS = 3;
@@ -279,6 +281,37 @@ function drawCapture() {
     context.fillText(`ID ${id}`, points[0].x + 6, points[0].y - 6);
     context.restore();
   });
+
+  // 전체 맵 끝점: 채널당 2개까지, 캡처 화면에서 직접 찍는다
+  const mapPoints = state.mapPoints.get(capture.stream.stream_id) || [];
+  mapPoints.forEach((pt, idx) => {
+    const s = screenFromImage(pt);
+    context.save();
+    context.fillStyle = 'rgba(33,110,170,.92)';
+    context.strokeStyle = '#fff';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(s.x, s.y, 6, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.fillStyle = '#fff';
+    context.font = '700 10px system-ui';
+    context.fillText(`${idx + 1}`, s.x + 8, s.y - 8);
+    context.restore();
+  });
+  if (mapPoints.length === 2) {
+    const p0 = screenFromImage(mapPoints[0]);
+    const p1 = screenFromImage(mapPoints[1]);
+    context.save();
+    context.strokeStyle = 'rgba(33,110,170,.9)';
+    context.lineWidth = 2;
+    context.setLineDash([6, 4]);
+    context.beginPath();
+    context.moveTo(p0.x, p0.y);
+    context.lineTo(p1.x, p1.y);
+    context.stroke();
+    context.restore();
+  }
 }
 
 function showSelectedStream() {
@@ -290,10 +323,12 @@ function showSelectedStream() {
     fitCapture();
     renderMarkerList();
     updateLocalResult();
+    updateMapPointStatus();
   } else {
     drawCapture();
     renderMarkerList();
     updateLocalResult();
+    updateMapPointStatus();
   }
   updateGlobalState();
 }
@@ -320,6 +355,16 @@ function renderMarkerList() {
       <button type="button" data-reference-marker="${id}">${reference ? '기준 마커' : '기준으로 선택'}</button>
     </div>`;
   }).join('');
+}
+
+function updateMapPointStatus() {
+  const points = state.currentCapture ? (state.mapPoints.get(state.currentCapture.stream.stream_id) || []) : [];
+  const el = $('#map-point-status');
+  if (!el) return;
+  if (!state.currentCapture) el.textContent = '';
+  else if (points.length === 0) el.textContent = '맵 끝점 0/2 — 화면을 클릭해 끝점을 찍으세요 (채널당 2개)';
+  else if (points.length === 1) el.textContent = '맵 끝점 1/2 — 한 점 더 찍으세요';
+  else el.textContent = '맵 끝점 2/2 ✓ — 다른 채널로 옮겨 2점 더 찍으세요';
 }
 
 function updateLocalResult() {
@@ -367,9 +412,11 @@ async function captureSelected() {
     renderMarkerList();
     updateLocalResult();
     updateGlobalState();
-    $('#camera-status').textContent = `${stream.stream_id} 캡처 완료 · 검출 ID ${detected.ids.join(', ') || '없음'}`;
+    const correction = detected.lens_undistorted ? ' · 렌즈 보정 적용' : '';
+    $('#camera-status').textContent = `${stream.stream_id} 캡처 완료${correction} · 검출 ID ${detected.ids.join(', ') || '없음'}`;
     log({stream_id: stream.stream_id, capture_id: detected.capture_id,
       detected_ids: detected.ids, image_size: detected.image_size,
+      lens_undistorted: detected.lens_undistorted,
       rtsp_alignment: detected.rtsp_alignment || detected.rtsp_alignment_error});
   } catch (error) {
     $('#camera-status').textContent = `캡처 실패: ${error.message}`;
@@ -411,11 +458,54 @@ async function solveLocal() {
 
 function updateGlobalState() {
   const ready = state.streams.filter((stream) => state.captures.get(stream.stream_id)?.localResult);
-  const missing = state.streams.length - ready.length;
-  $('#common-marker-summary').textContent = ready.length < 2
-    ? `카메라 화면 펴기 준비 ${ready.length}개 · 최소 2개 스트림이 필요합니다.`
-    : `카메라 화면 펴기 준비 ${ready.length}/${state.streams.length}개 · 준비된 스트림의 겹침 구간을 연결합니다.${missing ? ` 미준비 ${missing}개는 제외됩니다.` : ''}`;
-  $('#global-align-channels').disabled = ready.length < 2;
+  const unready = state.streams.filter((stream) =>
+    !state.captures.get(stream.stream_id)?.localResult);
+  const minimum = Number(state.status?.min_common_markers ?? 3);
+  const edges = [];
+  const adjacency = new Map(ready.map((stream) => [stream.stream_id, []]));
+  for (let leftIndex = 0; leftIndex < ready.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < ready.length; rightIndex += 1) {
+      const left = ready[leftIndex];
+      const right = ready[rightIndex];
+      const leftCapture = state.captures.get(left.stream_id);
+      const rightIds = new Set(usableMarkerIds(state.captures.get(right.stream_id)));
+      const commonIds = usableMarkerIds(leftCapture)
+        .filter((id) => rightIds.has(id)).sort((leftId, rightId) => leftId - rightId);
+      const usable = commonIds.length >= minimum;
+      edges.push({left, right, commonIds, usable});
+      if (usable) {
+        adjacency.get(left.stream_id).push(right.stream_id);
+        adjacency.get(right.stream_id).push(left.stream_id);
+      }
+    }
+  }
+  const reached = new Set();
+  const pending = ready.length ? [ready[0].stream_id] : [];
+  while (pending.length) {
+    const streamId = pending.shift();
+    if (reached.has(streamId)) continue;
+    reached.add(streamId);
+    (adjacency.get(streamId) || []).forEach((next) => {
+      if (!reached.has(next)) pending.push(next);
+    });
+  }
+  const canAlign = ready.length >= 2 && reached.size === ready.length;
+  let summary;
+  if (ready.length < 2) {
+    summary = `연결 준비 중 · 화면 펴기 완료 ${ready.length}개 · 최소 2개 스트림이 필요합니다.`;
+  } else {
+    const pairSummary = edges.map((edge) =>
+      `${edge.left.stream_id} ↔ ${edge.right.stream_id} 공통 ${edge.commonIds.length}개` +
+      (edge.commonIds.length ? ` (ID ${edge.commonIds.join(', ')})` : '')).join(' · ');
+    summary = `${canAlign ? '연결 가능' : '연결 불가'} · 화면 펴기 완료 ${ready.length}개: ` +
+      `${ready.map((stream) => stream.stream_id).join(', ')} · ${pairSummary}`;
+    if (!canAlign)
+      summary += ` · 각 스트림이 공통 마커 ${minimum}개 이상의 연결로 이어져야 합니다.`;
+  }
+  if (unready.length)
+    summary += ` · 이번 연결 대상 아님: ${unready.map((stream) => stream.stream_id).join(', ')}`;
+  $('#common-marker-summary').textContent = summary;
+  $('#global-align-channels').disabled = !canAlign;
   const anchor = $('#global-anchor-stream');
   const previous = anchor.value;
   anchor.innerHTML = ready.map((stream) =>
@@ -449,6 +539,164 @@ async function alignAllStreams() {
   } finally {
     updateGlobalState();
   }
+}
+
+async function saveSiteMap() {
+  const width = Number($('#site-map-width-mm').value);
+  const height = Number($('#site-map-height-mm').value);
+  const name = ($('#site-map-name').value || '작업 구역').trim() || '작업 구역';
+  const button = $('#save-site-map');
+  const result = $('#site-map-result');
+  const boundary = state.siteMap.previewPoints?.map((point) => [point.x, point.y]);
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0 || !boundary || boundary.length < 4) {
+    result.textContent = '끝점 4개를 확보하면 긴 변 기준으로 전체 맵을 자동 계산할 수 있습니다.';
+    return;
+  }
+  button.disabled = true;
+  result.textContent = '전체 맵 저장 중…';
+  try {
+    const payload = await post('/api/site-map', {width_mm: width, height_mm: height, name, boundary});
+    result.innerHTML = `<strong>전체 맵 저장 완료</strong><br>${payload.result.path} · ${Math.round(payload.result.width_mm)}×${Math.round(payload.result.height_mm)}mm · ${payload.result.name}<br><small>그린 사각형이 맵 원점(0,0)과 가로축입니다. 안전 서버를 재시작하면 사람·지게차 위치에 반영됩니다.</small>`;
+    log(payload);
+  } catch (error) {
+    result.textContent = `전체 맵 저장 실패: ${error.message}`;
+    log(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function collectMapWorldPoints() {
+  // 채널당 2점씩 찍은 픽셀을 H로 월드 변환해 4점을 모은다
+  if (!state.verification) return null;
+  const streams = state.verification.streams;
+  const points = [];
+  for (const [streamId, pts] of state.mapPoints.entries()) {
+    const stream = streams[streamId];
+    if (!stream || !pts.length) continue;
+    const H = stream.H_camera_pixels_to_shared_map;
+    pts.forEach((pt) => {
+      const w = homographyWorldPoint(H, pt.x, pt.y);
+      const x = w.x / w.w, y = w.y / w.w;
+      if (Number.isFinite(x) && Number.isFinite(y)) points.push({x, y, streamId});
+    });
+  }
+  return points.length >= 4 ? points : null;
+}
+
+function convexHull(points) {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  sorted.forEach((point) => {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+    lower.push(point);
+  });
+  const upper = [];
+  [...sorted].reverse().forEach((point) => {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+    upper.push(point);
+  });
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+function drawSiteMapPreview() {
+  const panel = $('#site-map-preview-panel');
+  const svg = $('#site-map-preview-svg');
+  const empty = $('#site-map-preview-empty');
+  if (!panel || !svg) return;
+  const worldPoints = collectMapWorldPoints();
+  if (!state.verification || !worldPoints) {
+    empty.style.display = 'grid';
+    svg.replaceChildren();
+    $('#site-map-width-display').textContent = '—';
+    $('#site-map-height-display').textContent = '—';
+    $('#save-site-map').disabled = true;
+    return;
+  }
+  const hull = convexHull(worldPoints);
+  if (hull.length < 3) {
+    empty.style.display = 'grid';
+    svg.replaceChildren();
+    $('#site-map-width-display').textContent = '—';
+    $('#site-map-height-display').textContent = '—';
+    $('#save-site-map').disabled = true;
+    return;
+  }
+  // 공통 좌/우 기준은 없으므로 외곽선의 긴 축을 자동으로 가로축으로 선택한다.
+  let axisX = 1, axisY = 0, longest = 0;
+  hull.forEach((point, index) => {
+    const next = hull[(index + 1) % hull.length];
+    const dx = next.x - point.x, dy = next.y - point.y;
+    const length = Math.hypot(dx, dy);
+    if (length > longest) {
+      longest = length;
+      axisX = dx / length;
+      axisY = dy / length;
+    }
+  });
+  const project = () => worldPoints.map((point) => ({x: point.x * axisX + point.y * axisY, y: -point.x * axisY + point.y * axisX}));
+  let displayPoints = project();
+  let minX = Math.min(...displayPoints.map((point) => point.x));
+  let maxX = Math.max(...displayPoints.map((point) => point.x));
+  let minY = Math.min(...displayPoints.map((point) => point.y));
+  let maxY = Math.max(...displayPoints.map((point) => point.y));
+  // 투영 오차로 세로 범위가 더 길어도 긴 쪽을 가로로 고정한다.
+  if (maxX - minX < maxY - minY) {
+    const oldAxisX = axisX, oldAxisY = axisY;
+    axisX = -oldAxisY;
+    axisY = oldAxisX;
+    displayPoints = project();
+    minX = Math.min(...displayPoints.map((point) => point.x));
+    maxX = Math.max(...displayPoints.map((point) => point.x));
+    minY = Math.min(...displayPoints.map((point) => point.y));
+    maxY = Math.max(...displayPoints.map((point) => point.y));
+  }
+  // 긴 변을 가로로 둔 뒤, 긋는 방향과 무관하게 같은 180°를 고른다.
+  if (axisX > 0 || (Math.abs(axisX) < 1e-9 && axisY > 0)) {
+    axisX = -axisX;
+    axisY = -axisY;
+    displayPoints = project();
+    minX = Math.min(...displayPoints.map((point) => point.x));
+    maxX = Math.max(...displayPoints.map((point) => point.x));
+    minY = Math.min(...displayPoints.map((point) => point.y));
+    maxY = Math.max(...displayPoints.map((point) => point.y));
+  }
+  const widthMm = maxX - minX;
+  const heightMm = maxY - minY;
+  const perpX = -axisY, perpY = axisX;
+  const toWorld = (x, y) => ({x: axisX * x + perpX * y, y: axisY * x + perpY * y});
+  const rectDisplay = [{x: minX, y: minY}, {x: maxX, y: minY}, {x: maxX, y: maxY}, {x: minX, y: maxY}];
+  const rectPts = rectDisplay.map((point) => toWorld(point.x, point.y));
+  state.siteMap.previewPoints = rectPts;
+  $('#site-map-width-mm').value = String(widthMm);
+  $('#site-map-height-mm').value = String(heightMm);
+  $('#site-map-width-display').textContent = Math.round(widthMm);
+  $('#site-map-height-display').textContent = Math.round(heightMm);
+  $('#save-site-map').disabled = !(widthMm > 0 && heightMm > 0);
+  const w = widthMm, h = heightMm;
+  const pad = Math.max(w, h) * 0.12;
+  svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${w + pad * 2} ${h + pad * 2}`);
+  svg.replaceChildren();
+  const NS = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs) => { const e = document.createElementNS(NS, tag); Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, String(v))); return e; };
+  const bg = mk('polygon', {points: rectDisplay.map((p) => `${p.x},${p.y}`).join(' '), fill: 'rgba(33,110,170,.08)', stroke: '#216eaa', 'stroke-width': Math.max(1, Math.max(w, h) * 0.003), 'stroke-dasharray': '8 4'});
+  svg.appendChild(bg);
+  // H로 변환한 원본 점과 자동 계산한 직사각형 코너를 함께 표시한다.
+  displayPoints.forEach((p) => {
+    const c = mk('circle', {cx: p.x, cy: p.y, r: Math.max(5, Math.max(w, h) * 0.006), fill: '#f59e0b', stroke: '#fff', 'stroke-width': 1.5});
+    svg.appendChild(c);
+  });
+  rectDisplay.forEach((p) => {
+    const c = mk('circle', {cx: p.x, cy: p.y, r: Math.max(6, Math.max(w, h) * 0.007), fill: '#216eaa', stroke: '#fff', 'stroke-width': 1.5});
+    svg.appendChild(c);
+  });
+  const edges = [
+    [rectDisplay[0], rectDisplay[1], '#3e9bff'], [rectDisplay[1], rectDisplay[2], '#f59e0b'],
+    [rectDisplay[2], rectDisplay[3], '#3e9bff'], [rectDisplay[3], rectDisplay[0], '#f59e0b'],
+  ];
+  edges.forEach(([from, to, color]) => svg.appendChild(mk('line', {x1: from.x, y1: from.y, x2: to.x, y2: to.y, stroke: color, 'stroke-width': Math.max(2, Math.max(w, h) * 0.004), 'stroke-dasharray': '8 4'})));
+  empty.style.display = 'none';
 }
 
 function loadImage(url) {
@@ -858,12 +1106,21 @@ function renderVerificationValues(payload) {
 
 async function prepareVerification(payload) {
   const verification = payload.verification;
-  if (!verification || !verification.streams || !verification.common_markers) {
+  // ponytail: 서버가 common_markers 또는 overlap_marker_consistency 중 하나만 보내도 통과
+  if (!verification || !verification.streams || !(verification.common_markers || verification.overlap_marker_consistency)) {
     throw new Error('서버가 공통 마커 검증 수치를 반환하지 않았습니다.');
+  }
+  // 구 서버 호환: common_markers가 없으면 overlap에서 합성
+  if (!verification.common_markers && verification.overlap_marker_consistency) {
+    verification.common_markers = verification.overlap_marker_consistency.map((m) => ({
+      id: m.id, x: m.consensus_center_mm.x, y: m.consensus_center_mm.y,
+    }));
   }
   state.verification = verification;
   $('#verification-panel').hidden = false;
+  $('#site-map-preview-panel').hidden = false;
   renderVerificationValues(payload);
+  drawSiteMapPreview();
 }
 
 function setupVerificationPointerControls() {
@@ -925,9 +1182,35 @@ function setupPointerControls() {
     }
     if (event.button !== 0 || !state.currentCapture) return;
     const nearest = nearestCorner(screen);
-    if (!nearest) return;
-    state.pointer = {type: 'corner', ...nearest};
-    canvas.setPointerCapture(event.pointerId);
+    if (nearest) {
+      state.pointer = {type: 'corner', ...nearest};
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    // 전체 맵 끝점 찍기: 마커 코너가 아니면 맵 점으로 추가 (채널당 2개까지, 우클릭이면 제거)
+    if (event.button === 0 && state.currentCapture) {
+      const streamId = state.currentCapture.stream.stream_id;
+      const pts = state.mapPoints.get(streamId) || [];
+      if (event.ctrlKey || event.metaKey || event.shiftKey) {
+        // 수정 모드: 마지막 점 제거
+        pts.pop();
+        state.mapPoints.set(streamId, pts);
+        drawCapture();
+        updateMapPointStatus();
+        drawSiteMapPreview();
+        return;
+      }
+      if (pts.length >= 2) {
+        // 2개 초과는 가장 오래된 것 교체
+        pts.shift();
+      }
+      pts.push(imagePoint(screen));
+      state.mapPoints.set(streamId, pts);
+      drawCapture();
+      updateMapPointStatus();
+      drawSiteMapPreview();
+      return;
+    }
   });
   canvas.addEventListener('pointermove', (event) => {
     if (!state.pointer) return;
@@ -991,6 +1274,18 @@ function setupEventHandlers() {
   $('#marker-size-mm').oninput = updateLocalResult;
   $('#solve-homography').onclick = solveLocal;
   $('#global-align-channels').onclick = alignAllStreams;
+  $('#save-site-map').onclick = saveSiteMap;
+  // 맵 끝점: 우클릭으로 마지막 점 제거
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (!state.currentCapture) return;
+    const pts = state.mapPoints.get(state.currentCapture.stream.stream_id) || [];
+    pts.pop();
+    state.mapPoints.set(state.currentCapture.stream.stream_id, pts);
+    drawCapture();
+    updateMapPointStatus();
+    drawSiteMapPreview();
+  });
   $('#clear-log').onclick = () => { $('#result-log').textContent = '채널 캡처를 시작하세요.'; };
   $('#save-camera-settings').onclick = async () => {
     try {
@@ -1030,6 +1325,7 @@ async function loadStatus() {
   const status = await getJson('/api/status');
   state.status = status;
   state.streams = status.streams || [];
+  $('#minimum-common-marker-count').textContent = String(status.min_common_markers ?? 3);
   populateCameraSelectors();
   updateHeader();
   updateGlobalState();

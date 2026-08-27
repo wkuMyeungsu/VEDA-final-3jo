@@ -13,7 +13,9 @@ enum class SensorMode {
 struct ServerCommandLineOptions {
     std::string config_dir;
     std::string common_config_dir;
-    bool enable_debug_csv = false;
+    bool enable_object_csv = false;
+    bool enable_aruco_csv = false;
+    bool enable_latency_csv = false;
     SensorMode sensor_mode = SensorMode::Network;
     bool show_help = false;
 };

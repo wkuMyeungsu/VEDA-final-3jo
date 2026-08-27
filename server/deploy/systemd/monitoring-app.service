@@ -5,11 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=veda3
-WorkingDirectory=/home/veda3/forklift-safety-server/server/apps/monitoring_app
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory=@APP_ROOT@/apps/monitoring_app
 Environment=SERVER_MONITORING_HOST=0.0.0.0
 Environment=SERVER_MONITORING_PORT=8000
-ExecStart=/usr/bin/python3 /home/veda3/forklift-safety-server/server/apps/monitoring_app/server.py
+Environment=SERVER_MONITORING_SYSTEMCTL=@SYSTEMCTL_BIN@
+Environment=SERVER_MONITORING_JOURNALCTL=@JOURNALCTL_BIN@
+Environment=SERVER_MONITORING_STATUS=@LOG_ROOT@/runtime/runtime-status.json
+ExecStart=@PYTHON_BIN@ @APP_ROOT@/apps/monitoring_app/server.py
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

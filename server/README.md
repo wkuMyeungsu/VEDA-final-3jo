@@ -14,7 +14,7 @@
   `forklift/status/server`
 - 로그: UTC `server.log`, 원자적 runtime 상태 snapshot, 위험 상태 SQLite, 선택형 원시 CSV 3종
 - 웹 앱: 호모그래피 UI/API `:8001`, 읽기 전용 모니터링 API `:8000`
-- 검증: 기본 CTest 16개, 외부 브로커 통합 테스트는 별도 활성화
+- 검증: 기본 CTest 20개, 외부 브로커 통합 테스트는 별도 활성화
 
 ## 구조
 
@@ -23,10 +23,12 @@
 - `apps/main_app`: 중앙 안전 서버와 입력·판정·통신·로깅 코드
 - `apps/homography_app/web`: CCTV 선택, 캡처, 호모그래피 보정 웹 UI/API
 - `apps/homography_app/processing`: ArUco 검출과 호모그래피 계산 C++ 엔진
-- `apps/monitoring_app`: 운영 화면 placeholder와 상태 API
-- `config`: 공통 장비 설정, 안전 정책, 호모그래피 결과
-- `scripts`: 실행·배포 스크립트와 main server systemd 유닛
-- `deploy/systemd`: 호모그래피·모니터링 웹 앱 systemd 유닛
+- `apps/monitoring_app`: 운영 화면과 상태 API
+- `apps/calibration_app`: 카메라 내부 파라미터 캘리브레이션 웹 앱
+- `config.example`: Git에서 관리하는 전체 설정 템플릿
+- `config`: 템플릿을 복사한 실제 장비 설정과 생성된 호모그래피 결과
+- `scripts`: 운영 CLI
+- `deploy/systemd`: 네 앱의 systemd 유닛 원본(설치 시 경로 토큰 렌더링)
 - `var`: 로컬 실행 중 생성되는 DB·CSV·텍스트 로그
 - `third_party`: 서버 빌드에 필요한 저장소 내부 의존 코드
 
@@ -34,7 +36,6 @@
 
 ```text
 20_server_workspace/
-├── run_server.sh                         # 로컬 안전 서버 실행 진입점
 └── server/
     ├── apps/
     │   ├── main_app/
@@ -49,17 +50,25 @@
     │   │   ├── web/                       # :8001 웹 UI/API
     │   │   ├── processing/                # 호모그래피 CLI·라이브러리
     │   │   └── tests/                     # 전역 정합 검증
-    │   └── monitoring_app/                # :8000 운영 화면 placeholder
-    ├── config/
+    │   ├── monitoring_app/                # :8000 운영 화면·상태 API
+    │   └── calibration_app/               # :8002 카메라 캘리브레이션 앱
+    ├── config.example/                    # Git 관리용 전체 설정 템플릿
     │   ├── safety/                        # 위험판정·MQTT·추적·출력 정책
-    │   ├── homography/                    # 보정 정책·카메라별 좌표계 변환 결과
+    │   ├── homography/                    # 보정 정책·검증 화면 설정
     │   ├── camera_model.json              # 모델별 채널 수
-    │   ├── camera_list.json               # 실제 CCTV 목록·RTSP 정보
-    │   └── forklift_device_config.json    # 실제 단말 목록·marker 정보
+    │   ├── camera_list.json               # CCTV 목록·RTSP 정보 템플릿
+    │   ├── site_map.json                  # 작업장 외곽·제외·가림 구역
+    │   └── forklift_device_config.json    # 단말 목록·marker 정보 템플릿
+    ├── config/                            # 실제 설정·생성 결과, Git 제외
+    │   ├── safety/
+    │   ├── homography/CAM_*/              # 생성된 좌표계 변환 결과
+    │   ├── camera_model.json
+    │   ├── camera_list.json
+    │   ├── site_map.json
+    │   └── forklift_device_config.json
     ├── scripts/
-    │   ├── run_server.sh                  # server 디렉터리 내부 실행 스크립트
-    │   └── deploy.sh                      # 세 앱 통합 배포
-    ├── deploy/systemd/                    # 세 앱의 단일 systemd 유닛 원본
+    │   └── forklift-bscpctl               # 운영 서비스 제어 CLI
+    ├── deploy/systemd/                    # 네 앱의 systemd 유닛 원본
     ├── build/                             # CMake 빌드 산출물
     ├── var/main_app/storage/              # 로컬 실행 데이터
     └── third_party/
@@ -175,61 +184,66 @@ latency.csv
 ### 형식
 
 ```text
-[2026-08-21T02:38:24.581Z] [WARN] [CCTV] CAM_01_CH_03 카메라 연결 끊김 (사유: 네트워크 오류 -> 재연결 2/10) [run_id=20260821T023800.004Z-p1234]
+[2026-08-21T02:38:24.581Z] [WARN] [CCTV] CAM_01_CH_03 연결 끊김 · 네트워크 오류 · 재연결 2/10
 ```
 
-- 시간: UTC ISO-8601 시각, 밀리초 단위
+- 시간: UTC ISO-8601 시각, 밀리초 단위. 운영 콘솔 로그창은 KST `HH:MM:SS`로 표시
 - 수준: `DEBUG`, `INFO`, `WARN`, `ERROR`
 - 태그: 처리 영역
-- 메시지: 단말·카메라·stream_id를 포함한 한국어 운영 메시지
-- `run_id`: 서버 프로세스 기동을 구분하는 UTC 기동시각+PID. 재시작한 서버의 로그를
-  같은 파일/journal에서 분리할 때 사용
-- `DEBUG`: 일반 운영에서는 끄고 원시 CSV 또는 송신 진단을 켠 경우에만 출력
+- 메시지: 한 줄에 한 사건. 헤드라인 뒤에 `·`로 짧은 필드만 붙인다
+- `run_id`: UTC 기동시각+PID. 기동 배너와 MQTT payload에만 넣고 매 줄 꼬리표로는 붙이지 않는다
+- `DEBUG`: 일반 운영에서는 끄고 원시 CSV 또는 송신 진단을 켠 경우에만 출력.
+  assignment `PUBACK`도 DEBUG
+- 마커 위치 로그는 3초 동안 같은 상태가 유지된 뒤에만 남긴다. 잠깐 보였다 사라진
+  깜빡임은 생략한다
+- 운영 콘솔은 systemd 기동/종료 줄을 숨기고 LEVEL·TAG 색으로 행을 나눈다
 
 ### 흐름별 예시
 
 기동·설정:
 
 ```text
-[... ] [INFO] [STORAGE] 위험 이벤트 DB 연결 완료 (경로: .../events.db)
-[... ] [INFO] [SERVER] 중앙 안전 서버 기동 완료 (CCTV 스트림: 2개, 지게차 단말: 1대)
+[... ] [INFO] [STORAGE] 이벤트 DB 연결 · .../events.db
+====================================================================
+서버 기동 완료 · CCTV 2개 · 단말 1대 · 센서 네트워크 · run_id=...
+====================================================================
 ```
 
 CCTV 연결·복구:
 
 ```text
-[... ] [INFO] [CCTV] CAM_01_CH_03 카메라 연결 성공 (최초)
-[... ] [WARN] [CCTV] CAM_01_CH_03 카메라 응답 없음 (5초 타임아웃 -> 재연결 1/10)
-[... ] [INFO] [CCTV] CAM_01_CH_03 카메라 재연결 성공 (정상 복구)
+[... ] [INFO] [CCTV] CAM_01_CH_03 연결 성공 (최초)
+[... ] [WARN] [CCTV] CAM_01_CH_03 응답 없음 · 5초 타임아웃 · 재연결 1/10
+[... ] [INFO] [CCTV] CAM_01_CH_03 재연결 성공
 ```
 
 센서 수신:
 
 ```text
-[... ] [INFO] [SENSOR] 지게차 센서 통합 수신 연결 완료 (127.0.0.1:1883, 구독: forklift/sensor/+)
+[... ] [INFO] [SENSOR] 센서 수신 연결 · 127.0.0.1:1883 · forklift/sensor/+
 [... ] [WARN] [SENSOR] 센서 데이터 형식 오류 (사유: camera_id 누락/형식오류, 토픽: forklift/sensor/TERM_01, 수신 계속, 누적: 1)
 ```
 
 판정·경보:
 
 ```text
-[... ] [WARN] [ALERT] [TERM_01] 위험도 상승: SAFE -> CAUTION (거리: 420mm, CAM_01_CH_03)
-[... ] [ERROR] [ALERT] [TERM_01] 비상 정지 발령: DANGER -> EMERGENCY (거리: 90mm, CAM_01_CH_03)
-[... ] [INFO] [ALERT] [TERM_01] 위험 해제: CAUTION -> SAFE (거리: 800mm, CAM_01_CH_03)
+[... ] [WARN] [ALERT] TERM_01 SAFE → CAUTION · 420mm · CAM_01_CH_03
+[... ] [ERROR] [ALERT] TERM_01 비상 정지 DANGER → EMERGENCY · 90mm · CAM_01_CH_03
+[... ] [INFO] [ALERT] TERM_01 CAUTION → SAFE · 800mm · CAM_01_CH_03
 ```
 
 관제 채널 전환:
 
 ```text
-[... ] [INFO] [HANDOVER] TERM_01 관제 채널 자동 전환 -> [CAM_01_CH_03]
+[... ] [INFO] [HANDOVER] TERM_01 채널 전환 → CAM_01_CH_03
 ```
 
 저장·종료:
 
 ```text
 [... ] [WARN] [STORAGE] DB 저장 대기열 초과 (이전 이벤트 1건 건너뜀, 누적: 1)
-[... ] [INFO] [SERVER] 서버 종료 신호 감지 (안전 종료 진행)
-[... ] [INFO] [SERVER] 중앙 안전 서버 정상 종료 완료
+[... ] [INFO] [SERVER] 서버 종료 신호 감지
+[... ] [INFO] [SERVER] 중앙 안전 서버 정상 종료
 ```
 
 송신 자체를 확인해야 할 때만 `FORKLIFT_DEBUG_SEND_LOG=1`로 기동한다.
@@ -258,9 +272,9 @@ debug CSV의 기본 컬럼은 다음과 같다.
 risk payload에는 기존 필드 외에 `server_run_id`, `decision_id`, `publish_seq`,
 `send_reason`, 센서 message context가 optional로 들어간다. 구형 Qt 수신기는 모르는
 JSON 키를 무시하므로 기존 위험 필드의 의미는 바뀌지 않는다. assignment는
-`assignment_id`/`revision`/`server_run_id`를 포함하고 QoS 1 PUBACK과 publish 실패를
-`HANDOVER` 로그로 남긴다. 서버 상태 retained payload도 `server_run_id`와 `status_seq`를
-포함한다.
+`assignment_id`/`revision`/`server_run_id`를 포함한다. QoS 1 PUBACK은 DEBUG, publish
+실패는 WARN `HANDOVER` 로그로 남긴다. 서버 상태 retained payload도 `server_run_id`와
+`status_seq`를 포함한다.
 
 ## 네트워크
 
@@ -271,8 +285,9 @@ JSON 키를 무시하므로 기존 위험 필드의 의미는 바뀌지 않는�
 | `1883` | Mosquitto | 서버·단말 ↔ 브로커 | MQTT 기본 포트, `system_config.json`으로 변경 가능 |
 | `554` | CCTV | 서버 → CCTV | RTSP metadata track, `camera_list.json`에서 지정 |
 | `80` | CCTV | 서버 → CCTV | 호모그래피 캡처용 HTTP snapshot/카메라 API |
-| `8000` | monitoring app | 운영 PC → 서버 | 운영 화면 placeholder/API |
+| `8000` | monitoring app | 운영 PC → 서버 | 운영 화면/API |
 | `8001` | homography web | 작업 PC → 서버 | 호모그래피 UI/API |
+| `8002` | calibration app | 작업 PC → 서버 | 카메라 캘리브레이션 UI/API |
 
 메인 안전 서버는 별도의 TCP listen 포트를 열지 않는다. MQTT 브로커와 CCTV로
 연결하는 client이며, 과거 TCP 카메라 할당 포트 `9001`과 센서 업링크 포트 `9002`는
@@ -393,12 +408,13 @@ python3 server/apps/main_app/tools/fake_sensor_uplink_sender.py \
 
 - 공통 카메라 모델: `config/camera_model.json`
 - 공통 CCTV 목록: `config/camera_list.json`
+- 공통 작업장 지도: `config/site_map.json`
 - 공통 단말 목록: `config/forklift_device_config.json`
 - 안전 정책: `config/safety/danger_judgment_config.json`
 - 시스템 정책: `config/safety/system_config.json`
 - 호모그래피 정책: `config/homography/homography_config.json`
 - 좌표계 변환 결과: `config/homography/<camera_id>/`
-- 샘플: 각 운영 JSON 옆의 `*.sample.json`
+- 초기 설정 템플릿: `config.example/`
 
 ### 파일 역할
 
@@ -406,20 +422,27 @@ python3 server/apps/main_app/tools/fake_sensor_uplink_sender.py \
 | --- | --- | --- |
 | 공통 | `camera_model.json` | 카메라 모델별 지원 채널 수 |
 | 공통 | `camera_list.json` | `camera_id`, model, RTSP·HTTP 주소, 채널·해상도·좌표계 변환 결과 경로 |
-| 공통 | `forklift_device_config.json` | `terminal_id`, ArUco `marker_id`, 충돌 반경 |
+| 공통 | `site_map.json` | 공통 mm 좌표계의 작업장 외곽, 제외 구역, CCTV 가림 구역 |
+| 공통 | `forklift_device_config.json` | `terminal_id`, ArUco `marker_id`, 충돌 반경, 마커 높이 |
 | 안전 | `danger_judgment_config.json` | 거리 임계값, 위험 단계, 센서 결합 정책 |
 | 안전 | `system_config.json` | MQTT, handover, tracking, sensor, stream, 저장 경로 |
 | 호모그래피 | `homography_config.json` | 마커 사전, 산출 정책, 겹침 구간 연결 정책 |
 | 호모그래피 | `homography/<camera_id>/*.json` | `H_camera_pixels_to_channel_map`, `H_channel_map_to_shared_map`, `H_camera_pixels_to_shared_map`, `H_channel_map_to_camera_pixels`, 단위 mm, 영상 해상도 |
 
-실제 장비 주소·비밀번호·운영 단말 목록은 샘플과 분리한다. 실제 CCTV·안전 정책
-JSON은 Git에 넣지 않고, 배포 대상에 별도로 설치한다.
+실제 장비 주소·비밀번호·운영 단말 목록은 `config.example/`에서 복사한
+`config/`에 작성한다. `config/`와 그 안의 생성 결과는 Git에 넣지 않는다.
 
 ### 경로
 
 ```text
 --config-dir         server/config/safety   # 안전 정책·시스템 정책
 --common-config-dir  server/config          # 카메라·단말·공통 좌표계 변환 결과 경로
+```
+
+처음 실행할 때는 설정 템플릿을 실제 설정 루트로 복사한다.
+
+```sh
+cp -a server/config.example/. server/config/
 ```
 
 `forklift_device_config.json`은 `camera_list.json`과 같은 `server/config/` 레벨에
@@ -444,7 +467,7 @@ JSON은 Git에 넣지 않고, 배포 대상에 별도로 설치한다.
 ### 목록
 
 - CMake configure·build
-- 로컬 안전 서버
+- 설치된 안전 서버
 - debug CSV·송신 로그
 - 위험 이벤트 조회
 - 호모그래피 웹 앱
@@ -456,31 +479,30 @@ JSON은 Git에 넣지 않고, 배포 대상에 별도로 설치한다.
 cd /home/pms/20_server_workspace
 cmake -S server -B server/build
 cmake --build server/build -j2
-./run_server.sh \
-  --config-dir server/config/safety \
-  --common-config-dir server/config
 ```
 
-바이너리를 직접 실행할 때는 다음과 같다.
+소스 빌드 바이너리를 직접 실행하기 전에는 운영 서비스를 중지한다.
 
 ```sh
+sudo forklift-bscpctl stop safety
 ./server/build/apps/main_app/forklift_safety_server \
   --config-dir server/config/safety \
   --common-config-dir server/config
 ```
 
-`run_server.sh`는 브로커를 확인하고 로컬 바이너리를 실행한다. 운영 systemd 서비스나
-배포 바이너리가 이미 실행 중이면 기본적으로 종료 코드 3으로 중단한다. 운영 인스턴스를
-명시적으로 로컬 실행으로 교체할 때만 `./run_server.sh --takeover`를 사용한다.
-
 ### 진단
 
 ```sh
-# 원시 객체·ArUco·지연 CSV와 DEBUG 로그 활성화
-./run_server.sh --debug
+# 원시 객체·ArUco·지연 CSV 활성화
+./server/build/apps/main_app/forklift_safety_server \
+  --config-dir server/config/safety \
+  --common-config-dir server/config \
+  --log-csv all
 
 # 위험 결과 publish 변화·heartbeat DEBUG 로그 활성화
-FORKLIFT_DEBUG_SEND_LOG=1 ./run_server.sh
+FORKLIFT_DEBUG_SEND_LOG=1 ./server/build/apps/main_app/forklift_safety_server \
+  --config-dir server/config/safety \
+  --common-config-dir server/config
 
 # 운영 text log
 tail -f server/var/main_app/storage/server.log
@@ -490,7 +512,8 @@ tail -f server/var/main_app/storage/server.log
   20 server/var/main_app/storage/events.db
 ```
 
-`--debug`는 `detections.csv`, `aruco_markers.csv`, `latency.csv`를 활성화한다.
+`--log-csv object`, `--log-csv aruco`, `--log-csv latency`를 각각 켤 수 있고,
+`--log-csv all`은 세 로그를 모두 켠다.
 `FORKLIFT_DEBUG_SEND_LOG`는 프로세스 시작 시 한 번만 읽으므로 실행 전에 지정한다.
 
 ### 웹 앱
@@ -518,15 +541,15 @@ SERVER_MONITORING_REFRESH_INTERVAL_SECONDS=1 \
 
 - 기본 주소: `http://127.0.0.1:8000`
 - `SERVER_MONITORING_REFRESH_INTERVAL_SECONDS`: 화면 갱신 주기(초), 기본값 `1`
-- `/api/status`: 중앙 서버·MQTT·호모그래피·최근 로그 시각과 최근 로그 50줄의 읽기 전용 상태
+- `/api/status`: MQTT·안전 서버·호모그래피·캘리브레이션·모니터링 서비스와 최근 로그의 읽기 전용 상태
 - `/health/live`: 모니터링 앱 자체 liveness
 
 ## 검증
 
 ### 목록
 
-- 기본 CTest: 16개
-- unit: 14개
+- 기본 CTest: 20개
+- unit: 16개
 - fixture 기반 integration: 2개
 - 외부 MQTT integration: 별도 옵션
 - 실제 CCTV·단말이 필요한 운영 E2E: 미등록
@@ -579,24 +602,17 @@ Python interpreter가 발견되면 기본 CTest에 포함된다.
 - 운영 설정 권한
 - 카메라·좌표계 변환 파일·단말 등록 점검
 
-### 배포
+### 운영 서비스
+
+현재 저장소는 배포 패키지나 OS 설치 절차를 제공하지 않는다. 운영 환경에 배치된
+서비스는 다음 CLI로 제어한다.
 
 ```sh
-cd /home/pms/20_server_workspace
-./server/scripts/deploy.sh
+forklift-bscpctl status
+forklift-bscpctl start homography
+forklift-bscpctl stop homography
+forklift-bscpctl logs safety
 ```
-
-배포 스크립트는 다음 작업을 수행한다.
-
-- main server 빌드
-- `/usr/local/bin/forklift_safety_server` 설치
-- `/usr/local/bin/event_log_viewer` 설치
-- `/usr/local/bin/homography_tool` 설치
-- `server/config/`를 `/etc/forklift_safety/`로 복사
-- 로그 디렉터리 `/var/log/forklift_safety/` 생성
-- 세 systemd 유닛을 `server/deploy/systemd/`에서 등록
-- Mosquitto·중앙 서버·모니터링 앱 활성화
-- 호모그래피 앱 중지·비활성화
 
 main server systemd 실행 경로는 다음과 같다.
 
@@ -611,12 +627,15 @@ main server systemd 실행 경로는 다음과 같다.
 - `forklift_safety_server.service`: 상시 실행, 비정상 종료 시 자동 복구
 - `monitoring-app.service`: 상시 실행, 중앙 서버가 내려가도 독립적으로 상태 제공
 - `homography-app.service`: 온디맨드 유지보수 도구, 부팅 자동 실행과 자동 재시작 안 함
+- `calibration-app.service`: 온디맨드 유지보수 도구, 호모그래피 앱과 함께 수동 실행
 
 호모그래피 작업을 시작하고 끝낼 때는 다음 명령을 사용한다.
 
 ```sh
 sudo systemctl start homography-app.service
 sudo systemctl stop homography-app.service
+sudo systemctl start calibration-app.service
+sudo systemctl stop calibration-app.service
 ```
 
 ### 상태 확인
@@ -658,20 +677,20 @@ sudo systemctl status monitoring-app.service --no-pager
 - MQTT 기반 단말 센서·위험 결과·관제 전환
 - 서버 상태 online/offline와 LWT
 - 공통 설정 루트와 안전 정책 루트 분리
-- 모니터링 화면 실제 상태 연동: 미완료
+- 모니터링 API 서비스 상태 연동: 완료
 - 실제 장비 기반 운영 E2E 자동화: 미등록
 - `zone` 매핑: 현재 결과에서 `null` 가능
 
 ### 제한
 
-현재 모니터링 앱은 서비스 연결 확인용 placeholder다. `/api/status`는 실제
-서버·브로커·카메라 상태를 집계하지 않는다. 운영 상태 확인은 systemd, `server.log`,
-MQTT subscribe를 사용한다.
+`/api/status`는 안전 서버·MQTT·호모그래피·캘리브레이션·모니터링 서비스 상태와
+안전 서버 heartbeat를 집계한다. CPU·메모리·온도 세부값은 호스트가 Linux procfs/sysfs를
+제공할 때만 표시된다.
 
 ## 문서
 
-- [안전 서버 설정](config/safety/README.md)
-- [공통 카메라·단말 설정](config/README.md)
+- [안전 서버 설정](config.example/safety/README.md)
+- [공통 카메라·단말 설정](config.example/README.md)
 - [호모그래피 전체 개요](apps/homography_app/README.md)
 - [호모그래피 웹 UI/API](apps/homography_app/web/README.md)
 - [호모그래피 처리 엔진](apps/homography_app/processing/README.md)

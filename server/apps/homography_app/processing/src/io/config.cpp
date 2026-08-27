@@ -16,10 +16,12 @@ void print_usage() {
     std::cout << R"(homography_tool <command> [options]
 commands:
   detect-markers --config CONFIG --input IMAGE --output JSON [--overlay IMAGE]
+  undistort-image --config CONFIG --input IMAGE --output IMAGE
+                  [--stream-id ID] [--intrinsics JSON]
   gen-marker --config CONFIG --id ID --output FILE
              [--size-mm MM] [--margin-mm MM] [--label TEXT] [--dpi DPI]
   solve-manual --config CONFIG --input IMAGE --layout JSON --output JSON
-               [--overlay IMAGE]
+               [--overlay IMAGE] [--input-undistorted 1] [--intrinsics JSON]
   align-markers --config CONFIG --source IMAGE --destination IMAGE
                 --output JSON
   calibrate-intrinsics --config CONFIG --images DIR --output JSON

@@ -13,6 +13,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "logging/event_logger.hpp"
@@ -244,6 +245,30 @@ int main() {
               missingStatus.last_observed_marker_ids.front() == 34,
           "마커 미검출 원인과 최근 관측 ID를 진단 상태에 기록");
 
+    // 다른 스트림의 빈/미검출 프레임이 사이에 들어와도, 대상을 본
+    // 스트림의 연속 확인 횟수는 유지되어야 한다.
+    forklift::logic::SafetyFramePipeline interleavedActivation(config, device, sensors);
+    ArucoFrame targetFrame;
+    targetFrame.utcTime = "2026-08-13T00:00:01.000Z";
+    targetFrame.channel = kChannel;
+    targetFrame.stream_id = kStreamId;
+    targetFrame.camera_id = kCameraId;
+    targetFrame.markers = {markerAt(kForkliftMarkerId, {20.0, 120.0})};
+    ArucoFrame otherNoTarget = wrongMarkerFrame;
+    otherNoTarget.channel = kOtherChannel;
+    otherNoTarget.stream_id = kOtherStreamId;
+    check(!interleavedActivation.processArucoStreamFrame(targetFrame),
+          "교차 입력: 대상 스트림 1회 확인");
+    check(!interleavedActivation.processArucoStreamFrame(otherNoTarget),
+          "교차 입력: 다른 스트림 미검출은 후보를 초기화하지 않음");
+    check(!interleavedActivation.processArucoStreamFrame(targetFrame),
+          "교차 입력: 대상 스트림 2회 확인");
+    check(!interleavedActivation.processArucoStreamFrame(otherNoTarget),
+          "교차 입력: 다른 스트림이 다시 들어와도 연속성 유지");
+    const auto interleavedStream = interleavedActivation.processArucoStreamFrame(targetFrame);
+    check(interleavedStream && *interleavedStream == kStreamId,
+          "교차 입력에서도 대상 스트림 3회 확인 후 활성화");
+
     forklift::logic::SafetyFramePipeline pipeline(config, device, sensors);
     check(pipeline.homographyStreamLoadErrors().empty(), "stream별 실제 H 계약과 해상도 검증");
 
@@ -265,6 +290,24 @@ int main() {
     const auto stream = pipeline.processArucoStreamFrame(*parsedAruco);
     check(stream && *stream == kStreamId && pipeline.activeCameraId() == kCameraId,
           "TERM marker를 3프레임 확인한 뒤 활성 stream 확정");
+    const auto immediateLocalization = pipeline.localizationStatus();
+    check(immediateLocalization.status == "LOCALIZED" &&
+              immediateLocalization.localized &&
+              immediateLocalization.has_position &&
+              near(immediateLocalization.position.x, forkliftWorld.x) &&
+              near(immediateLocalization.position.y, forkliftWorld.y) &&
+              immediateLocalization.active_stream_id == kStreamId,
+          "대상 ArUco 좌표를 받으면 모니터링용 월드 위치까지 즉시 갱신");
+
+    MetadataFrame noObjectTick;
+    noObjectTick.stream_id = kStreamId;
+    noObjectTick.camera_id = kCameraId;
+    noObjectTick.channel = kChannel;
+    const auto periodicOutput = pipeline.processObjectFrame(noObjectTick, 0.25);
+    check(periodicOutput.forklift_localized &&
+              periodicOutput.judgment.result.final_risk == RiskLevel::SAFE &&
+              periodicOutput.judgment.result.distance_mm < 0.0,
+          "사람 객체 프레임이 없어도 주기 판정에서 센서와 최근 지게차 위치로 SAFE 산출");
 
     auto otherStreamObjects = parseOnvifMetadata(objectXml({{330.0, 120.0}}));
     otherStreamObjects.stream_id = kOtherStreamId;
@@ -283,6 +326,55 @@ int main() {
     check(pipeline.localizationStatus().status == "LOCALIZED" &&
               pipeline.localizationStatus().last_target_marker_seen_utc == "2026-08-13T00:00:00.000Z",
           "지게차 위치 확보 시 진단 상태와 대상 마커 마지막 검출 시각을 갱신");
+
+    const auto aggregatedOutput = pipeline.processAggregatedFrame(0.6);
+    check(aggregatedOutput.forklift_localized && aggregatedOutput.nearest.found &&
+              near(aggregatedOutput.nearest.position.x, 330.0) &&
+              near(aggregatedOutput.nearest.position.y, 120.0),
+          "주기 판정은 활성 카메라가 아닌 스트림까지 합친 전체 최신 관측으로 수행");
+
+    // 채널별 최근 ID를 따로 남겨, 3채널의 다른 마커 목록이
+    // 2채널/활성 채널의 대상 ID 진단을 덮어쓰지 않게 한다.
+    pipeline.processArucoStreamFrame(otherNoTarget);
+    const auto perStreamStatus = pipeline.localizationStatus();
+    const auto targetDiagnostic = std::find_if(
+        perStreamStatus.aruco_streams.begin(), perStreamStatus.aruco_streams.end(),
+        [](const auto& value) { return value.stream_id == kStreamId; });
+    const auto otherDiagnostic = std::find_if(
+        perStreamStatus.aruco_streams.begin(), perStreamStatus.aruco_streams.end(),
+        [](const auto& value) { return value.stream_id == kOtherStreamId; });
+    check(targetDiagnostic != perStreamStatus.aruco_streams.end() &&
+              targetDiagnostic->target_marker_visible &&
+              std::find(targetDiagnostic->marker_ids.begin(), targetDiagnostic->marker_ids.end(),
+                        kForkliftMarkerId) != targetDiagnostic->marker_ids.end() &&
+              otherDiagnostic != perStreamStatus.aruco_streams.end() &&
+          !otherDiagnostic->target_marker_visible &&
+              otherDiagnostic->marker_ids.size() == 1 && otherDiagnostic->marker_ids.front() == 34,
+          "채널별 최근 마커 ID와 설정 ID 가시성을 독립 기록");
+    check(perStreamStatus.status == "LOCALIZED" && perStreamStatus.localized,
+          "다른 스트림의 대상 마커 미검출이 유효한 스트림의 전역 위치를 덮어쓰지 않음");
+
+    // 활성 채널의 한 프레임에서 대상 ID가 빠져도 lost_grace_ms 동안은
+    // 직전 유효 위치를 쓰고, 유예가 끝나면 안전하게 미검출로 전환한다.
+    auto graceConfig = config;
+    graceConfig.handover.confirm_frames = 1;
+    graceConfig.handover.lost_grace_ms = 30;
+    forklift::logic::SafetyFramePipeline gracePipeline(graceConfig, device, sensors);
+    check(gracePipeline.processArucoStreamFrame(targetFrame).has_value(),
+          "유예 테스트 스트림 활성화");
+    gracePipeline.processArucoStreamFrame(wrongMarkerFrame);
+    auto graceObjects = parseOnvifMetadata(objectXml({{330.0, 120.0}}));
+    graceObjects.stream_id = kStreamId;
+    graceObjects.camera_id = kCameraId;
+    graceObjects.channel = kChannel;
+    const auto withinGrace = gracePipeline.processObjectFrame(graceObjects, 20.0);
+    check(withinGrace.forklift_localized,
+          "대상 ID 한 프레임 누락 직후에는 직전 위치를 유예 시간 동안 유지");
+    std::this_thread::sleep_for(std::chrono::milliseconds(45));
+    const auto afterGrace = gracePipeline.processObjectFrame(graceObjects, 20.1);
+    check(!afterGrace.forklift_localized &&
+              gracePipeline.localizationStatus().status == "MARKER_NOT_DETECTED",
+          "유예 시간 만료 후에는 이전 위치를 폐기하고 미검출로 전환");
 
     const std::string databasePath = temporaryDbPath();
     removeDb(databasePath);

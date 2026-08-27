@@ -10,11 +10,11 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
-#include <unistd.h>
 
 #include <mosquitto.h>
 
 #include "network/mqtt_tls_options.hpp"
+#include "common/platform.hpp"
 #include "logging/logger.hpp"
 
 // ResultPublisher - 판정 결과 MQTT 송신기 (헤더 온리)
@@ -215,7 +215,7 @@ private:
 
     std::string logTarget() const {
         return manage_server_status_ ? std::string("서버 상태")
-                                     : "[" + terminal_id_ + "] 위험 경보";
+                                     : terminal_id_ + " 위험 경보";
     }
 
     // [주의] mosquitto 콜백(네트워크 스레드)에서도 불린다.
@@ -228,8 +228,8 @@ private:
         auto* self = static_cast<ResultPublisher*>(obj);
         if (rc == 0) {
             ++self->connected_;
-            LOG_INFO(self->logTag(), self->logTarget() + " 송신 연결 완료 (" + self->broker_host_ + ":" +
-                                      std::to_string(self->broker_port_) + ", 토픽: " + self->topic_ + ")");
+            LOG_INFO(self->logTag(), self->logTarget() + " 송신 연결 · " + self->broker_host_ + ":" +
+                                      std::to_string(self->broker_port_));
             if (self->manage_server_status_) self->publishStatus("online");
             self->setState(LinkState::CONNECTED);
         } else {
@@ -259,7 +259,7 @@ private:
         libRetain();
 
         // 클라이언트 ID에 PID를 포함해 프로세스 간 ID 충돌 및 강제 연결 끊김(rc=7)을 방지한다.
-        const std::string client_id = "forklift-server-" + terminal_id_ + "-" + std::to_string(::getpid());
+        const std::string client_id = "forklift-server-" + terminal_id_ + "-" + forklift::platform::processId();
         mosq_ = mosquitto_new(client_id.c_str(), /*clean_session=*/true, this);
         if (mosq_ == nullptr) {
             LOG_ERROR(logTag(), logTarget() + " 초기화 실패 (mosquitto_new -> 송신 비활성)");

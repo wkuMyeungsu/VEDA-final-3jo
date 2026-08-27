@@ -32,12 +32,14 @@ CameraIntrinsics calibrate_camera(const Config& config,
 void set_active_intrinsics(const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
 bool has_active_intrinsics();
 cv::Point2f undistort_point(cv::Point2f pixel);
+cv::Mat undistort_image(const cv::Mat& image);
 
 // layout의 x_mm/y_mm은 좌상단 위치. marker_size_mm로 네 코너 확장함.
 // overlay가 있으면 입력 영상 크기의 진단 이미지 생성함.
 ManualSolveResult solve_manual_image(const Config& config, const cv::Mat& image,
                                      const nlohmann::json& layout,
-                                     cv::Mat* overlay);
+                                     cv::Mat* overlay,
+                                     bool pixels_already_undistorted = false);
 
 ManualSolveResult solve_square_markers(
     const std::vector<SquareMarkerObservation>& observations,

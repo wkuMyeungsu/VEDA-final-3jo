@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -26,6 +27,27 @@ struct HomographyConfig {
     // 모든 카메라의 모든 채널은 전역 stream_id로 식별한다.
     std::map<std::string, std::string> stream_files;
     std::map<std::string, std::pair<int, int>> stream_image_sizes;
+};
+
+struct SiteMapPoint {
+    double x_mm{};
+    double y_mm{};
+};
+
+struct SiteMapZone {
+    std::string id;
+    std::string label;
+    std::string kind;  // excluded | blind
+    std::vector<SiteMapPoint> polygon;
+};
+
+struct SiteMapConfig {
+    std::string name;
+    std::vector<SiteMapPoint> boundary;
+    std::vector<SiteMapZone> zones;
+    std::array<double, 9> h_shared_to_site{{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0}};
+    bool has_shared_to_site = false;
+    bool configured() const noexcept { return boundary.size() >= 3; }
 };
 
 struct HandoverConfig {
@@ -82,10 +104,13 @@ struct ForkliftDevice {
     std::string terminal_id;        // 위험 결과를 받을 운전자 단말
     int marker_id{};                // 이 지게차를 식별하는 ArUco ID
     double collision_radius_mm{};   // 지게차 외곽을 고려해 거리에서 뺄 반경
+    double marker_height_mm{};      // 바닥에서 마커 중심까지. 0이면 지면 호모그래피 그대로
 };
 
 struct OutputStorageConfig {
-    bool enable_raw_csv_logging = false; // 객체/ArUco 원시 CSV 로깅 활성화 여부 (디버깅 전용, 기본 false)
+    bool enable_object_csv_logging = false;
+    bool enable_aruco_csv_logging = false;
+    bool enable_latency_csv_logging = false;
     std::string runtime_status;     // 모니터링용 원자적 상태 snapshot
     std::string object_csv;         // 객체 메타데이터 CSV
     std::string aruco_csv;          // ArUco 메타데이터 CSV
@@ -96,6 +121,7 @@ struct OutputStorageConfig {
 struct SafetyServerConfig {
     DangerJudgmentConfig danger_judgment;
     HomographyConfig homography;
+    SiteMapConfig site_map;
     HandoverConfig handover;
     TrackingConfig tracking;
     SensorConfig sensor;

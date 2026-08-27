@@ -61,26 +61,27 @@
     .cpu-core-heading strong{font-size:.78rem}
     .cpu-core-bar{height:.32rem;margin-top:.45rem;border-radius:999px;background:#eaecf0;overflow:hidden}
     .cpu-core-bar-value{height:100%;border-radius:inherit;background:#216eaa}
-    .terminal-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.8rem}
-    .terminal-card{border:1px solid #dfe3e8;border-radius:10px;padding:1rem;background:#fcfcfd}
-    .terminal-card header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding-bottom:.8rem;border-bottom:1px solid #eaecf0}
-    .terminal-card h3{font-size:1rem}
-    .terminal-state{display:flex;align-items:center;gap:.45rem;color:#667085;font-size:.78rem}
-    .terminal-fields{display:grid;gap:.7rem;padding-top:.85rem}
-    .terminal-field{display:grid;grid-template-columns:5rem minmax(0,1fr);column-gap:.7rem;align-items:baseline}
-    .terminal-field>span{color:#667085;font-size:.78rem}
-    .terminal-field strong{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .terminal-field small{grid-column:2;color:#667085;font-size:.75rem;line-height:1.4;margin-top:.12rem}
-    .people-groups{display:grid;gap:.8rem}
-    .people-group{border:1px solid #dfe3e8;border-radius:10px;background:#fcfcfd;overflow:hidden}
-    .people-group header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.8rem 1rem;border-bottom:1px solid #eaecf0}
-    .people-group h3{font-size:.9rem}
-    .people-group-meta{color:#667085;font-size:.75rem;text-align:right}
-    .people-list{display:grid;gap:.45rem;padding:.8rem 1rem}
-    .person-row{display:grid;gap:.15rem;padding:.5rem .6rem;border:1px solid #eaecf0;border-radius:7px;background:#fff}
-    .person-row strong{font-size:.78rem;white-space:normal;overflow:visible}
-    .person-row small{grid-column:auto;margin:0;font-size:.72rem}
-    .people-empty{padding:.25rem .1rem;color:#667085;font-size:.8rem}
+    .map-legend{display:flex;flex-wrap:wrap;gap:.65rem 1rem;margin-bottom:.8rem;color:#667085;font-size:.78rem}
+    .map-swatch{display:inline-block;width:.9rem;height:.9rem;border:1px solid #98a2b3;border-radius:3px}
+    .map-swatch.forklift{border-radius:50%;background:#216eaa}
+    .map-swatch.person{border-radius:50%;background:#fff;border:3px solid #20252b}
+    .map-swatch.excluded{background:repeating-linear-gradient(135deg,#d0d5dd 0 3px,#f2f4f7 3px 7px)}
+    .map-swatch.blind{background:repeating-linear-gradient(45deg,#fdb022 0 2px,#fffaeb 2px 7px)}
+    .map-shell{position:relative;min-height:26rem;border:1px solid #d0d5dd;border-radius:10px;overflow:hidden;background:#eef2f6}
+    .site-map{display:block;width:100%;height:min(68vh,700px);min-height:26rem}
+    .map-empty{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;color:#667085;text-align:center;background:#f8fafc}
+    .map-empty[hidden]{display:none}
+    .map-boundary{fill:#fff;stroke:#344054;stroke-width:2;vector-effect:non-scaling-stroke}
+    .map-zone{stroke-width:1.5;vector-effect:non-scaling-stroke}
+    .map-zone-excluded{fill:url(#excluded-pattern);stroke:#667085}
+    .map-zone-blind{fill:url(#blind-pattern);stroke:#d97706}
+    .map-forklift{stroke:#fff;stroke-width:3;fill:#216eaa;fill-opacity:.82;vector-effect:non-scaling-stroke}
+    .map-risk-CAUTION{fill:#fdb022}.map-risk-DANGER{fill:#f04438}.map-risk-EMERGENCY{fill:#b42318}.map-risk-unknown{fill:#667085}
+    .map-person{fill:#fff;stroke:#20252b;stroke-width:3;vector-effect:non-scaling-stroke}
+    .map-label{font-weight:750;text-anchor:middle;dominant-baseline:middle;pointer-events:none;fill:#fff;paint-order:stroke;stroke:#101828;stroke-width:2px;stroke-linejoin:round}
+    .map-person-label{fill:#101828;stroke:#fff}
+    .map-zone-label{fill:#475467;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+    .map-notice{margin-top:.7rem;color:#b54708;font-size:.8rem;min-height:1.2rem}
     .risk-badge{display:inline-block;padding:.16rem .45rem;border-radius:999px;font-size:.76rem;font-weight:750}
     .risk-safe{color:#067647;background:#ecfdf3}
     .risk-caution{color:#b54708;background:#fffaeb}
@@ -88,8 +89,20 @@
     .risk-emergency{color:#7a271a;background:#fee4e2}
     .risk-unknown{color:#667085;background:#f2f4f7}
     .log-meta{color:#667085;font-size:.8rem}
-    pre{margin:0;max-height:26rem;overflow:auto;padding:.9rem;border-radius:8px;background:#1b1f24;color:#e6edf3;white-space:pre-wrap;word-break:break-word;font:.8rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
-    @media (max-width:760px){.topbar{display:block}.overall-status{margin-top:1rem}.status-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.resource-grid{grid-template-columns:1fr}}
+    .log-list{margin:0;max-height:26rem;overflow:auto;padding:.55rem .7rem;border-radius:8px;background:#1b1f24;color:#e6edf3;font:.8rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
+    .log-row{display:grid;grid-template-columns:4.7rem 3.3rem 5.6rem minmax(0,1fr);gap:.45rem .55rem;align-items:start;padding:.14rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
+    .log-row-raw{display:block;color:#98a2b3}
+    .log-time{color:#98a2b3;white-space:nowrap}
+    .log-level{font-weight:750;white-space:nowrap}
+    .log-level-info{color:#9ec1e0}
+    .log-level-warn{color:#fdb022}
+    .log-level-error{color:#f97066}
+    .log-level-debug{color:#98a2b3}
+    .log-tag{color:#cecfd3;font-weight:700;white-space:nowrap}
+    .log-message{color:#e6edf3;word-break:break-word}
+    .log-row.log-level-warn .log-message{color:#fef0c7}
+    .log-row.log-level-error .log-message{color:#fecdca}
+    @media (max-width:760px){.topbar{display:block}.overall-status{margin-top:1rem}.status-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.resource-grid{grid-template-columns:1fr}.log-row{grid-template-columns:4.7rem 3.3rem minmax(0,1fr)}.log-tag{grid-column:1 / span 2}}
     @media (max-width:450px){.metric-grid{grid-template-columns:1fr}}
   </style>
 </head>
@@ -108,8 +121,7 @@
 
   <nav class="tabs" role="tablist" aria-label="운영 정보 탭">
     <button id="tab-overview-button" type="button" class="tab-button active" role="tab" aria-selected="true" aria-controls="tab-overview" data-tab-target="tab-overview">운영 요약</button>
-    <button id="tab-terminals-button" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tab-terminals" data-tab-target="tab-terminals">단말 상태</button>
-    <button id="tab-detection-button" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tab-detection" data-tab-target="tab-detection">검출 현황</button>
+    <button id="tab-map-button" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tab-map" data-tab-target="tab-map">전체 맵</button>
     <button id="tab-system-button" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tab-system" data-tab-target="tab-system">시스템·로그</button>
   </nav>
 
@@ -130,9 +142,9 @@
     </section>
 
     <section class="panel">
-      <div class="section-heading"><h2>라즈베리파이 자원 사용량</h2><span id="resource-summary" class="section-meta">측정 중</span></div>
+      <div class="section-heading"><h2>호스트 자원 사용량</h2><span id="resource-summary" class="section-meta">측정 중</span></div>
       <div class="resource-grid">
-        <article class="resource-card"><header><h3>전체 시스템</h3><span id="resource-host-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><div class="resource-values"><div class="resource-value"><strong id="resource-host-cpu">—</strong><span>CPU</span></div><div class="resource-value"><strong id="resource-host-memory">—</strong><span>메모리 사용량</span></div><div class="resource-value"><strong id="resource-host-temperature">—</strong><span>온도</span></div></div><p id="resource-host-detail" class="resource-detail">라즈베리파이 전체 기준 · 측정 준비 중</p></article>
+        <article class="resource-card"><header><h3>전체 시스템</h3><span id="resource-host-indicator" class="status-value unknown"><span class="status-dot unknown"></span></span></header><div class="resource-values"><div class="resource-value"><strong id="resource-host-cpu">—</strong><span>CPU</span></div><div class="resource-value"><strong id="resource-host-memory">—</strong><span>메모리 사용량</span></div><div class="resource-value"><strong id="resource-host-temperature">—</strong><span>온도</span></div></div><p id="resource-host-detail" class="resource-detail">호스트 전체 기준 · 측정 준비 중</p></article>
         <article class="resource-card"><header><h3>CPU 코어별 사용량</h3><span id="resource-host-peak-core" class="resource-detail">최고 코어: 측정 중</span></header><div id="resource-host-cores" class="cpu-core-list" aria-live="polite">코어별 측정 준비 중</div><p class="resource-detail">코어별 사용량으로 단일 코어 편중을 확인합니다.</p></article>
       </div>
     </section>
@@ -147,17 +159,20 @@
     </section>
   </section>
 
-  <section id="tab-terminals" class="tab-panel" role="tabpanel" aria-labelledby="tab-terminals-button">
+  <section id="tab-map" class="tab-panel" role="tabpanel" aria-labelledby="tab-map-button">
     <section class="panel">
-      <div class="section-heading"><h2>단말별 운영 상태</h2><span id="terminal-summary" class="section-meta">확인 중</span></div>
-      <div id="terminal-cards" class="terminal-cards">확인 중</div>
-    </section>
-  </section>
-
-  <section id="tab-detection" class="tab-panel" role="tabpanel" aria-labelledby="tab-detection-button">
-    <section class="panel">
-      <div class="section-heading"><h2>사람 검출</h2><span id="people-summary" class="section-meta">확인 중</span></div>
-      <div id="people-detections" class="people-groups">확인 중</div>
+      <div class="section-heading"><h2 id="map-name">전체 작업 구역</h2><span id="map-summary" class="section-meta">확인 중</span></div>
+      <div class="map-legend" aria-label="지도 범례">
+        <span class="legend-item"><span class="map-swatch forklift" aria-hidden="true"></span>지게차·현재 위험도</span>
+        <span class="legend-item"><span class="map-swatch person" aria-hidden="true"></span>사람</span>
+        <span class="legend-item"><span class="map-swatch excluded" aria-hidden="true"></span>제외 구역</span>
+        <span class="legend-item"><span class="map-swatch blind" aria-hidden="true"></span>가림 구역</span>
+      </div>
+      <div class="map-shell">
+        <svg id="site-map" class="site-map" role="img" aria-label="지게차와 사람의 실시간 월드 좌표 지도"></svg>
+        <p id="map-empty" class="map-empty" hidden>지도 설정을 확인하고 있습니다.</p>
+      </div>
+      <p id="map-notice" class="map-notice" aria-live="polite"></p>
     </section>
   </section>
 
@@ -174,7 +189,7 @@
 
     <section class="panel">
       <div class="section-heading"><h2>최근 서버 로그</h2><span class="log-meta">로그 불러온 시각: <span id="server-log-fetched-time">확인 중</span> · 표시 범위: <span id="log-count">최근 50줄</span></span></div>
-      <pre id="server-logs">확인 중</pre>
+      <div id="server-logs" class="log-list" role="log" aria-live="polite">확인 중</div>
     </section>
   </section>
 
@@ -183,13 +198,12 @@
     const REFRESH_INTERVAL_SECONDS = Number(document.body.dataset.refreshIntervalSeconds);
     const REFRESH_INTERVAL_MS = REFRESH_INTERVAL_SECONDS * MILLISECONDS_PER_SECOND;
     const RUNTIME_STATUS_MAX_AGE_SECONDS = 3;
+    const SVG_NS = 'http://www.w3.org/2000/svg';
     const numberFormat = new Intl.NumberFormat('ko-KR');
     const riskLabels = Object.freeze({SAFE:'안전',CAUTION:'주의',DANGER:'위험',EMERGENCY:'비상'});
-    const exceptionLabels = Object.freeze({NONE:'없음',SENSOR_FAULT:'센서 이상',DEAD_RECKONING:'위치 추정',EMERGENCY_IMPACT:'충격 감지',UNCONFIRMED_PROXIMITY:'미확인 근접'});
-    const localizationLabels = Object.freeze({LOCALIZED:'위치 확인',MARKER_NOT_DETECTED:'마커 미검출',HOMOGRAPHY_UNAVAILABLE:'좌표 변환 불가',WAITING_FOR_ARUCO:'ArUco 입력 대기'});
 
     const setText=(id,value)=>{document.getElementById(id).textContent=value};
-    setText('refresh-note',`안전 서버와 단말별 상태를 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신`);
+    setText('refresh-note',`안전 서버와 전체 작업 구역을 한눈에 확인합니다. · ${REFRESH_INTERVAL_SECONDS}초마다 갱신`);
     const setIndicator=(id,kind,label)=>{
       const node=document.getElementById(id);
       const dot=document.createElement('span');
@@ -245,6 +259,69 @@
       if(age<MILLISECONDS_PER_SECOND)return `${Math.max(0,Math.round(age))}ms 전`;
       return `${(age/MILLISECONDS_PER_SECOND).toFixed(1)}초 전`;
     };
+    const LOG_LINE_RE=/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\] \[([A-Z]+)\] \[([A-Z0-9_]+)\] (.*)$/;
+    const isSystemdLogLine=(line)=>{
+      if(LOG_LINE_RE.test(line))return false;
+      return /^(Starting |Started |Stopping |Stopped )/.test(line)
+        || /\.service: /.test(line)
+        || /Consumed .+ CPU time/.test(line);
+    };
+    const stripRunId=(message)=>message.replace(/\s*\[run_id=[^\]]+\]\s*$/,'');
+    const formatLogClock=(value)=>{
+      const date=new Date(value);
+      if(Number.isNaN(date.getTime()))return value;
+      return new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Seoul'}).format(date);
+    };
+    const parseServerLogLine=(line)=>{
+      const match=line.match(LOG_LINE_RE);
+      if(!match)return null;
+      return {time:match[1],level:match[2],tag:match[3],message:stripRunId(match[4])};
+    };
+    const renderServerLogs=(lines)=>{
+      const node=document.getElementById('server-logs');
+      const visible=lines.filter((line)=>line && !isSystemdLogLine(line));
+      if(!visible.length){
+        node.textContent='기록 없음';
+        return 0;
+      }
+      const stickToBottom=node.dataset.pinned!=='0' && (node.scrollHeight-node.scrollTop-node.clientHeight<48);
+      const fragment=document.createDocumentFragment();
+      visible.forEach((line)=>{
+        const parsed=parseServerLogLine(line);
+        const row=document.createElement('div');
+        if(!parsed){
+          row.className='log-row log-row-raw';
+          row.textContent=line;
+          fragment.append(row);
+          return;
+        }
+        const level=parsed.level.toLowerCase();
+        row.className=`log-row log-level-${level}`;
+        const time=document.createElement('span');
+        time.className='log-time';
+        time.textContent=formatLogClock(parsed.time);
+        time.title=parsed.time;
+        const lvl=document.createElement('span');
+        lvl.className=`log-level log-level-${level}`;
+        lvl.textContent=parsed.level;
+        const tag=document.createElement('span');
+        tag.className='log-tag';
+        tag.textContent=parsed.tag;
+        const msg=document.createElement('span');
+        msg.className='log-message';
+        msg.textContent=parsed.message;
+        row.append(time,lvl,tag,msg);
+        fragment.append(row);
+      });
+      node.replaceChildren(fragment);
+      if(stickToBottom){
+        node.scrollTop=node.scrollHeight;
+        node.dataset.pinned='1';
+      }else{
+        node.dataset.pinned='0';
+      }
+      return visible.length;
+    };
     const formatDuration=(value)=>{
       const milliseconds=Number(value);
       if(!Number.isFinite(milliseconds)||milliseconds<0)return '확인 불가';
@@ -286,28 +363,11 @@
       }
     };
     const riskLabel=(value)=>riskLabels[value]||'판정 대기';
-    const riskClass=(value)=>({SAFE:'risk-safe',CAUTION:'risk-caution',DANGER:'risk-danger',EMERGENCY:'risk-emergency'}[value]||'risk-unknown');
-    const exceptionLabel=(value)=>exceptionLabels[value]||'확인 필요';
-    const localizationLabel=(value)=>localizationLabels[value]||'위치 진단 확인 필요';
-    const localizationClass=(value)=>({LOCALIZED:'risk-safe',MARKER_NOT_DETECTED:'risk-caution',HOMOGRAPHY_UNAVAILABLE:'risk-danger',WAITING_FOR_ARUCO:'risk-unknown'}[value]||'risk-unknown');
     const runtimeAgeMs=(checkedUtc)=>{
       if(!checkedUtc)return Number.POSITIVE_INFINITY;
       const checked=Date.parse(checkedUtc);
       if(!Number.isFinite(checked))return Number.POSITIVE_INFINITY;
       return Math.max(0,Date.now()-checked);
-    };
-    const addTerminalField=(parent,label,value,detail,valueClass='')=>{
-      const field=document.createElement('div');
-      field.className='terminal-field';
-      const labelNode=document.createElement('span');
-      labelNode.textContent=label;
-      const valueNode=document.createElement('strong');
-      valueNode.textContent=value;
-      if(valueClass)valueNode.className=valueClass;
-      const detailNode=document.createElement('small');
-      detailNode.textContent=detail;
-      field.append(labelNode,valueNode,detailNode);
-      parent.append(field);
     };
     const formatPercent=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 중':`${Number(value).toFixed(1)}%`;
     const formatMemoryMb=(value)=>value===null||value===undefined||!Number.isFinite(Number(value))?'측정 중':`${Number(value).toFixed(1)}MB`;
@@ -456,151 +516,130 @@
       const issueCount=[decisionKind==='problem',riskKind==='problem',storageKind==='problem'].filter(Boolean).length;
       setText('decision-summary',issueCount?`${formatNumber(issueCount)}개 항목 확인 필요`:sensorBypassed?'센서 제외 시험 모드':'주요 기능 정상');
     };
-    const appendPersonRow=(parent,person)=>{
-      const row=document.createElement('div');
-      row.className='person-row';
-      const trackId=Number.isFinite(Number(person.track_id))?`사람 #${person.track_id}`:'사람 ID 확인 필요';
-      const source=[person.camera_id||person.stream_id,Number.isFinite(Number(person.channel))?`${person.channel}번 채널`:null]
-        .filter(Boolean).join(' · ');
-      const title=document.createElement('strong');
-      title.textContent=source?`${trackId} · ${source}`:trackId;
-      const position=person.position||{};
-      const distance=Number.isFinite(Number(person.distance_mm))
-        ? `거리 ${formatNumber(person.distance_mm)}mm`
-        : '거리 확인 불가';
-      const detail=document.createElement('small');
-      detail.textContent=`위치 ${formatNumber(position.x_mm)} / ${formatNumber(position.y_mm)}mm · ${distance} · ${formatAgeMs(person.age_ms)}`;
-      if(person.observed_utc)row.title=`마지막 검출 ${formatTimestamp(person.observed_utc)}`;
-      row.append(title,detail);
-      parent.append(row);
+    const svgElement=(name,attributes={},text='')=>{
+      const node=document.createElementNS(SVG_NS,name);
+      Object.entries(attributes).forEach(([key,value])=>node.setAttribute(key,String(value)));
+      if(text)node.textContent=text;
+      return node;
     };
-    const renderTerminalCards=(terminals,sensorMode='network')=>{
-      const root=document.getElementById('terminal-cards');
-      root.replaceChildren();
-      const sensorBypassed=sensorMode==='disabled';
-      if(!terminals.length){
-        root.textContent='등록된 단말이 없습니다.';
-        setText('terminal-summary','등록된 단말 없음');
+    const validMapPoint=(point)=>Array.isArray(point)&&point.length===2&&
+      Number.isFinite(Number(point[0]))&&Number.isFinite(Number(point[1]));
+    const polygonText=(points)=>points.map((point)=>`${Number(point[0])},${Number(point[1])}`).join(' ');
+    const uniquePeople=(terminals)=>{
+      const people=new Map();
+      terminals.forEach((terminal)=>{
+        const tracks=Array.isArray(terminal.people?.tracks)?terminal.people.tracks:[];
+        tracks.forEach((person)=>{
+          const position=person.position||{};
+          const x=Number(position.x_mm),y=Number(position.y_mm);
+          if(!Number.isFinite(x)||!Number.isFinite(y))return;
+          const key=`${person.track_id??'?'}/${Math.round(x/25)}/${Math.round(y/25)}`;
+          const previous=people.get(key);
+          if(!previous||Number(person.age_ms||0)<Number(previous.age_ms||0))people.set(key,person);
+        });
+      });
+      return Array.from(people.values());
+    };
+    const renderSiteMap=(siteMap,terminals=[])=>{
+      const svg=document.getElementById('site-map');
+      const empty=document.getElementById('map-empty');
+      const boundary=Array.isArray(siteMap?.boundary)?siteMap.boundary.filter(validMapPoint):[];
+      if(boundary.length<3){
+        svg.replaceChildren();
+        svg.hidden=true;
+        empty.hidden=false;
+        empty.textContent='site_map.json에 전체 작업 구역을 설정하면 여기에 표시됩니다.';
+        setText('map-name','전체 작업 구역');
+        setText('map-summary','지도 설정 없음');
+        setText('map-notice','호모그래피는 그대로 두고 같은 mm 좌표계의 외곽선만 추가하면 됩니다.');
         return;
       }
-      terminals.forEach((terminal)=>{
-        const terminalId=terminal.terminal_id||'알 수 없는 단말';
-        const sensor=terminal.sensor||{};
-        const risk=terminal.risk||{};
-        const events=terminal.events||{};
-        const sensorHealthy=sensorBypassed||(sensor.has_sample===true&&sensor.stale===false);
-        const outputHealthy=terminal.risk_link==='connected'&&Number(terminal.risk_send_failures||0)===0&&Number(terminal.risk_queue_dropped||0)===0;
-        const hasRisk=risk.has_result===true;
-        const hasException=hasRisk&&risk.exception&&risk.exception!=='NONE';
-        const cardKind=(!sensorBypassed&&!sensor.has_sample)||!hasRisk?'unknown':sensorHealthy&&outputHealthy&&!hasException?'good':'problem';
-        const card=document.createElement('article');
-        card.className='terminal-card';
-        const header=document.createElement('header');
-        const title=document.createElement('h3');
-        title.textContent=terminalId;
-        const state=document.createElement('span');
-        state.className='terminal-state';
-        const dot=document.createElement('span');
-        dot.className=`status-dot ${cardKind}`;
-        dot.setAttribute('aria-hidden','true');
-        const stateText=sensorBypassed?'센서 제외 테스트':!sensor.has_sample?'센서 수신 없음':!hasRisk?'판정 대기':hasException?`예외 · ${exceptionLabel(risk.exception)}`:sensorHealthy&&outputHealthy?'운영 정상':'확인 필요';
-        state.append(dot,document.createTextNode(stateText));
-        header.append(title,state);
-        const fields=document.createElement('div');
-        fields.className='terminal-fields';
 
-        const sensorState=sensorBypassed?'센서 제외 테스트':!sensor.has_sample?'수신 없음':sensor.stale?'지연/끊김':'정상';
-        addTerminalField(fields,'센서',sensorState,
-          sensorBypassed?'실제 센서 입력을 위험 판정에서 제외':`${formatAgeMs(sensor.age_ms)} · 정상 ${formatNumber(sensor.received)}건 · 파싱 실패 ${formatNumber(sensor.parse_failures)}건`,
-          sensorHealthy?'':'risk-caution');
-
-        const currentRisk=risk.has_result===true?(risk.state||'UNKNOWN'):'UNKNOWN';
-        const riskDetails=[];
-        if(Number.isFinite(Number(risk.distance_mm)))riskDetails.push(`거리 ${formatNumber(risk.distance_mm)}mm`);
-        if(risk.exception&&risk.exception!=='NONE')riskDetails.push(`예외 ${exceptionLabel(risk.exception)}`);
-        if(risk.camera_id)riskDetails.push(`${risk.camera_id}${Number.isFinite(Number(risk.channel))?` · ${risk.channel}번 채널`:''}`);
-        if(!riskDetails.length)riskDetails.push(risk.has_result===true?'판정 근거 확인 중':'아직 실제 판정 없음');
-        addTerminalField(fields,'현재 판정',riskLabel(currentRisk),riskDetails.join(' · '),`risk-badge ${riskClass(currentRisk)}`);
-
-        const localization=terminal.localization||{};
-        const localizationStatus=localization.status||'WAITING_FOR_ARUCO';
-        const localizationDetails=[];
-        if(Number.isFinite(Number(localization.configured_marker_id)))
-          localizationDetails.push(`설정 ID ${formatNumber(localization.configured_marker_id)}`);
-        if(localization.last_observed_marker_ids?.length)
-          localizationDetails.push(`최근 관측 ID ${localization.last_observed_marker_ids.join(', ')}`);
-        else if(localizationStatus!=='LOCALIZED')
-          localizationDetails.push('이번 실행에서 관측된 마커 없음');
-        if(localization.last_observed_markers_stream_id)
-          localizationDetails.push(localization.last_observed_markers_stream_id);
-        if(localization.last_target_marker_seen_utc)
-          localizationDetails.push(`설정 ID 마지막 검출 ${formatTimestamp(localization.last_target_marker_seen_utc)}`);
-        else if(localizationStatus==='MARKER_NOT_DETECTED')
-          localizationDetails.push('설정 ID는 이번 실행에서 검출되지 않음');
-        addTerminalField(fields,'지게차 위치',localizationLabel(localizationStatus),
-          localizationDetails.join(' · ')||'진단 정보 없음',`risk-badge ${localizationClass(localizationStatus)}`);
-
-        const lastChange=risk.last_change_utc||events.last_change_utc;
-        addTerminalField(fields,'최근 전이',lastChange?formatTimestamp(lastChange):'기록 없음',
-          `상태 전이 ${formatNumber(events.state_changes??terminal.change_sends)}건`);
-
-        const outputState=terminal.risk_link==='connected'?'연결됨':terminal.risk_link==='connecting'?'연결 중':'끊김';
-        addTerminalField(fields,'위험 송신',outputState,
-          `실패 ${formatNumber(terminal.risk_send_failures)}건 · 하트비트 ${formatNumber(terminal.heartbeat_sends)}건`,
-          outputHealthy?'':'risk-caution');
-
-        card.append(header,fields);
-        root.append(card);
+      svg.hidden=false;
+      empty.hidden=true;
+      const localized=terminals.filter((terminal)=>{
+        const position=terminal.localization?.position;
+        return terminal.localization?.localized===true&&position&&Number.isFinite(Number(position.x_mm))&&Number.isFinite(Number(position.y_mm));
       });
-      const healthyCount=terminals.filter((terminal)=>{
-        const sensor=terminal.sensor||{};
-        const risk=terminal.risk||{};
-        return (sensorBypassed||(sensor.has_sample===true&&sensor.stale===false))&&risk.has_result===true
-          &&(!risk.exception||risk.exception==='NONE')
-          &&terminal.risk_link==='connected'
-          &&Number(terminal.risk_send_failures||0)===0
-          &&Number(terminal.risk_queue_dropped||0)===0;
-      }).length;
-      setText('terminal-summary',`${healthyCount}/${terminals.length}대 운영 정상`);
-    };
-    const renderPeopleSection=(terminals)=>{
-      const root=document.getElementById('people-detections');
-      root.replaceChildren();
-      let totalPeople=0;
-      let activeTerminalCount=0;
-      terminals.forEach((terminal)=>{
-        const people=terminal.people||{};
-        const tracks=Array.isArray(people.tracks)?people.tracks:[];
-        if(!tracks.length)return;
-        activeTerminalCount+=1;
-        totalPeople+=tracks.length;
-        const group=document.createElement('article');
-        group.className='people-group';
-        const header=document.createElement('header');
-        const title=document.createElement('h3');
-        title.textContent=terminal.terminal_id||'알 수 없는 단말';
-        const meta=document.createElement('span');
-        meta.className='people-group-meta';
-        meta.textContent=`${formatNumber(people.count??tracks.length)}명 · 마지막 프레임 ${formatAgeMs(people.last_update_age_ms)}`;
-        header.append(title,meta);
-        const list=document.createElement('div');
-        list.className='people-list';
-        tracks.forEach((person)=>appendPersonRow(list,person));
-        group.append(header,list);
-        root.append(group);
+      const people=uniquePeople(terminals);
+      const zones=Array.isArray(siteMap.zones)?siteMap.zones.map((zone)=>({
+        zone,
+        polygon:Array.isArray(zone.polygon)?zone.polygon.filter(validMapPoint):[],
+      })).filter((entry)=>entry.polygon.length>=3):[];
+      // 긴 변을 가로로 두고, 긋는 방향과 무관하게 -90° 두 번(180°) 돌린 방향으로 고정한다.
+      let axisX=1,axisY=0,longEdge=0;
+      boundary.forEach((point,index)=>{
+        const next=boundary[(index+1)%boundary.length];
+        const dx=Number(next[0])-Number(point[0]),dy=Number(next[1])-Number(point[1]);
+        const length=Math.hypot(dx,dy);
+        if(length>longEdge){longEdge=length;axisX=dx/length;axisY=dy/length;}
       });
-      if(!terminals.length){
-        root.textContent='등록된 단말이 없습니다.';
-        setText('people-summary','등록된 단말 없음');
-      }else if(totalPeople===0){
-        const empty=document.createElement('p');
-        empty.className='people-empty';
-        empty.textContent='현재 검출된 사람이 없습니다.';
-        root.append(empty);
-        setText('people-summary','현재 0명 검출');
-      }else{
-        setText('people-summary',`${formatNumber(totalPeople)}명 검출 · ${formatNumber(activeTerminalCount)}개 단말`);
-      }
+      if(axisX>0||(Math.abs(axisX)<1e-9&&axisY>0)){axisX=-axisX;axisY=-axisY;}
+      const toDisplay=(point)=>{
+        const x=Number(point[0]),y=Number(point[1]);
+        return [x*axisX+y*axisY,-x*axisY+y*axisX];
+      };
+      const displayBoundary=boundary.map(toDisplay);
+      const displayZones=zones.map((entry)=>({zone:entry.zone,polygon:entry.polygon.map(toDisplay)}));
+      const displayLocalized=localized.map((terminal)=>({terminal,position:toDisplay([terminal.localization.position.x_mm,terminal.localization.position.y_mm])}));
+      const displayPeople=people.map((person)=>({person,position:toDisplay([person.position.x_mm,person.position.y_mm])}));
+      const livePoints=[...displayLocalized.map((entry)=>entry.position),...displayPeople.map((entry)=>entry.position)];
+      const mapPoints=[...displayBoundary,...displayZones.flatMap((entry)=>entry.polygon),...livePoints];
+      const xs=mapPoints.map((point)=>Number(point[0]));
+      const ys=mapPoints.map((point)=>Number(point[1]));
+      const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+      const width=Math.max(1,maxX-minX),height=Math.max(1,maxY-minY);
+      const padding=Math.max(width,height)*.05;
+      const markerSize=Math.max(20,Math.min(width,height)*.025);
+      const fontSize=Math.max(20,markerSize*.8);
+      svg.setAttribute('viewBox',`${minX-padding} ${minY-padding} ${width+padding*2} ${height+padding*2}`);
+      svg.replaceChildren();
+
+      const defs=svgElement('defs');
+      const patternSize=Math.max(20,Math.max(width,height)*.015);
+      const excludedPattern=svgElement('pattern',{id:'excluded-pattern',patternUnits:'userSpaceOnUse',width:patternSize,height:patternSize,patternTransform:'rotate(45)'});
+      excludedPattern.append(svgElement('rect',{width:patternSize,height:patternSize,fill:'#f2f4f7'}),svgElement('line',{x1:0,y1:0,x2:0,y2:patternSize,stroke:'#98a2b3','stroke-width':patternSize*.3}));
+      const blindPattern=svgElement('pattern',{id:'blind-pattern',patternUnits:'userSpaceOnUse',width:patternSize,height:patternSize,patternTransform:'rotate(45)'});
+      blindPattern.append(svgElement('rect',{width:patternSize,height:patternSize,fill:'#fffaeb'}),svgElement('line',{x1:0,y1:0,x2:0,y2:patternSize,stroke:'#fdb022','stroke-width':patternSize*.18}));
+      defs.append(excludedPattern,blindPattern);
+      svg.append(defs,svgElement('polygon',{points:polygonText(displayBoundary),class:'map-boundary'}));
+
+      const layer=svgElement('g');
+      displayZones.forEach((entry)=>{
+        const zone=entry.zone;
+        const polygon=entry.polygon;
+        const shape=svgElement('polygon',{points:polygonText(polygon),class:`map-zone map-zone-${zone.kind==='blind'?'blind':'excluded'}`});
+        shape.append(svgElement('title',{},zone.label||zone.id||zone.kind));
+        layer.append(shape);
+        const center=polygon.reduce((sum,point)=>[sum[0]+Number(point[0]),sum[1]+Number(point[1])],[0,0]).map((value)=>value/polygon.length);
+        layer.append(svgElement('text',{x:center[0],y:center[1],class:'map-zone-label','font-size':fontSize},zone.label||zone.id||''));
+      });
+
+      displayLocalized.forEach(({terminal,position})=>{
+        const risk=terminal.risk?.state||'unknown';
+        const configuredRadius=Number(terminal.collision_radius_mm);
+        const radius=Number.isFinite(configuredRadius)&&configuredRadius>0?configuredRadius:markerSize*2;
+        const group=svgElement('g');
+        const circle=svgElement('circle',{cx:position[0],cy:position[1],r:radius,class:`map-forklift map-risk-${risk}`});
+        const original=terminal.localization.position;
+        circle.append(svgElement('title',{},`${terminal.terminal_id||'지게차'} · ${riskLabel(risk)} · ${formatNumber(original.x_mm)}, ${formatNumber(original.y_mm)}mm`));
+        group.append(circle,svgElement('text',{x:position[0],y:position[1],class:'map-label','font-size':fontSize},terminal.terminal_id||'지게차'));
+        layer.append(group);
+      });
+
+      displayPeople.forEach(({person,position})=>{
+        const group=svgElement('g');
+        const circle=svgElement('circle',{cx:position[0],cy:position[1],r:markerSize,class:'map-person'});
+        circle.append(svgElement('title',{},`사람 #${person.track_id??'?'} · ${formatNumber(person.position.x_mm)}, ${formatNumber(person.position.y_mm)}mm · ${formatAgeMs(person.age_ms)}`));
+        group.append(circle,svgElement('text',{x:position[0],y:position[1],class:'map-label map-person-label','font-size':fontSize},`P${person.track_id??''}`));
+        layer.append(group);
+      });
+      svg.append(layer);
+
+      const missing=terminals.filter((terminal)=>!localized.includes(terminal)).map((terminal)=>terminal.terminal_id||'알 수 없는 단말');
+      setText('map-name',siteMap.name||'전체 작업 구역');
+      setText('map-summary',`지게차 ${localized.length}/${terminals.length}대 · 사람 ${people.length}명 · 구역 ${zones.length}개`);
+      setText('map-notice',missing.length?`긴 변 가로 · 방향 고정 · 위치 미확인: ${missing.join(', ')}`:'긴 변 가로 · 방향 고정');
     };
     const setUnknownState=()=>{
       setOverall('unknown','확인 필요','상태를 확인할 수 없습니다.');
@@ -630,16 +669,14 @@
       setIndicator('event-storage-indicator','unknown','이벤트 DB 상태 확인 필요');
       setText('decision-summary','확인 필요');
       setText('server-log-fetched-time','확인 실패');
-      renderResources({});
-      setText('terminal-cards','실행 정보 없음');
-      setText('terminal-summary','실행 정보 없음');
-      setText('people-detections','실행 정보 없음');
-      setText('people-summary','실행 정보 없음');
     };
 
+    let lastSuccessfulRefresh=null;
+    let consecutiveRefreshFailures=0;
     async function refresh(){
       try{
         const response=await fetch('/api/status',{cache:'no-store'});
+        if(!response.ok)throw new Error(`HTTP ${response.status}`);
         const value=await response.json();
         const safetyState=value.safety_server?.state||'unknown';
         const mqttReachable=value.mqtt?.reachable;
@@ -687,8 +724,8 @@
         const serverLogFetchedNode=document.getElementById('server-log-fetched-time');
         if(serverLogFetchedNode){serverLogFetchedNode.textContent=formatTimestamp(value.checked_utc);serverLogFetchedNode.title=value.checked_utc||''}
         const recentLines=serverLog.recent_lines||[];
-        setText('server-logs',recentLines.length?recentLines.join('\n'):'기록 없음');
-        setText('log-count',`최근 ${recentLines.length}줄`);
+        const visibleLogCount=renderServerLogs(recentLines);
+        setText('log-count',`표시 ${visibleLogCount}줄`);
 
         if(snapshot){
           setText('server-run-id',`실행 ID: ${snapshot.server_run_id||'확인 불가'}`);
@@ -719,13 +756,11 @@
           setText('storage-state',storageFailures===0?'정상':'확인 필요');
           setText('storage-detail',`이번 실행 ${formatNumber(storage.events_written)}건 기록 · 실패 ${formatNumber(storage.events_write_failures)}건 · 폐기 ${formatNumber(storageDropped)}건`);
           renderOperationalSummary(snapshot);
-          renderTerminalCards(snapshot.terminals||[],snapshot.sensor_mode||'network');
-          renderPeopleSection(snapshot.terminals||[]);
+          renderSiteMap(snapshot.site_map,snapshot.terminals||[]);
         }else{
           setText('server-run-id','실행 정보 없음');
           setText('runtime-state','—');
           setText('runtime-detail','실행 정보 없음');
-          renderResources({});
           setText('sensor-state','—');
           setText('sensor-detail','실행 정보 없음');
           setText('queue-state','—');
@@ -733,27 +768,45 @@
           setText('storage-state','—');
           setText('storage-detail','실행 정보 없음');
           renderOperationalSummary(null);
-          setText('terminal-cards','실행 정보 없음');
-          setText('terminal-summary','실행 정보 없음');
-          setText('people-detections','실행 정보 없음');
-          setText('people-summary','실행 정보 없음');
+          renderSiteMap(null,[]);
           ['runtime-indicator','sensor-indicator','queue-indicator','storage-indicator'].forEach((id)=>setIndicator(id,'unknown','실행 정보 확인 필요'));
         }
 
         const checkedNode=document.getElementById('checked');
         checkedNode.textContent=formatTimestamp(value.checked_utc);
         checkedNode.title=value.checked_utc||'';
+        lastSuccessfulRefresh=value.checked_utc||new Date().toISOString();
+        consecutiveRefreshFailures=0;
       }catch(error){
-        setUnknownState();
-        setText('safety-detail','확인 실패');
-        setText('mqtt-detail','확인 실패');
-        setText('server-logs','확인 실패');
-        setText('log-count','확인 실패');
+        consecutiveRefreshFailures+=1;
+        if(!lastSuccessfulRefresh){
+          setUnknownState();
+          setText('safety-detail','확인 실패');
+          setText('mqtt-detail','확인 실패');
+          setText('server-logs','확인 실패');
+          setText('log-count','확인 실패');
+        }else{
+          const checkedNode=document.getElementById('checked');
+          checkedNode.textContent=`갱신 지연 ${consecutiveRefreshFailures}회 · 마지막 정상 ${formatTimestamp(lastSuccessfulRefresh)}`;
+          checkedNode.title=String(error);
+          if(consecutiveRefreshFailures>=3)
+            setOverall('unknown','갱신 지연','마지막 정상 상태를 유지 중입니다. 네트워크 연결을 확인하세요.');
+        }
       }
     }
 
-    refresh();
-    window.setInterval(refresh,REFRESH_INTERVAL_MS);
+    let refreshing = false;
+    async function scheduledRefresh() {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        await refresh();
+      } finally {
+        refreshing = false;
+      }
+      window.setTimeout(scheduledRefresh, REFRESH_INTERVAL_MS);
+    }
+    scheduledRefresh();
   </script>
 </body>
 </html>

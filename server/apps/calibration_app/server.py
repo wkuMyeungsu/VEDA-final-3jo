@@ -106,6 +106,22 @@ async function loadStreams() {
 }
 
 let liveTimer = null;
+let selectedFrame = null;
+
+function frameUrl(name) {
+  return `/api/frames/photo?stream_id=${encodeURIComponent(streamId())}&name=${encodeURIComponent(name)}`;
+}
+
+function showFrame(name) {
+  if (!name) return;
+  selectedFrame = name;
+  $('#preview').src = frameUrl(name);
+  // 선택한 원본과 같은 파일을 서버에서 현재 캘리브레이션 계수로 보정한다.
+  // t는 브라우저가 직전 선택의 보정 결과를 재사용하지 않게 한다.
+  $('#undistorted').src = `/api/frames/undistorted?stream_id=${encodeURIComponent(streamId())}` +
+    `&name=${encodeURIComponent(name)}&t=${Date.now()}`;
+}
+
 function startLivePreview() {
   if (liveTimer) clearInterval(liveTimer);
   const sid = streamId();
@@ -129,26 +145,29 @@ async function refresh() {
   const value = await (await fetch(`/api/frames?stream_id=${encodeURIComponent(sid)}`)).json();
   const files = value.files || [];
   $('#count').textContent = files.length;
-  // 수집 히스토리 썸네일. 사진을 클릭하면 마지막 캡처 뷰어로 크게 볼 수 있다. ×로 개별 삭제.
+  // 수집 히스토리 썸네일. 사진을 클릭하면 원본/보정 결과를 같은 사진으로 비교한다. ×로 개별 삭제.
   $('#thumbs').innerHTML = files.map((name) =>
     `<div style="position:relative;display:inline-block">
        <img loading="lazy" src="/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(name)}"
-            title="${name}" onclick="$('#preview').src=this.src">
+            title="${name}" onclick="showFrame('${name}')">
        <button onclick="deleteOne('${name}')" title="삭제"
                style="position:absolute;top:2px;right:2px;width:20px;height:20px;padding:0;
                       background:rgba(0,0,0,0.7);color:#fff;border:1px solid #666;
                       border-radius:50%;cursor:pointer;font-size:14px;line-height:1">×</button>
      </div>`).join('');
-  // 큰 뷰어(마지막 캡처)는 항상 마지막 사진으로 자동 갱신한다. 검정 배경 박스는 유지.
+  // 새 캡처 뒤에는 마지막 사진을, history를 선택하면 선택한 사진의 두 버전을 표시한다.
   if (files.length > 0) {
     const last = files[files.length - 1];
-    $('#preview').src = `/api/frames/photo?stream_id=${encodeURIComponent(sid)}&name=${encodeURIComponent(last)}`;
+    if (!selectedFrame || !files.includes(selectedFrame)) showFrame(last);
   } else {
+    selectedFrame = null;
     $('#preview').src = '';
+    $('#undistorted').src = '';
   }
 }
 
 $('#stream').onchange = async () => {
+  selectedFrame = null;
   $('#preview').src = '';
   $('#undistorted').src = '';
   $('#raw-box').classList.remove('warn', 'ok');
@@ -175,6 +194,7 @@ $('#shot').onclick = async () => {
 };
 
 $('#reset').onclick = async () => {
+  selectedFrame = null;
   await fetch(`/api/frames?stream_id=${encodeURIComponent(streamId())}`, {method: 'DELETE'});
   $('#preview').src = '';
   $('#undistorted').src = '';
@@ -198,18 +218,17 @@ $('#run').onclick = async () => {
     const r = value.result;
     $('#status').textContent = `완료 · 재투영 RMSE ${Number(r.reprojection_rmse_px).toFixed(3)} px`;
     $('#result').textContent = JSON.stringify(r, null, 2);
-    if (value.undistorted_image) {
-      $('#undistorted').src = 'data:image/jpeg;base64,' + value.undistorted_image;
-      // 테두리 색으로 보정 적용 여부를 표시한다. 빨강=왜곡 원본, 초록=보정 적용.
-      $('#raw-box').classList.add('warn');
-      $('#calib-box').classList.remove('warn');
-      $('#calib-box').classList.add('ok');
-      const d = r.detection || {};
-      $('#raw-rate').textContent =
-        d.board_markers ? `마커 검출 ${d.before}/${d.board_markers}개` : '';
-      $('#calib-rate').textContent =
-        d.board_markers ? `마커 검출 ${d.after}/${d.board_markers}개` : '';
-    }
+    // 산출 직후에도 마지막(또는 사용자가 고른) 사진 쌍을 유지한다.
+    showFrame(selectedFrame);
+    // 테두리 색으로 보정 적용 여부를 표시한다. 빨강=왜곡 원본, 초록=보정 적용.
+    $('#raw-box').classList.add('warn');
+    $('#calib-box').classList.remove('warn');
+    $('#calib-box').classList.add('ok');
+    const d = r.detection || {};
+    $('#raw-rate').textContent =
+      d.board_markers ? `마커 검출 ${d.before}/${d.board_markers}개` : '';
+    $('#calib-rate').textContent =
+      d.board_markers ? `마커 검출 ${d.after}/${d.board_markers}개` : '';
   } catch (error) {
     $('#status').textContent = '실패';
     $('#result').textContent = String(error);
@@ -339,14 +358,53 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"frame-\d{3}\.jpg", name):
                 self.send_error(404)
                 return
-            # 초록 실선 오버레이가 있으면 그것을, 없으면 원본을 보여준다.
-            annot_name = name.replace(".jpg", "_annot.jpg")
-            annot = session_dir(stream_id) / annot_name
-            photo = annot if annot.is_file() else session_dir(stream_id) / name
+            # 비교 뷰어의 왼쪽은 파일 그대로의 원본이어야 한다. 마커 오버레이는
+            # 수집 검증용 보조 파일로만 남기고 여기에는 섞지 않는다.
+            photo = session_dir(stream_id) / name
             if not photo.is_file():
                 self.send_error(404)
                 return
             body = photo.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/frames/undistorted":
+            query = parse_qs(urlparse(self.path).query)
+            stream_id = query.get("stream_id", [""])[0]
+            name = query.get("name", [""])[0]
+            if not re.fullmatch(r"frame-\d{3}\.jpg", name):
+                self.send_error(404)
+                return
+            job_dir = session_dir(stream_id)
+            source = job_dir / name
+            # 방금 이 세션에서 산출한 결과를 우선한다. 없으면 이미 운영 경로에
+            # 저장돼 있던 채널별 결과를 사용하므로, 다시 캘리브레이션할 필요가 없다.
+            session_intrinsics = job_dir / "intrinsics.json"
+            intrinsics = session_intrinsics if session_intrinsics.is_file() else output_path(stream_id)
+            if not source.is_file() or not intrinsics.is_file():
+                self.send_error(404, "캘리브레이션 결과가 없습니다")
+                return
+            # 선택한 history 원본을 요청마다 현재 세션의 계수로 보정한다. 임시 파일은
+            # 응답 후 제거해 다음 캘리브레이션 결과와 섞이지 않게 한다.
+            preview = job_dir / f".undistorted-{os.urandom(8).hex()}.jpg"
+            try:
+                result = subprocess.run(
+                    [str(TOOL), "undistort-image", "--config", str(CONFIG),
+                     "--intrinsics", str(intrinsics), "--input", str(source),
+                     "--output", str(preview)],
+                    capture_output=True, text=True, timeout=30, check=False)
+                if result.returncode != 0 or not preview.is_file():
+                    raise RuntimeError(result.stderr.strip() or "왜곡 보정 미리보기 생성 실패")
+                body = preview.read_bytes()
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                self.send_json({"ok": False, "error": str(error)}, 502)
+                return
+            finally:
+                preview.unlink(missing_ok=True)
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(body)))

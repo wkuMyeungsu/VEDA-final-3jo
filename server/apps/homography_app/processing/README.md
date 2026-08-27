@@ -70,7 +70,7 @@ homography_tool align-markers \
 
 ## 설정
 
-설정 설명과 예시는 [`server/config/homography/README.md`](../../../config/homography/README.md)에 있다.
+설정 설명과 예시는 [`server/config.example/homography/README.md`](../../../config.example/homography/README.md)에 있다.
 핵심은 다음 네 가지다.
 
 - `dictionary`: 검출할 ArUco 사전

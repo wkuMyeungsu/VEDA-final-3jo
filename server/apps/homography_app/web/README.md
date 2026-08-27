@@ -140,11 +140,11 @@ camera API와 전체 정합 요청은 `stream_id`를 사용한다.
 ### 상세
 
 공통 카메라 설정은 안전 서버와 호모그래피 앱이 함께 읽는다. 실제 CCTV 계정이
-포함될 수 있는 `camera_list.json`은 샘플에서 생성하고 운영 장비에만 둔다.
+포함될 수 있는 `camera_list.json`은 템플릿에서 복사해 운영 장비에만 둔다.
 
 ```sh
 cd /home/pms/20_server_workspace
-cp server/config/camera_list.sample.json server/config/camera_list.json
+cp -a server/config.example/. server/config/
 chmod 600 server/config/camera_list.json
 ```
 
@@ -268,5 +268,5 @@ QT_QPA_PLATFORM=offscreen \
 
 - [호모그래피 앱 전체 개요](../README.md)
 - [호모그래피 처리 엔진](../processing/README.md)
-- [호모그래피 설정·결과](../../../config/homography/README.md)
+- [호모그래피 설정·결과](../../../config.example/homography/README.md)
 - [서버 전체 문서](../../../README.md)

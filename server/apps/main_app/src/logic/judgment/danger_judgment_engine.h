@@ -12,8 +12,7 @@
 //        "사람인지 확인 안 됨"을 하류(단말/로그)에 전달 -> 오탐 설명·후속 대응 가능
 //
 // 구현은 danger_judgment_engine.cpp, 실행용 main()은 danger_judgment_engine_main.cpp에 있다.
-// 이 헤더 자체는 표준 헤더만 쓰므로 POSIX 의존성이 없다.
-// (nowIso8601Ms()의 gmtime_r, ResultPublisher의 소켓 의존성은 각 .cpp 쪽에 남아 있다.)
+// OS별 시간 처리는 구현부가 common/platform.hpp로 감싼다.
 
 #pragma once
 
@@ -238,7 +237,7 @@ std::string toString(ExceptionState e);
 
 
 // 현재 UTC 시각을 ISO8601 + 밀리초 문자열로 반환 (예: "2026-07-28T10:15:30.123Z").
-// gmtime_r 사용(POSIX 전용).
+// OS에 맞는 UTC 시간 API를 사용한다.
 std::string nowIso8601Ms();
 
 // "미확정/미연결이면 null"로 나가야 하는 문자열 필드(camera_id, zone, terminal_id)를 직렬화한다.

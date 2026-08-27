@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 
 #include <nlohmann/json.hpp>
@@ -10,6 +11,8 @@
 namespace forklift::logic {
 namespace {
 using nlohmann::json;
+
+void invertHomography(HomographyTransformer::StreamHomography& result);
 
 std::pair<std::string, bool> findIntrinsicsFile(const std::string& stream_id,
                                                 const std::filesystem::path& homography_root) {
@@ -62,11 +65,10 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path,
     result.image_width_px = width;
     result.image_height_px = height;
     result.lens_undistorted = root.value("lens_undistorted", false);
-    if (result.lens_undistorted) {
-        // 스트림 전용 산출물을 우선하고 공용 파일로 폴백한다.
-        const auto [intrinsics_path, is_per_stream] = findIntrinsicsFile(stream_id, homography_root);
-        result.intrinsics.valid = !intrinsics_path.empty() && loadIntrinsics(intrinsics_path, result.intrinsics);
-    }
+    // 포즈 복원(높이 보정)은 K가 필요하고, 왜곡 역산은 lens_undistorted일 때만 쓴다.
+    const auto [intrinsics_path, is_per_stream] = findIntrinsicsFile(stream_id, homography_root);
+    if (!intrinsics_path.empty())
+        loadIntrinsics(intrinsics_path, result.intrinsics);
     for (int row = 0; row < 3; ++row) {
         if (!matrix.at(row).is_array() || matrix.at(row).size() != 3) throw std::runtime_error("H_camera_pixels_to_shared_map는 3x3 행렬이어야 함");
         for (int col = 0; col < 3; ++col) {
@@ -75,6 +77,118 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path,
             result.h[row * 3 + col] = v;
         }
     }
+    invertHomography(result);
+    return result;
+}
+
+std::array<double, 9> multiply3x3(const std::array<double, 9>& left,
+                                  const std::array<double, 9>& right) {
+    std::array<double, 9> result{};
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            result[static_cast<std::size_t>(row * 3 + col)] =
+                left[static_cast<std::size_t>(row * 3 + 0)] * right[static_cast<std::size_t>(0 * 3 + col)] +
+                left[static_cast<std::size_t>(row * 3 + 1)] * right[static_cast<std::size_t>(1 * 3 + col)] +
+                left[static_cast<std::size_t>(row * 3 + 2)] * right[static_cast<std::size_t>(2 * 3 + col)];
+        }
+    }
+    const double scale = result[8];
+    if (std::isfinite(scale) && std::abs(scale) > 1e-12) {
+        for (double& value : result) value /= scale;
+    }
+    return result;
+}
+
+struct Vec3 {
+    double x = 0, y = 0, z = 0;
+};
+
+Vec3 sub(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+Vec3 scale(Vec3 v, double s) { return {v.x * s, v.y * s, v.z * s}; }
+double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+double norm(Vec3 v) { return std::sqrt(dot(v, v)); }
+Vec3 cross(Vec3 a, Vec3 b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+Vec3 normalize(Vec3 v) {
+    const double n = norm(v);
+    return n > 1e-12 ? scale(v, 1.0 / n) : Vec3{};
+}
+
+std::optional<common::WorldPoint> applyH(const std::array<double, 9>& h, double px, double py) {
+    const double denominator = h[6] * px + h[7] * py + h[8];
+    if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;
+    const double x = (h[0] * px + h[1] * py + h[2]) / denominator;
+    const double y = (h[3] * px + h[4] * py + h[5]) / denominator;
+    if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
+    return common::WorldPoint{x, y};
+}
+
+void computePose(HomographyTransformer::StreamHomography& loaded) {
+    loaded.pose_valid = false;
+    const auto& K = loaded.intrinsics;
+    if (!K.valid || !(K.fx > 1e-9) || !(K.fy > 1e-9)) return;
+    const auto& hi = loaded.h_raw_inv;
+    // [r1 r2 t] ~ K^{-1} H_{world→pixel}. 저장된 h_raw_inv가 그 행렬이다.
+    const double i00 = (hi[0] - K.cx * hi[6]) / K.fx;
+    const double i01 = (hi[1] - K.cx * hi[7]) / K.fx;
+    const double i02 = (hi[2] - K.cx * hi[8]) / K.fx;
+    const double i10 = (hi[3] - K.cy * hi[6]) / K.fy;
+    const double i11 = (hi[4] - K.cy * hi[7]) / K.fy;
+    const double i12 = (hi[5] - K.cy * hi[8]) / K.fy;
+    const Vec3 c0{i00, i10, hi[6]};
+    const Vec3 c1{i01, i11, hi[7]};
+    const Vec3 c2{i02, i12, hi[8]};
+    const double n0 = norm(c0);
+    const double n1 = norm(c1);
+    if (!(n0 > 1e-12) || !(n1 > 1e-12)) return;
+    const double lambda = 2.0 / (n0 + n1);
+    Vec3 r1 = scale(c0, lambda);
+    Vec3 r2 = scale(c1, lambda);
+    Vec3 t = scale(c2, lambda);
+    r1 = normalize(r1);
+    r2 = sub(r2, scale(r1, dot(r1, r2)));
+    const double n2 = norm(r2);
+    if (!(n2 > 1e-12)) return;
+    r2 = scale(r2, 1.0 / n2);
+    Vec3 r3 = cross(r1, r2);
+    if (norm(r3) < 1e-12) return;
+    r3 = normalize(r3);
+    auto cameraCenter = [&](Vec3 a, Vec3 b, Vec3 c, Vec3 trans) {
+        return Vec3{-dot(a, trans), -dot(b, trans), -dot(c, trans)};
+    };
+    Vec3 C = cameraCenter(r1, r2, r3, t);
+    if (!std::isfinite(C.x) || !std::isfinite(C.y) || !std::isfinite(C.z)) return;
+    if (C.z < 0.0) {
+        r1 = scale(r1, -1.0);
+        r2 = scale(r2, -1.0);
+        t = scale(t, -1.0);
+        C = cameraCenter(r1, r2, r3, t);
+    }
+    if (!(C.z > 1e-6)) return;
+    loaded.R = {r1.x, r2.x, r3.x, r1.y, r2.y, r3.y, r1.z, r2.z, r3.z};
+    loaded.t = {t.x, t.y, t.z};
+    loaded.C = {C.x, C.y, C.z};
+    loaded.pose_valid = true;
+}
+
+std::optional<common::WorldPoint> intersectHeight(
+    const HomographyTransformer::StreamHomography& stream, double px, double py, double height_mm) {
+    if (!stream.pose_valid) return std::nullopt;
+    const double camera_z = stream.C[2];
+    if (!(camera_z > height_mm + 1e-6)) return std::nullopt;
+    const auto ground = applyH(stream.h_raw, px, py);
+    if (!ground) return std::nullopt;
+    // 평면 H의 지면 교점 G와 카메라 중심 C를 잇는 선에서 z=height인 점.
+    // 복원된 R의 광축이 지면을 안 바라봐도, 보정된 H의 G는 쓸 수 있다.
+    const double alpha = (camera_z - height_mm) / camera_z;
+    const double x = stream.C[0] + alpha * (ground->x - stream.C[0]);
+    const double y = stream.C[1] + alpha * (ground->y - stream.C[1]);
+    if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
+    return common::WorldPoint{x, y};
+}
+
+void invertHomography(HomographyTransformer::StreamHomography& result) {
     const auto& h = result.h;
     const double determinant =
         h[0] * (h[4] * h[8] - h[5] * h[7]) -
@@ -91,7 +205,17 @@ HomographyTransformer::StreamHomography loadOne(const std::string& path,
                     (h[3] * h[7] - h[4] * h[6]) / determinant,
                     (h[1] * h[6] - h[0] * h[7]) / determinant,
                     (h[0] * h[4] - h[1] * h[3]) / determinant};
-    return result;
+}
+
+void applySiteFrame(HomographyTransformer::StreamHomography& loaded,
+                    const config::SiteMapConfig& site_map) {
+    loaded.h_raw = loaded.h;
+    loaded.h_raw_inv = loaded.h_inv;
+    computePose(loaded);
+    if (!site_map.has_shared_to_site) return;
+    loaded.shared_to_site = site_map.h_shared_to_site;
+    loaded.h = multiply3x3(site_map.h_shared_to_site, loaded.h);
+    invertHomography(loaded);
 }
 }  // namespace
 
@@ -105,9 +229,10 @@ HomographyTransformer::HomographyTransformer(const config::SafetyServerConfig& c
             continue;
         }
         try {
-            streams_.emplace(stream_id, loadOne(configured_path, size_it->second.first,
-                                                size_it->second.second, homography_root,
-                                                stream_id));
+            auto loaded = loadOne(configured_path, size_it->second.first,
+                                  size_it->second.second, homography_root, stream_id);
+            applySiteFrame(loaded, config.site_map);
+            streams_.emplace(stream_id, std::move(loaded));
         } catch (const std::exception& e) {
             stream_load_errors_[stream_id] = configured_path + ": " + e.what();
         }
@@ -119,13 +244,14 @@ bool HomographyTransformer::hasStream(const std::string& stream_id) const {
 }
 
 std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(
-    const std::string& stream_id, const common::PixelPoint& pixel) const {
+    const std::string& stream_id, const common::PixelPoint& pixel, double height_mm) const {
     const auto it = streams_.find(stream_id);
     if (it == streams_.end() || !std::isfinite(pixel.x) || !std::isfinite(pixel.y)) return std::nullopt;
     double px = pixel.x, py = pixel.y;
     // 무왜곡 계약 H: 렌즈 왜곡 역산(뉴턴 반복) 후 변환한다. 플래그 없는 구버전 H는 통과.
-    const auto& intrinsics = it->second.intrinsics;
-    if (it->second.lens_undistorted && intrinsics.valid) {
+    const auto& stream = it->second;
+    const auto& intrinsics = stream.intrinsics;
+    if (stream.lens_undistorted && intrinsics.valid) {
         double xn = (px - intrinsics.cx) / intrinsics.fx;
         double yn = (py - intrinsics.cy) / intrinsics.fy;
         for (int iteration = 0; iteration < 10; ++iteration) {
@@ -142,13 +268,11 @@ std::optional<common::WorldPoint> HomographyTransformer::pixelToWorld(
         px = xn * intrinsics.fx + intrinsics.cx;
         py = yn * intrinsics.fy + intrinsics.cy;
     }
-    const auto& h = it->second.h;
-    const double denominator = h[6] * px + h[7] * py + h[8];
-    if (!std::isfinite(denominator) || std::abs(denominator) < 1e-12) return std::nullopt;
-    const double x = (h[0] * px + h[1] * py + h[2]) / denominator;
-    const double y = (h[3] * px + h[4] * py + h[5]) / denominator;
-    if (!std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
-    return common::WorldPoint{x, y};
+    if (std::isfinite(height_mm) && height_mm > 1e-9) {
+        if (auto elevated = intersectHeight(stream, px, py, height_mm))
+            return applyH(stream.shared_to_site, elevated->x, elevated->y);
+    }
+    return applyH(stream.h, px, py);
 }
 
 std::optional<common::PixelPoint> HomographyTransformer::worldToPixel(

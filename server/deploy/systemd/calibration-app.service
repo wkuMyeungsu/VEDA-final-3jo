@@ -1,0 +1,23 @@
+[Unit]
+Description=Forklift Safety Camera Calibration App (On Demand)
+Requires=homography-app.service
+After=homography-app.service
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory=@APP_ROOT@/apps/calibration_app
+Environment=CALIBRATION_APP_HOST=0.0.0.0
+Environment=CALIBRATION_APP_PORT=8002
+Environment=HOMOGRAPHY_APP_URL=http://127.0.0.1:8001
+Environment=HOMOGRAPHY_CONFIG_DIR=@CONFIG_ROOT@/homography
+Environment=HOMOGRAPHY_TOOL=@BIN_DIR@/homography_tool
+Environment=SAFETY_SERVER_HOMOGRAPHY_DIR=@CONFIG_ROOT@/homography
+ExecStart=@PYTHON_BIN@ @APP_ROOT@/apps/calibration_app/server.py
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

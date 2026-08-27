@@ -61,6 +61,23 @@ int detect_markers_command(int argc, char** argv) {
     return 0;
 }
 
+// 내부 파라미터가 로드된 경우 입력 프레임을 무왜곡 화면으로 저장함.
+int undistort_image_command(int argc, char** argv) {
+    const std::string input = argument(argc, argv, "--input");
+    const std::string output = argument(argc, argv, "--output");
+    if (input.empty() || output.empty())
+        throw std::runtime_error("undistort-image requires --input and --output");
+    if (!has_active_intrinsics())
+        throw std::runtime_error("undistort-image requires camera intrinsics");
+    const cv::Mat image = cv::imread(input);
+    if (image.empty()) throw std::runtime_error("cannot read image: " + input);
+    const cv::Mat corrected = undistort_image(image);
+    if (!cv::imwrite(output, corrected))
+        throw std::runtime_error("cannot write undistorted image: " + output);
+    std::cout << "undistorted " << corrected.cols << "x" << corrected.rows << " image\n";
+    return 0;
+}
+
 // gen-marker 명령으로 단일 ArUco 마커 출력물 생성함.
 int generate_marker(int argc, char** argv) {
     const Config config = read_config(argument(argc, argv, "--config"));
@@ -107,8 +124,11 @@ int solve_manual_command(int argc, char** argv) {
     const json layout = json::parse(layout_input);
     cv::Mat overlay;
     const std::string overlay_path = argument(argc, argv, "--overlay");
+    const bool input_undistorted =
+        argument(argc, argv, "--input-undistorted", "0") == "1";
     const ManualSolveResult result = solve_manual_image(
-        config, image, layout, overlay_path.empty() ? nullptr : &overlay);
+        config, image, layout, overlay_path.empty() ? nullptr : &overlay,
+        input_undistorted);
     json marker_results = json::array();
     for (const auto& marker : result.markers)
         marker_results.push_back({{"id", marker.id}, {"x_mm", marker.x_mm},
@@ -259,9 +279,12 @@ int main(int argc, char** argv) {
         const std::string config_dir =
             fs::path(argument(argc, argv, "--config")).parent_path().string();
         const std::string stream_id = argument(argc, argv, "--stream-id");
-        fs::path intrinsics_path = fs::path(config_dir) / "camera_intrinsics.json";
-        if (!stream_id.empty() && fs::exists(fs::path(config_dir) /
-                                             ("camera_intrinsics_" + stream_id + ".json")))
+        const std::string explicit_intrinsics = argument(argc, argv, "--intrinsics");
+        fs::path intrinsics_path = explicit_intrinsics.empty()
+            ? fs::path(config_dir) / "camera_intrinsics.json"
+            : fs::path(explicit_intrinsics);
+        if (explicit_intrinsics.empty() && !stream_id.empty() &&
+            fs::exists(fs::path(config_dir) / ("camera_intrinsics_" + stream_id + ".json")))
             intrinsics_path = fs::path(config_dir) / ("camera_intrinsics_" + stream_id + ".json");
         std::ifstream intrinsics_input(intrinsics_path);
         if (intrinsics_input) {
@@ -278,6 +301,7 @@ int main(int argc, char** argv) {
         }
         const std::string command = argv[1];
         if (command == "detect-markers") return detect_markers_command(argc, argv);
+        if (command == "undistort-image") return undistort_image_command(argc, argv);
         if (command == "gen-marker") return generate_marker(argc, argv);
         if (command == "solve-manual") return solve_manual_command(argc, argv);
         if (command == "align-markers") return align_markers_command(argc, argv);

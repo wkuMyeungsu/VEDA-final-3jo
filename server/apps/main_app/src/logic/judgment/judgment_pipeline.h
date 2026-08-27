@@ -14,8 +14,7 @@
 // 카메라·스트림·단말 식별자는 모두 문자열/목록 기반으로 전달한다. 특정 카메라
 // 번호를 생성자에 박아 두지 않으며, 담당 스트림은 ArUco 핸드오버 결과로 갱신한다.
 //
-// 구현은 judgment_pipeline.cpp에 있다. 이 헤더는 표준 헤더 + 두 컴포넌트 헤더만 쓰므로
-// POSIX 의존성이 없다(gmtime_r/소켓 의존성은 엔진 .cpp와 ResultPublisher 쪽에만 있다).
+// 구현은 judgment_pipeline.cpp에 있다. 이 헤더는 표준 헤더 + 두 컴포넌트 헤더만 쓴다.
 
 #pragma once
 

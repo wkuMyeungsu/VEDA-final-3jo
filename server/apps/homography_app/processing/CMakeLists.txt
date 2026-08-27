@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d aruco highgui imgcodecs)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d aruco imgcodecs)
 
 add_library(homography_core STATIC
     src/core/calibration.cpp
@@ -17,6 +17,9 @@ add_library(homography_core STATIC
 )
 target_include_directories(homography_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_include_directories(homography_core PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../main_app/src
 )
 target_include_directories(homography_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party
@@ -30,6 +33,9 @@ target_compile_definitions(homography_tool PRIVATE HOMOGRAPHY_TOOL_VERSION="1")
 if(BUILD_TESTING)
     add_executable(homography_unit_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit_tests.cpp
+    )
+    target_include_directories(homography_unit_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../main_app/src
     )
     target_link_libraries(homography_unit_tests PRIVATE homography_core)
     add_test(NAME homography_unit_tests COMMAND homography_unit_tests)

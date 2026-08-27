@@ -8,7 +8,7 @@ forklift_safety_server [--config-dir PATH] [--common-config-dir PATH] [--no-sens
 
 `PATH`를 생략하면 `server/config/safety`를 찾는다. 공통 카메라·단말 식별 설정은
 `server/config`에서 읽으며, 다른 위치에 둘 때는 `--common-config-dir PATH`를 함께 지정한다.
-운영 설정은 장비마다 달라지므로 Git에는 샘플만 남기고 실제 값은 별도 파일로 둔다.
+이 파일은 템플릿이며, 실제 운영 파일은 `server/config/safety`에 둔다.
 
 센서가 아직 연결되지 않은 카메라 판정 테스트에서는 `--no-sensor`를 추가한다. 이때는
 센서 입력을 읽거나 위험 판정에 반영하지 않고 카메라·추적·호모그래피 경로만 검사한다.
@@ -103,12 +103,9 @@ assignment는 `type`, `terminal_id`, `stream_id`, `camera_id`, `channel`, `utc_t
 `tls_enabled`를 켜고 CA·중앙 서버용 client 인증서·개인키 경로를 설정해야 한다.
 개인키는 Git에 넣지 말고 `/etc/forklift_safety/certs/`에 설치한다.
 
-```text
-sudo ./server/scripts/install-server.sh
-```
-
-설치 스크립트는 `main_app`, 호모그래피 엔진, 호모그래피 앱, 모니터링 앱을 빌드·설치하고
-현재 저장소 경로를 사용하는 systemd 유닛을 등록한다. 운영 기본값에서는 모니터링 앱만
-자동 실행하며, 호모그래피 앱은 설치만 하고 중지·비활성화한다. 필요할 때
-`sudo systemctl start homography-app.service`로 수동 실행한다. Mosquitto의 평문 `1883` listener는
+이 저장소는 배포 패키지나 OS 설치 절차를 제공하지 않는다. 빌드는 CMake로 수행하고,
+운영 환경에 배치된 서비스는 `forklift-bscpctl`과 systemd로 관리한다. 운영 기본값에서는
+모니터링 앱만 자동 실행하며, 호모그래피·캘리브레이션 앱은 필요할 때만 실행한다.
+필요할 때 `sudo systemctl start homography-app.service` 또는
+`sudo systemctl start calibration-app.service`로 수동 실행한다. Mosquitto의 평문 `1883` listener는
 지게차 단말과 관제 PC의 `8883` 전환을 확인한 뒤 별도로 닫는다.

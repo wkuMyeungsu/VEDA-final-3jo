@@ -24,8 +24,7 @@
 #include <string>
 #include <thread>
 
-#include <unistd.h>
-
+#include "common/platform.hpp"
 #include "network/network_sensor_reader.hpp"
 
 namespace {
@@ -40,7 +39,7 @@ void check(bool cond, const std::string& what) {
 }
 
 std::string uniqueTerminalId(const std::string& suffix) {
-    return "TEST_" + std::to_string(static_cast<long long>(::getpid())) + "_" + suffix;
+    return "TEST_" + forklift::platform::processId() + "_" + suffix;
 }
 
 bool publishViaCli(const std::string& terminal_id, const std::string& payload) {

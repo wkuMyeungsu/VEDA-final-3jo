@@ -16,6 +16,7 @@
 
 #include "logic/judgment/danger_judgment_engine.h"
 #include "common/latency_stamps.hpp"
+#include "common/platform.hpp"
 #include "logging/logger.hpp"
 
 // ResultDispatcher - 판정 결과 송신 정책 (헤더 온리, 소켓 의존성 없음)
@@ -340,7 +341,7 @@ private:
                                  Clock::now().time_since_epoch()).count();
 
         std::tm tm_buf{};
-        ::localtime_r(&wall_t, &tm_buf);
+        forklift::platform::localtimeLocal(&wall_t, &tm_buf);
 
         // 여러 스레드(판정 루프 / 하트비트 워커)가 같이 찍으므로 한 줄을 통째로
         // 만들어 한 번에 내보낸다 - 스트림에 조각으로 흘리면 줄이 서로 섞인다.

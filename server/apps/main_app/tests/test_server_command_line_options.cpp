@@ -34,21 +34,44 @@ void testDefaults() {
     check(result.options.config_dir == "/default/config", "기본 설정 경로 보존");
     check(result.options.sensor_mode == forklift::runtime::SensorMode::Network,
           "센서 모드 기본값은 Network");
-    check(!result.options.enable_debug_csv, "디버그 CSV 기본값은 비활성");
+    check(!result.options.enable_object_csv && !result.options.enable_aruco_csv &&
+              !result.options.enable_latency_csv,
+          "CSV 로그 기본값은 비활성");
 }
 
 void testOverrides() {
     std::cout << "\n[명시적 옵션]\n";
-    const auto result = parse({"forklift_safety_server", "--debug", "--no-sensor",
+    const auto result = parse({"forklift_safety_server", "--log-csv", "all", "--no-sensor",
                                "--config-dir", "/custom/safety",
                                "--common-config-dir", "/custom/common"});
     check(result.ok(), "명시적 옵션 파싱 성공");
-    check(result.options.enable_debug_csv, "--debug가 디버그 CSV를 활성화");
+    check(result.options.enable_object_csv && result.options.enable_aruco_csv &&
+              result.options.enable_latency_csv,
+          "--log-csv all이 모든 CSV 로그를 활성화");
     check(result.options.sensor_mode == forklift::runtime::SensorMode::Disabled,
           "--no-sensor가 센서 모드를 Disabled로 전환");
     check(result.options.config_dir == "/custom/safety" &&
               result.options.common_config_dir == "/custom/common",
           "설정 경로 옵션을 각각 보존");
+}
+
+void testCsvLogKinds() {
+    std::cout << "\n[CSV 로그 종류 옵션]\n";
+    const auto result = parse({"forklift_safety_server", "--log-csv", "object",
+                               "--log-csv", "aruco", "--log-csv", "latency"});
+    check(result.ok(), "CSV 로그 종류 옵션 파싱 성공");
+    check(result.options.enable_object_csv, "object CSV 로그 활성화");
+    check(result.options.enable_aruco_csv, "aruco CSV 로그 활성화");
+    check(result.options.enable_latency_csv, "latency CSV 로그 활성화");
+
+    const auto all = parse({"forklift_safety_server", "--log-csv", "all"});
+    check(all.ok() && all.options.enable_object_csv && all.options.enable_aruco_csv &&
+              all.options.enable_latency_csv,
+          "all이 세 종류의 CSV 로그를 활성화");
+
+    const auto invalid = parse({"forklift_safety_server", "--log-csv", "unknown"});
+    check(!invalid.ok() && invalid.error.find("object") != std::string::npos,
+          "지원하지 않는 CSV 로그 종류를 거부");
 }
 
 void testErrorsAndHelp() {
@@ -70,6 +93,7 @@ void testErrorsAndHelp() {
 int main() {
     testDefaults();
     testOverrides();
+    testCsvLogKinds();
     testErrorsAndHelp();
     return failures == 0 ? 0 : 1;
 }

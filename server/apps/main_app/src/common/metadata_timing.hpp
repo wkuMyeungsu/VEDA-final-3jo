@@ -7,6 +7,8 @@
 #include <sstream>
 #include <string>
 
+#include "common/platform.hpp"
+
 namespace forklift::common {
 
 struct MetadataTiming {
@@ -19,11 +21,7 @@ inline std::string formatUtc(const std::chrono::system_clock::time_point& time) 
     const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time - seconds).count();
     const std::time_t raw = std::chrono::system_clock::to_time_t(seconds);
     std::tm utc{};
-#ifdef _WIN32
-    gmtime_s(&utc, &raw);
-#else
-    gmtime_r(&raw, &utc);
-#endif
+    if (!forklift::platform::gmtimeUtc(&raw, &utc)) return {};
     std::ostringstream output;
     output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%S")
            << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';

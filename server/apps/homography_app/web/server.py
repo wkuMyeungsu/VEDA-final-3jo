@@ -59,16 +59,27 @@ MIN_COMMON_MARKERS = int(CONFIG_VALUE.get("map", {}).get("min_common_markers", 3
 _INTRINSICS_CACHE = {}
 
 
-def camera_intrinsics_for(stream_id):
-    """stream_id 우선, 없으면 공용 파일 순으로 내부파라미터를 찾아 캐싱한다."""
-    if stream_id in _INTRINSICS_CACHE:
-        return _INTRINSICS_CACHE[stream_id]
-    value = None
+def camera_intrinsics_path(stream_id):
+    """채널 전용 파일을 우선하고, 없으면 공용 파일을 선택한다."""
     for name in (f"camera_intrinsics_{stream_id}.json", "camera_intrinsics.json"):
         path = HOMOGRAPHY_RESULTS_ROOT / name
-        if not path.is_file():
-            continue
+        if path.is_file():
+            return path
+    return None
+
+
+def camera_intrinsics_for(stream_id):
+    """파일 갱신을 감지하며 스트림의 내부 파라미터를 캐싱한다."""
+    value = None
+    path = camera_intrinsics_path(stream_id)
+    signature = None
+    if path is not None:
         try:
+            file_stat = path.stat()
+            signature = (str(path), file_stat.st_mtime_ns, file_stat.st_size)
+            cached = _INTRINSICS_CACHE.get(stream_id)
+            if cached and cached[0] == signature:
+                return cached[1]
             raw = json.loads(path.read_text(encoding="utf-8"))
             matrix = raw["camera_matrix"]
             coefficients = raw["dist_coeffs"]
@@ -80,10 +91,11 @@ def camera_intrinsics_for(stream_id):
                 "p2": float(coefficients[3]) if len(coefficients) > 3 else 0.0,
                 "k3": float(coefficients[4]) if len(coefficients) > 4 else 0.0,
             }
-            break
         except (OSError, ValueError, KeyError, IndexError, json.JSONDecodeError):
             value = None
-    _INTRINSICS_CACHE[stream_id] = value
+    elif stream_id in _INTRINSICS_CACHE and _INTRINSICS_CACHE[stream_id][0] is None:
+        return _INTRINSICS_CACHE[stream_id][1]
+    _INTRINSICS_CACHE[stream_id] = (signature, value)
     return value
 
 
@@ -477,6 +489,132 @@ def save_operational_homography(value):
     }
 
 
+def _convex_hull(points):
+    ordered = sorted(points, key=lambda point: (point[0], point[1]))
+    def cross(origin, a, b):
+        return (a[0] - origin[0]) * (b[1] - origin[1]) - (a[1] - origin[1]) * (b[0] - origin[0])
+    lower = []
+    for point in ordered:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+    upper = []
+    for point in reversed(ordered):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0:
+            upper.pop()
+        upper.append(point)
+    return lower[:-1] + upper[:-1]
+
+
+def site_frame_from_boundary(points):
+    """그린 외곽을 긴 변이 +X인 사이트 좌표로 맞추는 변환을 만든다."""
+    hull = _convex_hull(points)
+    if len(hull) < 3:
+        raise ValueError("전체 맵 경계에서 사각형을 만들 수 없습니다")
+    axis_x, axis_y = 1.0, 0.0
+    longest = 0.0
+    for index, point in enumerate(hull):
+        nxt = hull[(index + 1) % len(hull)]
+        dx = nxt[0] - point[0]
+        dy = nxt[1] - point[1]
+        length = math.hypot(dx, dy)
+        if length > longest:
+            longest = length
+            axis_x = dx / length
+            axis_y = dy / length
+
+    def project(axis_x, axis_y):
+        return [(point[0] * axis_x + point[1] * axis_y,
+                 -point[0] * axis_y + point[1] * axis_x) for point in points]
+
+    display = project(axis_x, axis_y)
+    min_x = min(point[0] for point in display)
+    max_x = max(point[0] for point in display)
+    min_y = min(point[1] for point in display)
+    max_y = max(point[1] for point in display)
+    if (max_x - min_x) < (max_y - min_y):
+        axis_x, axis_y = -axis_y, axis_x
+        display = project(axis_x, axis_y)
+        min_x = min(point[0] for point in display)
+        max_x = max(point[0] for point in display)
+        min_y = min(point[1] for point in display)
+        max_y = max(point[1] for point in display)
+    # 긴 변을 가로로 둔 뒤, 긋는 방향과 무관하게 같은 180°를 고른다.
+    # 운영 화면에서 -90°를 두 번 돌린 방향이 인지하기 쉬워 그쪽으로 고정한다.
+    if axis_x > 0 or (abs(axis_x) < 1e-9 and axis_y > 0):
+        axis_x, axis_y = -axis_x, -axis_y
+        display = project(axis_x, axis_y)
+        min_x = min(point[0] for point in display)
+        max_x = max(point[0] for point in display)
+        min_y = min(point[1] for point in display)
+        max_y = max(point[1] for point in display)
+    width = max_x - min_x
+    height = max_y - min_y
+    if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
+        raise ValueError("전체 맵 가로·세로를 계산할 수 없습니다")
+    origin_x = axis_x * min_x - axis_y * min_y
+    origin_y = axis_y * min_x + axis_x * min_y
+    h_shared_to_site = [
+        [axis_x, axis_y, -(axis_x * origin_x + axis_y * origin_y)],
+        [-axis_y, axis_x, (axis_y * origin_x - axis_x * origin_y)],
+        [0.0, 0.0, 1.0],
+    ]
+    return {
+        "H_shared_to_site": h_shared_to_site,
+        "width_mm": width,
+        "height_mm": height,
+        "boundary": [[0.0, 0.0], [width, 0.0], [width, height], [0.0, height]],
+        "source_boundary": points,
+    }
+
+
+def _transform_point(matrix, x, y):
+    denom = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2]
+    return ((matrix[0][0] * x + matrix[0][1] * y + matrix[0][2]) / denom,
+            (matrix[1][0] * x + matrix[1][1] * y + matrix[1][2]) / denom)
+
+
+def save_site_map(width_mm, height_mm, name="작업 구역", boundary=None):
+    """전체 맵 외곽을 저장하고, 그린 사각형을 공유 지도의 원점·가로축으로 맞춘다."""
+    name = str(name or "작업 구역").strip() or "작업 구역"
+    if len(name) > 64:
+        raise ValueError("맵 이름은 64자 이하여야 합니다")
+    if boundary is None:
+        try:
+            width = float(width_mm)
+            height = float(height_mm)
+        except (TypeError, ValueError) as error:
+            raise ValueError("가로·세로 실측값이 올바르지 않습니다") from error
+        boundary = [[0.0, 0.0], [width, 0.0], [width, height], [0.0, height]]
+    if not isinstance(boundary, list) or len(boundary) < 3:
+        raise ValueError("전체 맵 경계는 점이 3개 이상이어야 합니다")
+    try:
+        boundary = [[float(point[0]), float(point[1])] for point in boundary
+                    if isinstance(point, (list, tuple)) and len(point) == 2]
+    except (TypeError, ValueError) as error:
+        raise ValueError("전체 맵 경계 좌표가 올바르지 않습니다") from error
+    if len(boundary) < 3 or any(
+            not math.isfinite(value) or abs(value) > 1000000
+            for point in boundary for value in point):
+        raise ValueError("전체 맵 경계 좌표가 올바르지 않습니다")
+    frame = site_frame_from_boundary(boundary)
+    value = {
+        "unit": "mm",
+        "name": name,
+        "boundary": frame["boundary"],
+        "zones": [],
+        "H_shared_to_site": frame["H_shared_to_site"],
+        "source_boundary": frame["source_boundary"],
+    }
+    site_map_path = COMMON_CONFIG_DIR / "site_map.json"
+    existed = site_map_path.is_file()
+    atomic_write_text(site_map_path, json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+                      default_mode=0o644)
+    return {"path": str(site_map_path), "created": not existed, "overwritten": existed,
+            "width_mm": frame["width_mm"], "height_mm": frame["height_mm"], "name": name,
+            "applied_site_frame": True}
+
+
 
 def matrix_multiply(left, right):
     """3×3 호모그래피 두 개를 곱하고 마지막 원소로 정규화한다."""
@@ -638,17 +776,20 @@ def align_local_channel(source_result, source_corners, destination_result, desti
     source_points, destination_points = [], []
     for marker_id in common_ids:
         for source, destination in zip(source_corners[marker_id], destination_corners[marker_id]):
-            source_points.append(pixel_to_map(source_result["stream_id"], source_h, source))
-            destination_points.append(pixel_to_map(destination_result["stream_id"], destination_h, destination))
+            # 캡처 endpoint가 이미 무왜곡 이미지를 저장했다면 corners도
+            # 무왜곡 픽셀이다. 여기서 다시 undistort하면 H와 좌표 계약이
+            # 어긋나므로, 각 결과가 산출된 픽셀 좌표를 그대로 사용한다.
+            source_points.append(transform_point(source_h, source))
+            destination_points.append(transform_point(destination_h, destination))
     # 공통 마커가 한 직선에만 놓이면 화면상으로는 여러 개여도
     # 회전·기울기·원근을 안정적으로 결정할 수 없다. 중심점 삼각형의
     # 최대 면적을 확인해 방향 정보가 충분히 퍼져 있는지 먼저 검사한다.
     source_centers = []
     destination_centers = []
     for marker_id in common_ids:
-        source_world = [pixel_to_map(source_result["stream_id"], source_h, point)
+        source_world = [transform_point(source_h, point)
                         for point in source_corners[marker_id]]
-        destination_world = [pixel_to_map(destination_result["stream_id"], destination_h, point)
+        destination_world = [transform_point(destination_h, point)
                              for point in destination_corners[marker_id]]
         source_centers.append({
             "x": sum(point["x"] for point in source_world) / 4.0,
@@ -725,10 +866,10 @@ def held_out_overlap_check(source_result, source_corners,
         squared = 0.0
         errors = []
         for source, destination in zip(source_corners[held_id], destination_corners[held_id]):
-            source_local = pixel_to_map(source_result["stream_id"],
-                                        source_result["H_camera_pixels_to_channel_map"], source)
-            destination_local = pixel_to_map(destination_result["stream_id"],
-                                             destination_result["H_camera_pixels_to_channel_map"], destination)
+            source_local = transform_point(
+                source_result["H_camera_pixels_to_channel_map"], source)
+            destination_local = transform_point(
+                destination_result["H_camera_pixels_to_channel_map"], destination)
             predicted = transform_point(transform, source_local)
             error = math.hypot(predicted["x"] - destination_local["x"],
                                predicted["y"] - destination_local["y"])
@@ -1375,12 +1516,21 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_file(candidate)
             return
         if path == "/api/status":
+            site_map = None
+            site_map_path = COMMON_CONFIG_DIR / "site_map.json"
+            if site_map_path.is_file():
+                try:
+                    site_map = json.loads(site_map_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    site_map = None
             self.send_json({"ok": True,
                             "homography_tool": TOOL, "port": PORT,
                             "camera_list": camera_status_entries(),
                             "streams": stream_status_entries(),
                             "camera_models": CAMERA_MODELS.get("models", []),
-                            "max_verification_streams": MAX_VERIFICATION_STREAMS})
+                            "min_common_markers": MIN_COMMON_MARKERS,
+                            "max_verification_streams": MAX_VERIFICATION_STREAMS,
+                            "site_map": site_map})
             return
         if path == "/api/camera/frame":
             # 외부 앱(캘리브레이션 등)이 최신 원본 프레임 한 장을 가져가는 경로다.
@@ -1454,13 +1604,32 @@ class Handler(BaseHTTPRequestHandler):
                 channel_id = stream_entry["channel"]
                 camera_entry = stream_entry["camera"]
                 image_path = job_dir / "capture.jpg"
+                original_image_path = job_dir / "capture-original.jpg"
                 CAMERA_STREAM.ensure_worker(stream_id, stream_entry)
                 connection, _, _, _ = camera_urls(
                     channel_id, camera_entry=camera_entry)
                 capture_timeout = float(connection.get("timeout_sec", 10))
                 frame = capture_high_resolution_frame(channel_id, capture_timeout, camera_entry)
-                image_path.write_bytes(frame)
+                original_image_path.write_bytes(frame)
                 CAMERA_STREAM.stop(stream_id)
+                intrinsics_source = camera_intrinsics_path(stream_id)
+                intrinsics_snapshot = job_dir / "camera-intrinsics.json"
+                lens_undistorted = intrinsics_source is not None
+                if lens_undistorted:
+                    # 캡처 시점의 보정값을 작업 디렉터리에 복사해, 이후
+                    # 캘리브레이션 파일이 바뀌어도 같은 화면과 좌표 기준을 유지한다.
+                    shutil.copyfile(intrinsics_source, intrinsics_snapshot)
+                    undistort = run_tool([
+                        "undistort-image", "--config", str(CONFIG),
+                        "--stream-id", stream_id,
+                        "--intrinsics", str(intrinsics_snapshot),
+                        "--input", str(original_image_path),
+                        "--output", str(image_path),
+                    ])
+                    if not undistort["ok"]:
+                        raise RuntimeError(undistort["stderr"] or "image undistortion failed")
+                else:
+                    shutil.copyfile(original_image_path, image_path)
                 output_path = job_dir / "markers.json"
                 overlay_path = job_dir / "markers-overlay.png"
                 result = run_tool(["detect-markers", "--config", str(CONFIG),
@@ -1475,9 +1644,11 @@ class Handler(BaseHTTPRequestHandler):
                 detected["stream_id"] = stream_id
                 detected["camera_id"] = stream_entry["camera_id"]
                 detected["channel"] = channel_id
+                detected["lens_undistorted"] = lens_undistorted
                 (job_dir / "capture-meta.json").write_text(json.dumps({
                     "capture_id": job_id, "stream_id": stream_id,
                     "camera_id": stream_entry["camera_id"], "channel": channel_id,
+                    "lens_undistorted": lens_undistorted,
                     "capture_image_size": detected.get("image_size", {})
                 }, ensure_ascii=False, indent=2), encoding="utf-8")
                 self.send_json({"ok": True, "result": detected})
@@ -1506,10 +1677,15 @@ class Handler(BaseHTTPRequestHandler):
                 overlay_name = "homography-overlay.png"
                 capture_meta = json.loads((job_dir / "capture-meta.json").read_text(
                     encoding="utf-8")) if (job_dir / "capture-meta.json").is_file() else {}
-                result = run_tool(["solve-manual", "--config", str(CONFIG),
+                solve_args = ["solve-manual", "--config", str(CONFIG),
                     "--stream-id", str(capture_meta.get("stream_id") or ""),
                     "--input", str(job_dir / "capture.jpg"), "--layout", str(layout_file),
-                    "--output", str(output_file), "--overlay", str(job_dir / overlay_name)])
+                    "--output", str(output_file), "--overlay", str(job_dir / overlay_name)]
+                intrinsics_snapshot = job_dir / "camera-intrinsics.json"
+                if capture_meta.get("lens_undistorted") and intrinsics_snapshot.is_file():
+                    solve_args.extend(["--input-undistorted", "1",
+                                       "--intrinsics", str(intrinsics_snapshot)])
+                result = run_tool(solve_args)
                 if not result["ok"]:
                     self.send_json(result, 422)
                     return
@@ -1581,7 +1757,11 @@ class Handler(BaseHTTPRequestHandler):
                     final_value = {
                         "schema_version": 2,
                         "map_unit": "mm",
-                        "lens_undistorted": bool(stream_results[stream_id].get("lens_undistorted")),
+                        # solve-manual이 무왜곡 캡처에서 계산한 H라면 운영
+                        # 입력에서도 같은 계약을 유지해야 한다. 채널마다
+                        # 플래그를 보존해 안전 서버가 정확히 한 번만 역산한다.
+                        "lens_undistorted": bool(
+                            stream_results[stream_id].get("lens_undistorted")),
                         "camera_id": entry["camera_id"],
                         "stream_id": stream_id,
                         "channel": entry["channel"],
@@ -1592,7 +1772,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 verification_bounds = union_world_bounds([
                     image_world_bounds(global_h[stream_id],
-                                       stream_results[stream_id]["image_size"], stream_id)
+                                       stream_results[stream_id]["image_size"])
                     for stream_id in stream_ids
                 ])
                 verification_channels = {}
@@ -1614,6 +1794,11 @@ class Handler(BaseHTTPRequestHandler):
                             for marker_id, corners in stream_corners[stream_id].items()
                         },
                     }
+                # ponytail: common_markers는 구 JS 호환용 별칭, overlap과 동일 소스
+                common_markers = [
+                    {"id": m["id"], "x": m["consensus_center_mm"]["x"], "y": m["consensus_center_mm"]["y"]}
+                    for m in verification_markers
+                ]
                 self.send_json({
                     "ok": True,
                     "anchor_stream_id": anchor_stream_id,
@@ -1629,10 +1814,24 @@ class Handler(BaseHTTPRequestHandler):
                     "verification": {
                         "coordinate_frame": "BOARD_GLOBAL_MM",
                         "bounds_mm": verification_bounds,
+                        "bounds": verification_bounds,
                         "streams": verification_channels,
                         "overlap_marker_consistency": verification_markers,
+                        "common_markers": common_markers,
                     },
                 })
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                self.send_json({"ok": False, "error": str(error)}, 400)
+            return
+        if path == "/api/site-map":
+            try:
+                width_mm = payload.get("width_mm", payload.get("width"))
+                height_mm = payload.get("height_mm", payload.get("height"))
+                name = payload.get("name", "작업 구역")
+                result = save_site_map(width_mm, height_mm, name,
+                                       payload.get("boundary"))
+                self.send_json({"ok": True, "result": result, "site_map": json.loads(
+                    (COMMON_CONFIG_DIR / "site_map.json").read_text(encoding="utf-8"))})
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
                 self.send_json({"ok": False, "error": str(error)}, 400)
             return

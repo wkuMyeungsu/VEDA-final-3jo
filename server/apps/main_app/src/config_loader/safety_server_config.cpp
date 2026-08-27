@@ -6,8 +6,9 @@
 #include <fstream>
 #include <sstream>
 #include <set>
-#include <unistd.h>
+#include <cstdlib>
 
+#include "common/platform.hpp"
 #include <nlohmann/json.hpp>
 
 namespace forklift::config {
@@ -36,6 +37,33 @@ void positive(double v, const char* key, const std::string& path, bool zero_ok =
     if (!std::isfinite(v) || v < 0.0 || (!zero_ok && v == 0.0))
         schema(path, std::string("\"") + key + "\" 값이 허용 범위를 벗어남");
 }
+
+std::vector<SiteMapPoint> mapPolygon(const json& value, const std::string& path,
+                                     const std::string& field) {
+    if (!value.is_array() || value.size() < 3)
+        schema(path, "\"" + field + "\"는 점 3개 이상의 배열이어야 함");
+    std::vector<SiteMapPoint> points;
+    points.reserve(value.size());
+    for (const auto& point : value) {
+        if (!point.is_array() || point.size() != 2 || !point[0].is_number() ||
+            !point[1].is_number())
+            schema(path, "\"" + field + "\" 좌표는 [x_mm, y_mm] 형식이어야 함");
+        const double x = point[0].get<double>();
+        const double y = point[1].get<double>();
+        if (!std::isfinite(x) || !std::isfinite(y))
+            schema(path, "\"" + field + "\" 좌표는 유한한 수여야 함");
+        points.push_back({x, y});
+    }
+    double twice_area = 0.0;
+    for (std::size_t index = 0; index < points.size(); ++index) {
+        const auto& current = points[index];
+        const auto& next = points[(index + 1) % points.size()];
+        twice_area += current.x_mm * next.y_mm - next.x_mm * current.y_mm;
+    }
+    if (std::abs(twice_area) < 1e-6)
+        schema(path, "\"" + field + "\" 면적은 0보다 커야 함");
+    return points;
+}
 }  // namespace
 
 SafetyServerConfigError::SafetyServerConfigError(Code code, std::string path, const std::string& detail)
@@ -52,13 +80,7 @@ std::string toString(SafetyServerConfigError::Code code) {
 }
 
 static std::filesystem::path getExecutableDirectory() {
-    char buffer[4096];
-    const ssize_t len = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
-    if (len != -1) {
-        buffer[len] = '\0';
-        return std::filesystem::path(buffer).parent_path();
-    }
-    return std::filesystem::current_path();
+    return forklift::platform::executableDirectory();
 }
 
 std::string resolveConfigDirectory() {
@@ -78,9 +100,9 @@ std::string resolveConfigDirectory() {
     const char* candidates[] = {
         "/etc/forklift_safety/safety",
         "/etc/forklift_safety",
+        "../config/safety",
         "server/config/safety",
         "config/safety",
-        "../config/safety",
         "../../config/safety",
     };
     for (const char* candidate : candidates) {
@@ -111,9 +133,9 @@ std::string resolveCommonConfigDirectory(const std::string& config_dir) {
 
     const char* candidates[] = {
         "/etc/forklift_safety",
+        "../config",
         "server/config",
         "config",
-        "../config",
         "../../config",
     };
     for (const char* candidate : candidates) {
@@ -131,6 +153,7 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     const std::filesystem::path camera_path = common_dir / "camera_list.json";
     const std::filesystem::path model_path = common_dir / "camera_model.json";
     const std::filesystem::path device_path = common_dir / "forklift_device_config.json";
+    const std::filesystem::path site_map_path = common_dir / "site_map.json";
     const std::filesystem::path danger_path = dir / "danger_judgment_config.json";
     const std::filesystem::path system_path = dir / "system_config.json";
 
@@ -154,6 +177,52 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     const auto system = read(system_path);
     SafetyServerConfig c;
     c.source_path = camera_path.string();
+
+    // 공장 외곽과 가림 구역은 카메라 투영값이 아니라 같은 mm 월드 좌표계의
+    // 별도 운영 설정이다. 파일이 없으면 기존 설치와 호환되게 지도만 비활성화한다.
+    if (std::filesystem::exists(site_map_path)) {
+        const auto site_map = read(site_map_path);
+        if (value<std::string>(site_map, "site_map", "unit", site_map_path.string()) != "mm")
+            schema(site_map_path.string(), "unit은 mm여야 함");
+        c.site_map.name = site_map.value("name", std::string("작업 구역"));
+        c.site_map.boundary = mapPolygon(
+            site_map.at("boundary"), site_map_path.string(), "boundary");
+        const auto& zones = site_map.value("zones", json::array());
+        if (!zones.is_array()) schema(site_map_path.string(), "zones는 배열이어야 함");
+        std::set<std::string> zone_ids;
+        for (const auto& item : zones) {
+            if (!item.is_object()) schema(site_map_path.string(), "zone은 객체여야 함");
+            SiteMapZone zone;
+            zone.id = value<std::string>(item, "zones", "id", site_map_path.string());
+            zone.label = item.value("label", zone.id);
+            zone.kind = value<std::string>(item, "zones", "kind", site_map_path.string());
+            if (zone.id.empty() || !zone_ids.insert(zone.id).second)
+                schema(site_map_path.string(), "zone id가 비었거나 중복됨");
+            if (zone.kind != "excluded" && zone.kind != "blind")
+                schema(site_map_path.string(), "zone kind는 excluded 또는 blind여야 함");
+            zone.polygon = mapPolygon(
+                item.at("polygon"), site_map_path.string(), "zones[].polygon");
+            c.site_map.zones.push_back(std::move(zone));
+        }
+        if (site_map.contains("H_shared_to_site")) {
+            const auto& matrix = site_map.at("H_shared_to_site");
+            if (!matrix.is_array() || matrix.size() != 3)
+                schema(site_map_path.string(), "H_shared_to_site는 3x3 행렬이어야 함");
+            for (int row = 0; row < 3; ++row) {
+                if (!matrix.at(row).is_array() || matrix.at(row).size() != 3)
+                    schema(site_map_path.string(), "H_shared_to_site는 3x3 행렬이어야 함");
+                for (int col = 0; col < 3; ++col) {
+                    if (!matrix.at(row).at(col).is_number())
+                        schema(site_map_path.string(), "H_shared_to_site에 유효하지 않은 숫자가 있음");
+                    const double v = matrix.at(row).at(col).get<double>();
+                    if (!std::isfinite(v))
+                        schema(site_map_path.string(), "H_shared_to_site에 NaN 또는 Inf가 있음");
+                    c.site_map.h_shared_to_site[static_cast<std::size_t>(row * 3 + col)] = v;
+                }
+            }
+            c.site_map.has_shared_to_site = true;
+        }
+    }
 
     const auto& unit = object(danger, "units", danger_path.string());
     if (value<std::string>(unit, "units", "world", danger_path.string()) != "mm" ||
@@ -228,7 +297,7 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                 if (item.contains("channel") && item.at("channel").is_number_integer()) {
                     itemLabel = channelLabel(item.at("channel").get<int>());
                 }
-                LOG_WARN("CONFIG", itemLabel + " 제외 (사유: JSON 파싱 실패 - " + error.what() + ")");
+                LOG_WARN("CONFIG", itemLabel + " 제외 · JSON 파싱 실패 · " + error.what());
                 continue;
             }
 
@@ -245,18 +314,18 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                 invalidReason = "동일 카메라 내 채널 번호 중복";
             }
             if (!invalidReason.empty()) {
-                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: " + invalidReason + ")");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · " + invalidReason);
                 continue;
             }
             channels[{camera_id,s.channel}] = true;
             s.stream_id = camera_id + "_CH_" + (s.channel < 10 ? "0" : "") + std::to_string(s.channel);
             if (stream_ids[s.stream_id]) {
-                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 스트림 ID 중복 - " + s.stream_id + ")");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · 스트림 ID 중복 · " + s.stream_id);
                 continue;
             }
             stream_ids[s.stream_id] = true;
             if (!std::filesystem::exists(common_dir / s.homography_file)) {
-                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 없음 - " + s.homography_file + ")");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · 좌표변환 파일 없음 · " + s.homography_file);
                 continue;
             }
             const auto h_path = (common_dir / s.homography_file).lexically_normal();
@@ -282,10 +351,10 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
                         schema(h_path.string(), "H_camera_pixels_to_shared_map에 유효하지 않은 수가 있음");
                 }
             } catch (const SafetyServerConfigError& error) {
-                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 규격 오류 - " + error.what() + ")");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · 좌표변환 파일 규격 오류 · " + error.what());
                 continue;
             } catch (const std::exception& e) {
-                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 (사유: 좌표변환 파일 읽기 실패 - " + e.what() + ")");
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · 좌표변환 파일 읽기 실패 · " + e.what());
                 continue;
             }
             configured_channels.insert(s.channel);
@@ -294,7 +363,7 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             c.streams.push_back(std::move(s));
         }
         if (configured_channels.size() != static_cast<std::size_t>(expected_channels)) {
-            LOG_WARN("CONFIG", camera_id + " (" + std::to_string(expected_channels) + "채널 모델): 활성화된 " +
+            LOG_WARN("CONFIG", camera_id + " " + std::to_string(expected_channels) + "채널 모델 · " +
                                    std::to_string(configured_channels.size()) + "개 채널로 시작");
         }
     }
@@ -308,10 +377,17 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     std::map<std::string,bool> terminals; std::map<int,bool> markers;
     for (const auto& item : fl) {
         ForkliftDevice f{item.at("terminal_id").get<std::string>(), item.at("marker_id").get<int>(), item.at("collision_radius_mm").get<double>()};
+        if (item.contains("marker_height_mm")) {
+            if (!item.at("marker_height_mm").is_number())
+                schema(device_path.string(), "marker_height_mm는 숫자여야 함");
+            f.marker_height_mm = item.at("marker_height_mm").get<double>();
+        }
         // 반경 0은 기존 중심점 거리 판정을 그대로 쓰겠다는 의미이므로 허용한다.
+        // 마커 높이 0은 지면 호모그래피를 그대로 쓰겠다는 의미이므로 허용한다.
         if (f.terminal_id.empty() || terminals[f.terminal_id] || f.marker_id < 0 || markers[f.marker_id] ||
-            !std::isfinite(f.collision_radius_mm) || f.collision_radius_mm < 0)
-            schema(device_path.string(), "terminal/marker/radius 중복 또는 범위 오류");
+            !std::isfinite(f.collision_radius_mm) || f.collision_radius_mm < 0 ||
+            !std::isfinite(f.marker_height_mm) || f.marker_height_mm < 0)
+            schema(device_path.string(), "terminal/marker/radius/height 중복 또는 범위 오류");
         terminals[f.terminal_id] = true; markers[f.marker_id] = true; c.forklifts.push_back(std::move(f));
     }
     // MQTT, 핸드오버, 추적, 센서, 스트림 정책은 모든 TERM이 공유한다.
@@ -324,11 +400,13 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
     c.network.ca_cert_path = n.value("ca_cert_path", std::string{});
     c.network.client_cert_path = n.value("client_cert_path", std::string{});
     c.network.client_key_path = n.value("client_key_path", std::string{});
-    if (c.network.tls_enabled) {
-        c.network.ca_cert_path = (dir / c.network.ca_cert_path).lexically_normal().string();
-        c.network.client_cert_path = (dir / c.network.client_cert_path).lexically_normal().string();
-        c.network.client_key_path = (dir / c.network.client_key_path).lexically_normal().string();
-    }
+    const auto resolve_common_path = [&common_dir](std::string& value) {
+        if (!value.empty() && !std::filesystem::path(value).is_absolute())
+            value = (common_dir / value).lexically_normal().string();
+    };
+    resolve_common_path(c.network.ca_cert_path);
+    resolve_common_path(c.network.client_cert_path);
+    resolve_common_path(c.network.client_key_path);
     if (port < 1 || port > 65535 || c.network.mqtt_host.empty() || c.network.result_heartbeat_ms < 1)
         schema(system_path.string(), "MQTT 설정 범위 오류");
     if (c.network.tls_enabled && (c.network.ca_cert_path.empty() || c.network.client_cert_path.empty() || c.network.client_key_path.empty()))
@@ -372,13 +450,22 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
         schema(system_path.string(), "handover/tracking/sensor/stream 설정 범위 오류");
     const auto& out = object(system, "output_storage", system_path.string());
     std::filesystem::path storage_dir;
-    if (common_dir.string().rfind("/etc/forklift_safety", 0) == 0) {
+    if (const char* configured_data_dir = std::getenv("FORKLIFT_SAFETY_DATA_DIR");
+        configured_data_dir && *configured_data_dir) {
+        storage_dir = configured_data_dir;
+    } else if (common_dir.string().rfind("/etc/forklift_safety", 0) == 0) {
         storage_dir = "/var/log/forklift_safety";
     } else {
         storage_dir = common_dir.parent_path() / "var" / "main_app";
     }
-    if (out.contains("enable_raw_csv_logging") && out.at("enable_raw_csv_logging").is_boolean()) {
-        c.output_storage.enable_raw_csv_logging = out.at("enable_raw_csv_logging").get<bool>();
+    if (out.contains("enable_object_csv_logging") && out.at("enable_object_csv_logging").is_boolean()) {
+        c.output_storage.enable_object_csv_logging = out.at("enable_object_csv_logging").get<bool>();
+    }
+    if (out.contains("enable_aruco_csv_logging") && out.at("enable_aruco_csv_logging").is_boolean()) {
+        c.output_storage.enable_aruco_csv_logging = out.at("enable_aruco_csv_logging").get<bool>();
+    }
+    if (out.contains("enable_latency_csv_logging") && out.at("enable_latency_csv_logging").is_boolean()) {
+        c.output_storage.enable_latency_csv_logging = out.at("enable_latency_csv_logging").get<bool>();
     }
     if (out.contains("runtime_status") && !out.at("runtime_status").is_string())
         schema(system_path.string(), "output_storage.runtime_status는 문자열이어야 함");

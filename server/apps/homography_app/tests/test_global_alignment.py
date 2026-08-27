@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def _load_web_module():
@@ -190,6 +191,42 @@ def _make_stream_fixture():
 
 
 class GlobalAlignmentTests(unittest.TestCase):
+    def test_site_map_bakes_rectangle_into_shared_frame(self):
+        boundary = [[-940, 249], [740, -120], [1000, 760], [-680, 1129]]
+        SERVER.save_site_map(1800, 900, "작업 구역", boundary)
+        saved = json.loads((SERVER.COMMON_CONFIG_DIR / "site_map.json").read_text())
+        width = saved["boundary"][1][0]
+        height = saved["boundary"][2][1]
+        self.assertEqual(saved["boundary"][0], [0.0, 0.0])
+        self.assertGreaterEqual(width, height)
+        self.assertGreater(width, 1000)
+        self.assertGreater(height, 500)
+        matrix = saved["H_shared_to_site"]
+        mapped = [SERVER._transform_point(matrix, x, y) for x, y in boundary]
+        xs = [point[0] for point in mapped]
+        ys = [point[1] for point in mapped]
+        self.assertAlmostEqual(min(xs), 0.0, delta=1e-6)
+        self.assertAlmostEqual(min(ys), 0.0, delta=1e-6)
+        self.assertAlmostEqual(max(xs), width, delta=1e-6)
+        self.assertAlmostEqual(max(ys), height, delta=1e-6)
+
+    def test_site_map_orientation_ignores_draw_order(self):
+        boundary = [[-940, 249], [740, -120], [1000, 760], [-680, 1129]]
+        first = SERVER.site_frame_from_boundary(boundary)
+        reversed_boundary = list(reversed(boundary))
+        second = SERVER.site_frame_from_boundary(reversed_boundary)
+        shifted = boundary[2:] + boundary[:2]
+        third = SERVER.site_frame_from_boundary(shifted)
+        self.assertAlmostEqual(first["width_mm"], second["width_mm"], delta=1e-6)
+        self.assertAlmostEqual(first["height_mm"], second["height_mm"], delta=1e-6)
+        self.assertAlmostEqual(first["width_mm"], third["width_mm"], delta=1e-6)
+        for left, right in zip(first["H_shared_to_site"], second["H_shared_to_site"]):
+            for a, b in zip(left, right):
+                self.assertAlmostEqual(a, b, delta=1e-6)
+        for left, right in zip(first["H_shared_to_site"], third["H_shared_to_site"]):
+            for a, b in zip(left, right):
+                self.assertAlmostEqual(a, b, delta=1e-6)
+
     def test_final_homographies_map_independent_points(self):
         """사용 마커 밖의 체크 포인트도 BOARD 좌표로 돌아와야 한다."""
         stream_results, stream_corners, _, local_frames, pixel_frames = \
@@ -226,6 +263,20 @@ class GlobalAlignmentTests(unittest.TestCase):
                     error, 0.1,
                     f"{stream_id} 독립 체크 포인트 오차가 큼: {expected} -> {actual}",
                 )
+
+    def test_alignment_does_not_double_undistort_capture_corners(self):
+        """무왜곡 캡처 코너는 전역 연결에서 다시 렌즈 보정하지 않는다."""
+        stream_results, stream_corners, _, _, _ = _make_stream_fixture()
+        for result in stream_results.values():
+            result["lens_undistorted"] = True
+
+        with patch.object(SERVER, "undistort_pixel",
+                          side_effect=AssertionError("capture corner was undistorted twice")):
+            _, edges, _, shared_rmse, _, _ = SERVER.align_all_streams(
+                stream_results, stream_corners, "STREAM_A")
+
+        self.assertLess(edges[0]["overlap_join_rmse_mm"], 0.01)
+        self.assertLess(shared_rmse, 0.01)
 
     def test_disconnected_stream_is_rejected(self):
         """공통 마커 그래프가 끊기면 일부 스트림만 저장해서는 안 된다."""

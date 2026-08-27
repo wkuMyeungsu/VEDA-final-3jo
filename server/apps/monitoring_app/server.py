@@ -2,8 +2,10 @@
 """Read-only operations console for the forklift safety services."""
 import json
 import os
+import shutil
 import socket
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,11 +15,15 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 HOST = os.environ.get("SERVER_MONITORING_HOST", "0.0.0.0")
 PORT = int(os.environ.get("SERVER_MONITORING_PORT", "8000"))
-SYSTEMCTL = os.environ.get("SERVER_MONITORING_SYSTEMCTL", "/bin/systemctl")
+SYSTEMCTL = os.environ.get("SERVER_MONITORING_SYSTEMCTL", shutil.which("systemctl") or "systemctl")
+JOURNALCTL = os.environ.get("SERVER_MONITORING_JOURNALCTL", shutil.which("journalctl") or "journalctl")
 MQTT_HOST = os.environ.get("SERVER_MONITORING_MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("SERVER_MONITORING_MQTT_PORT", "8883"))
 SAFETY_UNIT = os.environ.get("SERVER_MONITORING_SAFETY_UNIT",
                              "forklift_safety_server.service")
+MQTT_UNIT = os.environ.get("SERVER_MONITORING_MQTT_UNIT", "mosquitto.service")
+HOMOGRAPHY_UNIT = os.environ.get("SERVER_MONITORING_HOMOGRAPHY_UNIT", "homography-app.service")
+CALIBRATION_UNIT = os.environ.get("SERVER_MONITORING_CALIBRATION_UNIT", "calibration-app.service")
 RUNTIME_STATUS = Path(os.environ.get(
     "SERVER_MONITORING_STATUS", "/var/log/forklift_safety/runtime/runtime-status.json"))
 DEFAULT_REFRESH_INTERVAL_SECONDS = 1
@@ -26,6 +32,9 @@ RUNTIME_STATUS_MAX_AGE_SECONDS = 3
 PROC_ROOT = Path(os.environ.get("SERVER_MONITORING_PROC_ROOT", "/proc"))
 THERMAL_ROOT = Path(os.environ.get("SERVER_MONITORING_THERMAL_ROOT", "/sys/class/thermal"))
 _HOST_CPU_SAMPLE = None
+_HOST_CPU_LOCK = threading.Lock()
+_RECENT_LOG_CACHE = []
+_RECENT_LOG_LOCK = threading.Lock()
 
 
 def refresh_interval_seconds():
@@ -172,14 +181,15 @@ def _read_host_temperature():
 
 
 def host_resource():
-    """Return whole-Raspberry-Pi CPU and memory usage from procfs."""
+    """Return host CPU and memory usage when Linux procfs is available."""
     global _HOST_CPU_SAMPLE
     now = time.monotonic()
     timestamp = datetime.now(timezone.utc).isoformat()
     cpu_ticks = _read_host_cpu_ticks()
     memory = _read_host_memory()
     if cpu_ticks is None or memory is None:
-        _HOST_CPU_SAMPLE = None
+        with _HOST_CPU_LOCK:
+            _HOST_CPU_SAMPLE = None
         return {
             "state": "unavailable",
             "cpu_percent": None,
@@ -201,30 +211,46 @@ def host_resource():
     temperature_c, temperature_source = _read_host_temperature()
     cpu_percent = None
     cpu_cores = []
-    # ponytail: 단일 스레드에서 갱신되는 값이라 락 없이 쓴다. 멀티스레드 샘플러가 생기면 락 추가.
-    previous = _HOST_CPU_SAMPLE
-    _HOST_CPU_SAMPLE = {
-        "sampled_at": now,
-        "aggregate": cpu_ticks["aggregate"],
-        "cores": cpu_ticks["cores"],
-    }
     core_ids = sorted(cpu_ticks["cores"])
-    core_set_changed = previous and set(previous["cores"]) != set(core_ids)
-    if previous and not core_set_changed:
-        cpu_percent = _cpu_percent(cpu_ticks["aggregate"], previous["aggregate"])
-        for core in core_ids:
-            core_percent = _cpu_percent(
-                cpu_ticks["cores"][core], previous["cores"][core]
-            )
-            cpu_cores.append({
-                "core": core,
-                "cpu_percent": round(core_percent, 1) if core_percent is not None else None,
-            })
-    else:
-        cpu_cores = [{"core": core, "cpu_percent": None} for core in core_ids]
+    with _HOST_CPU_LOCK:
+        previous = _HOST_CPU_SAMPLE
+        core_set_changed = previous and set(previous["cores"]) != set(core_ids)
+        if previous and not core_set_changed:
+            cpu_percent = _cpu_percent(cpu_ticks["aggregate"], previous["aggregate"])
+            for core in core_ids:
+                core_percent = _cpu_percent(
+                    cpu_ticks["cores"][core], previous["cores"][core]
+                )
+                cpu_cores.append({
+                    "core": core,
+                    "cpu_percent": round(core_percent, 1) if core_percent is not None else None,
+                })
+            if cpu_percent is None or any(
+                    core["cpu_percent"] is None for core in cpu_cores):
+                cpu_percent = previous.get("cpu_percent")
+                cpu_cores = previous.get("cpu_cores", cpu_cores)
+        else:
+            cpu_cores = [{"core": core, "cpu_percent": None} for core in core_ids]
+        if cpu_percent is not None:
+            cpu_percent = round(cpu_percent, 1)
+            _HOST_CPU_SAMPLE = {
+                "sampled_at": now,
+                "aggregate": cpu_ticks["aggregate"],
+                "cores": cpu_ticks["cores"],
+                "cpu_percent": cpu_percent,
+                "cpu_cores": cpu_cores,
+            }
+        elif previous is None or core_set_changed:
+            _HOST_CPU_SAMPLE = {
+                "sampled_at": now,
+                "aggregate": cpu_ticks["aggregate"],
+                "cores": cpu_ticks["cores"],
+                "cpu_percent": None,
+                "cpu_cores": cpu_cores,
+            }
     return {
         "state": "ok",
-        "cpu_percent": round(cpu_percent, 1) if cpu_percent is not None else None,
+        "cpu_percent": cpu_percent,
         "cpu_cores": cpu_cores,
         "memory_used_kb": used_kb,
         "memory_used_mb": round(used_kb / 1024, 1),
@@ -287,20 +313,33 @@ def read_recent_logs(limit=DEFAULT_RECENT_LOG_LINES):
     """판정 서버의 최근 로그를 journald에서 읽는다.
 
     server.log 파일 이중 기록은 폐기됐다. 단일 출처(journald)만 보므로
-    `server logs safety` CLI와 항상 동일한 내용이 표시된다.
+    `forklift-bscpctl logs safety` CLI와 항상 동일한 내용이 표시된다.
     """
+    global _RECENT_LOG_CACHE
     try:
         result = subprocess.run(
-            ["journalctl", "-u", SAFETY_UNIT, "-n", str(limit),
+            [JOURNALCTL, "-u", SAFETY_UNIT, "-n", str(limit),
              "-o", "cat", "--no-pager"],
             capture_output=True, text=True, timeout=5, check=False)
     except (OSError, subprocess.SubprocessError):
-        return []
-    return [line for line in result.stdout.splitlines() if line][-limit:]
+        lines = []
+    else:
+        lines = [line for line in result.stdout.splitlines() if line]
+    with _RECENT_LOG_LOCK:
+        if lines:
+            _RECENT_LOG_CACHE = lines
+        return list(_RECENT_LOG_CACHE[-limit:]) if limit > 0 else []
 
 
 def status_snapshot():
-    safety_state = service_state("forklift_safety_server.service")
+    safety_state = service_state(SAFETY_UNIT)
+    services = {
+        "mqtt": service_state(MQTT_UNIT),
+        "safety": safety_state,
+        "homography": service_state(HOMOGRAPHY_UNIT),
+        "monitoring": service_state("monitoring-app.service"),
+        "calibration": service_state(CALIBRATION_UNIT),
+    }
     mqtt_ok = tcp_reachable(MQTT_HOST, MQTT_PORT)
     runtime_status = read_runtime_status(RUNTIME_STATUS)
     runtime_health = runtime_status_health(runtime_status)
@@ -309,6 +348,7 @@ def status_snapshot():
         "ok": safety_state == "active" and mqtt_ok and runtime_health["fresh"],
         "service": "monitoring-app",
         "monitoring": "online",
+        "services": services,
         "safety_server": {"state": safety_state},
         "resources": resources,
         "mqtt": {
@@ -356,6 +396,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self.send_body(
                 json.dumps(status_snapshot(), ensure_ascii=False),
+                "application/json; charset=utf-8",
+            )
+            return
+        if path == "/api/logs":
+            # Keep older cached pages working while they move to /api/status.
+            recent_lines = read_recent_logs()
+            self.send_body(
+                json.dumps({
+                    "ok": True,
+                    "unit": SAFETY_UNIT,
+                    "recent_lines": recent_lines,
+                    "logs": recent_lines,
+                    "checked_utc": datetime.now(timezone.utc).isoformat(),
+                }, ensure_ascii=False),
                 "application/json; charset=utf-8",
             )
             return

@@ -9,14 +9,14 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include <unistd.h>
-
 #include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "common/platform.hpp"
 
 namespace {
 
@@ -248,7 +248,7 @@ void test_calibrate_camera_recovers_known_intrinsics() {
     const cv::Size view_size(2592, 1520);
 
     const std::filesystem::path dir = std::filesystem::temp_directory_path() /
-                                      ("charuco-calib-test-" + std::to_string(::getpid()));
+                                      ("charuco-calib-test-" + forklift::platform::processId());
     std::filesystem::create_directories(dir);
     for (int pose = 0; pose < 9; ++pose) {
         // 보드 평면(z=0)에 대한 자세: 거리와 기울기를 조금씩 바꿔 다양하게 둔다.
@@ -295,6 +295,27 @@ void test_calibrate_camera_recovers_known_intrinsics() {
     expect_near(result.camera_matrix.at<double>(1, 2), 760.0, 120.0, "주점 cy 회수");
 }
 
+void test_undistort_image_uses_active_intrinsics() {
+    cv::Mat image(240, 320, CV_8UC1);
+    for (int row = 0; row < image.rows; ++row)
+        for (int col = 0; col < image.cols; ++col)
+            image.at<unsigned char>(row, col) =
+                static_cast<unsigned char>((col * 3 + row * 5) % 256);
+    const cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) <<
+        300.0, 0.0, 160.0,
+        0.0, 300.0, 120.0,
+        0.0, 0.0, 1.0);
+    const cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) <<
+        -0.35, 0.08, 0.001, -0.001, 0.0);
+    homography::set_active_intrinsics(camera_matrix, dist_coeffs);
+
+    const cv::Mat corrected = homography::undistort_image(image);
+    expect(corrected.size() == image.size(), "무왜곡 화면 크기를 유지해야 함");
+    expect(corrected.type() == image.type(), "무왜곡 화면 타입을 유지해야 함");
+    expect(cv::norm(corrected, image, cv::NORM_L1) > 1000.0,
+           "왜곡 계수가 있으면 화면이 실제로 보정되어야 함");
+}
+
 }  // namespace
 
 
@@ -306,7 +327,8 @@ int main() {
         test_rtsp_capture_alignment();
         test_mirrored_axis_frame_is_reflection_invariant();
         test_calibrate_camera_recovers_known_intrinsics();
-        std::cout << "homography_unit_tests: 6 tests passed\n";
+        test_undistort_image_uses_active_intrinsics();
+        std::cout << "homography_unit_tests: 7 tests passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "homography_unit_tests: FAILED: " << error.what() << '\n';

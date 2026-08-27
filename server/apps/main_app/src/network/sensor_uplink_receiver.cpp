@@ -16,8 +16,9 @@
 #include "logging/logger.hpp"
 
 #include <cstdlib>
-#include <unistd.h>
 #include <mosquitto.h>
+
+#include "common/platform.hpp"
 
 namespace risk_transport {
 
@@ -209,8 +210,8 @@ void SensorUplinkReceiver::onConnect(int rc) {
         return;
     }
     connected_ = true;
-    LOG_INFO("SENSOR", "지게차 센서 통합 수신 연결 완료 (" + broker_host_ + ":" +
-                         std::to_string(broker_port_) + ", 구독: " + kSubscribeTopic + ")");
+    LOG_INFO("SENSOR", "센서 수신 연결 · " + broker_host_ + ":" +
+                         std::to_string(broker_port_) + " · " + kSubscribeTopic);
 
     const int sub_rc = mosquitto_subscribe(mosq_, nullptr, kSubscribeTopic, /*qos=*/0);
     if (sub_rc != MOSQ_ERR_SUCCESS) {
@@ -292,7 +293,7 @@ void SensorUplinkReceiver::onMessage(const mosquitto_message* msg) {
 void SensorUplinkReceiver::start() {
     if (running_.exchange(true)) return;
 
-    const std::string client_id = "forklift-server-sensor-" + std::to_string(::getpid());
+    const std::string client_id = "forklift-server-sensor-" + forklift::platform::processId();
     mosq_ = mosquitto_new(client_id.c_str(), /*clean_session=*/true, this);
     if (!mosq_) {
         LOG_ERROR("SENSOR", "센서 수신 초기화 실패 (mosquitto_new -> 수신 비활성)");

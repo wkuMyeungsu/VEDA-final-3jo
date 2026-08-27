@@ -46,9 +46,9 @@
 #include <cmath>
 #include <functional>
 
-#include <unistd.h>
 #include <mosquitto.h>
 
+#include "common/platform.hpp"
 #include "network/sensor_uplink_receiver.hpp"
 
 namespace {
@@ -70,7 +70,7 @@ void check(bool cond, const std::string& what) {
 // 공유해도(예: 실제 단말이 같은 브로커에 붙어 있는 개발 환경) 서로의 terminal_id가
 // 부딪히지 않게 하기 위함이다.
 std::string uniqueTerminalId(const std::string& suffix) {
-    return "TEST_" + std::to_string(static_cast<long long>(::getpid())) + "_" + suffix;
+    return "TEST_" + forklift::platform::processId() + "_" + suffix;
 }
 
 std::string topicFor(const std::string& terminal_id) {

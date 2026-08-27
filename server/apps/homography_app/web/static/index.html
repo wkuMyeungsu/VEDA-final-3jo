@@ -32,7 +32,29 @@
         <canvas id="work-canvas" tabindex="0" aria-label="마커 꼭짓점 보정 화면"></canvas>
         <div id="empty-state"><strong>채널을 선택하고 캡처하세요.</strong><span>캡처 후 초록 꼭짓점을 드래그해 미세 보정할 수 있습니다.</span></div>
       </div>
-      <div class="statusbar"><span id="camera-status">대기 중</span></div>
+      <div class="statusbar"><span id="camera-status">대기 중</span><span id="map-point-status" style="margin-left:auto;color:#216eaa;font-size:.82rem;font-weight:700"></span></div>
+
+      <section id="site-map-preview-panel" class="verification-panel" hidden>
+        <div class="verification-header">
+          <div>
+            <span class="eyebrow">전체 맵 미리보기 — 호모그래피 후</span>
+            <h2>끝점 4개로 만든 전체 맵</h2>
+            <p>각 채널에서 끝점 2개씩만 찍으면 H로 월드 변환한 외곽을 자동 계산합니다. 저장하면 긴 변이 맵의 가로축, 한쪽 모서리가 (0,0)이 되도록 사람·지게차 좌표에 반영합니다.</p>
+          </div>
+        </div>
+        <div style="position:relative;border:1px solid #d0d5dd;border-radius:8px;overflow:hidden;background:#fff">
+          <svg id="site-map-preview-svg" viewBox="0 0 320 180" style="width:100%;height:220px;display:block"></svg>
+          <div id="site-map-preview-empty" style="position:absolute;inset:0;display:grid;place-items:center;color:#667085;font-size:13px;background:rgba(255,255,255,.9)">4점을 모두 찍고 호모그래피가 끝나면 여기에 직사각형이 나타납니다.</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+          <span class="hint">자동 가로(긴 변): <strong id="site-map-width-display">—</strong> mm · 자동 세로: <strong id="site-map-height-display">—</strong> mm</span>
+          <span style="flex:1"></span>
+          <input id="site-map-name" type="hidden" value="작업 구역">
+          <input id="site-map-width-mm" type="hidden"><input id="site-map-height-mm" type="hidden">
+          <button id="save-site-map" class="primary" disabled>전체 맵 저장 (site_map.json)</button>
+        </div>
+        <div id="site-map-result" class="result-box">끝점 4개가 모이면 긴 변 기준으로 자동 계산됩니다.</div>
+      </section>
 
       <section id="verification-panel" class="verification-panel" hidden>
         <div class="verification-header">
@@ -100,7 +122,7 @@
 
       <section class="panel-block">
         <span class="eyebrow">2. 겹침 구간 연결</span>
-        <p class="hint">등록된 모든 CCTV의 채널 겹침 구간을 한 번에 연결합니다. 공통 마커가 최소 N개 이상인 스트림 연결을 모두 사용하며, 기준 스트림을 제외한 변환은 전체 오차가 최소가 되도록 동시에 계산합니다.</p>
+        <p class="hint">등록된 모든 CCTV의 채널 겹침 구간을 한 번에 연결합니다. 공통 마커가 최소 <span id="minimum-common-marker-count">3</span>개 이상인 스트림 연결을 모두 사용하며, 기준 스트림을 제외한 변환은 전체 오차가 최소가 되도록 동시에 계산합니다.</p>
         <label class="field-label">전체 맵 기준 스트림
           <select id="global-anchor-stream"></select>
         </label>
@@ -116,6 +138,6 @@
     </aside>
   </main>
 
-  <script src="/static/homography.js?v=20260814-22"></script>
+  <script src="/static/homography.js?v=20260828-02"></script>
 </body>
 </html>

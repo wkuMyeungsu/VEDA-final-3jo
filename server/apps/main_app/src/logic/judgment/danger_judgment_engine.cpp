@@ -5,15 +5,15 @@
 // 자료구조·enum·클래스 선언은 danger_judgment_engine.h,
 // 운영 임계값은 기동 시 읽은 danger_judgment 설정에서 전달받는다.
 //
-// 빌드 (라즈베리파이 / Linux, POSIX 전용):
+// 빌드 (C++17 표준 라이브러리 기반):
 //   CMake: cmake -S . -B build && cmake --build build
 //   또는 직접: g++ -std=c++17 danger_judgment_engine.cpp danger_judgment_engine_main.cpp \
 //              -o danger_engine -pthread
 //
-// 이 파일 자체는 소켓/스레드를 쓰지 않지만 nowIso8601Ms()가 gmtime_r을 쓰므로 POSIX 전용이다.
-// (-pthread가 필요한 쪽은 ResultPublisher를 링크하는 main / 테스트 실행파일이다.)
+// 시간·프로세스별 OS 호출은 common/platform.hpp에서 감싼다.
 
 #include "logic/judgment/danger_judgment_engine.h"
+#include "common/platform.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -259,7 +259,7 @@ std::string nowIso8601Ms() {
     auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
 
     std::tm tm_utc{};
-    gmtime_r(&t, &tm_utc);
+    forklift::platform::gmtimeUtc(&t, &tm_utc);
 
     std::ostringstream os;
     os << std::put_time(&tm_utc, "%Y-%m-%dT%H:%M:%S")

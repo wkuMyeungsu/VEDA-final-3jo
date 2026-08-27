@@ -74,7 +74,7 @@ bool EventLogger::start() {
 
     running_.store(true);
     worker_ = std::thread(&EventLogger::run, this);
-    LOG_INFO("STORAGE", "위험 이벤트 DB 연결 완료 (경로: " + db_path_ + ")");
+    LOG_INFO("STORAGE", "이벤트 DB 연결 · " + db_path_);
     return true;
 }
 

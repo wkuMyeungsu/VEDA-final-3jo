@@ -36,9 +36,10 @@ int main() {
       {"camera_id":"CAM_01","model":"PNO-A9081RG","channels":[{"channel":1,"rtsp_url":"rtsp://cam01","homography_file":"homography/CAM_01/homography_result_cam01_ch01_mm.json","image_width_px":640,"image_height_px":480}]},
       {"camera_id":"CAM_02","model":"PNM-C16083RVQ","channels":[{"channel":1,"rtsp_url":"rtsp://cam02","homography_file":"homography/CAM_02/homography_result_cam02_ch01_mm.json","image_width_px":640,"image_height_px":480},{"channel":2,"rtsp_url":"rtsp://cam02/2","homography_file":"homography/CAM_02/homography_result_cam02_ch02_mm.json","image_width_px":640,"image_height_px":480},{"channel":3,"rtsp_url":"rtsp://cam02/3","homography_file":"homography/CAM_02/homography_result_cam02_ch03_mm.json","image_width_px":640,"image_height_px":480},{"channel":4,"rtsp_url":"rtsp://cam02/4","homography_file":"homography/CAM_02/homography_result_cam02_ch04_mm.json","image_width_px":640,"image_height_px":480}]}
     ]})");
-    write(multi_dir / "forklift_device_config.json", R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
+    write(multi_dir / "forklift_device_config.json", R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500,"marker_height_mm":850},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
+    write(multi_dir / "site_map.json", R"({"unit":"mm","name":"테스트 작업장","boundary":[[0,0],[2700,0],[2700,1200],[0,1200]],"zones":[{"id":"machine","label":"설비","kind":"excluded","polygon":[[1000,300],[1300,300],[1300,600],[1000,600]]},{"id":"blind","kind":"blind","polygon":[[2000,0],[2300,0],[2300,200],[2000,200]]}]})");
     write(multi_dir / "danger_judgment_config.json", R"({"units":{"world":"mm","distance":"mm"},"danger_judgment":{"caution_threshold_mm":3000,"danger_threshold_mm":1500,"emergency_threshold_mm":400,"emergency_release_margin_mm":100,"tof_caution_mm":1000,"tof_danger_mm":500,"impact_accel_threshold_g":2}})");
-    write(multi_dir / "system_config.json", R"({"network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"result_heartbeat_ms":200,"tls_enabled":false},"handover":{"confirm_frames":2,"lost_grace_ms":500},"tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"track_freshness_ms":200,"track_timeout_ms":500},"sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},"stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":2,"retry_delay_s":1},"output_storage":{"object_csv":"storage/objects.csv","aruco_csv":"storage/aruco.csv","event_db":"storage/events.db","latency_csv":"storage/latency.csv"}})");
+    write(multi_dir / "system_config.json", R"({"network":{"mqtt_host":"127.0.0.1","mqtt_port":1883,"result_heartbeat_ms":200,"tls_enabled":false,"ca_cert_path":"certs/ca.crt","client_cert_path":"certs/client-server.crt","client_key_path":"certs/client-server.key"},"handover":{"confirm_frames":2,"lost_grace_ms":500},"tracking":{"iou_threshold":0.3,"world_distance_threshold_mm":1000,"track_freshness_ms":200,"track_timeout_ms":500},"sensor":{"stub_tof_distance_mm":5000,"stale_timeout_ms":1200},"stream":{"rtsp_latency_ms":100,"appsink_max_buffers":5,"eos_force_timeout_s":30,"connect_timeout_s":45,"max_retries":2,"retry_delay_s":1},"output_storage":{"object_csv":"storage/objects.csv","aruco_csv":"storage/aruco.csv","event_db":"storage/events.db","latency_csv":"storage/latency.csv"}})");
     try {
         const auto multi = loadMultiCameraServerConfig(multi_dir.string());
         const auto endsWith = [](const std::string& value, const std::string& suffix) {
@@ -46,6 +47,10 @@ int main() {
                    value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
         };
         check(multi.streams.size() == 5, "모델별 채널 수에 맞춰 스트림을 읽음");
+        check(multi.network.ca_cert_path == (multi_dir / "certs/ca.crt").lexically_normal().string() &&
+                  multi.network.client_cert_path == (multi_dir / "certs/client-server.crt").lexically_normal().string() &&
+                  multi.network.client_key_path == (multi_dir / "certs/client-server.key").lexically_normal().string(),
+              "상대 TLS 경로를 공통 설정 루트 기준으로 해석함");
         check(multi.streams.size() >= 2 &&
                   multi.streams[0].stream_id == "CAM_01_CH_01" &&
                   multi.streams[1].stream_id == "CAM_02_CH_01",
@@ -59,8 +64,15 @@ int main() {
         check(multi.forklifts.size() == 2 &&
                   multi.forklifts[0].marker_id == 10 && multi.forklifts[1].marker_id == 11 &&
                   multi.forklifts[0].collision_radius_mm == 500 &&
-                  multi.forklifts[1].collision_radius_mm == 600,
-              "TERM별 marker와 충돌 반경을 목록으로 읽음");
+                  multi.forklifts[1].collision_radius_mm == 600 &&
+                  multi.forklifts[0].marker_height_mm == 850 &&
+                  multi.forklifts[1].marker_height_mm == 0,
+              "TERM별 marker, 충돌 반경, 선택적 마커 높이를 목록으로 읽음");
+        check(multi.site_map.configured() && multi.site_map.name == "테스트 작업장" &&
+                  multi.site_map.boundary.size() == 4 && multi.site_map.zones.size() == 2 &&
+                  multi.site_map.zones[0].kind == "excluded" &&
+                  multi.site_map.zones[1].kind == "blind",
+              "공장 외곽과 제외·가림 구역을 월드 좌표로 읽음");
         check(multi.output_storage.object_csv ==
                   (multi_dir.parent_path() / "var/main_app/storage/objects.csv").lexically_normal().string(),
               "런타임 출력은 config와 분리된 var/main_app에 저장함");
@@ -104,10 +116,23 @@ int main() {
         const auto split = loadMultiCameraServerConfig(split_app.string(), split_common.string());
         check(split.streams.size() == 5 && split.forklifts.size() == 2,
               "공통 camera·단말 설정과 main 전용 정책을 분리해 읽음");
+        check(!split.site_map.configured(), "site_map이 없는 기존 설정도 계속 읽음");
     } catch (const std::exception& error) {
         check(false, error.what());
     }
     std::filesystem::remove_all(split_root);
+
+    write(multi_dir / "forklift_device_config.json",
+          R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500,"marker_height_mm":-1}]})");
+    try {
+        (void)loadMultiCameraServerConfig(multi_dir.string());
+        check(false, "음수 marker_height_mm를 거부함");
+    } catch (const SafetyServerConfigError& error) {
+        check(error.code() == SafetyServerConfigError::Code::SchemaInvalid,
+              "음수 마커 높이를 스키마 오류로 보고함");
+    }
+    write(multi_dir / "forklift_device_config.json",
+          R"({"forklifts":[{"terminal_id":"TERM_01","marker_id":10,"collision_radius_mm":500,"marker_height_mm":850},{"terminal_id":"TERM_02","marker_id":11,"collision_radius_mm":600}]})");
 
     // 일부 채널의 H가 아직 없거나 손상돼도 중앙 서버 전체를 막지 않고,
     // 보정이 준비된 스트림만 남겨서 기동할 수 있어야 한다.

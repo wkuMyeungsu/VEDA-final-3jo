@@ -4,7 +4,8 @@
 #include <chrono>
 #include <algorithm>
 #include <sstream>
-#include <unistd.h>
+
+#include "common/platform.hpp"
 
 namespace risk_transport {
 namespace {
@@ -102,10 +103,10 @@ void AssignmentPublisher::publish(const std::string& terminal_id, const std::str
 
 bool AssignmentPublisher::connect() {
     retainMqtt();
-    const std::string client_id = "forklift-server-assignment-" + std::to_string(::getpid());
+    const std::string client_id = "forklift-server-assignment-" + forklift::platform::processId();
     mosq_ = mosquitto_new(client_id.c_str(), true, this);
     if (!mosq_) {
-        LOG_ERROR("HANDOVER", "관제 채널 전환 송신 초기화 실패 (mosquitto_new)");
+        LOG_ERROR("HANDOVER", "채널 전환 송신 초기화 실패");
         releaseMqtt();
         return false;
     }
@@ -117,21 +118,21 @@ bool AssignmentPublisher::connect() {
                                              tls_.client_cert_path.c_str(),
                                              tls_.client_key_path.c_str(), nullptr);
         if (tls_rc != MOSQ_ERR_SUCCESS) {
-            LOG_ERROR("HANDOVER", "관제 채널 전환 TLS 설정 실패 (사유: " +
-                                      std::string(mosquitto_strerror(tls_rc)) + ")");
+            LOG_ERROR("HANDOVER", "채널 전환 TLS 설정 실패 · " +
+                                      std::string(mosquitto_strerror(tls_rc)));
             mosquitto_destroy(mosq_); mosq_ = nullptr; releaseMqtt(); return false;
         }
     }
     const int rc = mosquitto_connect(mosq_, broker_host_.c_str(), broker_port_, 60);
     if (rc != MOSQ_ERR_SUCCESS) {
-        LOG_WARN("HANDOVER", "관제 채널 전환 브로커 연결 대기 (" + broker_host_ + ":" +
-                               std::to_string(broker_port_) + ", 사유: " +
-                               std::string(mosquitto_strerror(rc)) + ")");
+        LOG_WARN("HANDOVER", "채널 전환 브로커 연결 대기 · " + broker_host_ + ":" +
+                               std::to_string(broker_port_) + " · " +
+                               std::string(mosquitto_strerror(rc)));
     }
     const int loop_rc = mosquitto_loop_start(mosq_);
     if (loop_rc != MOSQ_ERR_SUCCESS) {
-        LOG_ERROR("HANDOVER", "관제 채널 전환 네트워크 스레드 시작 실패 (사유: " +
-                                  std::string(mosquitto_strerror(loop_rc)) + ")");
+        LOG_ERROR("HANDOVER", "채널 전환 네트워크 스레드 시작 실패 · " +
+                                  std::string(mosquitto_strerror(loop_rc)));
         mosquitto_destroy(mosq_); mosq_ = nullptr; releaseMqtt(); return false;
     }
     return true;
@@ -150,11 +151,11 @@ void AssignmentPublisher::onConnect(struct mosquitto*, void* user, int rc) {
     auto* self = static_cast<AssignmentPublisher*>(user);
     self->connected_ = rc == MOSQ_ERR_SUCCESS;
     if (self->connected_) {
-        LOG_INFO("HANDOVER", "관제 채널 전환 송신 연결 완료 (" + self->broker_host_ + ":" +
-                                  std::to_string(self->broker_port_) + ")");
+        LOG_INFO("HANDOVER", "채널 전환 송신 연결 · " + self->broker_host_ + ":" +
+                                  std::to_string(self->broker_port_));
     } else {
-        LOG_WARN("HANDOVER", "관제 채널 전환 송신 연결 거부 (사유: " +
-                                  std::string(mosquitto_connack_string(rc)) + ")");
+        LOG_WARN("HANDOVER", "채널 전환 송신 거부 · " +
+                                  std::string(mosquitto_connack_string(rc)));
     }
 }
 
@@ -162,7 +163,7 @@ void AssignmentPublisher::onDisconnect(struct mosquitto*, void* user, int rc) {
     auto* self = static_cast<AssignmentPublisher*>(user);
     self->connected_ = false;
     if (rc != 0 && self->running_) {
-        LOG_WARN("HANDOVER", "관제 채널 전환 통신 끊김 (자동 재연결 대기)");
+        LOG_WARN("HANDOVER", "채널 전환 통신 끊김 · 재연결 대기");
     }
 }
 
@@ -178,8 +179,8 @@ void AssignmentPublisher::onPublish(struct mosquitto*, void* user, int mid) {
         }
         ++self->publish_acks_;
     }
-    LOG_INFO("HANDOVER", "assignment PUBACK 수신 (mid=" + std::to_string(mid) +
-                              (topic.empty() ? std::string() : ", 토픽: " + topic) + ")");
+    LOG_DEBUG("HANDOVER", "PUBACK mid=" + std::to_string(mid) +
+                              (topic.empty() ? std::string() : " · " + topic));
 }
 
 void AssignmentPublisher::run() {
@@ -202,9 +203,9 @@ void AssignmentPublisher::run() {
         if (rc != MOSQ_ERR_SUCCESS) {
             std::lock_guard<std::mutex> lock(mutex_);
             ++publish_failures_;
-            LOG_WARN("HANDOVER", "assignment publish 실패 (토픽: " + message.topic +
-                                   ", 사유: " + std::string(mosquitto_strerror(rc)) +
-                                   ", 누적: " + std::to_string(publish_failures_) + ")");
+            LOG_WARN("HANDOVER", "채널 전환 송신 실패 · " + message.topic +
+                                   " · " + std::string(mosquitto_strerror(rc)) +
+                                   " · 누적 " + std::to_string(publish_failures_));
         } else {
             std::lock_guard<std::mutex> lock(mutex_);
             pending_publish_topics_[mid] = message.topic;

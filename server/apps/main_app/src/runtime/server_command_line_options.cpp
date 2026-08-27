@@ -8,8 +8,7 @@ namespace {
 
 constexpr const char* kConfigDirOption = "--config-dir";
 constexpr const char* kCommonConfigDirOption = "--common-config-dir";
-constexpr const char* kDebugOption = "--debug";
-constexpr const char* kEnableDebugCsvOption = "--enable-debug-csv";
+constexpr const char* kLogCsvOption = "--log-csv";
 constexpr const char* kNoSensorOption = "--no-sensor";
 constexpr const char* kHelpOption = "--help";
 constexpr const char* kShortHelpOption = "-h";
@@ -39,8 +38,25 @@ ServerCommandLineParseResult parseServerCommandLine(
         } else if (option == kCommonConfigDirOption) {
             if (!takeOptionValue(index, argc, argv, result.options.common_config_dir,
                                  kCommonConfigDirOption, result.error)) return result;
-        } else if (option == kDebugOption || option == kEnableDebugCsvOption) {
-            result.options.enable_debug_csv = true;
+        } else if (option == kLogCsvOption) {
+            std::string kind;
+            if (!takeOptionValue(index, argc, argv, kind, kLogCsvOption, result.error))
+                return result;
+            if (kind == "object") {
+                result.options.enable_object_csv = true;
+            } else if (kind == "aruco") {
+                result.options.enable_aruco_csv = true;
+            } else if (kind == "latency") {
+                result.options.enable_latency_csv = true;
+            } else if (kind == "all") {
+                result.options.enable_object_csv = true;
+                result.options.enable_aruco_csv = true;
+                result.options.enable_latency_csv = true;
+            } else {
+                result.error = std::string(kLogCsvOption) +
+                               " 값은 object, aruco, latency, all 중 하나여야 합니다.";
+                return result;
+            }
         } else if (option == kNoSensorOption) {
             result.options.sensor_mode = SensorMode::Disabled;
         } else if (option == kHelpOption || option == kShortHelpOption) {
@@ -61,8 +77,7 @@ std::string serverCommandLineUsage(const char* program_name) {
           << "옵션:\n"
           << "  " << kConfigDirOption << " PATH          안전 설정 디렉터리 경로 (기본값: 자동 감지)\n"
           << "  " << kCommonConfigDirOption << " PATH   공통 설정 디렉터리 경로 (기본값: 자동 감지)\n"
-          << "  " << kDebugOption << ", " << kEnableDebugCsvOption
-          << " 원시 CSV 디버그 로깅 활성화\n"
+          << "  " << kLogCsvOption << " KIND          CSV 로그 활성화 (object|aruco|latency|all, 반복 가능)\n"
           << "  " << kNoSensorOption << "               센서 입력을 위험 판정에서 제외 (테스트 전용)\n"
           << "  " << kHelpOption << ", " << kShortHelpOption << "                 도움말 출력\n";
     return usage.str();

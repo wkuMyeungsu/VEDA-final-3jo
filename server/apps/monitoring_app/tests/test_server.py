@@ -13,6 +13,9 @@ SPEC.loader.exec_module(SERVER)
 
 
 class MonitoringStatusTests(unittest.TestCase):
+    def setUp(self):
+        SERVER._RECENT_LOG_CACHE = []
+
     @mock.patch.object(SERVER.subprocess, "run",
                        return_value=mock.Mock(returncode=0, stdout="line-0\nline-1\nline-2\n"))
     def test_recent_logs_reads_safety_unit_journal(self, run):
@@ -25,6 +28,13 @@ class MonitoringStatusTests(unittest.TestCase):
         with mock.patch.object(SERVER.subprocess, "run",
                                side_effect=SERVER.subprocess.SubprocessError("boom")):
             self.assertEqual(SERVER.read_recent_logs(), [])
+
+    @mock.patch.object(SERVER.subprocess, "run",
+                       side_effect=[mock.Mock(returncode=0, stdout="line-0\nline-1\n"),
+                                    SERVER.subprocess.SubprocessError("boom")])
+    def test_recent_logs_keeps_last_success_during_journalctl_failure(self, _run):
+        self.assertEqual(SERVER.read_recent_logs(), ["line-0", "line-1"])
+        self.assertEqual(SERVER.read_recent_logs(), ["line-0", "line-1"])
 
     @mock.patch.dict(SERVER.os.environ, {"SERVER_MONITORING_REFRESH_INTERVAL_SECONDS": "2"})
     def test_index_uses_configured_refresh_interval(self):
@@ -39,6 +49,39 @@ class MonitoringStatusTests(unittest.TestCase):
             SERVER.refresh_interval_seconds(),
             SERVER.DEFAULT_REFRESH_INTERVAL_SECONDS,
         )
+
+    def test_index_renders_structured_server_logs(self):
+        page = SERVER.render_index()
+
+        self.assertIn('id="server-logs"', page)
+        self.assertIn('class="log-list"', page)
+        self.assertIn("const parseServerLogLine=", page)
+        self.assertIn("const isSystemdLogLine=", page)
+        self.assertIn("const visibleLogCount=renderServerLogs(recentLines)", page)
+        self.assertNotIn("<pre id=\"server-logs\">", page)
+        self.assertNotIn("recentLines.join('\\n')", page)
+
+    def test_index_replaces_status_lists_with_site_map(self):
+        page = SERVER.render_index()
+
+        self.assertIn('data-tab-target="tab-map">전체 맵</button>', page)
+        self.assertIn('id="site-map"', page)
+        self.assertIn('renderSiteMap(snapshot.site_map,snapshot.terminals||[])', page)
+        self.assertIn("r:radius,class:`map-forklift map-risk-${risk}`", page)
+        self.assertIn('const mapPoints=[...displayBoundary,...displayZones.flatMap((entry)=>entry.polygon),...livePoints]', page)
+        self.assertNotIn("clip-path':'url(#map-boundary-clip)", page)
+        self.assertNotIn('>단말 상태</button>', page)
+        self.assertNotIn('>검출 현황</button>', page)
+
+    def test_failed_refresh_keeps_last_resource_values(self):
+        page = SERVER.render_index()
+        unknown_state = page.split("const setUnknownState=()=>{", 1)[1].split(
+            "async function refresh", 1)[0]
+
+        self.assertNotIn("renderResources({})", page)
+        self.assertNotIn("renderSiteMap(null,[])", unknown_state)
+        self.assertIn("if(!lastSuccessfulRefresh)", page)
+        self.assertIn("마지막 정상 상태를 유지 중입니다", page)
 
     def test_successful_requests_are_quiet(self):
         handler = object.__new__(SERVER.Handler)
@@ -97,6 +140,10 @@ class MonitoringStatusTests(unittest.TestCase):
                     [{"core": 0, "cpu_percent": 100.0}, {"core": 1, "cpu_percent": 0.0}],
                 )
                 self.assertEqual(second["memory_total_mb"], 4000.0)
+
+                repeated = SERVER.host_resource()
+                self.assertEqual(repeated["cpu_percent"], 66.7)
+                self.assertEqual(repeated["cpu_cores"], second["cpu_cores"])
 
                 (proc_root / "stat").write_text(
                     "cpu 200 0 200 800 100 0 0 0\n"
@@ -213,6 +260,13 @@ class MonitoringStatusTests(unittest.TestCase):
 
             with urllib.request.urlopen(f"{base}/health/live") as response:
                 self.assertEqual(json.load(response)["service"], "monitoring-app")
+
+            with mock.patch.object(SERVER, "read_recent_logs", return_value=["line-0"]):
+                with urllib.request.urlopen(f"{base}/api/logs") as response:
+                    payload = json.load(response)
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["recent_lines"], ["line-0"])
+                    self.assertEqual(payload["logs"], ["line-0"])
 
             with self.assertRaises(urllib.error.HTTPError) as raised:
                 urllib.request.urlopen(f"{base}/missing")

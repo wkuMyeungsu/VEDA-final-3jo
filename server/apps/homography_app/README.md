@@ -208,5 +208,5 @@ QT_QPA_PLATFORM=offscreen \
 
 - [호모그래피 처리 엔진](processing/README.md)
 - [호모그래피 웹 UI/API](web/README.md)
-- [호모그래피 설정·결과](../../config/homography/README.md)
+- [호모그래피 설정·결과](../../config.example/homography/README.md)
 - [서버 전체 문서](../../README.md)
