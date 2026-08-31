@@ -72,6 +72,10 @@ struct NearestPersonResult {
 // 이 선언을 그대로 include해서 재사용 - 중복 정의로 인한 링크 충돌을 피한다).
 double euclideanDistance(const WorldPoint& a, const WorldPoint& b);
 
+// site_map.boundary 같은 다각형 내부/경계 여부. 점이 변 위에 있으면 안으로 본다.
+// polygon.size() < 3 이면 구역 설정이 없는 것으로 보고 true.
+bool pointInPolygon(const WorldPoint& point, const std::vector<WorldPoint>& polygon);
+
 // 지게차 world 좌표 기준, tracks 중 가장 가까운 사람 1명을 찾는다.
 //
 // freshness_sec 이내에 관측된 트랙만 후보로 삼는다. 프레임 수(missed_frames)로 거르면

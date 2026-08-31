@@ -162,14 +162,17 @@ public:
     //        const를 유지한 건 기존 호출부/테스트가 const 참조로 엔진을 쓰고 있어서다.
     JudgmentResult evaluate(const CameraInput& cam, const SensorInput& sen) const;
 
-    // 히스테리시스 상태를 초기화한다(EMERGENCY 래치 + DEAD_RECKONING 해제 유예 상태 해제).
-    // 판정 대상이 바뀌거나(카메라 전환 등) 테스트에서 이전 프레임 영향을 지울 때 쓴다.
-    // dead_reckoning_active_도 같이 지우는 이유는 in_emergency_와 같다 - 직전 카메라 기준으로
-    // 걸린 상태를 시야도 좌표계도 다른 새 카메라의 첫 프레임에 그대로 물려주면 안 된다.
+    // 히스테리시스 상태를 초기화한다(EMERGENCY 래치 + DEAD_RECKONING 해제 유예 +
+    // 직전 거리 판정 유지값 해제). 판정 대상이 바뀌거나(카메라 전환 등) 테스트에서
+    // 이전 프레임 영향을 지울 때 쓴다. dead_reckoning_active_와 직전 거리 유지도
+    // in_emergency_와 같다 - 직전 카메라 기준 상태를 시야·좌표계가 다른 새 카메라의
+    // 첫 프레임에 그대로 물려주면 안 된다.
     void resetHysteresis() {
         in_emergency_ = false;
         dead_reckoning_active_ = false;
         last_camera_level_ = RiskLevel::SAFE;
+        has_last_camera_measurement_ = false;
+        last_distance_mm_ = -1.0;
     }
 
     // 지금 EMERGENCY 래치가 걸려 있는지 (디버깅·테스트용)
@@ -213,6 +216,11 @@ private:
     // SAFE/CAUTION/DANGER 경계 히스테리시스용 직전 카메라 판정 단계. 하락(안전 방향)
     // 은 release margin을 넘겼을 때만 한 단계 내려간다. in_emergency_와 같은 이유로 mutable.
     mutable RiskLevel last_camera_level_ = RiskLevel::SAFE;
+
+    // 거리를 실제로 한 번이라도 잰 적이 있는지. 마커가 잠깐 빠져도 직전 단계/거리를
+    // 유지하려면 이 플래그가 필요하다. 측정 전에 폐색되면 기존처럼 최소 CAUTION.
+    mutable bool has_last_camera_measurement_ = false;
+    mutable double last_distance_mm_ = -1.0;
 
     // DEAD_RECKONING 해제 히스테리시스 래치. 진입(raw 조건 참)은 즉시 걸리고,
     // 해제는 raw 조건이 거짓으로 돌아온 뒤에도 dead_reckoning_release_grace_ms만큼

@@ -96,6 +96,46 @@ int main() {
     check(evaluateDistance(900.0) == RiskLevel::SAFE,
           "reset 후에는 유예 없이 SAFE 판정");
 
+    std::cout << "\n[마커 폐색 시 직전 판정 유지]\n";
+    // 운영 관찰: 마커가 몇 초 간격으로 빠질 때마다 DEAD_RECKONING이 SAFE→CAUTION을
+    // 강제해, 1097mm처럼 안전한 거리에서도 WARN↔SAFE가 반복됐다.
+    engine.resetHysteresis();
+    check(evaluateDistance(1097.0) == RiskLevel::SAFE, "1097mm는 SAFE");
+    CameraInput occluded = cameraAt(1097.0);
+    occluded.forklift_localized = false;
+    const auto occluded_safe = engine.evaluate(occluded, healthySensor());
+    check(occluded_safe.exception == ExceptionState::DEAD_RECKONING,
+          "마커 폐색은 DEAD_RECKONING으로 태깅");
+    check(occluded_safe.final_risk == RiskLevel::SAFE,
+          "직전이 SAFE면 폐색 중에도 SAFE 유지 (CAUTION으로 올리지 않음)");
+    check(evaluateDistance(1097.0) == RiskLevel::SAFE,
+          "마커가 다시 잡혀도 SAFE 유지 (진동 없음)");
+
+    engine.resetHysteresis();
+    check(evaluateDistance(500.0) == RiskLevel::DANGER, "500mm는 DANGER");
+    CameraInput occluded_danger = cameraAt(500.0);
+    occluded_danger.forklift_localized = false;
+    const auto held_danger = engine.evaluate(occluded_danger, healthySensor());
+    check(held_danger.final_risk == RiskLevel::DANGER,
+          "직전이 DANGER면 폐색 중에도 DANGER 유지 (CAUTION으로 내리지 않음)");
+
+    engine.resetHysteresis();
+    CameraInput unknown = cameraAt(1097.0);
+    unknown.forklift_localized = false;
+    const auto first_occlusion = engine.evaluate(unknown, healthySensor());
+    check(first_occlusion.exception == ExceptionState::DEAD_RECKONING &&
+              first_occlusion.final_risk == RiskLevel::CAUTION,
+          "거리를 한 번도 못 잰 폐색은 기존대로 최소 CAUTION");
+
+    engine.resetHysteresis();
+    check(evaluateDistance(700.0) == RiskLevel::CAUTION, "700mm는 CAUTION");
+    CameraInput person_gone = cameraAt(700.0);
+    person_gone.person_detected = false;
+    const auto person_missing = engine.evaluate(person_gone, healthySensor());
+    check(person_missing.final_risk == RiskLevel::SAFE &&
+              person_missing.exception == ExceptionState::NONE,
+          "지게차는 보이는데 사람이 없으면 SAFE (사람이 구역을 벗어남)");
+
     std::cout << "\n=== " << (failures == 0 ? "전체 통과" : "실패 " + std::to_string(failures) + "건")
               << " ===\n";
     return failures == 0 ? 0 : 1;

@@ -30,6 +30,31 @@ double euclideanDistance(const WorldPoint& a, const WorldPoint& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
+bool pointInPolygon(const WorldPoint& point, const std::vector<WorldPoint>& polygon) {
+    if (polygon.size() < 3) return true;
+    const double x = point.x;
+    const double y = point.y;
+    constexpr double kEdgeEps = 1e-6;
+    bool inside = false;
+    for (std::size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++) {
+        const double xi = polygon[i].x;
+        const double yi = polygon[i].y;
+        const double xj = polygon[j].x;
+        const double yj = polygon[j].y;
+        const double edge_dx = xj - xi;
+        const double edge_dy = yj - yi;
+        const double cross = (x - xi) * edge_dy - (y - yi) * edge_dx;
+        if (std::abs(cross) <= kEdgeEps) {
+            const double dot = (x - xi) * edge_dx + (y - yi) * edge_dy;
+            const double len2 = edge_dx * edge_dx + edge_dy * edge_dy;
+            if (dot >= -kEdgeEps && dot <= len2 + kEdgeEps) return true;
+        }
+        if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi))
+            inside = !inside;
+    }
+    return inside;
+}
+
 NearestPersonResult selectNearestPerson(const WorldPoint& forklift,
                                         const std::vector<Track>& tracks,
                                         double now_s,

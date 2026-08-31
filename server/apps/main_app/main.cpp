@@ -27,6 +27,7 @@
 #include "input/metadata_router.hpp"
 #include "input/onvif_metadata_parser.hpp"
 #include "input/rtp_metadata_receiver.hpp"
+#include "logic/judgment/announcement_gate.hpp"
 #include "logic/pipeline/safety_frame_pipeline.hpp"
 #include "logging/aruco_csv_logger.hpp"
 #include "logging/csv_logger.hpp"
@@ -102,16 +103,6 @@ std::string jsonString(const std::string& value) {
     return escaped;
 }
 
-std::string markerIdList(const std::vector<int>& marker_ids) {
-    if (marker_ids.empty()) return "없음";
-    std::ostringstream output;
-    for (std::size_t index = 0; index < marker_ids.size(); ++index) {
-        if (index) output << ',';
-        output << marker_ids[index];
-    }
-    return output.str();
-}
-
 const char* localizationLogLabel(const std::string& status) {
     if (status == "LOCALIZED") return "위치 확인";
     if (status == "MARKER_NOT_DETECTED") return "마커 미검출";
@@ -124,14 +115,14 @@ std::string formatLocalizationMessage(
     const forklift::logic::SafetyFramePipeline::LocalizationStatus& localization) {
     std::ostringstream message;
     message << terminal_id << " " << localizationLogLabel(localization.status)
-            << " · 목표 " << localization.configured_marker_id;
-    const std::string stream = localization.last_aruco_frame_stream_id.empty()
-                                   ? localization.last_target_marker_stream_id
-                                   : localization.last_aruco_frame_stream_id;
-    if (!stream.empty()) {
-        message << " · " << stream << " 관측 "
-                << markerIdList(localization.last_observed_marker_ids);
-    }
+            << " · 마커 " << localization.configured_marker_id;
+    const std::string stream = !localization.active_stream_id.empty()
+                                   ? localization.active_stream_id
+                                   : (!localization.last_target_marker_stream_id.empty()
+                                          ? localization.last_target_marker_stream_id
+                                          : localization.last_aruco_frame_stream_id);
+    if (!stream.empty() && localization.status != "WAITING_FOR_ARUCO")
+        message << " · " << stream;
     return message.str();
 }
 
@@ -207,6 +198,8 @@ struct TerminalContext {
     risk_transport::ResultPublisher publisher;
     risk_transport::ResultDispatcher dispatcher;
     forklift::logging::LocalizationLogGate localization_log_gate;
+    AnnouncementGate announcement_gate;
+    std::string last_assignment_stream;
 
     TerminalContext(forklift::config::SafetyServerConfig config,
                     forklift::config::ForkliftDevice forklift,
@@ -353,7 +346,7 @@ void CentralServer::process(const MetadataEvent& event) {
             // 한 카메라의 빈/지연 프레임이 다른 카메라의 결과를 덮어쓰지 않도록
             // 단말별로 누적된 전체 스트림 스냅숏만 판정한다.
             auto output = terminal->pipeline.processAggregatedFrame(now_s);
-            terminal->dispatcher.submit(output.judgment.result);
+            terminal->dispatcher.submit(terminal->announcement_gate.apply(output.judgment.result));
             logLocalizationIfNeeded(*terminal);
         }
         return;
@@ -363,13 +356,18 @@ void CentralServer::process(const MetadataEvent& event) {
         aruco_logger_.logFrame(event.aruco);
     }
     for (auto& terminal : terminals_) {
-        const auto changed = terminal->pipeline.processArucoStreamFrame(event.aruco);
+        const auto assigned = terminal->pipeline.processArucoStreamFrame(event.aruco);
         logLocalizationIfNeeded(*terminal);
-        if (!changed) continue;
-        assignment_publisher_.publish(terminal->device.terminal_id, *changed,
-                                      event.aruco.camera_id, event.aruco.channel,
+        if (!assigned) continue;
+        assignment_publisher_.publish(terminal->device.terminal_id, *assigned,
+                                      terminal->pipeline.activeCameraId(),
+                                      terminal->pipeline.activeChannel(),
                                       nowIso8601Ms());
-        LOG_INFO("HANDOVER", terminal->device.terminal_id + " 채널 전환 → " + *changed);
+        if (terminal->last_assignment_stream != *assigned) {
+            LOG_INFO("HANDOVER", terminal->device.terminal_id + " 채널 전환 → " + *assigned);
+            terminal->announcement_gate.reset();
+            terminal->last_assignment_stream = *assigned;
+        }
     }
 }
 
@@ -710,25 +708,21 @@ struct CentralServer::StreamWorker {
         auto* worker = static_cast<StreamWorker*>(user_data);
         GstCaps* caps = gst_pad_get_current_caps(pad);
         if (!caps) caps = gst_pad_query_caps(pad, nullptr);
-        gchar* pad_name = gst_pad_get_name(pad);
-        gchar* caps_str = caps ? gst_caps_to_string(caps) : g_strdup("caps 없음");
+        gchar* caps_str = caps ? gst_caps_to_string(caps) : nullptr;
         const std::string caps_text = caps_str ? caps_str : "";
-        LOG_INFO("CCTV", worker->stream.stream_id + " RTSP 패드 · " +
-                             (pad_name ? pad_name : "?") + " · " + caps_text);
-        if (caps_text.find("media=(string)application") != std::string::npos ||
-            caps_text.find("media=application") != std::string::npos)
+        const bool application = caps_text.find("media=(string)application") != std::string::npos ||
+                                 caps_text.find("media=application") != std::string::npos;
+        if (application) {
             worker->saw_application_pad_ = true;
-        g_free(pad_name);
+            LOG_INFO("CCTV", worker->stream.stream_id + " 메타데이터 트랙 연결");
+        }
         g_free(caps_str);
         if (caps) gst_caps_unref(caps);
     }
 
     void consumePayload(const uint8_t* data, size_t size) {
         ++rtp_packets_;
-        if (!logged_rtp_) {
-            logged_rtp_ = true;
-            LOG_INFO("CCTV", stream.stream_id + " 메타데이터 RTP 수신 시작");
-        }
+        if (!logged_rtp_) logged_rtp_ = true;
         RtpHeaderInfo header;
         if (parseRtpHeader(data, size, header)) {
             auto xml = reassembler.feed(data + header.headerLength,
@@ -777,7 +771,7 @@ struct CentralServer::StreamWorker {
         if (type == MetadataType::ObjectDetection) {
             if (!logged_object_) {
                 logged_object_ = true;
-                LOG_INFO("CCTV", stream.stream_id + " 객체 메타데이터 수신 시작");
+                LOG_INFO("CCTV", stream.stream_id + " 객체 검출 수신");
             }
             auto frame = parseOnvifMetadata(xml);
             const auto timing = forklift::common::makeMetadataTiming(
@@ -793,14 +787,14 @@ struct CentralServer::StreamWorker {
         if (type != MetadataType::ArucoDetection) {
             if (type == MetadataType::Unknown && !logged_unknown_) {
                 logged_unknown_ = true;
-                LOG_WARN("CCTV", stream.stream_id + " 알 수 없는 메타데이터 문서 · 길이 " +
-                                     std::to_string(xml.size()));
+                LOG_DEBUG("CCTV", stream.stream_id + " 기타 메타데이터 문서 · 길이 " +
+                                      std::to_string(xml.size()));
             }
             return;
         }
         if (!logged_metadata_) {
             logged_metadata_ = true;
-            LOG_INFO("CCTV", stream.stream_id + " ArUco 메타데이터 수신 시작");
+            LOG_INFO("CCTV", stream.stream_id + " 마커 검출 수신");
         }
         auto parsed = parseArucoMetadata(xml);
         if (!parsed) return;
@@ -943,9 +937,7 @@ struct CentralServer::StreamWorker {
                     // 영원히 안 온다. 실패로 세지 않고 세션만 다시 연다.
                     if (reached_playing && !logged_object_ && !logged_metadata_ &&
                         now - playing_at > std::chrono::seconds(8)) {
-                        LOG_WARN("CCTV", stream.stream_id + " 메타데이터 트랙 무응답 · RTP " +
-                                             std::to_string(rtp_packets_) + "패킷 · application 패드 " +
-                                             (saw_application_pad_ ? "있음" : "없음") + " · 재연결");
+                        LOG_WARN("CCTV", stream.stream_id + " 메타데이터 없음 · 재연결");
                         retry_needed = true;
                         break;
                     }

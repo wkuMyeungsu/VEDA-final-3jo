@@ -10,7 +10,7 @@
 {
   "stream_id": "CAM_01_CH_01",
   "camera_id": "CAM_01",
-  "channel": 0,
+  "channel": 1,
   "name": "CH 1 (창고 입구)",
   "zone": "ZONE_A",
   "source_type": "rtsp",

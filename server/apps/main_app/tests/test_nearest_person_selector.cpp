@@ -92,18 +92,29 @@ void testMissedFramesPositiveButFreshAccepted() {
     check(result.distance_mm == 280.0, "Case 4: 거리 280mm");
 }
 
+void testPointInWorkAreaPolygon() {
+    const std::vector<WorldPoint> box{{0.0, 0.0}, {1800.0, 0.0}, {1800.0, 870.0}, {0.0, 870.0}};
+    check(pointInPolygon({100.0, 100.0}, box), "구역 안 점은 true");
+    check(pointInPolygon({0.0, 0.0}, box), "꼭짓점은 안으로 본다");
+    check(pointInPolygon({900.0, 0.0}, box), "변 위 점은 안으로 본다");
+    check(!pointInPolygon({-10.0, 100.0}, box), "왼쪽 밖은 false");
+    check(!pointInPolygon({100.0, 900.0}, box), "위쪽 밖은 false");
+    check(pointInPolygon({50.0, 50.0}, {}), "다각형이 없으면 필터 없음");
+}
+
 } // namespace
 
 int main() {
     testBothFreshSelectNearest();
     testNearStaleFarFresh();
     testAllStaleNoneFound();
+    testPointInWorkAreaPolygon();
     testMissedFramesPositiveButFreshAccepted();
 
     if (failures > 0) {
         std::cerr << "총 " << failures << "개 테스트 실패\n";
         return 1;
     }
-    std::cout << "test_nearest_person_selector: 모든 테스트 통과 (4/4)\n";
+    std::cout << "test_nearest_person_selector: 모든 테스트 통과\n";
     return 0;
 }

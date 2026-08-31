@@ -325,7 +325,8 @@ SafetyServerConfig loadMultiCameraServerConfigImpl(const std::string& config_dir
             }
             stream_ids[s.stream_id] = true;
             if (!std::filesystem::exists(common_dir / s.homography_file)) {
-                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · 좌표변환 파일 없음 · " + s.homography_file);
+                LOG_WARN("CONFIG", channelLabel(s.channel) + " 제외 · 좌표변환 파일 없음 · " +
+                                       std::filesystem::path(s.homography_file).filename().string());
                 continue;
             }
             const auto h_path = (common_dir / s.homography_file).lexically_normal();

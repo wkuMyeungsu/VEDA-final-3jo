@@ -1,7 +1,9 @@
 #include "logic/pipeline/safety_frame_pipeline.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -18,7 +20,8 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
       marker_height_mm_(std::max(0.0, device.marker_height_mm)),
       homography_(config),
       fov_grace_(std::max(std::chrono::milliseconds(0), config.handover.lostGrace())),
-      activation_confirm_(std::max(1, config.handover.confirm_frames)),
+      view_freshness_(std::max(std::chrono::milliseconds(0),
+                               std::chrono::milliseconds(config.tracking.track_freshness_ms))),
       people_timeout_sec_(config.tracking.track_timeout_ms / 1000.0),
       world_distance_threshold_mm_(std::max(0.0, config.tracking.world_distance_threshold_mm)),
       cross_camera_tracker_(config.tracking.iou_threshold,
@@ -30,6 +33,11 @@ SafetyFramePipeline::SafetyFramePipeline(const config::SafetyServerConfig& confi
     localization_status_.configured_marker_id = marker_id_;
     for (const auto& stream : config.streams)
         stream_identity_[stream.stream_id] = {stream.camera_id, stream.channel};
+    if (config.site_map.configured()) {
+        work_area_boundary_.reserve(config.site_map.boundary.size());
+        for (const auto& point : config.site_map.boundary)
+            work_area_boundary_.push_back({point.x_mm, point.y_mm});
+    }
 }
 
 void SafetyFramePipeline::recordArucoObservation(const ArucoFrame& frame) {
@@ -42,27 +50,15 @@ void SafetyFramePipeline::recordArucoObservation(const ArucoFrame& frame) {
     localization_status_.last_aruco_frame_stream_id = frame.stream_id;
     localization_status_.last_aruco_frame_channel = frame.channel;
 
-    bool target_marker_seen = false;
-    for (const auto& marker : frame.markers) {
-        if (marker.id == marker_id_) target_marker_seen = true;
-    }
-    if (target_marker_seen) {
-        localization_status_.last_target_marker_seen_utc = frame_utc;
-        localization_status_.last_target_marker_stream_id = frame.stream_id;
-        localization_status_.last_target_marker_channel = frame.channel;
-    }
     auto& stream_status = aruco_stream_status_[frame.stream_id];
     stream_status.stream_id = frame.stream_id;
     stream_status.camera_id = frame.camera_id;
     stream_status.channel = frame.channel;
     stream_status.last_frame_utc = frame_utc;
-    stream_status.target_marker_visible = target_marker_seen;
     stream_status.marker_ids.clear();
     stream_status.marker_ids.reserve(frame.markers.size());
     for (const auto& marker : frame.markers)
         stream_status.marker_ids.push_back(marker.id);
-    if (target_marker_seen)
-        stream_status.last_target_marker_seen_utc = frame_utc;
     if (!frame.markers.empty()) {
         localization_status_.last_observed_markers_utc = frame_utc;
         localization_status_.last_observed_markers_stream_id = frame.stream_id;
@@ -97,28 +93,14 @@ void SafetyFramePipeline::updateLocalizationResult(bool localized,
     }
 }
 
-void SafetyFramePipeline::refreshGlobalForkliftSighting() {
-    std::optional<WorldSighting> newest;
-    bool marker_visible = false;
-    bool homography_available = false;
-    {
-        std::lock_guard<std::mutex> lock(localization_mutex_);
-        for (const auto& entry : aruco_stream_status_) {
-            const auto& status = entry.second;
-            if (!status.target_marker_visible) continue;
-            marker_visible = true;
-            const auto sighting = stream_sightings_.find(entry.first);
-            if (sighting == stream_sightings_.end()) continue;
-            homography_available = true;
-            if (!newest || sighting->second.seen > newest->seen)
-                newest = sighting->second;
-        }
-    }
+void SafetyFramePipeline::refreshGlobalForkliftSighting(
+    std::chrono::steady_clock::time_point now) {
+    const WorldSighting* fresh = bestFreshSighting(now);
     // 대상 마커를 못 본 한 스트림의 프레임이 다른 스트림의 유효 관측을 지우면 안 된다.
-    // 유효 관측이 하나라도 있으면 가장 최근 관측을 전역 지게차 위치로 채택한다.
-    if (newest) forklift_sighting_ = *newest;
-    any_target_marker_visible_ = marker_visible;
-    any_target_with_homography_ = homography_available;
+    // 유효 관측이 있으면 화면에서 더 크게 보이는 쪽을 지게차 위치로 채택한다.
+    if (fresh) forklift_sighting_ = *fresh;
+    any_target_marker_visible_ = fresh != nullptr;
+    any_target_with_homography_ = fresh != nullptr;
 }
 
 std::optional<WorldPoint> SafetyFramePipeline::resolvedForkliftWorld(
@@ -139,19 +121,29 @@ bool SafetyFramePipeline::anyTargetMarkerVisible() const {
     return any_target_marker_visible_;
 }
 
+bool SafetyFramePipeline::insideWorkArea(const WorldPoint& point) const {
+    return pointInPolygon(point, work_area_boundary_);
+}
+
 NearestPersonResult SafetyFramePipeline::nearestAcrossCameras(
     const WorldPoint& forklift, double now_s) const {
     // 트래커 결과를 기본값으로 사용하되, 카메라별 최신 원시 관측도 함께 비교한다.
     // 한 스트림의 마지막 프레임이 다른 스트림의 최신 결과를 덮어쓰지 않게 하는
-    // 전역 최소거리 선택이다.
+    // 전역 최소거리 선택이다. 작업 구역 밖 사람은 후보에서 뺀다.
+    std::vector<Track> inside_tracks;
+    inside_tracks.reserve(latest_tracks_.size());
+    for (const auto& track : latest_tracks_) {
+        if (insideWorkArea(track.last_world)) inside_tracks.push_back(track);
+    }
     NearestPersonResult result = selectNearestPerson(
-        forklift, latest_tracks_, now_s, people_timeout_sec_);
+        forklift, inside_tracks, now_s, people_timeout_sec_);
     for (const auto& entry : latest_people_observations_) {
         const auto& observation = entry.second;
         if (observation.timestamp_s < 0.0 || now_s < observation.timestamp_s ||
             now_s - observation.timestamp_s > people_timeout_sec_)
             continue;
         for (const auto& detection : observation.detections) {
+            if (!insideWorkArea(detection.world)) continue;
             const double distance = euclideanDistance(forklift, detection.world);
             if (distance >= result.distance_mm) continue;
 
@@ -206,108 +198,140 @@ SafetyFramePipeline::PeopleStatus SafetyFramePipeline::peopleStatus(double now_s
     return result;
 }
 
-std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const ArucoFrame& frame) {
-    if (frame.stream_id.empty() || frame.camera_id.empty() || frame.channel < 1) return std::nullopt;
-    recordArucoObservation(frame);
-    const auto now = std::chrono::steady_clock::now();
+double SafetyFramePipeline::markerPixelArea(
+    const std::array<forklift::common::PixelPoint, 4>& corners) {
+    double sum = 0.0;
+    for (std::size_t index = 0; index < corners.size(); ++index) {
+        const auto& a = corners[index];
+        const auto& b = corners[(index + 1) % corners.size()];
+        sum += static_cast<double>(a.x) * b.y - static_cast<double>(b.x) * a.y;
+    }
+    return std::abs(sum) * 0.5;
+}
 
-    // 1) 이 화면의 지게차 마커 중심을 월드 좌표로 바꿔 스트림별 관측을 갱신한다.
-    //    최종 위치는 아래에서 모든 스트림의 유효 관측을 합쳐 선택한다.
-    bool marker_here = false;
-    bool homography_here = false;
-    bool localized_here = false;
+std::optional<SafetyFramePipeline::WorldSighting> SafetyFramePipeline::extractForkliftSighting(
+    const ArucoFrame& frame, std::chrono::steady_clock::time_point now) const {
+    struct Candidate {
+        WorldPoint world{};
+        double area = 0.0;
+    };
+    std::vector<Candidate> candidates;
     for (const auto& marker : frame.markers) {
-        if (marker.id != marker_id_) continue;
-        marker_here = true;
-        homography_here = homography_.hasStream(frame.stream_id);
-        if (marker.corners.empty()) {
-            stream_sightings_.erase(frame.stream_id);
-            break;
-        }
-        common::PixelPoint center;
+        if (marker.id != marker_id_ || marker.corners.empty()) continue;
+        common::PixelPoint center{};
         for (const auto& corner : marker.corners) {
             center.x += corner.x;
             center.y += corner.y;
         }
         center.x /= static_cast<float>(marker.corners.size());
         center.y /= static_cast<float>(marker.corners.size());
-        if (auto world = homography_.pixelToWorld(frame.stream_id, center, marker_height_mm_)) {
-            stream_sightings_[frame.stream_id] = WorldSighting{*world, now, frame.stream_id};
-            localized_here = true;
-        } else {
-            stream_sightings_.erase(frame.stream_id);
-        }
-        break;
+        const auto world = homography_.pixelToWorld(frame.stream_id, center, marker_height_mm_);
+        if (!world) continue;
+        Candidate candidate;
+        candidate.world = *world;
+        candidate.area = markerPixelArea(marker.corners);
+        candidates.push_back(candidate);
     }
-    if (!marker_here) stream_sightings_.erase(frame.stream_id);
-    refreshGlobalForkliftSighting();
-    if (marker_here) {
-        marker_missing_since_.reset();
-        // ArUco 입력만으로 대상 ID와 월드 좌표가 이미 확정됐는데도 다음 객체
-        // 메타데이터가 올 때까지 WAITING_FOR_ARUCO로 남지 않게 즉시 반영한다.
-        // 다른 채널의 빈 ArUco 프레임은 이 상태를 다시 미검출로 덮어쓰지 않는다.
-    }
-    const bool global_localized = resolvedForkliftWorld(now).has_value();
-    if (marker_here || anyTargetMarkerVisible() || !global_localized)
-        updateLocalizationResult(global_localized, anyTargetMarkerVisible(),
-                                 global_localized || homography_here);
+    if (candidates.empty()) return std::nullopt;
 
-    // 2) 활성 스트림이 없으면: 같은 화면에서 연속 확정된 뒤 채택한다(오검출 방지).
-    if (!active_stream_) {
-        if (marker_here && localized_here && forklift_sighting_ &&
-            forklift_sighting_->stream_id == frame.stream_id) {
-            const int streak = ++activation_streaks_[frame.stream_id];
-            if (streak >= activation_confirm_) {
-                activateStream(frame.stream_id, frame.camera_id, frame.channel, &frame);
-                return active_stream_;
-            }
-        } else {
-            // 다른 채널의 미검출은 현재 후보 채널의 연속 확인을 깨지 않는다.
-            // 자신의 프레임에서 마커를 놓친 경우에만 해당 카운터를 초기화한다.
-            activation_streaks_[frame.stream_id] = 0;
+    const auto best = std::max_element(
+        candidates.begin(), candidates.end(),
+        [](const Candidate& a, const Candidate& b) { return a.area < b.area; });
+    WorldSighting sighting;
+    sighting.pos = best->world;
+    sighting.seen = now;
+    sighting.stream_id = frame.stream_id;
+    sighting.pixel_area = best->area;
+    return sighting;
+}
+
+const SafetyFramePipeline::WorldSighting* SafetyFramePipeline::bestFreshSighting(
+    std::chrono::steady_clock::time_point now) const {
+    const WorldSighting* best = nullptr;
+    for (const auto& entry : stream_sightings_) {
+        const auto& sighting = entry.second;
+        if (now < sighting.seen) continue;
+        if (view_freshness_.count() > 0 && now - sighting.seen > view_freshness_) continue;
+        if (!best || sighting.pixel_area > best->pixel_area) {
+            best = &sighting;
+            continue;
         }
-        return std::nullopt;
+        if (sighting.pixel_area < best->pixel_area) continue;
+        // 크기가 같으면 이미 배정된 화면을 유지해 카메라 사이 진동을 막는다.
+        if (active_stream_ && sighting.stream_id == *active_stream_) best = &sighting;
+        else if (!active_stream_ || best->stream_id != *active_stream_) {
+            if (sighting.seen > best->seen) best = &sighting;
+        }
+    }
+    return best;
+}
+
+std::optional<std::string> SafetyFramePipeline::selectAssignment(
+    const ArucoFrame& frame, std::chrono::steady_clock::time_point now) {
+    const WorldSighting* best = bestFreshSighting(now);
+    if (!best) return std::nullopt;
+
+    // 한 프레임만 크게 잡히거나 마커 면적이 조금 요동쳐도 화면이 바뀌지 않게,
+    // 현재 화면이 아직 유효하면 1.3배 이상 더 클 때만 바꾼다.
+    if (active_stream_) {
+        const auto active_it = stream_sightings_.find(*active_stream_);
+        if (active_it != stream_sightings_.end()) {
+            const auto& active = active_it->second;
+            const bool active_fresh =
+                now >= active.seen &&
+                (view_freshness_.count() == 0 || now - active.seen <= view_freshness_);
+            if (active_fresh && best->stream_id != *active_stream_ &&
+                best->pixel_area < active.pixel_area * 1.3)
+                best = &active;
+        }
     }
 
-    // 3) 액티브 유지 판단: 직접 보이거나, 추적 위치가 액티브 화면 안에 있으면 유지.
-    //    "같은 마커가 여러 화면에 동시 잡힘"은 여기서 전환 사유가 되지 않는다.
-    bool in_fov = false;
-    if (frame.stream_id == *active_stream_) {
-        if (marker_here) {
-            in_fov = true;
-            marker_missing_since_.reset();
-        } else if (!marker_missing_since_) {
-            marker_missing_since_ = now;
-        }
+    const auto identity = stream_identity_.find(best->stream_id);
+    if (identity == stream_identity_.end()) return std::nullopt;
+    if (!active_stream_ || *active_stream_ != best->stream_id) {
+        activateStream(best->stream_id, identity->second.first, identity->second.second,
+                       best->stream_id == frame.stream_id ? &frame : nullptr);
+    }
+    return best->stream_id;
+}
+
+std::optional<std::string> SafetyFramePipeline::processArucoStreamFrame(const ArucoFrame& frame) {
+    if (frame.stream_id.empty() || frame.camera_id.empty() || frame.channel < 1) return std::nullopt;
+    recordArucoObservation(frame);
+    const auto now = std::chrono::steady_clock::now();
+
+    const auto extracted = extractForkliftSighting(frame, now);
+    const bool homography_here = homography_.hasStream(frame.stream_id);
+    if (extracted) {
+        stream_sightings_[frame.stream_id] = *extracted;
         last_aruco_ = frame;
+    } else {
+        stream_sightings_.erase(frame.stream_id);
     }
-    if (!in_fov && forklift_sighting_) {
-        const auto size = homography_.imageSize(*active_stream_);
-        if (auto pixel = homography_.worldToPixel(*active_stream_, forklift_sighting_->pos)) {
-            in_fov = size.has_value() && pixel->x >= 0.0f && pixel->y >= 0.0f &&
-                     pixel->x < static_cast<float>(size->first) &&
-                     pixel->y < static_cast<float>(size->second);
+    {
+        std::lock_guard<std::mutex> lock(localization_mutex_);
+        auto& stream_status = aruco_stream_status_[frame.stream_id];
+        stream_status.target_marker_visible = extracted.has_value();
+        if (extracted) {
+            const std::string& frame_utc =
+                !frame.utcTime.empty() ? frame.utcTime : frame.serverReceivedUtc;
+            stream_status.last_target_marker_seen_utc = frame_utc;
+            localization_status_.last_target_marker_seen_utc = frame_utc;
+            localization_status_.last_target_marker_stream_id = frame.stream_id;
+            localization_status_.last_target_marker_channel = frame.channel;
         }
     }
-    if (in_fov) {
-        out_of_fov_since_.reset();
-        return std::nullopt;
-    }
 
-    // 4) FOV 이탈 유예 시간 경과 후에만 전환한다.
-    if (!out_of_fov_since_) out_of_fov_since_ = now;
-    if (now - *out_of_fov_since_ < fov_grace_) return std::nullopt;
+    refreshGlobalForkliftSighting(now);
+    if (any_target_with_homography_) marker_missing_since_.reset();
+    else if (!marker_missing_since_) marker_missing_since_ = now;
 
-    std::string target;
-    if (marker_here && frame.stream_id != *active_stream_) target = frame.stream_id;
-    else if (forklift_sighting_ && forklift_sighting_->stream_id != *active_stream_)
-        target = forklift_sighting_->stream_id;
-    const auto identity = stream_identity_.find(target);
-    if (target.empty() || target == *active_stream_ || identity == stream_identity_.end())
-        return std::nullopt;
+    const bool global_localized = resolvedForkliftWorld(now).has_value();
+    if (extracted || anyTargetMarkerVisible() || !global_localized)
+        updateLocalizationResult(global_localized, anyTargetMarkerVisible(),
+                                 global_localized || (extracted.has_value() && homography_here));
 
-    activateStream(target, identity->second.first, identity->second.second, nullptr);
-    return active_stream_;
+    return selectAssignment(frame, now);
 }
 
 void SafetyFramePipeline::activateStream(const std::string& stream_id,
@@ -316,8 +340,6 @@ void SafetyFramePipeline::activateStream(const std::string& stream_id,
     active_stream_ = stream_id;
     active_camera_id_ = camera_id;
     active_channel_ = channel;
-    out_of_fov_since_.reset();
-    activation_streaks_.clear();
     marker_missing_since_.reset();
     judgment_pipeline_.setActiveStream(stream_id, camera_id, channel);
     if (triggering_frame) last_aruco_ = *triggering_frame;
@@ -362,18 +384,16 @@ SafetyFramePipeline::ObjectFrameOutput SafetyFramePipeline::processAggregatedFra
         output.nearest = nearestAcrossCameras(output.forklift_world, timestamp_s);
     output.judgment = judgment_pipeline_.processFrame(
         output.forklift_world, output.forklift_localized, output.nearest);
-    // 최종 판정은 전체 스트림의 최근접 관측으로 계산한다. 결과 식별자도
-    // 활성 핸드오버 채널이 아니라 실제로 선택된 관측의 출처를 가리켜야
-    // CH_02/CH_03 중 어느 입력이 집계에 기여했는지 운영 로그에서 확인할 수 있다.
-    if (output.nearest.found) {
-        output.judgment.result.stream_id = output.nearest.stream_id;
+    // Qt 운전자 단말은 stream_id == 활성 화면일 때만 HUD/FPGA에 위험도를 반영한다.
+    // 최근접 사람이 다른 채널에 있어도 공지 식별자는 배정 화면을 쓴다.
+    // 관측 출처는 source_camera_id에만 남겨 이벤트 DB/서버 로그가 추적할 수 있게 한다.
+    output.judgment.result.stream_id = active_stream_.value_or("");
+    output.judgment.result.camera_id = active_camera_id_;
+    output.judgment.result.channel = active_channel_;
+    if (output.nearest.found)
         output.judgment.result.source_camera_id = output.nearest.camera_id;
-        output.judgment.result.channel = output.nearest.channel;
-    } else {
-        output.judgment.result.stream_id = active_stream_.value_or("");
+    else
         output.judgment.result.source_camera_id = active_camera_id_;
-        output.judgment.result.channel = active_channel_;
-    }
     return output;
 }
 

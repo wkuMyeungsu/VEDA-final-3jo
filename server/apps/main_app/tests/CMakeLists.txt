@@ -41,6 +41,15 @@ add_executable(test_distance_hysteresis test_distance_hysteresis.cpp)
 target_link_libraries(test_distance_hysteresis PRIVATE server_judgment Threads::Threads)
 add_test(NAME distance_hysteresis_test COMMAND test_distance_hysteresis)
 
+add_executable(test_announcement_gate test_announcement_gate.cpp)
+target_link_libraries(test_announcement_gate PRIVATE server_judgment Threads::Threads)
+add_test(NAME announcement_gate_test COMMAND test_announcement_gate)
+
+add_executable(test_qt_client_e2e test_qt_client_e2e.cpp)
+target_include_directories(test_qt_client_e2e PRIVATE ${SERVER_THIRD_PARTY_DIR})
+target_link_libraries(test_qt_client_e2e PRIVATE server_judgment Threads::Threads)
+add_test(NAME qt_client_e2e_test COMMAND test_qt_client_e2e)
+
 add_executable(test_judgment_pipeline test_judgment_pipeline.cpp)
 target_link_libraries(test_judgment_pipeline PRIVATE server_judgment Threads::Threads)
 add_test(NAME judgment_pipeline_test COMMAND test_judgment_pipeline)
@@ -122,6 +131,9 @@ set_tests_properties(
     bounded_queue_test
     server_command_line_options_test
     judgment_engine_test
+    distance_hysteresis_test
+    announcement_gate_test
+    qt_client_e2e_test
     judgment_pipeline_test
     assignment_publisher_test
     result_publisher_test

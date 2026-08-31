@@ -1,8 +1,6 @@
 // test_fov_handover.cpp
-// FOV 기반 핸드오버 검증: 지게차 마커의 world 좌표가 활성 스트림 화면 안에 있는 한
-// 전환이 일어나지 않고, 화면 밖으로 나간 채 유예 시간을 넘겼을 때만 전환된다.
-//
-// 채널3 통합 테스트와 같은 fixture H(두 스트림 공유)를 사용한다.
+// 등록된 단말 마커가 보이면 그 화면으로 즉시 배정하고, 여러 카메라에 동시에
+// 있으면 더 크게 보이는 쪽을 고른다. 매 확인마다 현재 배정 stream을 돌려준다.
 
 #include <algorithm>
 #include <chrono>
@@ -90,7 +88,7 @@ public:
 };
 
 ArucoFrame markerFrame(const std::string& stream_id, int channel,
-                       const WorldPoint& world) {
+                       const WorldPoint& world, float half_size = 5.0f) {
     ArucoFrame frame;
     frame.utcTime = "2026-08-25T00:00:00.000Z";
     frame.channel = channel;
@@ -99,10 +97,10 @@ ArucoFrame markerFrame(const std::string& stream_id, int channel,
     const auto center = worldToPixel(world);
     ArucoMarker marker;
     marker.id = kForkliftMarkerId;
-    marker.corners = {{{center.x - 5.0f, center.y - 5.0f},
-                       {center.x + 5.0f, center.y - 5.0f},
-                       {center.x + 5.0f, center.y + 5.0f},
-                       {center.x - 5.0f, center.y + 5.0f}}};
+    marker.corners = {{{center.x - half_size, center.y - half_size},
+                       {center.x + half_size, center.y - half_size},
+                       {center.x + half_size, center.y + half_size},
+                       {center.x - half_size, center.y + half_size}}};
     frame.markers.push_back(marker);
     return frame;
 }
@@ -110,7 +108,7 @@ ArucoFrame markerFrame(const std::string& stream_id, int channel,
 }  // namespace
 
 int main() {
-    std::cout << "=== FOV 기반 핸드오버 ===\n";
+    std::cout << "=== 마커 가시성 핸드오버 ===\n";
     FixedSensorReader sensors;
     const auto config = testConfig();
     const auto device_it = std::find_if(
@@ -120,43 +118,65 @@ int main() {
     const auto& device = *device_it;
 
     forklift::logic::SafetyFramePipeline pipeline(config, device, sensors);
+    const WorldPoint forklift{20.0, 120.0};
 
-    // 활성화: CH_03에서 3프레임 연속 관측
-    for (int frame = 0; frame < 3; ++frame) {
-        const auto changed = pipeline.processArucoStreamFrame(
-            markerFrame(kStreamId, kChannel, {20.0, 120.0}));
-        check(frame == 2 ? (changed && *changed == kStreamId) : !changed,
-              "CH_03 3프레임 연속 관측 후 활성화");
-    }
+    const auto first = pipeline.processArucoStreamFrame(
+        markerFrame(kStreamId, kChannel, forklift, 8.0f));
+    check(first && *first == kStreamId && pipeline.activeStreamId() &&
+              *pipeline.activeStreamId() == kStreamId,
+          "등록 마커가 보이면 즉시 그 화면으로 배정");
+    const auto again = pipeline.processArucoStreamFrame(
+        markerFrame(kStreamId, kChannel, forklift, 8.0f));
+    check(again && *again == kStreamId, "매 확인마다 현재 배정 화면을 다시 알려줌");
 
-    // 시나리오 1: 같은 마커가 CH_02에서도 동시에 보인다 (같은 world 위치).
-    // 유예 시간을 실제로 넘겨도 활성 CH_03의 FOV 안이므로 전환되지 않아야 한다.
-    std::this_thread::sleep_for(std::chrono::milliseconds(700));
-    const auto unchanged = pipeline.processArucoStreamFrame(
-        markerFrame(kOtherStreamId, kOtherChannel, {20.0, 120.0}));
-    check(!unchanged && pipeline.activeStreamId() && *pipeline.activeStreamId() == kStreamId,
-          "동시 관측(FOV 내)은 유예 경과 후에도 전환하지 않음");
+    const auto sameView = pipeline.processArucoStreamFrame(
+        markerFrame(kOtherStreamId, kOtherChannel, forklift, 8.0f));
+    check(sameView && *sameView == kStreamId && pipeline.activeStreamId() &&
+              *pipeline.activeStreamId() == kStreamId,
+          "비슷한 크기로 동시에 보이면 현재 배정 화면을 유지");
 
-    // 시나리오 2: 마커가 CH_03 화면 밖 world 위치로 이동했다.
-    // CH_03 투영이 이미지 밖이 되는 위치를 찾는다.
-    WorldPoint outside{20.0, 120.0};
-    while (true) {
-        outside.y -= 500.0;
-        const auto px = worldToPixel(outside);
-        if (px.y < -50.0f || px.x < -50.0f || px.x > 2600.0f || px.y > 1600.0f) break;
-        if (outside.y < -100000.0) break;
-    }
-    // FOV 밖 위치를 CH_02가 보기 시작 -> 첫 프레임은 유예 타이머만 켜고,
-    // 실제로 유예(500ms)가 지난 뒤 들어오는 프레임에서 전환된다.
-    check(!pipeline.processArucoStreamFrame(
-              markerFrame(kOtherStreamId, kOtherChannel, outside)),
-          "FOV 이탈 직후에는 유예 중 전환 없음");
-    std::this_thread::sleep_for(std::chrono::milliseconds(700));
     const auto switched = pipeline.processArucoStreamFrame(
-        markerFrame(kOtherStreamId, kOtherChannel, outside));
+        markerFrame(kOtherStreamId, kOtherChannel, forklift, 20.0f));
     check(switched && *switched == kOtherStreamId &&
               pipeline.activeStreamId() && *pipeline.activeStreamId() == kOtherStreamId,
-          "FOV 이탈 + 유예 경과 후 대상 스트림으로 전환");
+          "더 크게 보이는 화면이 있으면 즉시 그쪽으로 배정");
+
+    forklift::logic::SafetyFramePipeline jitter(config, device, sensors);
+    check(jitter.processArucoStreamFrame(markerFrame(kStreamId, kChannel, forklift, 10.0f)) &&
+              jitter.activeStreamId() && *jitter.activeStreamId() == kStreamId,
+          "지터 테스트 시작 화면 CH_03");
+    const auto jittered = jitter.processArucoStreamFrame(
+        markerFrame(kOtherStreamId, kOtherChannel, forklift, 11.0f));
+    check(jittered && *jittered == kStreamId,
+          "1.3배 미만 크기 차이면 화면을 바꾸지 않음");
+
+    forklift::logic::SafetyFramePipeline smallerOther(config, device, sensors);
+    check(smallerOther.processArucoStreamFrame(
+              markerFrame(kStreamId, kChannel, forklift, 12.0f)) &&
+              smallerOther.activeStreamId() && *smallerOther.activeStreamId() == kStreamId,
+          "시작 화면은 마커가 더 크게 보이는 CH_03");
+    const WorldPoint otherSpot{900.0, 120.0};
+    const auto keepLarger = smallerOther.processArucoStreamFrame(
+        markerFrame(kOtherStreamId, kOtherChannel, otherSpot, 4.0f));
+    check(keepLarger && *keepLarger == kStreamId &&
+              smallerOther.activeStreamId() && *smallerOther.activeStreamId() == kStreamId,
+          "다른 화면의 더 작은 동일 ID보다 큰 쪽을 유지");
+
+    auto staleConfig = config;
+    staleConfig.tracking.track_freshness_ms = 1;
+    staleConfig.handover.lost_grace_ms = 2;
+    forklift::logic::SafetyFramePipeline staleView(staleConfig, device, sensors);
+    check(staleView.processArucoStreamFrame(
+              markerFrame(kStreamId, kChannel, forklift)).has_value(),
+          "중단 스트림 만료 테스트 시작 화면 배정");
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    ArucoFrame emptyOther = markerFrame(kOtherStreamId, kOtherChannel, forklift);
+    emptyOther.markers.clear();
+    staleView.processArucoStreamFrame(emptyOther);
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    staleView.processArucoStreamFrame(emptyOther);
+    check(!staleView.localizationStatus().localized,
+          "카메라가 끊겨 새 프레임이 없어도 과거 마커 관측은 만료");
 
     std::cout << (failures == 0 ? "test_fov_handover: 전체 통과\n" : "test_fov_handover: FAILED\n");
     return failures == 0 ? 0 : 1;

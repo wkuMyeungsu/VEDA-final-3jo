@@ -525,6 +525,16 @@
     const validMapPoint=(point)=>Array.isArray(point)&&point.length===2&&
       Number.isFinite(Number(point[0]))&&Number.isFinite(Number(point[1]));
     const polygonText=(points)=>points.map((point)=>`${Number(point[0])},${Number(point[1])}`).join(' ');
+    const pointInPolygon=(point,polygon)=>{
+      const x=Number(point[0]),y=Number(point[1]);
+      let inside=false;
+      for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+        const xi=Number(polygon[i][0]),yi=Number(polygon[i][1]);
+        const xj=Number(polygon[j][0]),yj=Number(polygon[j][1]);
+        if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+      }
+      return inside;
+    };
     const uniquePeople=(terminals)=>{
       const people=new Map();
       terminals.forEach((terminal)=>{
@@ -581,12 +591,11 @@
       };
       const displayBoundary=boundary.map(toDisplay);
       const displayZones=zones.map((entry)=>({zone:entry.zone,polygon:entry.polygon.map(toDisplay)}));
-      const displayLocalized=localized.map((terminal)=>({terminal,position:toDisplay([terminal.localization.position.x_mm,terminal.localization.position.y_mm])}));
-      const displayPeople=people.map((person)=>({person,position:toDisplay([person.position.x_mm,person.position.y_mm])}));
-      const livePoints=[...displayLocalized.map((entry)=>entry.position),...displayPeople.map((entry)=>entry.position)];
-      const mapPoints=[...displayBoundary,...displayZones.flatMap((entry)=>entry.polygon),...livePoints];
-      const xs=mapPoints.map((point)=>Number(point[0]));
-      const ys=mapPoints.map((point)=>Number(point[1]));
+      const insideWorkArea=(position)=>pointInPolygon(position,displayBoundary);
+      const displayLocalized=localized.map((terminal)=>({terminal,position:toDisplay([terminal.localization.position.x_mm,terminal.localization.position.y_mm])})).filter((entry)=>insideWorkArea(entry.position));
+      const displayPeople=people.map((person)=>({person,position:toDisplay([person.position.x_mm,person.position.y_mm])})).filter((entry)=>insideWorkArea(entry.position));
+      const xs=displayBoundary.map((point)=>Number(point[0]));
+      const ys=displayBoundary.map((point)=>Number(point[1]));
       const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
       const width=Math.max(1,maxX-minX),height=Math.max(1,maxY-minY);
       const padding=Math.max(width,height)*.05;
@@ -637,9 +646,17 @@
       svg.append(layer);
 
       const missing=terminals.filter((terminal)=>!localized.includes(terminal)).map((terminal)=>terminal.terminal_id||'알 수 없는 단말');
+      const omittedPeople=people.length-displayPeople.length;
+      const omittedForklifts=localized.length-displayLocalized.length;
+      const omitted=[];
+      if(omittedPeople>0)omitted.push(`사람 ${omittedPeople}명`);
+      if(omittedForklifts>0)omitted.push(`지게차 ${omittedForklifts}대`);
       setText('map-name',siteMap.name||'전체 작업 구역');
-      setText('map-summary',`지게차 ${localized.length}/${terminals.length}대 · 사람 ${people.length}명 · 구역 ${zones.length}개`);
-      setText('map-notice',missing.length?`긴 변 가로 · 방향 고정 · 위치 미확인: ${missing.join(', ')}`:'긴 변 가로 · 방향 고정');
+      setText('map-summary',`지게차 ${displayLocalized.length}/${terminals.length}대 · 사람 ${displayPeople.length}명 · 구역 ${zones.length}개`);
+      const noticeParts=['긴 변 가로','방향 고정','작업 구역 고정'];
+      if(missing.length)noticeParts.push(`위치 미확인: ${missing.join(', ')}`);
+      if(omitted.length)noticeParts.push(`구역 밖 ${omitted.join(', ')} 생략`);
+      setText('map-notice',noticeParts.join(' · '));
     };
     const setUnknownState=()=>{
       setOverall('unknown','확인 필요','상태를 확인할 수 없습니다.');

@@ -18,7 +18,8 @@
 //   [테스트 4] 충돌 반경 0mm에서는 중심점 거리 판정이 그대로 유지되고,
 //              반경을 주더라도 외부 distance_mm에는 원시 중심점 거리가 남는지
 //
-//   DEAD_RECKONING은 트리거 발생 여부와 "최소 CAUTION 유지"까지만 검증한다.
+//   DEAD_RECKONING은 트리거 발생 여부와, 거리를 한 번도 못 잰 폐색의 최소 CAUTION
+//   유지만 검증한다. 직전 거리 판정 유지는 test_distance_hysteresis.cpp 쪽.
 //   회전 중 폐색 지속에 따른 DANGER 에스컬레이션은 회전 임계값이 잠정치라 범위 밖.
 //
 // 엔진은 danger_judgment_engine.h(선언) / .cpp(구현)로 분리되어 있고 main()은
@@ -177,30 +178,42 @@ void testBoundaryValues() {
          ExceptionState::NONE,                  RiskLevel::SAFE},
     });
 
-    // (4) SENSOR_FAULT / DEAD_RECKONING 트리거 자체 확인 (최소 CAUTION 유지)
+    // (4) SENSOR_FAULT / DEAD_RECKONING 트리거 자체 확인.
+    //     거리 히스테리시스(직전 판정 유지)가 앞 케이스에서 넘어오지 않도록 엔진을 분리한다.
     //     DR은 여기까지만 - 회전 중 폐색 지속 -> DANGER 에스컬레이션은 범위 밖.
     std::cout << "  -- SENSOR_FAULT / DEAD_RECKONING 트리거 + 최소 CAUTION 보정 --\n";
-    runCases(engine, {
-        {"ToF 고장 (tof_ok=false)",
-         CameraInput{true, true, kFarA, kFarB, "", ""},
-         SensorInput{true, false, 0.0, 0.1, false},
-         ExceptionState::SENSOR_FAULT,   RiskLevel::CAUTION},
+    {
+        DangerJudgmentEngine isolated(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
+        runCases(isolated, {
+            {"ToF 고장 (tof_ok=false)",
+             CameraInput{true, true, kFarA, kFarB, "", ""},
+             SensorInput{true, false, 0.0, 0.1, false},
+             ExceptionState::SENSOR_FAULT,   RiskLevel::CAUTION},
 
-        {"IMU 고장 (imu_ok=false)",
-         CameraInput{true, true, kFarA, kFarB, "", ""},
-         SensorInput{false, true, 5000.0, 0.1, false},
-         ExceptionState::SENSOR_FAULT,   RiskLevel::CAUTION},
-
-        {"마커 폐색 (forklift_localized=false)",
-         CameraInput{false, true, kFarA, kFarB, "", ""},
-         SensorInput{true, true, 5000.0, 0.1, false},
-         ExceptionState::DEAD_RECKONING, RiskLevel::CAUTION},
-
-        {"IMU 추정 모드 (is_dead_reckoning=true)",
-         CameraInput{true, true, kFarA, kFarB, "", ""},
-         SensorInput{true, true, 5000.0, 0.1, true},
-         ExceptionState::DEAD_RECKONING, RiskLevel::CAUTION},
-    });
+            {"IMU 고장 (imu_ok=false)",
+             CameraInput{true, true, kFarA, kFarB, "", ""},
+             SensorInput{false, true, 5000.0, 0.1, false},
+             ExceptionState::SENSOR_FAULT,   RiskLevel::CAUTION},
+        });
+    }
+    {
+        DangerJudgmentEngine isolated(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
+        runCases(isolated, {
+            {"마커 폐색 (측정 전)",
+             CameraInput{false, true, kFarA, kFarB, "", ""},
+             SensorInput{true, true, 5000.0, 0.1, false},
+             ExceptionState::DEAD_RECKONING, RiskLevel::CAUTION},
+        });
+    }
+    {
+        DangerJudgmentEngine isolated(testJudgmentConfig(), 0.0, std::chrono::milliseconds(500));
+        runCases(isolated, {
+            {"IMU 추정 모드 + 원거리 측정",
+             CameraInput{true, true, kFarA, kFarB, "", ""},
+             SensorInput{true, true, 5000.0, 0.1, true},
+             ExceptionState::DEAD_RECKONING, RiskLevel::SAFE},
+        });
+    }
 }
 
 // ── 테스트 2: 우선순위 충돌 매트릭스 ────────────────────────

@@ -257,17 +257,15 @@ int main() {
     ArucoFrame otherNoTarget = wrongMarkerFrame;
     otherNoTarget.channel = kOtherChannel;
     otherNoTarget.stream_id = kOtherStreamId;
-    check(!interleavedActivation.processArucoStreamFrame(targetFrame),
-          "교차 입력: 대상 스트림 1회 확인");
-    check(!interleavedActivation.processArucoStreamFrame(otherNoTarget),
-          "교차 입력: 다른 스트림 미검출은 후보를 초기화하지 않음");
-    check(!interleavedActivation.processArucoStreamFrame(targetFrame),
-          "교차 입력: 대상 스트림 2회 확인");
-    check(!interleavedActivation.processArucoStreamFrame(otherNoTarget),
-          "교차 입력: 다른 스트림이 다시 들어와도 연속성 유지");
+    const auto interleavedFirst = interleavedActivation.processArucoStreamFrame(targetFrame);
+    check(interleavedFirst && *interleavedFirst == kStreamId,
+          "교차 입력: 등록 마커가 보이면 즉시 배정");
+    const auto interleavedOther = interleavedActivation.processArucoStreamFrame(otherNoTarget);
+    check(interleavedOther && *interleavedOther == kStreamId,
+          "교차 입력: 다른 스트림 미검출이 기존 배정을 지우지 않음");
     const auto interleavedStream = interleavedActivation.processArucoStreamFrame(targetFrame);
     check(interleavedStream && *interleavedStream == kStreamId,
-          "교차 입력에서도 대상 스트림 3회 확인 후 활성화");
+          "교차 입력: 매 확인마다 현재 배정 화면을 다시 알려줌");
 
     forklift::logic::SafetyFramePipeline pipeline(config, device, sensors);
     check(pipeline.homographyStreamLoadErrors().empty(), "stream별 실제 H 계약과 해상도 검증");
@@ -285,11 +283,12 @@ int main() {
     if (!parsedAruco) return 1;
     parsedAruco->stream_id = kStreamId;
     parsedAruco->camera_id = kCameraId;
-    check(!pipeline.processArucoStreamFrame(*parsedAruco), "첫 번째 TERM marker 프레임에서는 stream 미확정");
-    check(!pipeline.processArucoStreamFrame(*parsedAruco), "두 번째 TERM marker 프레임에서도 stream 미확정");
     const auto stream = pipeline.processArucoStreamFrame(*parsedAruco);
     check(stream && *stream == kStreamId && pipeline.activeCameraId() == kCameraId,
-          "TERM marker를 3프레임 확인한 뒤 활성 stream 확정");
+          "등록된 TERM 마커가 보이면 즉시 활성 stream 확정");
+    const auto streamAgain = pipeline.processArucoStreamFrame(*parsedAruco);
+    check(streamAgain && *streamAgain == kStreamId,
+          "같은 마커를 다시 봐도 매 확인마다 배정 화면을 알려줌");
     const auto immediateLocalization = pipeline.localizationStatus();
     check(immediateLocalization.status == "LOCALIZED" &&
               immediateLocalization.localized &&
@@ -446,6 +445,28 @@ int main() {
               published.back().find("\"distance_mm\":60") != std::string::npos &&
               published.back().find("\"risk_level\":2") != std::string::npos,
           "최종 DANGER 결과가 distance_mm JSON 계약으로 발행됨");
+
+    auto areaConfig = config;
+    areaConfig.site_map.boundary = {{0.0, 0.0}, {400.0, 0.0}, {400.0, 250.0}, {0.0, 250.0}};
+    forklift::logic::SafetyFramePipeline areaPipeline(areaConfig, device, sensors);
+    check(areaPipeline.processArucoStreamFrame(targetFrame).has_value(),
+          "작업 구역 필터 테스트 스트림 활성화");
+    auto mixedPeople = parseOnvifMetadata(objectXml({
+        {20.0, -80.0},   // 지게차(20,120)에서 200mm, 구역 밖
+        {330.0, 120.0}   // 310mm, 구역 안
+    }));
+    mixedPeople.stream_id = kStreamId;
+    mixedPeople.camera_id = kCameraId;
+    mixedPeople.channel = kChannel;
+    const auto mixedOutput = areaPipeline.processObjectFrame(mixedPeople, 1.0);
+    check(mixedOutput.nearest.found &&
+              near(mixedOutput.nearest.position.x, 330.0) &&
+              near(mixedOutput.nearest.position.y, 120.0) &&
+              near(mixedOutput.judgment.result.distance_mm, 310.0) &&
+              mixedOutput.judgment.result.final_risk == RiskLevel::SAFE,
+          "작업 구역 밖 최근접 사람은 판정에서 제외하고 구역 안 사람으로 SAFE");
+    check(areaPipeline.peopleStatus(1.0).tracks.size() == 2,
+          "모니터링 트랙은 구역 밖 사람도 유지");
 
     check(logger.flushWithin(std::chrono::seconds(3)), "판정 상태 변화 로그를 SQLite에 반영");
     logger.stop();

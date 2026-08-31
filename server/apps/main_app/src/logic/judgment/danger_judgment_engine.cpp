@@ -52,23 +52,33 @@ JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const Sens
     result.zone      = cam.zone;
 
     // ── 1) 카메라 기반 판정 ──────────────────────────
-    // 지게차 좌표가 없거나(마커 폐색) 사람이 안 잡히면 카메라 기준 거리 계산 자체가 불가능
+    // 지게차 좌표가 없거나(마커 폐색) 사람이 안 잡히면 이번 프레임의 거리 계산은 불가능하다.
     double dist = -1.0;
     if (cam.forklift_localized && cam.person_detected) {
         dist = euclideanDistance(cam.forklift, cam.person);
         const double effective_distance_mm = std::max(0.0, dist - forklift_collision_radius_mm);
         result.camera_risk = classifyByDistance(effective_distance_mm);
+        has_last_camera_measurement_ = true;
+        last_distance_mm_ = dist;
+    } else if (!cam.forklift_localized && has_last_camera_measurement_) {
+        // 마커 폐색: 직전 거리 판정을 유지한다.
+        // 예전에는 camera_risk=SAFE로 지운 뒤 DEAD_RECKONING이 최소 CAUTION을 걸어서,
+        // 1097mm처럼 안전한 거리에서도 마커가 깜빡일 때마다 SAFE↔CAUTION이 반복됐다.
+        result.camera_risk = last_camera_level_;
+        dist = last_distance_mm_;
+        if (result.camera_risk == RiskLevel::EMERGENCY) {
+            // 거리를 못 재는 동안 EMERGENCY를 붙들고 있으면 전진 차단이 풀릴 방법이 없다.
+            result.camera_risk = RiskLevel::DANGER;
+            last_camera_level_ = RiskLevel::DANGER;
+        }
+        in_emergency_ = false;
     } else {
-        // 판정 보류 -> 예외 단계에서 보정 (SAFE로 두되, 아래 예외 로직이 실제 위험 여부를 반영)
+        // 지게차는 보이는데 사람이 없거나, 아직 거리를 한 번도 못 잰 상태.
+        // 사람 미검출은 "작업 구역에 사람이 없다"이므로 직전 근접 판정을 들고 가지 않는다.
         result.camera_risk = RiskLevel::SAFE;
-
-        // 거리를 못 재는 프레임에서는 EMERGENCY 래치도 푼다.
-        // 유지하는 쪽이 더 안전해 보이지만, 한번 걸리면 사람이 다시 잡힐 때까지 풀 방법이
-        // 없어 EMERGENCY가 무기한 고착된다(전진 차단이 걸린 채로 남는다). 폐색/미검출 구간은
-        // 예외 상태(DEAD_RECKONING/SENSOR_FAULT)가 최소 CAUTION을 보장하는 기존 설계에 맡긴다.
-        // -> DANGER도 같은 이유로 유지되지 않으므로 EMERGENCY만 예외를 두지 않는다.
         in_emergency_ = false;
         last_camera_level_ = RiskLevel::SAFE;
+        last_distance_mm_ = -1.0;
     }
     result.distance_mm = dist;
 
@@ -101,9 +111,17 @@ JudgmentResult DangerJudgmentEngine::evaluate(const CameraInput& cam, const Sens
             fused = atLeast(fused, RiskLevel::DANGER);
             break;
         case ExceptionState::SENSOR_FAULT:
-        case ExceptionState::DEAD_RECKONING:
-            // 판정 신뢰도가 떨어지는 상황 -> 보수적으로 최소 "주의" 유지
+            // 센서 입력을 신뢰할 수 없으면 최소 "주의"를 유지한다.
             fused = atLeast(fused, RiskLevel::CAUTION);
+            break;
+        case ExceptionState::DEAD_RECKONING:
+            // 이번 프레임에 거리를 쟀으면 그 판정을 그대로 쓴다.
+            // 한 번도 못 잰 폐색만 최소 CAUTION으로 올린다. 이미 잰 거리에서
+            // 마커가 잠깐 빠지는 경우에는 직전 단계를 유지해 SAFE↔CAUTION 진동을 막는다.
+            if (!(cam.forklift_localized && cam.person_detected) &&
+                !has_last_camera_measurement_) {
+                fused = atLeast(fused, RiskLevel::CAUTION);
+            }
             break;
         case ExceptionState::UNCONFIRMED_PROXIMITY:
             // ToF가 뭔가를 감지했지만 카메라로 사람인지 확인이 안 된 상태.
@@ -280,12 +298,18 @@ std::string toJson(const JudgmentResult& r) {
        << "\"zone\":" << toJsonOrNull(r.zone) << ','
        << "\"terminal_id\":" << toJsonOrNull(r.terminal_id) << ','
        << "\"stream_id\":" << toJsonOrNull(r.stream_id) << ','
-       << "\"camera_id\":" << toJsonOrNull(r.source_camera_id.empty() ? r.camera_id : r.source_camera_id) << ','
+       // Qt 단말은 stream_id가 활성 화면과 같을 때만 HUD/FPGA에 반영한다.
+       // camera_id는 배정된 물리 CCTV ID를 쓰고, 최근접 관측 출처는 source_camera_id에만 둔다.
+       << "\"camera_id\":" << toJsonOrNull(r.camera_id) << ','
        << "\"channel\":" << r.channel << ','
        << "\"exception_state\":\"" << toString(r.exception) << "\",";
     // distance_mm은 sentinel(-1)을 유효 측정값으로 오독하지 않도록 음수면 null, 아니면 숫자 그대로.
+    // distance_m도 같이 보낸다. 구형 Qt는 distance_mm을 모르고 distance_m만 읽어,
+    // 필드가 없으면 거리 0/측정불가로 표시한다(경보 risk_level은 그대로 동작).
     os << "\"distance_mm\":";
     if (r.distance_mm < 0) os << "null"; else os << r.distance_mm;
+    os << ",\"distance_m\":";
+    if (r.distance_mm < 0) os << "null"; else os << (r.distance_mm / 1000.0);
     // risk_level은 문자열이 아니라 정수(0=SAFE/1=CAUTION/2=DANGER/3=EMERGENCY)로 내보낸다.
     // 단말(Qt RiskMetadata::fromJson)이 toInt()로 읽으므로 문자열을 보내면
     // 항상 0(Safe)으로 떨어져 위험 경보가 통째로 유실된다.

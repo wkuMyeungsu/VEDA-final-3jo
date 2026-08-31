@@ -90,9 +90,9 @@ public:
                         ISensorReader& sensors,
                         bool ignore_sensor_input = false);
 
-    // 지게차 마커의 world 좌표를 추적하고, 그 위치가 활성 stream의 화면 범위(FOV)를
-    // 벗어난 채 유예 시간을 넘겼을 때만 새 stream_id를 반환한다. 같은 마커가 여러
-    // 화면에 동시 잡혀도 위치가 활성 FOV 안인 한 전환이 일어나지 않는다.
+    // 이 단말에 등록된 마커가 보이면 그 화면으로 즉시 배정한다. 여러 카메라에
+    // 동시에 있으면 더 크게 보이는 쪽을 고르고, 마커가 있는 동안에는 매 확인마다
+    // 현재 배정 stream_id를 돌려준다.
     std::optional<std::string> processArucoStreamFrame(const ArucoFrame& frame);
 
     // 최근 ArUco와 현재 사람 검출을 같은 stream의 H로 변환한 뒤 최근접 선택과
@@ -117,11 +117,21 @@ public:
     PeopleStatus peopleStatus(double now_s) const;
 
 private:
+    // 지게차 마커의 최근 월드 관측. 어느 스트림이 봤든 하나의 위치로 융합한다
+    // (단말당 지게차 1대 가정 - forklifts 설정이 단일 마커 ID 기준).
+    struct WorldSighting {
+        WorldPoint pos{};
+        std::chrono::steady_clock::time_point seen{};
+        std::string stream_id;
+        double pixel_area = 0.0;
+    };
+
     void recordArucoObservation(const ArucoFrame& frame);
-    void refreshGlobalForkliftSighting();
+    void refreshGlobalForkliftSighting(std::chrono::steady_clock::time_point now);
     std::optional<WorldPoint> resolvedForkliftWorld(
         std::chrono::steady_clock::time_point now) const;
     bool anyTargetMarkerVisible() const;
+    bool insideWorkArea(const WorldPoint& point) const;
     NearestPersonResult nearestAcrossCameras(const WorldPoint& forklift,
                                              double now_s) const;
     void updateLocalizationResult(bool localized,
@@ -129,14 +139,13 @@ private:
                                   bool homography_available);
     void activateStream(const std::string& stream_id, const std::string& camera_id,
                         int channel, const ArucoFrame* triggering_frame);
-
-    // 지게차 마커의 최근 월드 관측. 어느 스트림이 봤든 하나의 위치로 융합한다
-    // (단말당 지게차 1대 가정 - forklifts 설정이 단일 마커 ID 기준).
-    struct WorldSighting {
-        WorldPoint pos{};
-        std::chrono::steady_clock::time_point seen{};
-        std::string stream_id;
-    };
+    std::optional<WorldSighting> extractForkliftSighting(
+        const ArucoFrame& frame, std::chrono::steady_clock::time_point now) const;
+    const WorldSighting* bestFreshSighting(
+        std::chrono::steady_clock::time_point now) const;
+    std::optional<std::string> selectAssignment(
+        const ArucoFrame& frame, std::chrono::steady_clock::time_point now);
+    static double markerPixelArea(const std::array<forklift::common::PixelPoint, 4>& corners);
 
     struct StreamPeopleObservation {
         double timestamp_s = -1.0;
@@ -148,12 +157,8 @@ private:
     std::optional<ArucoFrame> last_aruco_;
     HomographyTransformer homography_;
     std::chrono::milliseconds fov_grace_{};
-    int activation_confirm_ = 1;
+    std::chrono::milliseconds view_freshness_{};
     std::optional<WorldSighting> forklift_sighting_;
-    std::optional<std::chrono::steady_clock::time_point> out_of_fov_since_;
-    // 스트림별 연속 확인 횟수. 다른 스트림 프레임이 사이에 들어와도
-    // 해당 스트림의 확인 횟수를 초기화하지 않는다.
-    std::map<std::string, int> activation_streaks_;
     // 활성 스트림이 대상 마커를 빠뜨린 첫 프레임 시각. 이 시점부터
     // lost_grace_ms 동안만 직전 유효 위치를 재사용한다.
     std::optional<std::chrono::steady_clock::time_point> marker_missing_since_;
@@ -163,6 +168,7 @@ private:
     int active_channel_ = -1;
     double people_timeout_sec_;
     double world_distance_threshold_mm_;
+    std::vector<WorldPoint> work_area_boundary_;
     CrossCameraTracker cross_camera_tracker_;
     JudgmentPipeline judgment_pipeline_;
     mutable std::mutex localization_mutex_;
