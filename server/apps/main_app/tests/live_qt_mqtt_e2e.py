@@ -2,9 +2,15 @@
 """Subscribe to the live risk topic and evaluate payloads with the Qt HUD rules."""
 
 import json
+import os
 import subprocess
 import sys
 
+HOST = os.environ.get("MQTT_HOST", "127.0.0.1")
+PORT = os.environ.get("MQTT_PORT", "8883")
+CA = os.environ.get("MQTT_CA", "/etc/forklift_safety/certs/ca.crt")
+CERT = os.environ.get("MQTT_CERT", "/home/veda3/forklift-safety-mqtt/term01/client-term01.crt")
+KEY = os.environ.get("MQTT_KEY", "/home/veda3/forklift-safety-mqtt/term01/client-term01.key")
 TOPIC = "forklift/risk/TERM_01"
 ACTIVE = "CAM_01_CH_02"
 
@@ -52,8 +58,11 @@ def matches_active(meta):
 def main():
     cmd = [
         "mosquitto_sub",
-        "-h", "127.0.0.1",
-        "-p", "1883",
+        "-h", HOST,
+        "-p", PORT,
+        "--cafile", CA,
+        "--cert", CERT,
+        "--key", KEY,
         "-t", TOPIC,
         "-C", "12",
         "-W", "8",
