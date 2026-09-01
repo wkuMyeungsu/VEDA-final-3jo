@@ -4,1302 +4,1578 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArUCoDetector</title>
+  <title>ArUCoDetector - Pipeline Monitor & Visual Benchmark</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 1180px; margin: 24px auto; padding: 0 16px; color: #222;
-           -webkit-user-select: none; user-select: none; }
-    /* UI 텍스트는 선택 안 됨(클릭 시 커서 깜빡임 방지). 입력/결과 등 필요한 곳만 예외 */
-    input, textarea, select, pre { -webkit-user-select: text; user-select: text; }
-    h1 { font-size: 20px; margin-bottom: 4px; }
-    .subtitle { color: #6b7280; font-size: 13px; margin: 0 0 16px; }
-
-    /* 상단 탭 (가로) */
-    .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e5e7eb; margin-bottom: 16px; }
-    .tab { padding: 8px 16px; border: 0; background: none; color: #6b7280; font-size: 14px; cursor: pointer;
-           border-bottom: 2px solid transparent; margin-bottom: -2px; border-radius: 0; }
-    .tab:hover { color: #111; }
-    .tab.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
-
-    /* 본문 + 오른쪽 세로 서브탭 레이아웃 */
-    .layout { display: flex; gap: 16px; align-items: flex-start; }
-    .content { flex: 1; min-width: 0; order: 1; }
-    .sidebar { width: 150px; flex-shrink: 0; order: 2; }
-    .side-group { display: none; flex-direction: column; gap: 4px; position: sticky; top: 16px; }
-    .side-group.active { display: flex; }
-    .side-tab { text-align: left; background: none; color: #6b7280; border: 1px solid transparent;
-                padding: 9px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-    .side-tab:hover { background: #f3f4f6; color: #111; }
-    .side-tab.active { background: #eff6ff; color: #2563eb; font-weight: 600; border-color: #bfdbfe; }
-    .sub-panel { display: none; }
-    .sub-panel.active { display: block; }
-
-    section { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-    section h2 { font-size: 15px; margin: 0 0 12px; }
-    label { font-size: 13px; margin-right: 6px; }
-    input[type="number"], input[type="text"] { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 6px 14px; border: 0; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
-    button:disabled { background: #9ca3af; cursor: default; }
-    button.btn-editing { background: #d97706; }
-    button.btn-editing:hover { background: #b45309; }
-    button.btn-apply { background: #15803d; }
-    button.btn-apply:hover { background: #166534; }
-    pre { background: #f6f8fa; border-radius: 4px; padding: 12px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; margin-top: 12px; min-height: 20px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; white-space: nowrap; }
-    th { color: #6b7280; font-weight: 600; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #f3f4f6; color: #6b7280; }
-
-    /* On/Off 토글 스위치 */
-    .switch { position: relative; display: inline-block; width: 44px; height: 24px; vertical-align: middle; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; inset: 0; cursor: pointer; background: #cbd5e1; border-radius: 24px; transition: .2s; }
-    .slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px;
-                      background: #fff; border-radius: 50%; transition: .2s; }
-    .switch input:checked + .slider { background: #2563eb; }
-    .switch input:checked + .slider::before { transform: translateX(20px); }
-    .switch input:disabled + .slider { opacity: .45; cursor: not-allowed; }
-    input:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
-
-    .editbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
-    .form-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-    .form-row > label:first-child { width: 88px; color: #6b7280; font-weight: 600; flex-shrink: 0; font-size: 13px; }
-    select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
-    select:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
-    .ch-list { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
-    .ch-item { display: flex; align-items: center; gap: 6px; }
-    .ch-item .ch-name { font-size: 13px; }
-
-    /* 동적 ON/OFF 버튼 */
-    .toggle-btn { min-width: 54px; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
-    .toggle-btn.on { background: #15803d; }
-    .toggle-btn.on:hover { background: #166534; }
-    .toggle-btn.off { background: #9ca3af; }
-    .toggle-btn.off:hover { background: #6b7280; }
-    .toggle-btn:disabled { opacity: .45; cursor: not-allowed; }
-
-    .ok { color: #15803d; }
-    .fail { color: #b91c1c; }
-    .muted { color: #6b7280; font-size: 12px; }
-    .wip { background: #fef9c3; color: #854d0e; border: 1px dashed #eab308; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-bottom: 16px; }
-    .table-wrap { overflow-x: auto; }
-
-    /* ===== 모바일 (좁은 화면): 서브탭을 위로, 폼 세로 스택 ===== */
-    @media (max-width: 640px) {
-      body { margin: 12px auto; padding: 0 12px; }
-      h1 { font-size: 18px; }
-      section { padding: 12px; }
-      .layout { flex-direction: column; }
-      .sidebar { width: auto; order: 0; }
-      .side-group { position: static; }
-      .side-group.active { flex-direction: row; flex-wrap: wrap; }
-      .side-tab { flex: 1; text-align: center; }
-      .editbar { flex-wrap: wrap; }
-      .editbar #edit_hint { flex-basis: 100%; margin-top: 2px; }
-      .form-row { flex-direction: column; align-items: flex-start !important; gap: 6px; }
-      .form-row > label:first-child { width: auto; }
-      th, td { padding: 6px; font-size: 12px; }
-      button { padding: 9px 14px; }
-      .tab { padding: 9px 14px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "JetBrains Mono", "Consolas", system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-user-select: none;
+      user-select: none;
     }
+    input, select, textarea, pre { -webkit-user-select: text; user-select: text; }
+
+    /* 헤더 */
+    header {
+      padding: 10px 20px;
+      border-bottom: 1px solid #21262d;
+      background: #161b22;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #3fb950;
+      box-shadow: 0 0 8px #3fb950;
+      flex-shrink: 0;
+    }
+    .status-dot.offline {
+      background: #f85149;
+      box-shadow: 0 0 8px #f85149;
+    }
+    h1 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+      color: #e6edf3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #21262d;
+      color: #79c0ff;
+      border: 1px solid #30363d;
+    }
+    .badge.green { background: #1f3724; color: #56d364; border-color: #2ea043; }
+    .badge.orange { background: #3b2a1a; color: #f0883e; border-color: #bd561d; }
+    .badge.purple { background: #2e1a47; color: #d2a8ff; border-color: #8957e5; }
+
+    /* 탭 내비게이션 */
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      margin-left: 20px;
+      background: #0d1117;
+      padding: 3px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: #e6edf3; background: #21262d; }
+    .tab-btn.active {
+      background: #1f6feb;
+      color: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    #header-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button:hover { background: #30363d; border-color: #58a6ff; color: #ffffff; }
+    button.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    button.primary:hover { background: #2ea043; }
+    button.danger {
+      background: #da3633;
+      border-color: #f85149;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    button.danger:hover { background: #b62324; }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed !important;
+      background: #21262d !important;
+      border-color: #30363d !important;
+      color: #8b949e !important;
+    }
+
+    /* 탭 콘텐츠 */
+    .tab-content {
+      display: none;
+      flex: 1;
+      min-height: 0;
+    }
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* 1. 모니터링 탭 */
+    #main_layout {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      padding: 16px 20px;
+      min-height: 0;
+    }
+
+    #left_pane {
+      flex: 1.55;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    #channels_container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+    }
+
+    .channel-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .channel-card.active { border-color: #388bfd; }
+
+    .channel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .channel-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #e6edf3;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .marker-box,
+    .marker-id-box {
+      background: #010409;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-height: 32px;
+    }
+    .marker-tag {
+      background: #1b2f23;
+      border: 1px solid #2ea043;
+      color: #56d364;
+      font-weight: 700;
+      font-size: 11.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+    .breakdown-table th, .breakdown-table td {
+      padding: 4px 6px;
+      text-align: left;
+      border-bottom: 1px solid #21262d;
+    }
+    .breakdown-table th { color: #8b949e; font-weight: 600; font-size: 10.5px; }
+
+    .tip-stage {
+      cursor: help;
+      border-bottom: 1px dotted #8b949e;
+      transition: color 0.15s;
+    }
+    .tip-stage:hover {
+      color: #58a6ff !important;
+      border-bottom-color: #58a6ff;
+    }
+
+    .stat-pill-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .stat-pill {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .stat-pill-lbl { color: #8b949e; font-size: 10px; }
+    .stat-pill-val { font-size: 13px; font-weight: 700; color: #58a6ff; }
+
+    #right_pane {
+      flex: 0.85;
+      min-width: 300px;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .proc-item {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .proc-lbl { font-size: 10.5px; color: #8b949e; display: flex; justify-content: space-between; }
+    .proc-val { font-size: 14px; font-weight: 700; color: #79c0ff; }
+    .proc-sub { font-size: 10.5px; color: #8b949e; font-weight: 400; }
+
+    .prog-track {
+      background: #0d1117;
+      border-radius: 4px;
+      height: 6px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+    .prog-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .form-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .form-row label {
+      font-size: 12px;
+      color: #c9d1d9;
+      font-weight: 500;
+    }
+    select, input[type="number"], input[type="text"] {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    select:focus, input:focus { outline: none; border-color: #58a6ff; }
+
+    .log-box {
+      background: #010409;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #8b949e;
+      height: 280px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* 2. 테스트 탭 */
+    #test_layout {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px 20px;
+      overflow-y: auto;
+    }
+
+    .test-env-bar {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .mode-btn-group {
+      display: flex;
+      gap: 6px;
+    }
+    .mode-btn {
+      padding: 6px 12px;
+      font-size: 11.5px;
+      font-weight: 600;
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .mode-btn.active {
+      background: #1f6feb;
+      border-color: #388bfd;
+      color: #ffffff;
+    }
+
+    .profile-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .profile-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+    .profile-card.active-running {
+      border-color: #58a6ff;
+      box-shadow: 0 0 12px rgba(88, 166, 255, 0.25);
+    }
+    .profile-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .profile-name-input {
+      font-weight: 700;
+      color: #e6edf3;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+      width: 100%;
+    }
+
+    .btn-del-prof {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      font-size: 15px;
+      padding: 2px 6px;
+      cursor: pointer;
+    }
+    .btn-del-prof:hover { color: #f85149; }
+
+    /* 결과 대시보드 및 시각화 도구 */
+    .bench-results-section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .bench-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      margin-top: 8px;
+    }
+    .bench-table th, .bench-table td {
+      padding: 6px 8px;
+      border: 1px solid #30363d;
+      text-align: center;
+    }
+    .bench-table th { background: #21262d; color: #8b949e; font-weight: 600; }
+
   </style>
-</head>
-
-<body>
-  <h1>ArUCoDetector</h1>
-  <p class="subtitle">카메라 채널별로 ArUco 마커를 검출해 서버로 메타데이터를 전송하는 앱</p>
-
-  <div class="tabs">
-    <button class="tab active" data-tab="main" onclick="switchTab('main')">메인</button>
-    <button class="tab" data-tab="test" onclick="switchTab('test')">테스트</button>
-  </div>
-
-  <div class="layout">
-    <div class="content">
-
-      <!-- ===================== 메인 > 상태 모니터링 (기본 화면) ===================== -->
-      <div id="sub-main-status" class="sub-panel active">
-        <section>
-          <h2>검출 엔진 상태</h2>
-          <table>
-            <tbody>
-              <tr><th>상태</th><td id="st_state"><span class="badge">—</span></td></tr>
-              <tr><th>가동 시간</th><td id="st_uptime">—</td></tr>
-              <tr><th>마지막 메타데이터 전송</th><td id="st_last_sent">—</td></tr>
-            </tbody>
-          </table>
-        </section>
-
-        <section>
-          <h2>채널 현황</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>채널</th><th>상태</th><th>검출 마커수</th><th>탈락 후보수</th><th>지연(ms)</th><th>CPU지연(ms)</th><th>마지막 검출</th><th>왜곡보정</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>1</td><td id="ch_state_1">—</td><td id="ch_markers_1">—</td><td id="ch_rejected_1">—</td><td id="ch_latency_1">—</td><td id="ch_cpulatency_1">—</td><td id="ch_lastdetect_1">—</td><td id="ch_calib_1">—</td></tr>
-                <tr><td>2</td><td id="ch_state_2">—</td><td id="ch_markers_2">—</td><td id="ch_rejected_2">—</td><td id="ch_latency_2">—</td><td id="ch_cpulatency_2">—</td><td id="ch_lastdetect_2">—</td><td id="ch_calib_2">—</td></tr>
-                <tr><td>3</td><td id="ch_state_3">—</td><td id="ch_markers_3">—</td><td id="ch_rejected_3">—</td><td id="ch_latency_3">—</td><td id="ch_cpulatency_3">—</td><td id="ch_lastdetect_3">—</td><td id="ch_calib_3">—</td></tr>
-                <tr><td>4</td><td id="ch_state_4">—</td><td id="ch_markers_4">—</td><td id="ch_rejected_4">—</td><td id="ch_latency_4">—</td><td id="ch_cpulatency_4">—</td><td id="ch_lastdetect_4">—</td><td id="ch_calib_4">—</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="muted" style="margin-top: 10px;">
-            2초마다 자동 갱신. 채널 On/Off는 [설정]에서 변경.
-            <b>지연(ms)</b>=체감 지연(경합 포함) · <b>CPU지연(ms)</b>=파이프라인 순수 계산 시간(경합 미포함).
-            둘의 차이가 크면 다른 채널과의 CPU 경합 때문입니다.
-            <b>탈락 후보수</b>=사각형처럼 보였지만 사전과 안 맞아 버려진 후보 개수 — 마커 유무와 무관하게 이 값이 크면
-            장면이 복잡(컨투어 많음)해 CPU지연이 늘어난다는 신호입니다.
-          </p>
-
-          <div style="margin-top: 14px; border-top: 1px dashed #e5e7eb; padding-top: 10px;">
-            <button type="button" id="us_toggle_btn" onclick="toggleUsDetail()" style="background:#f8fafc; color:#475569; border:1px solid #cbd5e1; font-size:12px; padding:5px 12px; cursor:pointer; border-radius:6px;">
-              ▼ 6구간 μs 정밀 소요시간 세부보기
-            </button>
-            <div id="us_detail_box" style="display:none; margin-top:10px; background:#fafafa; border:1px solid #e2e8f0; border-radius:6px; padding:12px;">
-              <h3 style="font-size:13px; margin:0 0 8px; color:#334155;">파이프라인 6구간 마이크로초(μs) 실시간 상세 분해 <span class="muted" style="font-weight:400;">(KAN-78)</span></h3>
-              <div class="table-wrap" style="overflow-x: auto;">
-                <table style="min-width: 760px;">
-                  <thead>
-                    <tr>
-                      <th>채널</th>
-                      <th>① 프레임인출 (get)</th>
-                      <th>② 슬롯대기 (slot)</th>
-                      <th>③ 왜곡보정 (undist)</th>
-                      <th>④ 마커검출 (detect)</th>
-                      <th>⑤ 메타전송 (send)</th>
-                      <th>⑥ 전체소요 (total)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>1</td>
-                      <td id="us_main_get_1">—</td><td id="us_main_slot_1">—</td><td id="us_main_undist_1">—</td>
-                      <td id="us_main_detect_1">—</td><td id="us_main_send_1">—</td><td id="us_main_total_1">—</td>
-                    </tr>
-                    <tr>
-                      <td>2</td>
-                      <td id="us_main_get_2">—</td><td id="us_main_slot_2">—</td><td id="us_main_undist_2">—</td>
-                      <td id="us_main_detect_2">—</td><td id="us_main_send_2">—</td><td id="us_main_total_2">—</td>
-                    </tr>
-                    <tr>
-                      <td>3</td>
-                      <td id="us_main_get_3">—</td><td id="us_main_slot_3">—</td><td id="us_main_undist_3">—</td>
-                      <td id="us_main_detect_3">—</td><td id="us_main_send_3">—</td><td id="us_main_total_3">—</td>
-                    </tr>
-                    <tr>
-                      <td>4</td>
-                      <td id="us_main_get_4">—</td><td id="us_main_slot_4">—</td><td id="us_main_undist_4">—</td>
-                      <td id="us_main_detect_4">—</td><td id="us_main_send_4">—</td><td id="us_main_total_4">—</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p class="muted" style="margin: 8px 0 0; font-size:11px;">
-                ms (μs) 동시 표기 · <b>슬롯대기</b>=채널 간 CPU 경합 대기, <b>왜곡보정/마커검출</b>=순수 연산 부하
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2>실시간 로그 <span class="muted" style="font-weight:400;">(raw 검출)</span></h2>
-          <pre id="log_view" style="max-height: 320px; overflow-y: auto; margin-top: 0;">—</pre>
-          <p class="muted" style="margin-top: 8px;">2초마다 자동 갱신 · 최근 200줄</p>
-        </section>
-      </div>
-
-      <!-- ===================== 메인 > 설정 ===================== -->
-      <div id="sub-main-settings" class="sub-panel">
-        <div class="editbar">
-          <button type="button" id="edit_btn" onclick="toggleEditMode()">설정 변경</button>
-          <button type="button" id="apply_btn" class="btn-apply" onclick="onApplySettings()">적용</button>
-          <span id="edit_hint" class="muted">[설정 변경]으로 잠금을 풀고 값을 수정한 뒤 [적용]을 누르세요.</span>
-        </div>
-
-        <section>
-          <h2>검출 설정</h2>
-
-          <div class="form-row">
-            <label for="set_dict_sel">마커 사전</label>
-            <select id="set_dict_sel">
-              <option value="DICT_4X4_50">DICT_4X4_50</option>
-              <option value="DICT_4X4_100">DICT_4X4_100</option>
-              <option value="DICT_4X4_250">DICT_4X4_250</option>
-              <option value="DICT_5X5_50">DICT_5X5_50</option>
-              <option value="DICT_5X5_100">DICT_5X5_100</option>
-              <option value="DICT_6X6_50">DICT_6X6_50</option>
-              <option value="DICT_6X6_250">DICT_6X6_250</option>
-            </select>
-            <span class="muted">검출할 ArUco 마커 종류 (인쇄한 마커와 일치해야 함)</span>
-          </div>
-
-          <div class="form-row">
-            <label for="set_poll">검출 주기</label>
-            <select id="set_poll" style="width: 150px;">
-              <option value="500">500ms</option>
-              <option value="750">750ms</option>
-              <option value="1000">1000ms (권장)</option>
-              <option value="1500">1500ms</option>
-              <option value="2000">2000ms</option>
-              <option value="3000">3000ms</option>
-            </select>
-            <span class="muted">채널별로 최신 raw 프레임에 검출을 실행하는 주기. 채널당 실제 검출 소요시간(약 500ms~)보다 짧게 잡아도 더 빨라지지 않고 CPU만 소모합니다. 값이 클수록 위험 감지가 늦어집니다.</span>
-          </div>
-        </section>
-
-        <section>
-          <h2>채널 설정</h2>
-          <p class="muted" style="margin: -4px 0 12px;">
-            채널마다 <b>검출</b> 여부와 <b>왜곡보정</b> 적용을 따로 설정합니다.
-            왜곡보정은 캘리브레이션이 있는 채널에서만 효과가 있고, 카메라가 이미 렌즈 보정을 하는 채널은 끄는 게 낫습니다.
-          </p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>채널</th><th>검출</th><th>왜곡보정</th></tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>채널 1</td>
-                  <td><button type="button" class="toggle-btn on" id="ch_on_1" data-on="true" onclick="toggleDetect(1)">ON</button></td>
-                  <td><button type="button" class="toggle-btn on" id="ch_undist_1" data-on="true" onclick="toggleBtn(this)">ON</button></td>
-                </tr>
-                <tr>
-                  <td>채널 2</td>
-                  <td><button type="button" class="toggle-btn on" id="ch_on_2" data-on="true" onclick="toggleDetect(2)">ON</button></td>
-                  <td><button type="button" class="toggle-btn on" id="ch_undist_2" data-on="true" onclick="toggleBtn(this)">ON</button></td>
-                </tr>
-                <tr>
-                  <td>채널 3</td>
-                  <td><button type="button" class="toggle-btn on" id="ch_on_3" data-on="true" onclick="toggleDetect(3)">ON</button></td>
-                  <td><button type="button" class="toggle-btn on" id="ch_undist_3" data-on="true" onclick="toggleBtn(this)">ON</button></td>
-                </tr>
-                <tr>
-                  <td>채널 4</td>
-                  <td><button type="button" class="toggle-btn on" id="ch_on_4" data-on="true" onclick="toggleDetect(4)">ON</button></td>
-                  <td><button type="button" class="toggle-btn on" id="ch_undist_4" data-on="true" onclick="toggleBtn(this)">ON</button></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div id="settings_result" class="muted" style="margin-top: 12px;"></div>
-        </section>
-      </div>
-
-      <!-- ===================== 테스트 > 지연 측정 =====================
-           [TEST-ONLY] 이 <div> 전체(마크업)와 아래 스크립트의 [TEST-ONLY] 블록,
-           사이드탭 버튼(지연 측정) 3곳만 지우면 실제 앱 빌드 시 깨끗이 제거된다.
-           (GET /status는 상태모니터링도 같이 쓰는 공용 엔드포인트라 그대로 둘 것) -->
-      <div id="sub-test-latency" class="sub-panel active">
-        <div class="wip">
-          🔧 개발/실기 확인용 테스트 도구입니다.
-        </div>
-
-        <section>
-          <h2>지연 및 병목 측정 <span class="muted" style="font-weight:400;">(KAN-78, KAN-79)</span></h2>
-          <p class="muted" style="margin: -4px 0 12px;">
-            4개 채널의 파이프라인 구간별(슬롯대기·왜곡보정·마커검출·전체소요) 실측 소요시간과 p95 지연을 수집합니다.
-            <b>고정 도화지 모드</b>를 켜면 외부 환경 노이즈 없이 4채널 순수 알고리즘 및 CPU 경합 성능을 오차 없이 측정할 수 있습니다.
-          </p>
-
-          <!-- 입력 영상 소스 선택 (KAN-79 환경 고정) -->
-          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 14px; margin-bottom:14px;">
-            <div style="font-size:13px; font-weight:600; color:#334155; margin-bottom:6px;">입력 영상 소스 (테스트 환경 고정)</div>
-            <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; font-size:13px;">
-              <label><input type="radio" name="frame_mode" value="camera" checked onchange="changeFrameMode('camera')"> 실제 카메라 영상 (기본)</label>
-              <label><input type="radio" name="frame_mode" value="white" onchange="changeFrameMode('white')"> 고정 빈 도화지 (White 1080p, 마커 없음)</label>
-              <label><input type="radio" name="frame_mode" value="marker" onchange="changeFrameMode('marker')"> 고정 ArUco 마커 1개 (ID 0, 1080p)</label>
-              <span id="frame_mode_badge" class="muted"></span>
-            </div>
-          </div>
-
-          <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
-            <button type="button" id="latency_start_btn" onclick="startLatencyMeasure()">측정 시작</button>
-            <button type="button" id="latency_stop_btn" onclick="stopLatencyMeasure()" disabled>측정 종료</button>
-            <button type="button" id="latency_csv_btn" onclick="downloadLatencyStatCsv()" disabled style="background:#475569;">지연 측정 통계 CSV 다운로드</button>
-            <span id="latency_measuring_badge" class="muted"></span>
-          </div>
-
-          <!-- [TEST-ONLY] 비교 테스트 시작 -->
-          <div id="compare_box" style="border-top: 1px dashed #e5e7eb; margin: 4px 0 14px; padding-top: 14px;">
-            <p class="muted" style="margin: 0 0 10px;">
-              <b>비교 테스트</b> — 아래 항목(설정)마다 채널 on/off를 정의해두면, [비교 테스트 시작] 시
-              <b>실제로 그 설정을 적용(/settings/apply)</b>한 뒤 지정 시간×반복 횟수만큼 측정 →
-              다음 항목으로 자동 이동합니다. 끝나면 원래 설정으로 복원하고, 항목별 <b>구간별 소요시간/경합손실/경합비율</b>을
-              계산해 표로 보여주고 CSV로도 내려받을 수 있습니다.
-            </p>
-
-            <div id="compare_slots"></div>
-            <button type="button" onclick="addCompareSlot()" style="margin-bottom: 12px;">+ 비교 항목 추가</button>
-
-            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom: 10px;">
-              <label>측정 시간(초) <input type="number" id="cmp_duration_sec" value="50" min="5" max="600" style="width:70px;"></label>
-              <label>반복 횟수 <input type="number" id="cmp_repeat_count" value="4" min="1" max="20" style="width:60px;"></label>
-              <label>웜업(초) <input type="number" id="cmp_warmup_sec" value="3" min="0" max="60" style="width:60px;"></label>
-              <button type="button" id="cmp_start_btn" onclick="startCompareTest()">비교 테스트 시작</button>
-              <button type="button" id="cmp_cancel_btn" onclick="cancelCompareTest()" disabled>중단</button>
-            </div>
-            <div id="cmp_status_badge" class="muted" style="margin-bottom: 12px;"></div>
-
-            <div id="cmp_summary_wrap" class="table-wrap" style="display:none; overflow-x:auto;">
-              <table style="min-width: 800px;">
-                <thead>
-                  <tr>
-                    <th>항목</th><th>활성채널</th><th>검출횟수</th>
-                    <th>슬롯대기(μs)</th><th>왜곡보정(μs)</th><th>마커검출(μs)</th><th>전체소요(μs)</th>
-                    <th>경합손실(μs)</th><th>경합비율(%)</th><th>평균 탈락후보</th>
-                  </tr>
-                </thead>
-                <tbody id="cmp_summary_tbody"></tbody>
-              </table>
-            </div>
-            <div id="cmp_download_row" style="display:none; gap:10px; margin-top: 12px;">
-              <button type="button" onclick="downloadCompareSummaryCsv()">요약 CSV 다운로드</button>
-              <button type="button" onclick="downloadCompareDetailCsv()">상세(회차별) CSV 다운로드</button>
-            </div>
-          </div>
-          <!-- [TEST-ONLY] 비교 테스트 끝 -->
-
-          <!-- 구간별 지연 통계 표 (KAN-78, KAN-79) -->
-          <div class="table-wrap" style="overflow-x: auto;">
-            <table style="min-width: 760px;">
-              <thead>
-                <tr>
-                  <th>채널</th>
-                  <th>검출 횟수</th>
-                  <th>② 슬롯대기 (μs) · CPU경합</th>
-                  <th>③ 왜곡보정 연산 (μs)</th>
-                  <th>④ 마커검출 연산 (μs)</th>
-                  <th>⑥ 전체 소요시간 (μs)</th>
-                  <th>탈락후보(평균)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>1</td><td id="lat_detectionCount_1">—</td>
-                  <td id="lat_slot_cell_1">—</td>
-                  <td id="lat_undist_cell_1">—</td>
-                  <td id="lat_det_cell_1">—</td>
-                  <td id="lat_tot_cell_1">—</td>
-                  <td id="lat_rejected_avg_1">—</td>
-                </tr>
-                <tr>
-                  <td>2</td><td id="lat_detectionCount_2">—</td>
-                  <td id="lat_slot_cell_2">—</td>
-                  <td id="lat_undist_cell_2">—</td>
-                  <td id="lat_det_cell_2">—</td>
-                  <td id="lat_tot_cell_2">—</td>
-                  <td id="lat_rejected_avg_2">—</td>
-                </tr>
-                <tr>
-                  <td>3</td><td id="lat_detectionCount_3">—</td>
-                  <td id="lat_slot_cell_3">—</td>
-                  <td id="lat_undist_cell_3">—</td>
-                  <td id="lat_det_cell_3">—</td>
-                  <td id="lat_tot_cell_3">—</td>
-                  <td id="lat_rejected_avg_3">—</td>
-                </tr>
-                <tr>
-                  <td>4</td><td id="lat_detectionCount_4">—</td>
-                  <td id="lat_slot_cell_4">—</td>
-                  <td id="lat_undist_cell_4">—</td>
-                  <td id="lat_det_cell_4">—</td>
-                  <td id="lat_tot_cell_4">—</td>
-                  <td id="lat_rejected_avg_4">—</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="muted" style="margin-top: 10px;">
-            1초마다 갱신 · [측정 종료] 시 마지막 값에서 고정.
-            <b>평균 (p95 한계선)</b> 형태 표기 · 최대값/최소값 전체 데이터는 [CSV 다운로드]로 확인 가능합니다.
-          </p>
-        </section>
-      </div>
-      <!-- ===================== [TEST-ONLY] 지연 측정 끝 ===================== -->
-
-    </div>
-
-    <!-- ===================== 오른쪽 세로 서브탭 (상단 탭에 종속) ===================== -->
-    <div class="sidebar">
-      <div class="side-group active" data-parent="main">
-        <button class="side-tab active" data-sub="status" onclick="switchSub('main','status')">상태 모니터링</button>
-        <button class="side-tab" data-sub="settings" onclick="switchSub('main','settings')">설정</button>
-      </div>
-      <div class="side-group" data-parent="test">
-        <!-- [TEST-ONLY] 지연 측정 사이드탭 -->
-        <button class="side-tab active" data-sub="latency" onclick="switchSub('test','latency')">지연 측정</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     const paths = window.location.pathname.split('/');
-    const app_id = paths[5];
+    const app_id = paths[5] || "ArUCoDetector";
     const base_uri = `${window.location.protocol}//${window.location.hostname}:${window.location.port}/opensdk/${app_id}`;
 
-    // ---- 중첩 탭: 상단 탭(top) → 오른쪽 서브탭(sub, 상단 탭에 종속) ----
-    const defaultSub = { main: 'status', test: 'latency' };
+    let currentSettings = null;
+    let savedSettings = null;
+    let currentTab = 'monitoring';
+    let currentFrameMode = 'camera';
 
-    function switchTab(top) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === top));
-      // 오른쪽 서브탭 그룹을 상단 탭에 맞게 표시
-      document.querySelectorAll('.side-group').forEach(g => g.classList.toggle('active', g.dataset.parent === top));
-      // 해당 상단 탭의 기본 서브탭 화면으로
-      switchSub(top, defaultSub[top]);
-    }
+    // 벤치마크 비교 설정 목록
+    let testProfiles = [
+      { id: "prof_1", name: "운영 권장 (2 workers, 원본)", workers: 2, scale: 1.0, dict: "DICT_4X4_50" },
+      { id: "prof_2", name: "CPU 절감 (1 worker, 원본)", workers: 1, scale: 1.0, dict: "DICT_4X4_50" }
+    ];
 
-    function switchSub(top, sub) {
-      const id = 'sub-' + top + '-' + sub;
-      document.querySelectorAll('.sub-panel').forEach(p => p.classList.toggle('active', p.id === id));
-      document.querySelectorAll('.side-group[data-parent="' + top + '"] .side-tab')
-        .forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
-      // 상태 모니터링 탭 및 테스트(지연 측정) 탭에서 /status 및 /logs 주기 폴링 활성화
-      if ((top === 'main' && sub === 'status') || (top === 'test' && sub === 'latency')) {
-        startStatusPolling();
+    let isBenchRunning = false;
+    let benchQueue = [];
+    let benchCurrentIndex = 0;
+    let benchResults = {};
+    let benchSessionId = 0;
+
+    function switchTab(tabId) {
+      currentTab = tabId;
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+      if (tabId === 'monitoring') {
+        document.getElementById('tab_btn_mon').classList.add('active');
+        document.getElementById('tab_monitoring').classList.add('active');
       } else {
-        stopStatusPolling();
+        document.getElementById('tab_btn_test').classList.add('active');
+        document.getElementById('tab_test').classList.add('active');
+        renderProfileCards();
       }
     }
 
-    // ---- 상태 모니터링: GET /status 주기 폴링 ----
-    let statusTimer = null;
+    function updateApplyButtonState() {
+      const btn = document.getElementById('btn_apply');
+      if (!savedSettings || !btn) return;
 
-    function startStatusPolling() {
-      loadStatus(); loadLogs();                  // 진입 즉시 1회
-      if (statusTimer) return;                   // 이미 돌면 중복 방지
-      statusTimer = setInterval(() => { loadStatus(); loadLogs(); }, 2000);
-    }
-    function stopStatusPolling() {
-      if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
-    }
+      const curDict = document.getElementById('sel_dict').value;
+      const curWorkers = parseInt(document.getElementById('sel_workers').value, 10);
+      const curScale = parseFloat(document.getElementById('sel_scale').value);
 
-    function setCellText(id, v) {
-      const el = document.getElementById(id);
-      if (el) el.textContent = (v === undefined || v === null || v === '') ? '—' : v;
-    }
+      const origDict = savedSettings.dictionary_name || "DICT_4X4_50";
+      const origWorkers = savedSettings.detection_worker_count || 2;
+      const origScale = (savedSettings.channels && savedSettings.channels.length > 0) ? (savedSettings.channels[0].scale || 1.0) : 1.0;
 
-    function setCellHtml(id, html) {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = (html === undefined || html === null || html === '') ? '—' : html;
+      const isChanged = (curDict !== origDict) || (curWorkers !== origWorkers) || (Math.abs(curScale - origScale) > 0.001);
+
+      btn.disabled = !isChanged;
+      if (isChanged) btn.classList.add('primary');
+      else btn.classList.remove('primary');
     }
 
-    function formatUsCell(us) {
-      if (us == null || us === undefined) return '—';
-      const ms = (us / 1000).toFixed(1);
-      return `<b>${ms} ms</b> <span class="muted" style="font-size:11px;">(${us.toLocaleString()} μs)</span>`;
-    }
+    function fetchStatus() {
+      fetch(base_uri + "/status?_t=" + Date.now(), { cache: "no-store" })
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('status_dot').className = data.running ? 'status-dot' : 'status-dot offline';
+          document.getElementById('status_badge').textContent = `${data.running ? 'RUNNING' : 'STOPPED'} · ${(data.frame_mode || 'camera').toUpperCase()}`;
+          document.getElementById('status_badge').className = data.running ? 'badge green' : 'badge orange';
 
-    function toggleUsDetail() {
-      const box = document.getElementById('us_detail_box');
-      const btn = document.getElementById('us_toggle_btn');
-      if (!box || !btn) return;
-      if (box.style.display === 'none') {
-        box.style.display = 'block';
-        btn.textContent = '▲ 6구간 μs 정밀 소요시간 접기';
-        btn.style.background = '#eff6ff';
-        btn.style.borderColor = '#bfdbfe';
-        btn.style.color = '#2563eb';
-      } else {
-        box.style.display = 'none';
-        btn.textContent = '▼ 6구간 μs 정밀 소요시간 세부보기';
-        btn.style.background = '#f8fafc';
-        btn.style.borderColor = '#cbd5e1';
-        btn.style.color = '#475569';
-      }
-    }
+          document.getElementById('stat_workers_header').textContent = `${data.effective_worker_count || 1} Cores`;
 
-    // ms → "1h 2m 3s"
-    function formatUptime(ms) {
-      const s = Math.floor(ms / 1000);
-      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-      return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + sec + 's';
-    }
-    // "2026-07-24T09:00:00Z" → "09:00:00" (시각만)
-    function formatTime(iso) {
-      const t = /T(\d{2}:\d{2}:\d{2})/.exec(iso || '');
-      return t ? t[1] : (iso || '—');
-    }
+          if (data.process) {
+            const cpuPct = (data.process.cpu_percent || 0).toFixed(1);
+            const memPct = (data.process.mem_percent || 0).toFixed(1);
+            const rssMb = (data.process.rss_mb || 0).toFixed(1);
+            const totalRamMb = (data.process.total_ram_mb || 1024).toFixed(0);
 
-    // 왜곡보정 상태를 "설정값 + 실제 적용 여부"까지 정확히 표시.
-    // (예전엔 calibration 파일 존재 여부만 봐서, 토글이 꺼져있거나 해상도가 안 맞아도 "있음"으로 보였음)
-    function formatUndistortStatus(c) {
-      if (!c.calibration) return '파일없음';
-      if (!c.undistort_enabled) return '꺼짐(파일있음)';
-      return c.undistort_applied ? '적용중' : '해상도불일치';
-    }
+            const cpuValEl = document.getElementById('proc_cpu_val');
+            cpuValEl.textContent = `${cpuPct} %`;
+            cpuValEl.style.color = parseFloat(cpuPct) > 75 ? '#f85149' : (parseFloat(cpuPct) > 40 ? '#f0883e' : '#56d364');
+            const cpuBar = document.getElementById('proc_cpu_bar');
+            cpuBar.style.width = `${Math.min(parseFloat(cpuPct), 100)}%`;
+            cpuBar.style.background = cpuValEl.style.color;
 
-    function loadStatus() {
-      fetch(base_uri + '/status')
-        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
-        .then(d => {
-          // 검출 엔진 상태
-          const stateEl = document.getElementById('st_state');
-          if (stateEl) stateEl.innerHTML = '<span class="badge">' + (d.running ? '실행 중' : '정지') + '</span>';
-          setCellText('st_uptime', d.running && d.uptime_ms != null ? formatUptime(d.uptime_ms) : '—');
-          setCellText('st_last_sent', d.last_sent ? formatTime(d.last_sent) : '—');
+            document.getElementById('proc_mem_val').innerHTML = `${memPct} % <span class="proc-sub">(${rssMb}MB / ${totalRamMb}MB)</span>`;
+            const memBar = document.getElementById('proc_mem_bar');
+            memBar.style.width = `${Math.min(parseFloat(memPct), 100)}%`;
+            memBar.style.background = parseFloat(memPct) > 70 ? '#f85149' : '#79c0ff';
 
-          // 현재 프레임 모드 라디오 버튼 동기화
-          if (d.frame_mode) {
-            const rad = document.querySelector(`input[name="frame_mode"][value="${d.frame_mode}"]`);
-            if (rad && !rad.checked) rad.checked = true;
+            document.getElementById('proc_threads').textContent = `${data.process.threads || 1} Threads`;
+          }
+          if (data.uptime_ms !== undefined) {
+            const upSecs = Math.floor(data.uptime_ms / 1000);
+            const upMins = Math.floor(upSecs / 60);
+            const upHours = Math.floor(upMins / 60);
+            document.getElementById('proc_uptime').textContent = `${upHours}h ${upMins % 60}m ${upSecs % 60}s`;
           }
 
-          // 채널 현황 및 6구간 μs 분해: 먼저 전부 비우고, 응답에 있는 채널만 채움
-          for (let ch = 1; ch <= 4; ch++) {
-            setCellText('ch_state_' + ch, '—');
-            setCellText('ch_markers_' + ch, '—');
-            setCellText('ch_rejected_' + ch, '—');
-            setCellText('ch_latency_' + ch, '—');
-            setCellText('ch_cpulatency_' + ch, '—');
-            setCellText('ch_lastdetect_' + ch, '—');
-            setCellText('ch_calib_' + ch, '—');
-
-            setCellHtml('us_main_get_' + ch, '—');
-            setCellHtml('us_main_slot_' + ch, '—');
-            setCellHtml('us_main_undist_' + ch, '—');
-            setCellHtml('us_main_detect_' + ch, '—');
-            setCellHtml('us_main_send_' + ch, '—');
-            setCellHtml('us_main_total_' + ch, '—');
-          }
-          if (Array.isArray(d.channels)) {
-            for (const c of d.channels) {
-              const ch = c.channel;
-              if (ch < 1 || ch > 4) continue;
-              setCellText('ch_state_' + ch, c.state);
-              const markerText = (c.marker_count != null ? c.marker_count : 0) +
-                (Array.isArray(c.marker_ids) && c.marker_ids.length > 0 ? ' (ID: ' + c.marker_ids.join(', ') + ')' : '');
-              setCellText('ch_markers_' + ch, markerText);
-              setCellText('ch_rejected_' + ch, c.rejected_count);
-              setCellText('ch_latency_' + ch, c.latency_ms);
-              setCellText('ch_cpulatency_' + ch, c.cpu_latency_ms);
-              setCellText('ch_lastdetect_' + ch, c.last_detect ? formatTime(c.last_detect) : '—');
-              setCellText('ch_calib_' + ch, formatUndistortStatus(c));
-
-              // 메인 상태모니터링 6구간 μs 세부보기 테이블 업데이트
-              setCellHtml('us_main_get_' + ch, formatUsCell(c.frame_get_us));
-              setCellHtml('us_main_slot_' + ch, formatUsCell(c.slot_wait_us));
-              setCellHtml('us_main_undist_' + ch, c.undistort_applied ? formatUsCell(c.undistort_us) : '<span class="muted">미적용 (0 μs)</span>');
-              setCellHtml('us_main_detect_' + ch, formatUsCell(c.detect_us));
-              setCellHtml('us_main_send_' + ch, formatUsCell(c.send_us));
-              setCellHtml('us_main_total_' + ch, formatUsCell(c.total_us));
-            }
-          }
+          updateChannelsUI(data.channels || []);
         })
-        .catch(() => { /* 조용히 무시하고 다음 주기에 재시도 */ });
+        .catch(err => console.error("status fetch error:", err));
     }
 
-    // ========================================================================
-    // [TEST-ONLY] 지연 측정 — 테스트 탭 전용 기능. 실제 앱 빌드 시 이 블록 전체와
-    // 위 "테스트 > 지연 측정" <div id="sub-test-latency">, 사이드탭 버튼을 지우면
-    // 깨끗이 제거된다. (GET /status는 상태모니터링도 같이 쓰는 공용 엔드포인트라 그대로 둘 것)
-    //
-    // 설계:
-    //  - 검출 확인(0.5초)과 화면 표시(1초)를 분리한다 — 데이터는 촘촘히, 표시는 읽기 편하게.
-    //  - last_detect가 바뀐 경우만 새 검출로 인정해 같은 검출 결과의 중복 집계를 막는다.
-    //  - 표는 채널당 1행(총 4행) 고정 — 매 틱마다 "측정 시작부터 지금까지 누적" 통계로
-    //    같은 셀 값만 덮어쓴다(행이 늘어나지 않음). 경과시간은 표가 아니라 측정 배지 옆에 표시.
-    //  - 검출값 저장: min/max/합계/개수는 새 검출이 들어올 때 O(1)로 바로 누적한다(매 틱마다
-    //    배열 전체를 훑지 않음). 다만 p95는 전체 분포 없이는 정확히 못 구하므로 원본 검출값
-    //    배열도 계속 갖고 있다가, 표시 시점에만 그 배열을 정렬해 p95를 뽑는다.
-    //    (검출 횟수가 측정 세션 동안 많아야 수천 개 수준이라 이 정도 정렬 비용은 매 틱 걱정할
-    //    수준이 아니라서, min/max/합계만 O(1)로 따로 유지하는 정도로 충분하다 판단함)
-    // ========================================================================
-    let latencyMeasuring = false;
-    let detectionPollTimer = null;   // 0.5초: /status를 촘촘히 확인해 새 검출 확인
-    let latencyDisplayTimer = null;  // 1초: 누적 통계로 표 셀 + 경과시간 갱신
-    let latencyStartTime = null;     // 측정 시작 시각(ms) — 경과시간 계산용
-
-    // 4개 핵심 구간별(슬롯대기/왜곡보정/마커검출/전체소요) 지연 스토어 (ms 단위)
-    let latencyStatsSlot = {};       // { 채널: { values:[], detectionCount, sum, min, max } }
-    let latencyStatsUndist = {};     // { 채널: { values:[], detectionCount, sum, min, max } }
-    let latencyStatsDetect = {};     // { 채널: { values:[], detectionCount, sum, min, max } }
-    let latencyStatsTotal = {};      // { 채널: { values:[], detectionCount, sum, min, max } }
-    let latencyStatsRejected = {};   // { 채널: { values:[], detectionCount, sum, min, max } }
-    let latencyLastDetect = {};      // { 채널: 마지막으로 검출로 인정한 last_detect 값 } (중복 집계 방지)
-    const kDetectionPollIntervalMs = 500;
-    const kLatencyDisplayIntervalMs = 1000;
-
-    function changeFrameMode(mode) {
-      const badge = document.getElementById('frame_mode_badge');
-      if (badge) badge.textContent = '모드 변경 중...';
-      fetch(base_uri + '/test/framemode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
-      })
-      .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
-      .then(() => {
-        if (badge) {
-          const name = (mode === 'white') ? '고정 빈 도화지' : (mode === 'marker') ? '고정 ArUco 마커' : '카메라 영상';
-          badge.textContent = `[${name}] 적용됨`;
-          setTimeout(() => { if (badge) badge.textContent = ''; }, 3000);
-        }
-      })
-      .catch(e => {
-        if (badge) badge.textContent = '모드 변경 실패: ' + e;
-      });
-    }
-
-    function makeEmptyStatStore() {
-      const s = {};
-      for (let ch = 1; ch <= 4; ch++) s[ch] = { values: [], detectionCount: 0, sum: 0, min: Infinity, max: -Infinity };
-      return s;
-    }
-
-    function formatStatCell(stat) {
-      if (!stat || stat.detectionCount === 0) return '—';
-      return `<b>${stat.avg.toLocaleString()} μs</b> <span class="muted" style="font-size:11px;">(p95: ${stat.p95.toLocaleString()} μs)</span>`;
-    }
-
-    function startLatencyMeasure() {
-      latencyMeasuring = true;
-      latencyStartTime = Date.now();
-      latencyStatsSlot = makeEmptyStatStore();
-      latencyStatsUndist = makeEmptyStatStore();
-      latencyStatsDetect = makeEmptyStatStore();
-      latencyStatsTotal = makeEmptyStatStore();
-      latencyStatsRejected = makeEmptyStatStore();
-      latencyLastDetect = {};
-      document.getElementById('latency_start_btn').disabled = true;
-      document.getElementById('latency_stop_btn').disabled = false;
-      document.getElementById('latency_csv_btn').disabled = true;
-      for (let ch = 1; ch <= 4; ch++) {
-        setCellText('lat_detectionCount_' + ch, '—');
-        setCellHtml('lat_slot_cell_' + ch, '—');
-        setCellHtml('lat_undist_cell_' + ch, '—');
-        setCellHtml('lat_det_cell_' + ch, '—');
-        setCellHtml('lat_tot_cell_' + ch, '—');
-        setCellText('lat_rejected_avg_' + ch, '—');
-      }
-      pollForNewDetection();
-      updateLatencyDisplay();
-      detectionPollTimer = setInterval(pollForNewDetection, kDetectionPollIntervalMs);
-      latencyDisplayTimer = setInterval(updateLatencyDisplay, kLatencyDisplayIntervalMs);
-    }
-
-    function pollForNewDetection() {
-      fetch(base_uri + '/status')
-        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
-        .then(d => {
-          if (!Array.isArray(d.channels)) return;
-          for (const c of d.channels) {
-            const ch = c.channel;
-            if (ch < 1 || ch > 4) continue;
-            // last_detect가 이전에 기록한 값과 다를 때만 "새 검출"로 보고 값 추가.
-            if (c.last_detect && latencyLastDetect[ch] !== c.last_detect) {
-              latencyLastDetect[ch] = c.last_detect;
-              const slot_us = c.slot_wait_us != null ? c.slot_wait_us : 0;
-              const undist_us = c.undistort_us != null ? c.undistort_us : 0;
-              const det_us = c.detect_us != null ? c.detect_us : 0;
-              const tot_us = c.total_us != null ? c.total_us : (c.latency_ms ? c.latency_ms * 1000 : 0);
-              addDetection(latencyStatsSlot, ch, slot_us);
-              addDetection(latencyStatsUndist, ch, undist_us);
-              addDetection(latencyStatsDetect, ch, det_us);
-              addDetection(latencyStatsTotal, ch, tot_us);
-              if (typeof c.rejected_count === 'number') addDetection(latencyStatsRejected, ch, c.rejected_count);
-            }
-          }
-        })
-        .catch(() => { /* 측정 중 일시 오류는 무시하고 다음 확인에서 재시도 */ });
-    }
-
-    // 검출값 1개를 지정된 스토어의 채널 통계에 반영.
-    function addDetection(store, ch, ms) {
-      if (!store) return;
-      if (!store[ch]) store[ch] = { values: [], detectionCount: 0, sum: 0, min: Infinity, max: -Infinity };
-      const s = store[ch];
-      s.values.push(ms);
-      s.detectionCount++;
-      s.sum += ms;
-      if (ms < s.min) s.min = ms;
-      if (ms > s.max) s.max = ms;
-    }
-
-    function percentile(sortedArr, p) {
-      if (!sortedArr || sortedArr.length === 0) return 0;
-      const idx = Math.min(sortedArr.length - 1, Math.ceil(sortedArr.length * p) - 1);
-      return sortedArr[Math.max(0, idx)];
-    }
-
-    // 지정된 스토어에서 채널의 통계 계산 (평균 및 p95 소수점 1자리)
-    function computeStatsFrom(store, ch) {
-      if (!store || !store[ch]) return null;
-      const s = store[ch];
-      if (s.detectionCount === 0) return null;
-      const sorted = s.values.slice().sort((a, b) => a - b);
-      const avg = Math.round(s.sum / s.detectionCount);
-      const p95 = Math.round(percentile(sorted, 0.95));
-      return { detectionCount: s.detectionCount, min: s.min, max: s.max, avg, p95 };
-    }
-
-    // 표 셀을 누적 통계로 갱신
-    function updateLatencyDisplay() {
-      const elapsedSec = Math.floor((Date.now() - latencyStartTime) / 1000);
-      const badge = document.getElementById('latency_measuring_badge');
-      badge.textContent = latencyMeasuring ? `측정 중... (${elapsedSec}초)` : `측정 종료 · 총 ${elapsedSec}초`;
-
-      for (let ch = 1; ch <= 4; ch++) {
-        const sl = computeStatsFrom(latencyStatsSlot, ch);
-        const un = computeStatsFrom(latencyStatsUndist, ch);
-        const dt = computeStatsFrom(latencyStatsDetect, ch);
-        const tt = computeStatsFrom(latencyStatsTotal, ch);
-        const rj = computeStatsFrom(latencyStatsRejected, ch);
-
-        setCellText('lat_detectionCount_' + ch, tt ? tt.detectionCount : 0);
-        setCellHtml('lat_slot_cell_' + ch, formatStatCell(sl));
-        setCellHtml('lat_undist_cell_' + ch, formatStatCell(un));
-        setCellHtml('lat_det_cell_' + ch, formatStatCell(dt));
-        setCellHtml('lat_tot_cell_' + ch, formatStatCell(tt));
-        setCellText('lat_rejected_avg_' + ch, rj ? rj.avg : '—');
-      }
-    }
-
-    function stopLatencyMeasure() {
-      latencyMeasuring = false;
-      if (detectionPollTimer) { clearInterval(detectionPollTimer); detectionPollTimer = null; }
-      if (latencyDisplayTimer) { clearInterval(latencyDisplayTimer); latencyDisplayTimer = null; }
-      document.getElementById('latency_start_btn').disabled = false;
-      document.getElementById('latency_stop_btn').disabled = true;
-      document.getElementById('latency_csv_btn').disabled = false;
-      updateLatencyDisplay();  // 마지막 검출값까지 반영한 값으로 한 번 더 갱신 + 배지를 "측정 종료"로 고정
-    }
-
-    function downloadLatencyStatCsv() {
-      const rows = [];
-      for (let ch = 1; ch <= 4; ch++) {
-        const sl = computeStatsFrom(latencyStatsSlot, ch);
-        const un = computeStatsFrom(latencyStatsUndist, ch);
-        const dt = computeStatsFrom(latencyStatsDetect, ch);
-        const tt = computeStatsFrom(latencyStatsTotal, ch);
-        const rj = computeStatsFrom(latencyStatsRejected, ch);
-        if (!tt || tt.detectionCount === 0) continue;
-        rows.push({
-          channel: ch,
-          detectionCount: tt.detectionCount,
-          slot_avg_us: sl ? sl.avg : 0,
-          slot_p95_us: sl ? sl.p95 : 0,
-          slot_max_us: sl ? sl.max : 0,
-          undist_avg_us: un ? un.avg : 0,
-          undist_p95_us: un ? un.p95 : 0,
-          undist_max_us: un ? un.max : 0,
-          detect_avg_us: dt ? dt.avg : 0,
-          detect_p95_us: dt ? dt.p95 : 0,
-          detect_max_us: dt ? dt.max : 0,
-          total_avg_us: tt ? tt.avg : 0,
-          total_p95_us: tt ? tt.p95 : 0,
-          total_max_us: tt ? tt.max : 0,
-          rejected_avg: rj ? rj.avg : 0
-        });
-      }
-      if (rows.length === 0) { alert('측정된 데이터가 없습니다.'); return; }
-      downloadCsvGeneric('latency_stat_breakdown_us',
-        ['channel', 'detectionCount', 'slot_avg_us', 'slot_p95_us', 'slot_max_us', 'undist_avg_us', 'undist_p95_us', 'undist_max_us', 'detect_avg_us', 'detect_p95_us', 'detect_max_us', 'total_avg_us', 'total_p95_us', 'total_max_us', 'rejected_avg'],
-        rows);
-    }
-
-    // ========================================================================
-    // [TEST-ONLY] 비교 테스트 시작
-    // 실제 앱 빌드 시 제거 방법: 이 블록 전체 + 위 HTML의
-    // <!-- [TEST-ONLY] 비교 테스트 시작 --> ~ <!-- ...끝 --> 사이(<div id="compare_box">)만 지우면 됨.
-    // 그 외 파일은 안 건드려도 됨 (/settings, /settings/apply는 원래 있는 운영 엔드포인트).
-    //
-    // 의존성 방향(중요): 이 블록은 위 "지연 측정"(수동) 섹션의 전역 상태
-    // (latencyStatsWall/Cpu, latencyMeasuring, latencyStartTime, detectionPollTimer,
-    // latencyDisplayTimer)와 함수(makeEmptyStatStore/addDetection/computeStatsFrom/
-    // pollForNewDetection/updateLatencyDisplay), 그리고 결과 표(lat_wall_*/lat_cpu_* 셀)를
-    // 그대로 재사용한다.
-    //   ① 이 블록만 단독 삭제 = 안전. "지연 측정"(수동) 기능은 영향 없이 그대로 동작.
-    //   ② "지연 측정" 자체를 통째로 지울 경우 = 이 블록도 반드시 함께 지워야 함
-    //      (반대로 놔두면 존재하지 않는 함수/전역을 참조해 즉시 에러남).
-    //
-    // 여러 항목(채널 on/off 조합)을 정의해두면, 순서대로 실제 설정을 적용
-    // (/settings, /settings/apply)하고 측정→다음 항목 순으로 자동 진행한다.
-    // latencyStatsWall/Cpu 전역을 라운드마다 리셋해서 쓰고, 그 결과를 항목별 풀(pool)에 합산한다.
-    //
-    // 지표 정의:
-    //   경합손실(ms) = wall_avg - cpu_avg        (경합 때문에 날아간 절대 시간)
-    //   경합비율(%)  = 경합손실 / cpu_avg * 100   (기준이 다른 항목끼리도 비교 가능하게 정규화)
-    //   변동폭(ms)   = wall_p95 - wall_min        ("지연 폭이 크다"는 원 문제를 직접 수치화)
-    //   항목 헤드라인 = 그 항목의 활성 채널들의 평균 경합비율(%)
-    // ========================================================================
-    let cmpRunning = false;
-    let cmpCancelled = false;
-    let cmpSlotResults = [];   // 항목별 요약 결과
-    let cmpRoundDetail = [];   // 항목x회차x채널 상세 결과 (CSV용)
-    let cmpSlotCounter = 0;
-
-    // 취소 가능한 대기. delay(ms) 후 자동으로 resolve 되거나, cancelCompareTest()가
-    // cmpPendingTimer/cmpPendingResolve를 통해 즉시 resolve 시킬 수 있다.
-    // (기존엔 setTimeout이 끝날 때까지 무조건 기다려야 해서 [중단]을 눌러도
-    //  남은 웜업/측정 시간만큼은 계속 대기하는 문제가 있었음)
-    let cmpPendingTimer = null;
-    let cmpPendingResolve = null;
-
-    function cancellableWait(ms) {
-      return new Promise(resolve => {
-        cmpPendingResolve = resolve;
-        cmpPendingTimer = setTimeout(() => {
-          cmpPendingTimer = null;
-          cmpPendingResolve = null;
-          resolve();
-        }, ms);
-      });
-    }
-
-    function sleep(ms) { return cancellableWait(ms); }
-
-    // ---- 비교 항목(슬롯) 관리 ----
-    function addCompareSlot(label, defaultChannels) {
-      const id = cmpSlotCounter++;
-      defaultChannels = defaultChannels || [1];
-      const div = document.createElement('div');
-      div.className = 'compare-slot';
-      div.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;';
-      const chBoxes = [1, 2, 3, 4].map(ch => {
-        const checked = defaultChannels.includes(ch) ? 'checked' : '';
-        return `<label style="font-size:13px;">ch${ch}<input type="checkbox" class="cmp_ch" value="${ch}" ${checked}></label>`;
-      }).join('');
-      div.innerHTML =
-        `<input type="text" class="cmp_label" value="${label || ('설정' + (id + 1))}" style="width:110px;">` +
-        chBoxes +
-        `<button type="button" onclick="this.closest('.compare-slot').remove()">삭제</button>`;
-      document.getElementById('compare_slots').appendChild(div);
-    }
-
-    function readCompareSlots() {
-      const slots = [];
-      document.querySelectorAll('#compare_slots .compare-slot').forEach(div => {
-        const label = div.querySelector('.cmp_label').value.trim() || '설정';
-        const channels = Array.from(div.querySelectorAll('.cmp_ch:checked')).map(cb => parseInt(cb.value, 10));
-        if (channels.length > 0) slots.push({ label, channels });
-      });
-      return slots;
-    }
-
-    function setCmpStatus(text) {
-      document.getElementById('cmp_status_badge').textContent = text;
-    }
-
-    // ---- 라운드 1회 실행 (기존 수동 측정과 동일한 전역 상태를 재사용) ----
-    function runCompareRound(round, totalRounds, durationSec, label) {
-      latencyStatsSlot = makeEmptyStatStore();
-      latencyStatsUndist = makeEmptyStatStore();
-      latencyStatsDetect = makeEmptyStatStore();
-      latencyStatsTotal = makeEmptyStatStore();
-      latencyStatsRejected = makeEmptyStatStore();
-      latencyLastDetect = {};
-      latencyMeasuring = true;
-      latencyStartTime = Date.now();
-      pollForNewDetection();
-      updateLatencyDisplay();
-      detectionPollTimer = setInterval(pollForNewDetection, kDetectionPollIntervalMs);
-      latencyDisplayTimer = setInterval(() => {
-        updateLatencyDisplay();
-        const elapsed = Math.floor((Date.now() - latencyStartTime) / 1000);
-        setCmpStatus(`[${label}] ${round}/${totalRounds}회차 측정 중... (${elapsed}/${durationSec}s)`);
-      }, kLatencyDisplayIntervalMs);
-
-      // durationSec만큼 기다리되, [중단]이 눌리면 cancellableWait가 즉시 resolve 되면서
-      // 아래 정리(interval clear)가 바로 실행된다 — 남은 시간을 기다릴 필요 없음.
-      return cancellableWait(durationSec * 1000).then(() => {
-        clearInterval(detectionPollTimer); detectionPollTimer = null;
-        clearInterval(latencyDisplayTimer); latencyDisplayTimer = null;
-        latencyMeasuring = false;
-        updateLatencyDisplay();
-      });
-    }
-
-    // 한 라운드의 검출값을 항목 단위 풀(pool)에 합산 (percentile 계산을 위해 원본 검출값을 그대로 옮김)
-    function mergeIntoPool(poolStore, ch, sourceStatEntry) {
-      if (!sourceStatEntry) return;
-      for (const v of sourceStatEntry.values) addDetection(poolStore, ch, v);
-    }
-
-    async function startCompareTest() {
-      if (cmpRunning) return;
-      const slots = readCompareSlots();
-      if (slots.length < 1) { alert('비교 항목을 1개 이상 추가하세요.'); return; }
-      const durationSec = parseInt(document.getElementById('cmp_duration_sec').value, 10);
-      const repeatCount = parseInt(document.getElementById('cmp_repeat_count').value, 10);
-      const warmupSec = parseInt(document.getElementById('cmp_warmup_sec').value, 10) || 0;
-      if (!Number.isFinite(durationSec) || durationSec < 1 || !Number.isFinite(repeatCount) || repeatCount < 1) {
-        alert('측정 시간/반복 횟수를 올바르게 입력하세요.');
+    function updateChannelsUI(channels) {
+      const container = document.getElementById('channels_container');
+      if (!channels || channels.length === 0) {
+        container.innerHTML = '<div style="color:#8b949e;padding:20px;">활성화된 채널이 없습니다.</div>';
         return;
       }
 
-      cmpRunning = true;
-      cmpCancelled = false;
-      cmpSlotResults = [];
-      cmpRoundDetail = [];
-      document.getElementById('cmp_start_btn').disabled = true;
-      document.getElementById('cmp_cancel_btn').disabled = false;
-      document.getElementById('latency_start_btn').disabled = true;
-      document.getElementById('latency_stop_btn').disabled = true;
-      document.getElementById('cmp_summary_wrap').style.display = 'none';
-      document.getElementById('cmp_download_row').style.display = 'none';
-
-      // 원래 설정 저장 (끝나고 복원용)
-      let originalSettings = null;
-      try {
-        const r = await fetch(base_uri + '/settings');
-        if (r.ok) originalSettings = await r.json();
-      } catch (e) { /* 조회 실패해도 진행은 계속 (복원만 못 함) */ }
-
-      for (let si = 0; si < slots.length && !cmpCancelled; si++) {
-        const slot = slots[si];
-        setCmpStatus(`[${slot.label}] 설정 적용 중...`);
-
-        const channelsPayload = [1, 2, 3, 4].map(ch => (
-          { channel: ch, enabled: slot.channels.includes(ch), undistort: false }
-        ));
-        const payload = {
-          dictionary_name: (originalSettings && originalSettings.dictionary_name) || 'DICT_4X4_50',
-          poll_interval_ms: (originalSettings && originalSettings.poll_interval_ms) || 1000,
-          channels: channelsPayload
-        };
-        try {
-          await fetch(base_uri + '/settings', { method: 'POST', body: JSON.stringify(payload) });
-          await fetch(base_uri + '/settings/apply', { method: 'POST' });
-        } catch (e) {
-          setCmpStatus(`[${slot.label}] 설정 적용 실패 — 건너뜀`);
-          continue;
+      channels.forEach(ch => {
+        let card = document.getElementById(`ch_card_${ch.channel}`);
+        if (!card) {
+          container.innerHTML = channels.map(c => renderChannelCardHtml(c)).join('');
+          channels.forEach(updateChannelCardData);
+          return;
         }
+        updateChannelCardData(ch);
+      });
+    }
 
-        if (warmupSec > 0 && !cmpCancelled) {
-          setCmpStatus(`[${slot.label}] 웜업 대기 중... (${warmupSec}s)`);
-          await sleep(warmupSec * 1000);
-        }
-        if (cmpCancelled) break;
+    function renderChannelCardHtml(ch) {
+      return `
+        <div id="ch_card_${ch.channel}" class="channel-card ${ch.running ? 'active' : ''}">
+          <div class="channel-header">
+            <div class="channel-title">
+              <span>Channel ${ch.channel}</span>
+              <span id="ch_state_${ch.channel}" class="badge ${ch.running ? 'green' : 'orange'}">${ch.state || (ch.running ? 'active' : 'idle')}</span>
+              <span id="ch_scale_${ch.channel}" class="badge">${ch.scale}x</span>
+            </div>
+          </div>
 
-        const slotPoolSlot = makeEmptyStatStore();
-        const slotPoolUndist = makeEmptyStatStore();
-        const slotPoolDetect = makeEmptyStatStore();
-        const slotPoolTotal = makeEmptyStatStore();
-        const slotPoolRejected = makeEmptyStatStore();
+          <div>
+            <div style="font-size:10.5px;font-weight:600;color:#8b949e;margin-bottom:4px;">검출 마커 (Detected Markers)</div>
+            <div id="ch_markers_${ch.channel}" class="marker-box"><span style="color:#8b949e;font-size:11.5px;">검출 대기 (처리 완료 전)</span></div>
+            <div style="font-size:10.5px;font-weight:600;color:#8b949e;margin:8px 0 4px;">검출 ID (Detected IDs)</div>
+            <div id="ch_marker_ids_${ch.channel}" class="marker-id-box"><span style="color:#8b949e;font-size:11.5px;">검출 대기 (처리 완료 전)</span></div>
+          </div>
 
-        for (let round = 1; round <= repeatCount && !cmpCancelled; round++) {
-          setCmpStatus(`[${slot.label}] ${round}/${repeatCount}회차 측정 중... (0/${durationSec}s)`);
-          await runCompareRound(round, repeatCount, durationSec, slot.label);
+          <div>
+            <div style="font-size:10.5px;font-weight:600;color:#8b949e;margin-bottom:4px;">
+              레이턴시 Breakdown <small style="color:#58a6ff;font-weight:400;">(단계에 마우스 호버 시 설명)</small>
+            </div>
+            <table class="breakdown-table">
+              <tr>
+                <th>단계 (Stage)</th>
+                <th style="text-align:right;">소요 시간</th>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="원본 프레임을 worker용 snapshot으로 복사하는 시간">1. 입력 복사 (Snapshot Copy)</span></td>
+                <td style="text-align:right;color:#8b949e;" id="ch_t_copy_${ch.channel}">0.0 ms</td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" style="color:#8b949e;" title="snapshot 복사가 끝난 뒤 worker가 가져가기 전까지의 대기 시간">2. 버퍼 대기 (Queue Wait)</span></td>
+                <td style="text-align:right;color:#8b949e;" id="ch_t_qwait_${ch.channel}">0.0 ms</td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="worker가 snapshot을 확보하는 시간">3. Snapshot Acquire</span></td>
+                <td style="text-align:right;"><b id="ch_t_get_${ch.channel}">0.0 ms</b></td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="worker별 설정, 감지 프로필, ArUCo detector 준비 시간">4. Worker 준비 (Setup)</span></td>
+                <td style="text-align:right;"><b id="ch_t_setup_${ch.channel}">0.0 ms</b></td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="스마트 조기 다운스케일 (1280x796)">5. Resize (${ch.scale}x)</span></td>
+                <td style="text-align:right;"><b id="ch_t_resize_${ch.channel}">0.0 ms</b></td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="명암/노이즈 전처리 보정">6. Preprocess</span></td>
+                <td style="text-align:right;"><b id="ch_t_pre_${ch.channel}">0.0 ms</b></td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="마커 코너 탐색 및 비트 디코딩의 wall-clock 시간; worker 선점 시간도 포함">7. Detect (ArUCo)</span></td>
+                <td style="text-align:right;"><b id="ch_t_det_${ch.channel}" style="color:#56d364;">0.0 ms</b></td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="2560x1592 원본 해상도 좌표계 복원">8. Restore</span></td>
+                <td style="text-align:right;"><b id="ch_t_res_${ch.channel}">0.0 ms</b></td>
+              </tr>
+              <tr>
+                <td><span class="tip-stage" title="XML 생성, MetadataManager 이벤트 제출, 로깅; 비동기 수신 완료는 포함하지 않음">9. Metadata Submit</span></td>
+                <td style="text-align:right;"><b id="ch_t_snd_${ch.channel}">0.0 ms</b></td>
+              </tr>
+              <tr style="background:#16202c;">
+                <td><span class="tip-stage" style="color:#58a6ff;font-weight:700;" title="Resize부터 Metadata Submit까지의 pipeline wall-clock; 단계 합계 밖의 소량 제어 코드도 포함">Pipeline 처리 (Processing)</span></td>
+                <td style="text-align:right;"><b id="ch_t_proc_${ch.channel}" style="color:#58a6ff;">0.0 ms</b></td>
+              </tr>
+              <tr style="background:#131c26;">
+                <td><span class="tip-stage" style="color:#ffffff;font-weight:700;" title="snapshot 복사 시작부터 MetadataManager 이벤트 제출까지; 카메라 촬영 시각과 비동기 수신 완료는 포함하지 않음">앱 지연 (Snapshot-to-Submit)</span></td>
+                <td style="text-align:right;"><b id="ch_t_e2e_${ch.channel}" style="color:#39d353;">0.0 ms</b></td>
+              </tr>
+            </table>
+          </div>
 
-          for (let ch = 1; ch <= 4; ch++) {
-            mergeIntoPool(slotPoolSlot, ch, latencyStatsSlot[ch]);
-            mergeIntoPool(slotPoolUndist, ch, latencyStatsUndist[ch]);
-            mergeIntoPool(slotPoolDetect, ch, latencyStatsDetect[ch]);
-            mergeIntoPool(slotPoolTotal, ch, latencyStatsTotal[ch]);
-            mergeIntoPool(slotPoolRejected, ch, latencyStatsRejected[ch]);
+          <div class="stat-pill-grid">
+            <div class="stat-pill">
+              <span class="stat-pill-lbl">수신 (Callback)</span>
+              <span class="stat-pill-val" id="ch_c_cb_${ch.channel}">0</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-lbl">처리 (Consumed)</span>
+              <span class="stat-pill-val" id="ch_c_con_${ch.channel}" style="color:#56d364;">0</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-lbl">스킵 (15 FPS)</span>
+              <span class="stat-pill-val" id="ch_c_skp_${ch.channel}" style="color:#e3b341;">0</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-lbl">완료 (Completed)</span>
+              <span class="stat-pill-val" id="ch_c_cmp_${ch.channel}">0</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
-            const sl = computeStatsFrom(latencyStatsSlot, ch);
-            const un = computeStatsFrom(latencyStatsUndist, ch);
-            const dt = computeStatsFrom(latencyStatsDetect, ch);
-            const tt = computeStatsFrom(latencyStatsTotal, ch);
-            const rj = computeStatsFrom(latencyStatsRejected, ch);
-            cmpRoundDetail.push({
-              slot: slot.label, round, channel: ch,
-              detectionCount: tt ? tt.detectionCount : 0,
-              slot_avg_us: sl ? sl.avg : '',
-              slot_p95_us: sl ? sl.p95 : '',
-              undist_avg_us: un ? un.avg : '',
-              undist_p95_us: un ? un.p95 : '',
-              detect_avg_us: dt ? dt.avg : '',
-              detect_p95_us: dt ? dt.p95 : '',
-              total_avg_us: tt ? tt.avg : '',
-              total_p95_us: tt ? tt.p95 : '',
-              rejected_avg: rj ? rj.avg : ''
-            });
+    function updateChannelCardData(ch) {
+      const card = document.getElementById(`ch_card_${ch.channel}`);
+      if (!card) return;
+      card.className = `channel-card ${ch.running ? 'active' : ''}`;
+
+      const stateEl = document.getElementById(`ch_state_${ch.channel}`);
+      stateEl.textContent = ch.state || (ch.running ? 'active' : 'idle');
+      stateEl.className = `badge ${ch.running ? 'green' : 'orange'}`;
+
+      document.getElementById(`ch_scale_${ch.channel}`).textContent = `${ch.scale}x`;
+      const markerBox = document.getElementById(`ch_markers_${ch.channel}`);
+      const markerIdBox = document.getElementById(`ch_marker_ids_${ch.channel}`);
+      const markerIds = Array.isArray(ch.marker_ids) ? ch.marker_ids : [];
+      const markerCount = Number.isInteger(ch.marker_count) ? ch.marker_count : markerIds.length;
+      const completedCount = Number.isInteger(ch.completed_count) ? ch.completed_count : 0;
+      if (ch.last_error) {
+        markerBox.textContent = `오류: ${ch.last_error}`;
+        markerIdBox.textContent = '확정 ID 없음';
+      } else if (markerCount > 0) {
+        markerBox.textContent = ch.rejected_count > 0
+          ? `검출 ${markerCount}개 · 후보 탈락 ${ch.rejected_count}개`
+          : `검출 ${markerCount}개`;
+        markerIdBox.innerHTML = markerIds.length > 0
+          ? markerIds.map(id => `<span class="marker-tag">ID #${id}</span>`).join('')
+          : 'ID 응답 없음';
+      } else if (completedCount === 0) {
+        markerBox.textContent = '검출 대기 (처리 완료 전)';
+        markerIdBox.textContent = '검출 대기 (처리 완료 전)';
+      } else if (ch.rejected_count > 0) {
+        markerBox.textContent = `후보 ${ch.rejected_count}개가 사전에서 탈락`;
+        markerIdBox.textContent = '확정 ID 없음';
+      } else {
+        markerBox.textContent = '검출된 마커 없음';
+        markerIdBox.textContent = '확정 ID 없음';
+      }
+
+      const copyMs = ((ch.input_copy_us || 0) / 1000).toFixed(1);
+      const queueWaitMs = ((ch.queue_wait_us || 0) / 1000).toFixed(1);
+      const frameGetMs = ((ch.frame_get_us || 0) / 1000).toFixed(1);
+      const workerSetupMs = ((ch.worker_setup_us || 0) / 1000).toFixed(1);
+      const resizeMs = ((ch.resize_us || 0) / 1000).toFixed(1);
+      const preprocessMs = ((ch.preprocess_us || 0) / 1000).toFixed(1);
+      const detectMs = ((ch.detect_us || 0) / 1000).toFixed(1);
+      const restoreMs = ((ch.coordinate_restore_us || 0) / 1000).toFixed(1);
+      const sendMs = ((ch.send_us || 0) / 1000).toFixed(1);
+
+      const procTotalUs = ch.processing_total_us || ((ch.resize_us || 0) + (ch.preprocess_us || 0) + (ch.detect_us || 0) + (ch.coordinate_restore_us || 0) + (ch.send_us || 0));
+      const procTotalMs = (procTotalUs / 1000).toFixed(1);
+      const e2eMs = ((ch.end_to_end_us || procTotalUs) / 1000).toFixed(1);
+
+      document.getElementById(`ch_t_copy_${ch.channel}`).textContent = `${copyMs} ms`;
+      document.getElementById(`ch_t_qwait_${ch.channel}`).textContent = `${queueWaitMs} ms`;
+      document.getElementById(`ch_t_get_${ch.channel}`).textContent = `${frameGetMs} ms`;
+      document.getElementById(`ch_t_setup_${ch.channel}`).textContent = `${workerSetupMs} ms`;
+      document.getElementById(`ch_t_resize_${ch.channel}`).textContent = `${resizeMs} ms`;
+      document.getElementById(`ch_t_pre_${ch.channel}`).textContent = `${preprocessMs} ms`;
+      document.getElementById(`ch_t_det_${ch.channel}`).textContent = `${detectMs} ms`;
+      document.getElementById(`ch_t_res_${ch.channel}`).textContent = `${restoreMs} ms`;
+      document.getElementById(`ch_t_snd_${ch.channel}`).textContent = `${sendMs} ms`;
+      document.getElementById(`ch_t_proc_${ch.channel}`).textContent = `${procTotalMs} ms`;
+      document.getElementById(`ch_t_e2e_${ch.channel}`).textContent = `${e2eMs} ms`;
+
+      document.getElementById(`ch_c_cb_${ch.channel}`).textContent = ch.callback_count || 0;
+      document.getElementById(`ch_c_con_${ch.channel}`).textContent = ch.consumed_count || 0;
+      document.getElementById(`ch_c_skp_${ch.channel}`).textContent = ch.skipped_count || 0;
+      document.getElementById(`ch_c_cmp_${ch.channel}`).textContent = ch.completed_count || 0;
+    }
+
+    function fetchSettings() {
+      fetch(base_uri + "/settings?_t=" + Date.now(), { cache: "no-store" })
+        .then(r => r.json())
+        .then(settings => {
+          currentSettings = settings;
+          savedSettings = JSON.parse(JSON.stringify(settings));
+
+          document.getElementById('sel_dict').value = settings.dictionary_name || "DICT_4X4_50";
+          document.getElementById('sel_workers').value = settings.detection_worker_count || 2;
+          if (settings.channels && settings.channels.length > 0) {
+            document.getElementById('sel_scale').value = settings.channels[0].scale || 1.0;
           }
-        }
+          updateApplyButtonState();
+          renderProfileCards();
+          renderBenchmarkChannelControls();
+        })
+        .catch(err => console.error("settings fetch error:", err));
+    }
 
-        // 항목 요약 계산 — 라운드 전체를 풀링한 검출값 기준
-        let totalDetectionCount = 0, sumSlotWeighted = 0, sumUndistWeighted = 0, sumDetectWeighted = 0, sumTotalWeighted = 0, sumRejectedWeighted = 0;
-        const perChannel = [];
-        for (const ch of slot.channels) {
-          const sl = computeStatsFrom(slotPoolSlot, ch);
-          const un = computeStatsFrom(slotPoolUndist, ch);
-          const dt = computeStatsFrom(slotPoolDetect, ch);
-          const tt = computeStatsFrom(slotPoolTotal, ch);
-          const rj = computeStatsFrom(slotPoolRejected, ch);
-          if (!tt || tt.detectionCount === 0) continue;
-          const loss = sl ? sl.avg : 0;
-          const nonSlotTime = (un ? un.avg : 0) + (dt ? dt.avg : 0);
-          const ratio = nonSlotTime > 0 ? (loss / nonSlotTime) * 100 : 0;
-          perChannel.push({ loss, ratio });
-          totalDetectionCount += tt.detectionCount;
-          sumSlotWeighted += (sl ? sl.avg : 0) * tt.detectionCount;
-          sumUndistWeighted += (un ? un.avg : 0) * tt.detectionCount;
-          sumDetectWeighted += (dt ? dt.avg : 0) * tt.detectionCount;
-          sumTotalWeighted += tt.avg * tt.detectionCount;
-          sumRejectedWeighted += (rj ? rj.avg : 0) * tt.detectionCount;
-        }
-        cmpSlotResults.push({
-          label: slot.label,
-          channels: slot.channels.join('+'),
-          totalDetectionCount,
-          avgSlot_us: totalDetectionCount > 0 ? Math.round(sumSlotWeighted / totalDetectionCount) : 0,
-          avgUndist_us: totalDetectionCount > 0 ? Math.round(sumUndistWeighted / totalDetectionCount) : 0,
-          avgDetect_us: totalDetectionCount > 0 ? Math.round(sumDetectWeighted / totalDetectionCount) : 0,
-          avgTotal_us: totalDetectionCount > 0 ? Math.round(sumTotalWeighted / totalDetectionCount) : 0,
-          avgLoss_us: perChannel.length > 0 ? Math.round(perChannel.reduce((a, p) => a + p.loss, 0) / perChannel.length) : 0,
-          avgRatio: perChannel.length > 0 ? Math.round((perChannel.reduce((a, p) => a + p.ratio, 0) / perChannel.length) * 10) / 10 : 0,
-          avgRejected: totalDetectionCount > 0 ? Math.round(sumRejectedWeighted / totalDetectionCount) : 0
+    function applySettings() {
+      if (!currentSettings) return;
+      currentSettings.dictionary_name = document.getElementById('sel_dict').value;
+      currentSettings.detection_worker_count = parseInt(document.getElementById('sel_workers').value, 10);
+      const scaleVal = parseFloat(document.getElementById('sel_scale').value);
+      if (currentSettings.channels && currentSettings.channels.length > 0) {
+        currentSettings.channels.forEach(channel => {
+          channel.scale = scaleVal;
         });
       }
 
-      // 원래 설정 복원
-      if (originalSettings) {
-        setCmpStatus('원래 설정으로 복원 중...');
-        try {
-          await fetch(base_uri + '/settings', { method: 'POST', body: JSON.stringify(originalSettings) });
-          await fetch(base_uri + '/settings/apply', { method: 'POST' });
-        } catch (e) { /* 복원 실패 시 설정 탭에서 수동으로 재적용 필요 */ }
-      }
+      const btn = document.getElementById('btn_apply');
+      btn.disabled = true;
+      btn.textContent = "적용 중...";
 
-      cmpRunning = false;
-      document.getElementById('cmp_start_btn').disabled = false;
-      document.getElementById('cmp_cancel_btn').disabled = true;
-      document.getElementById('latency_start_btn').disabled = false;
-      setCmpStatus(cmpCancelled ? '비교 테스트 중단됨' : '비교 테스트 완료');
-      renderCompareSummary();
+      fetch(base_uri + "/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentSettings)
+      })
+      .then(r => r.json())
+      .then(res => {
+        savedSettings = JSON.parse(JSON.stringify(currentSettings));
+        btn.textContent = "설정 적용 (Apply)";
+        updateApplyButtonState();
+        renderBenchmarkChannelControls();
+        fetchStatus();
+      })
+      .catch(err => {
+        alert("설정 적용 실패: " + err);
+        btn.textContent = "설정 적용 (Apply)";
+        updateApplyButtonState();
+      });
     }
 
-    function cancelCompareTest() {
-      cmpCancelled = true;
-      document.getElementById('cmp_cancel_btn').disabled = true;
-      setCmpStatus('중단 처리 중...');
-      // 지금 웜업/라운드 대기 중이면 남은 시간을 기다리지 않고 그 자리에서 바로 깨운다.
-      if (cmpPendingTimer) { clearTimeout(cmpPendingTimer); cmpPendingTimer = null; }
-      if (cmpPendingResolve) { const r = cmpPendingResolve; cmpPendingResolve = null; r(); }
-    }
-
-    function renderCompareSummary() {
-      const tbody = document.getElementById('cmp_summary_tbody');
-      tbody.innerHTML = '';
-      for (const r of cmpSlotResults) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.label}</td><td>${r.channels}</td><td>${r.totalDetectionCount}</td>` +
-          `<td>${r.avgSlot_us.toLocaleString()}</td><td>${r.avgUndist_us.toLocaleString()}</td><td>${r.avgDetect_us.toLocaleString()}</td><td>${r.avgTotal_us.toLocaleString()}</td>` +
-          `<td>${r.avgLoss_us.toLocaleString()}</td><td>${r.avgRatio}%</td><td>${r.avgRejected}</td>`;
-        tbody.appendChild(tr);
-      }
-      document.getElementById('cmp_summary_wrap').style.display = cmpSlotResults.length ? 'block' : 'none';
-      document.getElementById('cmp_download_row').style.display = cmpSlotResults.length ? 'flex' : 'none';
-    }
-
-    // 필드에 CSV 구분자(,)나 따옴표, 줄바꿈이 섞여 있으면 RFC4180대로 큰따옴표로 감싼다.
-    // (안 하면 예: 항목명에 콤마가 들어있을 때 그 콤마가 열 구분자로 오인돼 뒤 셀들이 밀려서 표가 깨짐)
-    function csvEscape(v) {
-      const s = (v === undefined || v === null) ? '' : String(v);
-      if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-      return s;
-    }
-
-    function downloadCsvGeneric(filenamePrefix, header, rows) {
-      const lines = [header.map(csvEscape).join(',')];
-      for (const r of rows) lines.push(header.map(k => csvEscape(r[k])).join(','));
-      // 맨 앞 BOM(U+FEFF): 없으면 엑셀이 한글을 시스템 기본 인코딩으로 잘못 읽어 깨져 보인다.
-      const csv = '﻿' + lines.join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      a.href = url;
-      a.download = `${filenamePrefix}_${ts}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-
-    function downloadCompareSummaryCsv() {
-      downloadCsvGeneric('compare_summary_us',
-        ['label', 'channels', 'totalDetectionCount', 'avgSlot_us', 'avgUndist_us', 'avgDetect_us', 'avgTotal_us', 'avgLoss_us', 'avgRatio', 'avgRejected'], cmpSlotResults);
-    }
-    function downloadCompareDetailCsv() {
-      downloadCsvGeneric('compare_detail_us',
-        ['slot', 'round', 'channel', 'detectionCount', 'slot_avg_us', 'slot_p95_us', 'undist_avg_us', 'undist_p95_us', 'detect_avg_us', 'detect_p95_us', 'total_avg_us', 'total_p95_us', 'rejected_avg'],
-        cmpRoundDetail);
-    }
-    // ========================================================================
-    // [TEST-ONLY] 비교 테스트 끝
-    // ========================================================================
-
-    // ---- 실시간 로그: GET /logs (plain text) 주기 폴링 ----
-    function loadLogs() {
-      fetch(base_uri + '/logs')
-        .then(r => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))
-        .then(text => {
-          const el = document.getElementById('log_view');
-          if (!el) return;
-          // 사용자가 하단을 보고 있었으면 새 로그를 따라 스크롤(위로 올려 읽는 중이면 방해 안 함)
-          const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-          el.textContent = text.trim() ? text : '(로그 없음)';
-          if (atBottom) el.scrollTop = el.scrollHeight;
+    function fetchLogs() {
+      fetch(base_uri + "/logs?_t=" + Date.now(), { cache: "no-store" })
+        .then(r => r.text())
+        .then(logs => {
+          const box = document.getElementById('log_box');
+          box.textContent = logs || "최근 로그 없음";
+          box.scrollTop = box.scrollHeight;
         })
         .catch(() => {});
     }
 
-    // ---- 설정 변경 모드: 버튼으로 토글 (켰을 때만 설정 변경 가능) ----
-    let editMode = false;
-
-    function toggleEditMode() {
-      editMode = !editMode;
-      applyEditMode();
+    /* --- 🧪 프로파일별 성능 벤치마크 및 시각화 도구 --- */
+    function setFrameMode(mode) {
+      currentFrameMode = mode;
+      const expectedIds = document.getElementById('bench_expected_ids');
+      if (expectedIds && mode === 'marker' && !expectedIds.value.trim()) expectedIds.value = '0';
+      if (expectedIds && (mode === 'white' || mode === 'black')) expectedIds.value = '';
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      document.getElementById('curr_mode_badge').textContent = mode.toUpperCase();
     }
 
-    function applyEditMode() {
-      const btn = document.getElementById('edit_btn');
-      const hint = document.getElementById('edit_hint');
-      if (editMode) {
-        btn.textContent = '설정 잠금';
-        btn.className = 'btn-editing';
-        hint.textContent = '값을 수정한 뒤 [적용]을 누르면 저장+반영됩니다. 끝나면 [설정 잠금].';
-      } else {
-        btn.textContent = '설정 변경';
-        btn.className = '';
-        hint.textContent = '[설정 변경]으로 잠금을 풀고 값을 수정한 뒤 [적용]을 누르세요.';
+    function renderBenchmarkChannelControls() {
+      const container = document.getElementById('bench_channel_controls');
+      if (!container) return;
+      const active = currentSettings && Array.isArray(currentSettings.channels)
+        ? currentSettings.channels.filter(channel => channel.enabled).map(channel => channel.channel)
+        : [1, 2, 3, 4];
+      const previouslySelected = [...container.querySelectorAll('input:checked')]
+        .map(input => Number(input.value));
+      const selected = previouslySelected.length > 0 ? previouslySelected : active;
+      container.innerHTML = active.length > 0 ? active.map(channel => `
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;">
+          <input type="checkbox" data-bench-control value="${channel}" ${selected.includes(channel) ? 'checked' : ''}>
+          Ch ${channel}
+        </label>`).join('') : '<span style="color:#f85149;">활성 채널 없음</span>';
+    }
+
+    function selectedBenchmarkChannels() {
+      return [...document.querySelectorAll('#bench_channel_controls input:checked')]
+        .map(input => Number(input.value));
+    }
+
+    function benchmarkExpectedIds() {
+      if (currentFrameMode === 'white' || currentFrameMode === 'black') return [];
+      const input = document.getElementById('bench_expected_ids');
+      const text = input ? input.value.trim() : '';
+      if (!text) return null;
+      const ids = text.split(',').map(value => Number(value.trim()));
+      if (ids.some(id => !Number.isInteger(id) || id < 0) || new Set(ids).size !== ids.length) {
+        throw new Error('정답 마커 ID는 중복 없는 0 이상의 정수를 쉼표로 구분해 입력하세요.');
       }
-      const dis = !editMode;
-      document.getElementById('set_dict_sel').disabled = dis;
-      document.getElementById('set_poll').disabled = dis;
-      document.getElementById('apply_btn').disabled = dis;
-      for (let ch = 1; ch <= 4; ch++) {
-        document.getElementById('ch_on_' + ch).disabled = dis;
-        updateUndistortEnabled(ch);
-      }
+      return ids;
     }
 
-    // ON/OFF 버튼: 상태 읽기/쓰기/토글
-    function btnIsOn(id) { return document.getElementById(id).dataset.on === 'true'; }
-    function setBtnState(el, on) {
-      el.dataset.on = on ? 'true' : 'false';
-      el.textContent = on ? 'ON' : 'OFF';
-      el.classList.toggle('on', on);
-      el.classList.toggle('off', !on);
-    }
-    function toggleBtn(el) {
-      if (el.disabled) return;
-      setBtnState(el, !(el.dataset.on === 'true'));
-    }
-    function toggleDetect(ch) {
-      const el = document.getElementById('ch_on_' + ch);
-      if (el.disabled) return;
-      setBtnState(el, !(el.dataset.on === 'true'));
-      updateUndistortEnabled(ch);   // 검출 끄면 왜곡보정 버튼도 비활성
+    function renderProfileCards() {
+      const container = document.getElementById('profile_cards_container');
+      if (!container) return;
+
+      const disabled = isBenchRunning ? 'disabled' : '';
+
+      container.innerHTML = testProfiles.map((p, idx) => {
+        return `
+        <div class="profile-card" id="card_${p.id}">
+          <div class="profile-card-header">
+            <span class="badge purple">설정 ${idx + 1}</span>
+            <input type="text" class="profile-name-input" value="${p.name}" onchange="updateProfileName('${p.id}', this.value)" ${disabled} />
+            <button type="button" class="btn-del-prof" title="설정 삭제" onclick="deleteProfile('${p.id}')" ${disabled}>✕</button>
+          </div>
+
+          <div class="form-group">
+            <div class="form-row">
+              <label>워커 코어:</label>
+              <select onchange="updateProfileProp('${p.id}', 'workers', parseInt(this.value, 10))" ${disabled}>
+                <option value="2" ${p.workers === 2 ? 'selected' : ''}>2 Cores (Dual)</option>
+                <option value="1" ${p.workers === 1 ? 'selected' : ''}>1 Core (Single)</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>해상도 스케일:</label>
+              <select onchange="updateProfileProp('${p.id}', 'scale', parseFloat(this.value))" ${disabled}>
+                <option value="0.5" ${p.scale === 0.5 ? 'selected' : ''}>0.5x (1280x796)</option>
+                <option value="0.25" ${p.scale === 0.25 ? 'selected' : ''}>0.25x (640x398)</option>
+                <option value="1.0" ${p.scale === 1.0 ? 'selected' : ''}>1.0x (2560x1592)</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>마커 사전:</label>
+              <select onchange="updateProfileProp('${p.id}', 'dict', this.value)" ${disabled}>
+                <option value="DICT_4X4_50" ${p.dict === 'DICT_4X4_50' ? 'selected' : ''}>DICT_4X4_50</option>
+                <option value="DICT_4X4_100" ${p.dict === 'DICT_4X4_100' ? 'selected' : ''}>DICT_4X4_100</option>
+                <option value="DICT_5X5_100" ${p.dict === 'DICT_5X5_100' ? 'selected' : ''}>DICT_5X5_100</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+      `;
+      }).join('');
     }
 
-    // 왜곡보정 버튼은 (편집 가능 && 해당 채널 검출 ON) 일 때만 활성 (검출 안 하면 보정 설정도 의미 없음)
-    function updateUndistortEnabled(ch) {
-      const detectOn = btnIsOn('ch_on_' + ch);
-      document.getElementById('ch_undist_' + ch).disabled = !editMode || !detectOn;
+    function addProfile() {
+      const newId = "prof_" + Date.now();
+      const num = testProfiles.length + 1;
+      testProfiles.push({
+        id: newId,
+        name: `설정 ${num} (사용자 설정)`,
+        workers: 2,
+        scale: 0.5,
+        dict: "DICT_4X4_50"
+      });
+      renderProfileCards();
     }
 
-    // ---- 설정 조회/적용 (GET·POST /settings, POST /settings/apply — 엔드포인트 구현 후 동작) ----
-    function showSettingsMsg(msg, cls) {
-      const el = document.getElementById('settings_result');
-      el.textContent = msg;
-      el.className = cls;
-    }
-
-    // 채널별 설정 수집: [{ channel, enabled, undistort }, ...] (4채널 전부)
-    function getChannelConfig() {
-      const list = [];
-      for (let ch = 1; ch <= 4; ch++) {
-        list.push({
-          channel: ch,
-          enabled: btnIsOn('ch_on_' + ch),
-          undistort: btnIsOn('ch_undist_' + ch)
-        });
-      }
-      return list;
-    }
-
-    // 서버 값대로 채널 버튼 반영
-    function setChannelConfig(list) {
-      if (!Array.isArray(list)) return;
-      for (const c of list) {
-        const ch = c.channel;
-        if (ch < 1 || ch > 4) continue;
-        setBtnState(document.getElementById('ch_on_' + ch), !!c.enabled);
-        setBtnState(document.getElementById('ch_undist_' + ch), !!c.undistort);
-        updateUndistortEnabled(ch);
-      }
-    }
-
-    // set_poll(select)에 서버 값을 반영. 옵션에 정확히 없는 값(예전 설정 등)이면
-    // 가장 가까운 옵션으로 스냅한다 — select가 빈 채로 남는 것을 방지.
-    function setPollSelectValue(ms) {
-      const sel = document.getElementById('set_poll');
-      const options = Array.from(sel.options).map(o => parseInt(o.value, 10));
-      let nearest = options[0], best = Math.abs(nearest - ms);
-      for (const v of options) {
-        const diff = Math.abs(v - ms);
-        if (diff < best) { best = diff; nearest = v; }
-      }
-      sel.value = String(nearest);
-    }
-
-    function loadSettings(silent) {
-      fetch(base_uri + '/settings')
-        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
-        .then(d => {
-          if (d.dictionary_name) document.getElementById('set_dict_sel').value = d.dictionary_name;
-          if (d.poll_interval_ms != null) setPollSelectValue(d.poll_interval_ms);
-          // 서버 상태를 그대로 반영: 먼저 전 채널 OFF로 초기화 후, 서버가 준 채널만 켠다.
-          // (settings.json 없으면 channels가 비어 옴 → 하드코딩 ON이 남는 버그 방지)
-          for (let ch = 1; ch <= 4; ch++) {
-            setBtnState(document.getElementById('ch_on_' + ch), false);
-            setBtnState(document.getElementById('ch_undist_' + ch), false);
-            updateUndistortEnabled(ch);
-          }
-          if (Array.isArray(d.channels)) setChannelConfig(d.channels);
-          if (!silent) showSettingsMsg('현재 설정을 불러왔습니다.', 'ok');
-        })
-        .catch(e => { if (!silent) showSettingsMsg('불러오기 실패: ' + e, 'fail'); });
-    }
-
-    // [적용] = settings.json 저장(POST /settings) 후 워커 반영(POST /settings/apply)
-    function onApplySettings() {
-      const poll = parseInt(document.getElementById('set_poll').value, 10);
-      if (!Number.isFinite(poll) || poll < 500 || poll > 3000) {
-        showSettingsMsg('검출 주기는 500~3000ms 범위여야 합니다.', 'fail');
+    function deleteProfile(id) {
+      if (testProfiles.length <= 1) {
+        alert("최소 1개 이상의 설정이 있어야 비교할 수 있습니다.");
         return;
       }
-      const channels = getChannelConfig();
-      if (!channels.some(c => c.enabled)) {
-        showSettingsMsg('검출 채널이 하나도 켜져 있지 않습니다.', 'fail');
+      testProfiles = testProfiles.filter(p => p.id !== id);
+      renderProfileCards();
+    }
+
+    function updateProfileName(id, name) {
+      const p = testProfiles.find(item => item.id === id);
+      if (p) p.name = name;
+    }
+
+    function updateProfileProp(id, prop, val) {
+      const p = testProfiles.find(item => item.id === id);
+      if (p) p[prop] = val;
+    }
+
+    /* 순차 벤치마크 실행기 */
+    function startProfileSuite() {
+      if (testProfiles.length === 0) return;
+      if (selectedBenchmarkChannels().length === 0) {
+        alert('시험할 활성 채널을 하나 이상 선택하세요.');
         return;
       }
+      isBenchRunning = true;
+      benchSessionId++;
+      benchQueue = [...testProfiles];
+      benchCurrentIndex = 0;
+      benchResults = {};
+
+      document.getElementById('btn_run_all').disabled = true;
+      document.getElementById('btn_cancel_all').disabled = false;
+      document.getElementById('btn_add_profile').disabled = true;
+      document.querySelectorAll('[data-bench-control]').forEach(control => control.disabled = true);
+      document.getElementById('bench_suite_progress').style.display = 'block';
+      renderProfileCards();
+
+      runNextProfile(benchSessionId);
+    }
+
+    function runNextProfile(sessionId) {
+      if (sessionId !== benchSessionId) return;
+      if (benchCurrentIndex >= benchQueue.length || !isBenchRunning) {
+        finishProfileSuite(false, sessionId);
+        return;
+      }
+
+      const p = benchQueue[benchCurrentIndex];
+      const sampleCount = parseInt(document.getElementById('bench_samples_global').value, 10) || 50;
+      let expectedIds;
+      try {
+        expectedIds = benchmarkExpectedIds();
+      } catch (error) {
+        alert(error.message);
+        finishProfileSuite(true, sessionId);
+        return;
+      }
+
+      document.querySelectorAll('.profile-card').forEach(card => card.classList.remove('active-running'));
+      const activeCard = document.getElementById(`card_${p.id}`);
+      if (activeCard) activeCard.classList.add('active-running');
+
+      document.getElementById('suite_status_txt').textContent = `[${benchCurrentIndex + 1}/${benchQueue.length}] "${p.name}" 측정 실행 중...`;
+      const overallPct = ((benchCurrentIndex) / benchQueue.length * 100).toFixed(0);
+      document.getElementById('suite_prog_bar').style.width = `${overallPct}%`;
+      document.getElementById('suite_prog_pct').textContent = `${overallPct} %`;
+
+      let scaleId = "half";
+      if (p.scale === 1.0) scaleId = "full";
+      else if (p.scale === 0.25) scaleId = "quarter";
+
       const payload = {
-        dictionary_name: document.getElementById('set_dict_sel').value,
-        poll_interval_ms: poll,
-        channels: channels
+        worker_counts: [p.workers],
+        scales: [scaleId],
+        input_mode: currentFrameMode,
+        dictionary_name: p.dict,
+        warmup_samples: 5,
+        measurement_samples: sampleCount,
+        channels: selectedBenchmarkChannels()
       };
+      if (expectedIds !== null) payload.expected_ids = expectedIds;
 
-      showSettingsMsg('저장 중...', 'muted');
-      fetch(base_uri + '/settings', { method: 'POST', body: JSON.stringify(payload) })
-        .then(r => r.ok ? r.text() : Promise.reject('저장(POST /settings) HTTP ' + r.status))
-        .then(() => fetch(base_uri + '/settings/apply', { method: 'POST' }))
-        .then(r => r.ok ? r.text() : Promise.reject('적용(POST /settings/apply) HTTP ' + r.status))
-        .then(() => {
-          const on = channels.filter(c => c.enabled)
-                             .map(c => c.channel + (c.undistort ? '(보정)' : ''))
-                             .join(', ');
-          showSettingsMsg('적용됨 — ' + payload.dictionary_name + ', poll=' + poll + 'ms, 검출채널: ' + on, 'ok');
-        })
-        .catch(e => showSettingsMsg('실패: ' + e + ' (엔드포인트 미구현일 수 있음)', 'fail'));
+      fetch(base_uri + "/test/run/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(res => {
+        if (sessionId !== benchSessionId || !isBenchRunning) return;
+        if (res.error) {
+          console.error("Start error for profile:", p.name, res.error);
+          benchResults[p.id] = { error: res.error, profile: p };
+          benchCurrentIndex++;
+          setTimeout(() => runNextProfile(sessionId), 500);
+        } else {
+          pollSingleProfile(p, sessionId);
+        }
+      })
+      .catch(err => {
+        if (sessionId !== benchSessionId || !isBenchRunning) return;
+        console.error("Start fail:", err);
+        benchResults[p.id] = { error: String(err), profile: p };
+        benchCurrentIndex++;
+        setTimeout(() => runNextProfile(sessionId), 500);
+      });
     }
 
-    // 초기화: 메인 탭 + 상태 모니터링, 설정 잠금, 현재 설정 자동 조회(미구현이면 조용히)
-    switchTab('main');
-    applyEditMode();
-    loadSettings(true);
-    // [TEST-ONLY] 비교 테스트 시작 — 이 2줄도 제거 대상 (기본 항목 2개: 1채널 vs 1~4채널)
-    addCompareSlot('1채널', [1]);
-    addCompareSlot('1~4채널', [1, 2, 3, 4]);
-    // [TEST-ONLY] 비교 테스트 끝
+    function updateSuiteProgress(data, profile) {
+      const progress = data && data.progress ? data.progress : {};
+      const completed = Number(progress.completed_samples) || 0;
+      const total = Number(progress.total_samples) || 0;
+      const overall = benchQueue.length
+        ? ((benchCurrentIndex + (total ? completed / total : 0)) / benchQueue.length * 100).toFixed(0)
+        : 0;
+      document.getElementById('suite_status_txt').textContent =
+        `[${benchCurrentIndex + 1}/${benchQueue.length}] "${profile.name}" · ${completed}/${total} 샘플`;
+      document.getElementById('suite_prog_bar').style.width = `${overall}%`;
+      document.getElementById('suite_prog_pct').textContent = `${overall} %`;
+    }
+
+    function pollSingleProfile(profile, sessionId) {
+      fetch(base_uri + "/test/run/status?_t=" + Date.now(), { cache: "no-store" })
+        .then(r => r.json())
+        .then(data => {
+          if (sessionId !== benchSessionId || !isBenchRunning) return;
+          updateSuiteProgress(data, profile);
+          if (data.status === "completed" || data.status === "error" || data.status === "cancelled") {
+            benchResults[profile.id] = { data: data, profile: profile };
+            benchCurrentIndex++;
+            renderComparisonDashboard();
+            setTimeout(() => runNextProfile(sessionId), 600);
+          } else {
+            setTimeout(() => pollSingleProfile(profile, sessionId), 400);
+          }
+        })
+        .catch(() => {
+          if (sessionId === benchSessionId && isBenchRunning) {
+            setTimeout(() => pollSingleProfile(profile, sessionId), 600);
+          }
+        });
+    }
+
+    function cancelProfileSuite() {
+      if (!isBenchRunning) return;
+      isBenchRunning = false;
+      benchSessionId++;
+      document.getElementById('btn_cancel_all').disabled = true;
+      document.getElementById('suite_status_txt').textContent = '벤치마크 취소 처리 중...';
+      fetch(base_uri + "/test/run/cancel", { method: "POST" })
+        .then(() => waitForBenchmarkStop())
+        .catch(() => finishProfileSuite(true));
+    }
+
+    function waitForBenchmarkStop() {
+      fetch(base_uri + "/test/run/status?_t=" + Date.now(), { cache: "no-store" })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'running') {
+            setTimeout(waitForBenchmarkStop, 250);
+          } else {
+            finishProfileSuite(true);
+          }
+        })
+        .catch(() => setTimeout(waitForBenchmarkStop, 500));
+    }
+
+    function finishProfileSuite(cancelled, sessionId) {
+      if (sessionId !== undefined && sessionId !== benchSessionId) return;
+      isBenchRunning = false;
+      document.querySelectorAll('.profile-card').forEach(card => card.classList.remove('active-running'));
+      document.getElementById('btn_run_all').disabled = false;
+      document.getElementById('btn_cancel_all').disabled = true;
+      document.getElementById('btn_add_profile').disabled = false;
+      document.querySelectorAll('[data-bench-control]').forEach(control => control.disabled = false);
+      document.getElementById('suite_status_txt').textContent = cancelled
+        ? `벤치마크가 취소되었습니다. 완료된 설정 ${Object.keys(benchResults).length}개 결과만 표시합니다.`
+        : `모든 설정 (${benchQueue.length}개) 측정 완료!`;
+      const progress = cancelled && benchQueue.length > 0
+        ? (benchCurrentIndex / benchQueue.length * 100).toFixed(0)
+        : 100;
+      document.getElementById('suite_prog_bar').style.width = `${progress}%`;
+      document.getElementById('suite_prog_pct').textContent = `${progress} %`;
+      renderProfileCards();
+      renderComparisonDashboard();
+    }
+
+    function buildBenchmarkSummary(data) {
+      const aggregates = data && Array.isArray(data.aggregates)
+        ? data.aggregates.filter(aggregate => aggregate && aggregate.timings)
+        : [];
+      const timing = (name, statistic) => {
+        let total = 0;
+        let weight = 0;
+        let worst = null;
+        aggregates.forEach(aggregate => {
+          const series = aggregate.timings[name];
+          const value = series && series[statistic];
+          if (!Number.isFinite(value)) return;
+          if (statistic === 'p95') {
+            worst = worst === null ? value : Math.max(worst, value);
+            return;
+          }
+          const count = Number.isFinite(series.count) && series.count > 0 ? series.count : 1;
+          total += value * count;
+          weight += count;
+        });
+        return statistic === 'p95' ? worst : (weight > 0 ? total / weight : null);
+      };
+      const sum = name => aggregates.reduce((total, aggregate) =>
+        total + (Number.isFinite(aggregate[name]) ? aggregate[name] : 0), 0);
+      return {
+        aggregateCount: aggregates.length,
+        resizeAvgUs: timing('resize_us', 'avg'),
+        preprocessAvgUs: timing('preprocess_us', 'avg'),
+        detectAvgUs: timing('detect_us', 'avg'),
+        detectP95Us: timing('detect_us', 'p95'),
+        sendAvgUs: timing('send_us', 'avg'),
+        e2eAvgUs: timing('end_to_end_us', 'avg'),
+        throughputPerSecond: sum('throughput_per_second'),
+        throughputCount: sum('throughput_count'),
+        success: sum('success'),
+        failure: sum('failure'),
+        unscored: sum('unscored'),
+        skipped: sum('skip'),
+        errors: sum('error'),
+        measurement: sum('measurement')
+      };
+    }
+
+    function buildBenchmarkChannelRows(data) {
+      const aggregates = data && Array.isArray(data.aggregates) ? data.aggregates : [];
+      return aggregates.map(aggregate => {
+        const timings = aggregate.timings || {};
+        const average = name => Number.isFinite(timings[name] && timings[name].avg)
+          ? usToMs(timings[name].avg).toFixed(2) : '-';
+        const scored = (aggregate.success || 0) + (aggregate.failure || 0);
+        const executed = Number(aggregate.throughput_count) || 0;
+        const failed = `skip ${aggregate.skip || 0}, error ${aggregate.error || 0}`;
+        const result = executed === 0
+          ? `측정 실패 (${failed})`
+          : scored > 0
+          ? `${aggregate.success || 0} / ${scored}`
+          : `미채점 / ${aggregate.unscored || 0} (정답 ID 미입력)`;
+        return `<tr><td>Ch ${aggregate.channel}</td><td>${average('detect_us')} ms</td>` +
+          `<td>${average('send_us')} ms</td><td>${average('end_to_end_us')} ms</td>` +
+          `<td>${executed > 0 ? Number(aggregate.throughput_per_second || 0).toFixed(1) : '-'} FPS</td>` +
+          `<td>${result}${executed > 0 && (aggregate.skip || aggregate.error) ? ` (${failed})` : ''}</td></tr>`;
+      }).join('') || '<tr><td colspan="6">채널별 집계가 없습니다.</td></tr>';
+    }
+
+    function usToMs(value) {
+      return Number.isFinite(value) ? value / 1000 : null;
+    }
+
+    function renderComparisonDashboard() {
+      const box = document.getElementById('comparison_dashboard_box');
+      if (!box) return;
+
+      const completedIds = Object.keys(benchResults);
+      if (completedIds.length === 0) {
+        box.innerHTML = '<div style="color:#8b949e;padding:24px;text-align:center;">측정이 완료되면 설정별 가속 및 성능 비교 카드가 표시됩니다.</div>';
+        return;
+      }
+
+      const results = completedIds.map(id => {
+        const item = benchResults[id];
+        const summary = item.data ? buildBenchmarkSummary(item.data) : null;
+        return { id, item, summary, valid: summary && summary.throughputCount > 0 };
+      });
+      const validResults = results.filter(result => result.valid);
+      let bestSpeedId = null;
+      let minE2e = Number.POSITIVE_INFINITY;
+      validResults.forEach(({ id, summary }) => {
+        if (summary.e2eAvgUs < minE2e) {
+          minE2e = summary.e2eAvgUs;
+          bestSpeedId = id;
+        }
+      });
+      let tableRows = '';
+
+      results.forEach(({ id, item, summary, valid }) => {
+        const p = item.profile;
+        if (!valid) {
+          const reason = item.error || (item.data && item.data.error) ||
+            `유효 측정 없음 (skip ${summary ? summary.skipped : 0}, error ${summary ? summary.errors : 0})`;
+          tableRows += `<tr><td style="text-align:left;"><b>${p.name}</b></td><td colspan="9" style="color:#f85149;">측정 실패: ${reason}</td></tr>`;
+          return;
+        }
+
+        const detAvg = usToMs(summary.detectAvgUs);
+        const detP95 = usToMs(summary.detectP95Us);
+        const resAvg = usToMs(summary.resizeAvgUs);
+        const preAvg = usToMs(summary.preprocessAvgUs);
+        const e2eAvg = usToMs(summary.e2eAvgUs);
+        const scored = summary.success + summary.failure;
+        const successStr = scored > 0
+          ? `${summary.success} / ${scored}`
+          : `미채점 / ${summary.unscored} (정답 ID 미입력)`;
+        const fpsStr = summary.throughputPerSecond.toFixed(1) + " FPS";
+        const isWinner = (id === bestSpeedId);
+
+        tableRows += `
+          <tr ${isWinner ? 'style="background:#0c1e13;"' : ''}>
+            <td style="text-align:left;"><b>${p.name}</b> ${isWinner ? '🏆' : ''}</td>
+            <td>${p.workers} Cores</td>
+            <td>${p.scale}x</td>
+            <td>${resAvg.toFixed(2)} ms</td>
+            <td>${preAvg.toFixed(2)} ms</td>
+            <td style="color:#56d364;font-weight:700;">${detAvg.toFixed(2)} ms</td>
+            <td style="color:#8b949e;">${detP95.toFixed(2)} ms</td>
+            <td style="color:#79c0ff;font-weight:700;">${e2eAvg.toFixed(2)} ms</td>
+            <td><b>${fpsStr}</b></td>
+            <td>${successStr}</td>
+          </tr>
+        `;
+
+      });
+      const tableHtml = `
+        <div style="margin-top:14px;">
+          <div style="font-size:12px;font-weight:700;color:#e6edf3;margin-bottom:6px;">📑 설정별 상세 레이턴시 비교 (Data Grid Table)</div>
+          <table class="bench-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;">설정</th>
+                <th>코어</th>
+                <th>스케일</th>
+                <th>Resize</th>
+                <th>Preprocess</th>
+                <th>Detect (평균)</th>
+                <th>Detect (p95)</th>
+                <th>End-to-End</th>
+                <th>처리량</th>
+                <th>성공/샘플</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:12px;font-weight:700;color:#e6edf3;margin-bottom:6px;">채널별 운영 경로 결과</div>
+          ${completedIds.map(id => `<div style="margin:8px 0;"><b style="font-size:11px;">${benchResults[id].profile.name}</b>
+            <table class="bench-table"><thead><tr><th>채널</th><th>Detect</th><th>Metadata Send</th><th>E2E</th><th>처리량</th><th>정답</th></tr></thead>
+            <tbody>${buildBenchmarkChannelRows(benchResults[id].data)}</tbody></table></div>`).join('')}
+        </div>
+      `;
+
+      box.innerHTML = tableHtml;
+      document.getElementById('export_btn_group').style.display = 'flex';
+    }
+
+    /* 💾 브라우저 Blob 기반 100% 확실한 CSV 다운로드 */
+    function exportData(type) {
+      if (type === 'aggregates') {
+        exportAggregatesCsv();
+      } else {
+        downloadBlobFromServer("/test/run/export/samples", "aruco_benchmark_raw_samples.csv");
+      }
+    }
+
+    function csvCell(value) {
+      const text = String(value).replace(/^[=+\-@]/, "'$&");
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    function csvRow(values) {
+      return values.map(csvCell).join(',') + '\r\n';
+    }
+
+    function exportAggregatesCsv() {
+      const completedIds = Object.keys(benchResults);
+      if (completedIds.length === 0) {
+        alert("내보낼 벤치마크 결과 데이터가 없습니다.");
+        return;
+      }
+
+      let csv = "\uFEFF" + csvRow([
+        "config_name", "worker_count", "scale", "channel_count",
+        "resize_avg_ms", "preprocess_avg_ms", "detect_avg_ms", "detect_p95_ms",
+        "end_to_end_avg_ms", "throughput_fps", "score_status", "success_count",
+        "failure_count", "unscored_count", "measurement_count", "skip_count", "error_count"
+      ]);
+      let exported = 0;
+      completedIds.forEach(id => {
+        const item = benchResults[id];
+        const p = item.profile;
+        const d = item.data;
+        if (d) {
+          const summary = buildBenchmarkSummary(d);
+          if (summary.throughputCount === 0) return;
+          const detAvg = usToMs(summary.detectAvgUs).toFixed(2);
+          const detP95 = usToMs(summary.detectP95Us).toFixed(2);
+          const resAvg = usToMs(summary.resizeAvgUs).toFixed(2);
+          const preAvg = usToMs(summary.preprocessAvgUs).toFixed(2);
+          const e2eAvg = usToMs(summary.e2eAvgUs).toFixed(2);
+          const fps = summary.throughputPerSecond.toFixed(1);
+          const scoreStatus = summary.success + summary.failure > 0
+            ? "scored" : "unscored_no_expected_ids";
+          csv += csvRow([
+            p.name, p.workers, p.scale, summary.aggregateCount,
+            resAvg, preAvg, detAvg, detP95, e2eAvg, fps, scoreStatus,
+            summary.success, summary.failure, summary.unscored, summary.measurement,
+            summary.skipped, summary.errors
+          ]);
+          exported++;
+        }
+      });
+
+      if (exported === 0) {
+        alert("유효한 벤치마크 측정값이 없어 집계 CSV를 만들 수 없습니다.");
+        return;
+      }
+      downloadBlob(csv, "aruco_benchmark_config_aggregates.csv", "text/csv;charset=utf-8;");
+    }
+
+    function downloadBlobFromServer(endpoint, filename) {
+      fetch(base_uri + endpoint + "?_t=" + Date.now())
+        .then(r => {
+          if (!r.ok) throw new Error(`CSV 다운로드 실패 (${r.status})`);
+          return r.blob();
+        })
+        .then(blob => downloadBlob(blob, filename, blob.type))
+        .catch(err => alert("다운로드 실패: " + err));
+    }
+
+    function downloadBlob(content, filename, contentType) {
+      const blob = new Blob([content], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchStatus();
+      fetchSettings();
+      fetchLogs();
+      renderProfileCards();
+
+      document.getElementById('sel_dict').addEventListener('change', updateApplyButtonState);
+      document.getElementById('sel_scale').addEventListener('change', updateApplyButtonState);
+      document.getElementById('sel_workers').addEventListener('change', updateApplyButtonState);
+
+      setInterval(() => {
+        if (currentTab === 'monitoring') fetchStatus();
+      }, 1000);
+      setInterval(fetchLogs, 2000);
+    });
   </script>
+</head>
+
+<body>
+  <header>
+    <span id="status_dot" class="status-dot"></span>
+    <h1>ArUCoDetector</h1>
+    <span class="badge" style="color:#e6edf3;background:#30363d;">v1.4.13</span>
+    <span id="status_badge" class="badge green">RUNNING</span>
+    <span class="badge" id="stat_workers_header">2 Cores</span>
+    <span class="badge">15 FPS Throttled</span>
+
+    <!-- 탭 내비게이션 -->
+    <div class="nav-tabs">
+      <button type="button" id="tab_btn_mon" class="tab-btn active" onclick="switchTab('monitoring')">실시간 모니터링</button>
+      <button type="button" id="tab_btn_test" class="tab-btn" onclick="switchTab('test')">프로파일별 성능 벤치마크</button>
+    </div>
+
+    <div id="header-actions">
+      <button type="button" onclick="fetchStatus(); fetchLogs();">새로고침</button>
+      <button type="button" id="btn_apply" disabled onclick="applySettings()">설정 적용 (Apply)</button>
+    </div>
+  </header>
+
+  <!-- 탭 1: 실시간 모니터링 -->
+  <div id="tab_monitoring" class="tab-content active">
+    <div id="main_layout">
+      <!-- 좌측: 2x2 채널 그리드 실시간 파이프라인 관제 -->
+      <div id="left_pane">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:13px;font-weight:700;color:#e6edf3;">활성 채널 파이프라인 관제 (Active Channels - 2x2 Grid)</span>
+          <span style="font-size:11.5px;color:#58a6ff;">● 1초 실시간 스트리밍</span>
+        </div>
+        <div id="channels_container">
+          <div style="color:#8b949e;padding:20px;">채널 상태 로딩 중...</div>
+        </div>
+      </div>
+
+      <!-- 우측: 관제 & 성능 설정 -->
+      <div id="right_pane">
+        <!-- 1. 앱 프로세스 자원 모니터링 카드 (CPU %, RAM %) -->
+        <div class="card">
+          <span class="card-title">앱 프로세스 실시간 자원 점유율 (App Resource)</span>
+
+          <div class="proc-item">
+            <div class="proc-lbl">
+              <span>CPU 사용률 (Process)</span>
+              <b id="proc_cpu_val" style="color:#56d364;font-size:13.5px;">0.0 %</b>
+            </div>
+            <div class="prog-track">
+              <div id="proc_cpu_bar" class="prog-fill" style="width: 0%; background: #56d364;"></div>
+            </div>
+          </div>
+
+          <div class="proc-item">
+            <div class="proc-lbl">
+              <span>RAM 점유율 (RSS / Total)</span>
+              <b id="proc_mem_val" style="color:#79c0ff;font-size:12.5px;">0.0 % <span class="proc-sub">(0 MB / 0 MB)</span></b>
+            </div>
+            <div class="prog-track">
+              <div id="proc_mem_bar" class="prog-fill" style="width: 0%; background: #79c0ff;"></div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top:2px;">
+            <div class="proc-item">
+              <span class="proc-lbl">활성 스레드</span>
+              <span class="proc-val" id="proc_threads" style="font-size:13px;">— Threads</span>
+            </div>
+            <div class="proc-item">
+              <span class="proc-lbl">연속 가동 시간</span>
+              <span class="proc-val" id="proc_uptime" style="font-size:12.5px;color:#56d364;">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 설정 제어 패널 -->
+        <div class="card">
+          <span class="card-title">검출 엔진 설정 (Engine Settings)</span>
+          <div class="form-group" style="margin-top:8px;">
+            <div class="form-row">
+              <label>사전 (Dictionary):</label>
+              <select id="sel_dict">
+                <option value="DICT_4X4_50">DICT_4X4_50 (기본)</option>
+                <option value="DICT_4X4_100">DICT_4X4_100</option>
+                <option value="DICT_4X4_250">DICT_4X4_250</option>
+                <option value="DICT_5X5_100">DICT_5X5_100</option>
+                <option value="DICT_6X6_250">DICT_6X6_250</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>스케일 (Scale):</label>
+              <select id="sel_scale">
+                <option value="1.0">1.0x (2560x1592, 검출 권장)</option>
+                <option value="0.5">0.5x (1280x796, 고속)</option>
+                <option value="0.25">0.25x (640x398, 초경량)</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>워커 스레드 (Workers):</label>
+              <select id="sel_workers">
+                <option value="2">2 Cores (Dual Cortex-A76 병렬 가속)</option>
+                <option value="1">1 Core (단일 스레드)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 실시간 시스템 로그 -->
+        <div class="card">
+          <span class="card-title">시스템 로그 (System Logs)</span>
+          <div id="log_box" class="log-box">시스템 로그 로딩 중...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 탭 2: 설정별 성능 벤치마크 -->
+  <div id="tab_test" class="tab-content">
+    <div id="test_layout">
+      <!-- 1. 공통 실험 환경 바 -->
+      <div class="test-env-bar">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-size:12.5px;font-weight:700;color:#e6edf3;">실험 프레임 조건:</span>
+          <div class="mode-btn-group">
+            <button type="button" class="mode-btn active" data-mode="camera" onclick="setFrameMode('camera')">카메라 센서</button>
+            <button type="button" class="mode-btn" data-mode="marker" onclick="setFrameMode('marker')">합성 마커 (#0)</button>
+            <button type="button" class="mode-btn" data-mode="white" onclick="setFrameMode('white')">백색 (White)</button>
+            <button type="button" class="mode-btn" data-mode="black" onclick="setFrameMode('black')">흑색 (Black)</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:12px;color:#8b949e;">설정당 측정 샘플 수:</span>
+          <select id="bench_samples_global">
+            <option value="30">30회 (빠른 비교)</option>
+            <option value="50" selected>50회 (권장 정밀도)</option>
+            <option value="100">100회 (논문/보고서용)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:12px;color:#8b949e;">시험 채널:</span>
+          <span id="bench_channel_controls" style="font-size:12px;color:#c9d1d9;">설정 로딩 중...</span>
+          <label style="font-size:12px;color:#8b949e;">정답 ID:
+            <input id="bench_expected_ids" data-bench-control type="text" value="" placeholder="camera: 예) 0,12 / marker: 0" style="width:190px;">
+          </label>
+          <span style="font-size:10.5px;color:#8b949e;">메타데이터 송신 포함</span>
+        </div>
+      </div>
+
+      <!-- 2. 비교 대상 설정 -->
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <span style="font-size:13px;font-weight:700;color:#e6edf3;">비교 대상 설정 (Comparison Configurations)</span>
+            <span style="font-size:11.5px;color:#8b949e;margin-left:8px;">동일 프레임 환경에서 순서대로 돌며 성능을 대조합니다.</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="button" id="btn_add_profile" onclick="addProfile()">+ 설정 추가</button>
+            <button type="button" id="btn_run_all" class="primary" onclick="startProfileSuite()">▶ 전체 설정 벤치마크 실행</button>
+            <button type="button" id="btn_cancel_all" class="danger" disabled onclick="cancelProfileSuite()">■ 취소</button>
+          </div>
+        </div>
+
+        <div id="profile_cards_container" class="profile-cards-grid"></div>
+      </div>
+
+      <!-- 3. 실시간 진행 상태 & 프로그레스 바 -->
+      <div id="bench_suite_progress" class="card" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span id="suite_status_txt" style="font-size:12.5px;color:#58a6ff;font-weight:700;">벤치마크 초기화 중...</span>
+          <b id="suite_prog_pct" style="color:#56d364;">0 %</b>
+        </div>
+        <div class="prog-track" style="height:8px;">
+          <div id="suite_prog_bar" class="prog-fill" style="width:0%;background:#56d364;"></div>
+        </div>
+      </div>
+
+      <!-- 4. 결과 비교 대시보드 & 시각화 도구 -->
+      <div class="bench-results-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:13px;font-weight:700;color:#e6edf3;">🏆 설정별 종합 성능 분석 대시보드 (Visual Benchmark Suite)</span>
+          <div id="export_btn_group" style="display:none;gap:8px;">
+            <button type="button" onclick="exportData('aggregates')">📥 요약 CSV 다운로드</button>
+            <button type="button" title="마지막 설정 실행의 원시 샘플입니다." onclick="exportData('samples')">📥 Raw 샘플 CSV (마지막 설정)</button>
+          </div>
+        </div>
+
+        <div id="comparison_dashboard_box">
+          <div style="color:#8b949e;padding:24px;text-align:center;font-size:12px;">
+            상단의 <b>[▶ 전체 설정 벤치마크 실행]</b> 버튼을 누르면 설정 1, 2, 3... 순서대로 실행되어<br/>
+            <b>상세 표</b>는 각 설정 측정 완료 후 갱신됩니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 
 </html>

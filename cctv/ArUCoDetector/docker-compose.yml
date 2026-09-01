@@ -13,7 +13,7 @@ services:
       mkdir -p build &&
       cd build &&
       cmake -DSOC=${SOC} .. &&
-      make clean && make && make install &&
+      make clean && make -j$$(nproc) && make install &&
       cd /opt/${APP_NAME} &&
       opensdk_packager -s ${SOC}
       "

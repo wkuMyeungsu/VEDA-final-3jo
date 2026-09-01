@@ -1,116 +1,192 @@
 #include "detection_settings.h"
 
-#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <fstream>
+#include <set>
 #include <sstream>
 
+#include "aruco_detector.h"
 #include "json_utility.h"
 
-// settings.json 형태:
-// {
-//   "dictionary_name": "DICT_4X4_50",
-//   "poll_interval_ms": 1000,
-//   "channels": [{"channel":1,"enabled":true,"undistort":true}, ...]
-//   "calibration_path": "/mnt/opensdk/apps/ArUCoCalibration/app/bin/calib_result_ch{channel}.json"
-// }
-// 파일이 없거나 필드가 없으면 DetectionSettings의 기본값을 그대로 씀.
+namespace {
+
+void AddError(std::vector<std::string>* errors, const std::string& message) {
+  if (errors != nullptr) errors->push_back(message);
+}
+
+template <typename Allocator>
+JsonUtility::ValueType StringValue(const std::string& value, Allocator& allocator) {
+  JsonUtility::ValueType result;
+  result.SetString(value.c_str(), static_cast<rapidjson::SizeType>(value.size()), allocator);
+  return result;
+}
+
+bool IsFiniteScale(double value) {
+  return std::isfinite(value) && (value == 1.0 || value == 0.5 || value == 0.25);
+}
+
+}  // namespace
+
+bool ValidateDetectionSettings(const DetectionSettings& settings,
+                               std::vector<std::string>* errors) {
+  const size_t before = errors == nullptr ? 0 : errors->size();
+  if (settings.schema_version != kDetectionSettingsSchemaVersion) {
+    AddError(errors, "schema_version must be 4");
+  }
+  if (!IsSupportedArucoDictionary(settings.dictionary_name)) {
+    AddError(errors, "dictionary_name is not supported: " + settings.dictionary_name);
+  }
+  if (settings.detection_worker_count < kMinDetectionWorkerCount ||
+      settings.detection_worker_count > kMaxDetectionWorkerCount) {
+    AddError(errors, "detection_worker_count must be 1 or 2");
+  }
+  if (settings.channels.empty()) AddError(errors, "channels must not be empty");
+  std::set<int> channels;
+  for (const auto& channel : settings.channels) {
+    const std::string prefix = "channels[" + std::to_string(channel.channel) + "]";
+    if (channel.channel < 1 || channel.channel > 4) AddError(errors, prefix + ".channel must be in 1..4");
+    if (!channels.insert(channel.channel).second) AddError(errors, prefix + ".channel must be unique");
+    if (!IsFiniteScale(channel.scale)) AddError(errors, prefix + ".scale must be one of 1.0, 0.5, 0.25");
+  }
+  return errors == nullptr || errors->size() == before;
+}
 
 namespace DetectionSettingsIO {
 
-DetectionSettings Load(const std::string& path) {
+DetectionSettings Default() {
   DetectionSettings settings;
-
-  std::ifstream ifs(path);
-  if (!ifs.is_open()) {
-    return settings;
+  for (int channel = 1; channel <= 4; ++channel) {
+    ChannelConfig config;
+    config.channel = channel;
+    config.enabled = true;
+    config.scale = 1.0;
+    settings.channels.push_back(config);
   }
-
-  std::stringstream ss;
-  ss << ifs.rdbuf();
-
-  Deserialize(ss.str(), settings);
   return settings;
 }
 
 std::string Serialize(const DetectionSettings& settings) {
-  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
-  auto& alloc = doc.GetAllocator();
-
-  doc.AddMember("dictionary_name", settings.dictionary_name, alloc);
-  doc.AddMember("poll_interval_ms", settings.poll_interval_ms, alloc);
-  doc.AddMember("calibration_path", settings.calibration_path, alloc);
-  
-  JsonUtility::ValueType channels_arr(JsonUtility::Type::kArrayType);
-  for (const auto& cc : settings.channels) {
-    JsonUtility::ValueType obj(JsonUtility::Type::kObjectType);
-    obj.AddMember("channel", cc.channel, alloc);
-    obj.AddMember("enabled", cc.enabled, alloc);
-    obj.AddMember("undistort", cc.undistort, alloc);
-    channels_arr.PushBack(obj, alloc);
+  JsonUtility::JsonDocument document(JsonUtility::Type::kObjectType);
+  auto& allocator = document.GetAllocator();
+  document.AddMember("schema_version", settings.schema_version, allocator);
+  document.AddMember("dictionary_name", StringValue(settings.dictionary_name, allocator), allocator);
+  document.AddMember("detection_worker_count", settings.detection_worker_count, allocator);
+  JsonUtility::ValueType channels(JsonUtility::Type::kArrayType);
+  for (const auto& channel : settings.channels) {
+    JsonUtility::ValueType object(JsonUtility::Type::kObjectType);
+    object.AddMember("channel", channel.channel, allocator);
+    object.AddMember("enabled", channel.enabled, allocator);
+    object.AddMember("scale", channel.scale, allocator);
+    channels.PushBack(object, allocator);
   }
-  doc.AddMember("channels", channels_arr, alloc);
-
-  rapidjson::StringBuffer strbuf;
-  rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
-  doc.Accept(writer);
-  return strbuf.GetString();  
+  document.AddMember("channels", channels, allocator);
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  document.Accept(writer);
+  return std::string(buffer.GetString(), buffer.GetLength());
 }
 
-bool Save(const std::string& path, const DetectionSettings& settings) {
-  std::string json = Serialize(settings);
-  std::ofstream ofs(path);
-  if (!ofs.is_open()) {
-    return false;
-  }
-  ofs << json;
-  return true;
-}
-
-bool Deserialize(const std::string& json, DetectionSettings& settings) {
-  JsonUtility::JsonDocument doc(JsonUtility::Type::kObjectType);
-  doc.Parse(json);
-  if (doc.HasParseError()) {
+bool Deserialize(const std::string& json, DetectionSettings& settings,
+                 std::vector<std::string>* errors) {
+  std::vector<std::string> local_errors;
+  std::vector<std::string>* output = errors == nullptr ? &local_errors : errors;
+  const size_t initial_error_count = output->size();
+  JsonUtility::JsonDocument document(JsonUtility::Type::kObjectType);
+  document.Parse(json);
+  if (document.HasParseError() || !document.IsObject()) {
+    AddError(output, "request body must be a JSON object");
     return false;
   }
 
-  if (doc.HasMember("dictionary_name") && doc["dictionary_name"].IsString()) {
-    settings.dictionary_name = doc["dictionary_name"].GetString();
+  DetectionSettings parsed = Default();
+  int source_schema = 1;
+  if (document.HasMember("schema_version")) {
+    if (!document["schema_version"].IsInt()) AddError(output, "schema_version must be an integer");
+    else source_schema = document["schema_version"].GetInt();
   }
-  if (doc.HasMember("poll_interval_ms") && doc["poll_interval_ms"].IsInt()) {
-    // UI든 직접 API 호출이든, 어느 경로로 와도 여기서 최종적으로 범위를 강제한다.
-    settings.poll_interval_ms = std::clamp(doc["poll_interval_ms"].GetInt(), kMinPollIntervalMs, kMaxPollIntervalMs);
+  if (source_schema < 1 || source_schema > kDetectionSettingsSchemaVersion) {
+    AddError(output, "schema_version is not supported");
   }
-  if (doc.HasMember("calibration_path") && doc["calibration_path"].IsString()) {
-    settings.calibration_path = doc["calibration_path"].GetString();
+  parsed.schema_version = kDetectionSettingsSchemaVersion;
+  if (document.HasMember("dictionary_name")) {
+    if (!document["dictionary_name"].IsString()) AddError(output, "dictionary_name must be a string");
+    else parsed.dictionary_name = document["dictionary_name"].GetString();
   }
-  if (doc.HasMember("channels") && doc["channels"].IsArray()) {
-    settings.channels.clear();
-    for (auto& v : doc["channels"].GetArray()) {
-        if (!v.IsObject()) continue;
-        ChannelConfig cc;
-        if (v.HasMember("channel") && v["channel"].IsInt())       cc.channel    = v["channel"].GetInt();
-        if (v.HasMember("enabled") && v["enabled"].IsBool())      cc.enabled    = v["enabled"].GetBool();
-        if (v.HasMember("undistort") && v["undistort"].IsBool())  cc.undistort  = v["undistort"].GetBool();
-        settings.channels.push_back(cc);
+  if (document.HasMember("detection_worker_count")) {
+    if (!document["detection_worker_count"].IsInt()) AddError(output, "detection_worker_count must be an integer");
+    else parsed.detection_worker_count = document["detection_worker_count"].GetInt();
+  }
+  if (document.HasMember("channels")) {
+    if (!document["channels"].IsArray() || document["channels"].Empty()) {
+      AddError(output, "channels must be a non-empty array");
+    } else {
+      parsed.channels.clear();
+      for (auto it = document["channels"].Begin(); it != document["channels"].End(); ++it) {
+        if (!it->IsObject()) {
+          AddError(output, "channels[] must be an object");
+          continue;
+        }
+        ChannelConfig channel;
+        if (!it->HasMember("channel") || !(*it)["channel"].IsInt()) {
+          AddError(output, "channels[].channel must be an integer");
+        } else {
+          channel.channel = (*it)["channel"].GetInt();
+        }
+        if (it->HasMember("enabled")) {
+          if (!(*it)["enabled"].IsBool()) AddError(output, "channels[].enabled must be a boolean");
+          else channel.enabled = (*it)["enabled"].GetBool();
+        }
+        if (it->HasMember("scale")) {
+          if (!(*it)["scale"].IsNumber()) AddError(output, "channels[].scale must be a number");
+          else channel.scale = (*it)["scale"].GetDouble();
+        }
+        parsed.channels.push_back(channel);
+      }
+    }
+  }
+  if (source_schema == 2) {
+    for (auto& channel : parsed.channels) {
+      if (channel.scale == 0.5) channel.scale = 1.0;
     }
   }
 
+  const bool valid = ValidateDetectionSettings(parsed, output);
+  settings = parsed;
+  return valid && output->size() == initial_error_count;
+}
+
+DetectionSettings Load(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) return Default();
+  std::stringstream contents;
+  contents << input.rdbuf();
+  DetectionSettings settings = Default();
+  std::vector<std::string> errors;
+  if (!Deserialize(contents.str(), settings, &errors)) return settings;
+  return settings;
+}
+
+bool Save(const std::string& path, const DetectionSettings& settings) {
+  std::vector<std::string> errors;
+  if (!ValidateDetectionSettings(settings, &errors)) return false;
+  const std::string temporary = path + ".tmp";
+  std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+  if (!output.is_open()) return false;
+  const std::string json = Serialize(settings);
+  output.write(json.data(), static_cast<std::streamsize>(json.size()));
+  output.flush();
+  if (!output.good()) {
+    output.close();
+    std::remove(temporary.c_str());
+    return false;
+  }
+  output.close();
+  if (std::rename(temporary.c_str(), path.c_str()) != 0) {
+    std::remove(temporary.c_str());
+    return false;
+  }
   return true;
 }
 
-DetectionSettings Default() {
-  DetectionSettings s;   // dictionary_name="DICT_4X4_50", poll_interval_ms=1000 (구조체 기본값)
-  for (int ch = 1; ch <= 4; ++ch) {
-    ChannelConfig c;
-    c.channel = ch;
-    c.enabled = true;
-    c.undistort = false;   // 왜곡보정은 기본 off (지연↓, 필요하면 채널별로 켬)
-    s.channels.push_back(c);
-  }
-  return s;
-}
-
 }  // namespace DetectionSettingsIO
-
-
-

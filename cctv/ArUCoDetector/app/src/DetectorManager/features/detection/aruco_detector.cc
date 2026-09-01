@@ -1,13 +1,24 @@
 // aruco_detector.cc
 
 #include <unordered_map>
-
 #include "aruco_detector.h"
 
+namespace {
 
-// 사전 이름 문자열 -> OpenCV 사전 enum.
-cv::aruco::PREDEFINED_DICTIONARY_NAME StringToDict(const std::string& name) {
-  static const std::unordered_map<std::string, cv::aruco::PREDEFINED_DICTIONARY_NAME> kMap = {
+cv::Ptr<cv::aruco::Dictionary> MakeDictionary(ArucoDictionaryName dictionary_name) {
+#if CCTV_ARUCO_MODERN_API
+  return cv::makePtr<cv::aruco::Dictionary>(
+      cv::aruco::getPredefinedDictionary(dictionary_name));
+#else
+  return cv::aruco::getPredefinedDictionary(dictionary_name);
+#endif
+}
+
+}  // namespace
+
+
+const std::unordered_map<std::string, ArucoDictionaryName>& Dictionaries() {
+  static const std::unordered_map<std::string, ArucoDictionaryName> kMap = {
     {"DICT_4X4_50",  cv::aruco::DICT_4X4_50},
     {"DICT_4X4_100", cv::aruco::DICT_4X4_100},
     {"DICT_4X4_250", cv::aruco::DICT_4X4_250},
@@ -16,18 +27,39 @@ cv::aruco::PREDEFINED_DICTIONARY_NAME StringToDict(const std::string& name) {
     {"DICT_6X6_50",  cv::aruco::DICT_6X6_50},
     {"DICT_6X6_250", cv::aruco::DICT_6X6_250},
   };
-  auto it = kMap.find(name);
-  return it != kMap.end() ? it -> second : cv::aruco::DICT_4X4_50; // 모르는 값이면 DICT_4X4_50으로 폴백.
+  return kMap;
 }
 
-ArucoDetector::ArucoDetector(cv::aruco::PREDEFINED_DICTIONARY_NAME dictionary_name)
-    
-      // dictionary_name(DICT_4X4_50)에 해당하는 마커 사전을 한 번만 로드해서 저장.
-      // 이후 Detect()가 몇 번 호출되든 이 사전을 재사용한다.
-    : dictionary_(cv::aruco::getPredefinedDictionary(dictionary_name)),
-      
-      // 검출 알고리즘 튜닝 파라미터(threshold 등)를 기본값으로 생성해서 저장. **나중에 settings.json 값을 반영하려면 이 멤버를 직접 수정하면 된다.**
-      parameters_(cv::aruco::DetectorParameters::create()) {}
+bool IsSupportedArucoDictionary(const std::string& name) {
+  return Dictionaries().find(name) != Dictionaries().end();
+}
+
+ArucoDictionaryName StringToDict(const std::string& name) {
+  const auto& dictionaries = Dictionaries();
+  const auto it = dictionaries.find(name);
+  return it != dictionaries.end() ? it->second : cv::aruco::DICT_4X4_50;
+}
+
+ArucoDetector::ArucoDetector(
+    ArucoDictionaryName dictionary_name,
+    const cv::Ptr<cv::aruco::DetectorParameters>& parameters)
+    : dictionary_(MakeDictionary(dictionary_name)),
+      parameters_(parameters)
+#if CCTV_ARUCO_MODERN_API
+      , aruco_detector_(cv::makePtr<cv::aruco::ArucoDetector>(*dictionary_, *parameters_))
+#endif
+      {}
+
+cv::Ptr<ArucoDetector> ArucoDetector::Create(ArucoDictionaryName dictionary_name) {
+#if CCTV_ARUCO_MODERN_API
+  auto parameters = cv::makePtr<cv::aruco::DetectorParameters>();
+#else
+  auto parameters = cv::aruco::DetectorParameters::create();
+#endif
+  // 사전이 허용하는 오류 정정 한도까지 사용한다. 전처리/프로파일은 운영 경로에 없다.
+  parameters->errorCorrectionRate = 1.0;
+  return cv::Ptr<ArucoDetector>(new ArucoDetector(dictionary_name, parameters));
+}
 
 // 흑백 (gray) 이미지 한 장을 받아서 그 안의 ArUCo 마커를 검출하고 결과를 반환한다.
 // 이 함수는 dictionary_/parameters_ 를 읽기만 하고 바꾸지 않는다. --> const
@@ -47,7 +79,11 @@ DetectionResult ArucoDetector::Detect(const cv::Mat& gray) const {
     // 4. result.ids        : [출력] 검출된 각 마커의 ID
     // 5. parameters_       : 검출 알고리즘 튜닝값
     // 6. rejected          : [출력] ID 판별에 실패한 후보들의 코너
+#if CCTV_ARUCO_MODERN_API
+    aruco_detector_->detectMarkers(gray, result.corners, result.ids, rejected);
+#else
     cv::aruco::detectMarkers(gray, dictionary_, result.corners, result.ids, parameters_, rejected);
+#endif
     
     // 탈락한 후보 개수만 기록 (좌표 자체는 버림) **필요해지면 DetectionResult에 필드 추가하면 됨**
     result.rejected_count = static_cast<int>(rejected.size());

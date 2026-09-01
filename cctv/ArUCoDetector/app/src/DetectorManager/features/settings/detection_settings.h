@@ -3,41 +3,41 @@
 #include <string>
 #include <vector>
 
-// poll_interval_ms 허용 범위. raw 파이프라인에서 이 값은 "채널별로 최신 raw 프레임에
-// 검출을 실행하는 주기"다 (프레임 획득 자체는 카메라가 계속 push하므로 이 값과 무관).
-//   하한 500ms : 채널당 검출(4MP ArUco) 실측 소요시간(~300~440ms, 4채널 동시 실행 시 더 걸림)보다
-//                짧게 잡아도 실제로 더 빨라지지 않고 CPU만 계속 태운다.
-//   상한 3000ms: 사각지대 충돌방지 용도상 반응 지연 상한. 안전 요구사항에 따라 조정 필요.
-constexpr int kMinPollIntervalMs = 500;
-constexpr int kMaxPollIntervalMs = 3000;
+// 운영 설정은 검출 주기를 저장하지 않는다. dispatcher가 snapshot 수신과 완료
+// 순서를 기준으로 다음 채널을 고르므로 고정 sleep 값은 런타임 계약을 흐린다.
+constexpr int kDetectionSettingsSchemaVersion = 4;
+constexpr int kMinDetectionWorkerCount = 1;
+constexpr int kMaxDetectionWorkerCount = 2;
 
 struct ChannelConfig {
-    int channel = 0;
-    bool enabled = false;
-    bool undistort = false;
+  int channel = 0;
+  bool enabled = false;
+  double scale = 1.0;
 };
 
 struct DetectionSettings {
-    std::string dictionary_name = "DICT_4X4_50";
-    int poll_interval_ms = 1000;
-    std::vector<ChannelConfig> channels;    // 채널별 검출/왜곡보정 설정
-    std::string calibration_path;
+  int schema_version = kDetectionSettingsSchemaVersion;
+  std::string dictionary_name = "DICT_4X4_50";
+  int detection_worker_count = 2;
+  std::vector<ChannelConfig> channels;
 };
 
-// DetectionSettings를 settings.json으로 읽고 쓰는 담당.
+// 설정 검증 실패는 호출자가 HTTP 400 필드 오류로 그대로 노출할 수 있도록
+// 첫 번째 오류가 아닌 모든 오류를 수집한다.
+bool ValidateDetectionSettings(const DetectionSettings& settings,
+                               std::vector<std::string>* errors = nullptr);
+
 namespace DetectionSettingsIO {
-    // path는 settings.json 경로
-    DetectionSettings Load(const std::string& path);
+  DetectionSettings Load(const std::string& path);
+  std::string Serialize(const DetectionSettings& settings);
 
-    // settings를 path에 JSON으로 저장. 성공 여부 반환.
-    bool Save(const std::string& path, const DetectionSettings& settings);
+  // 임시 파일에 먼저 쓰고 rename하여 전원 장애 중 반쪽 JSON이 남지 않게 한다.
+  bool Save(const std::string& path, const DetectionSettings& settings);
 
-    std::string Serialize(const DetectionSettings& settings);
+  // schema v1~3의 dictionary/channels/enabled를 보존하고, schema 2의 0.5x
+  // 운영 기본값은 원본 해상도로 한 번 승격한다. 기존 profile/profile_id는 무시한다.
+  bool Deserialize(const std::string& json, DetectionSettings& settings,
+                  std::vector<std::string>* errors = nullptr);
 
-    // JSON 문자열 → 구조체. json에 있는 필드만 덮어씀(없는 필드는 인자 settings 값 유지).
-    // "channels"가 있으면 기존 channels를 통째로 교체. 파싱 실패 시 false.
-    bool Deserialize(const std::string& json, DetectionSettings& settings);
-
-    // 기본 설정 (4채널 ON, undistort off). settings.json이 없을 때 초기값으로 사용.
-    DetectionSettings Default();
+  DetectionSettings Default();
 }

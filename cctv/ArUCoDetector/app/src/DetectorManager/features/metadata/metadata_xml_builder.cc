@@ -16,7 +16,14 @@ namespace MetadataXmlBuilder {
         
         // ::gmtime((const time_t*)&sec) — sec처럼 그냥 정수 하나로 된 시간을 사람이 읽는 struct tm(연/월/일/시/분/초로 나뉜 구조체)으로 바꿔줍
         // 
-        auto conv_time = ::gmtime((const time_t*)&sec);
+        // 두 worker가 동시에 metadata를 만들 수 있으므로 정적 버퍼를 반환하는
+        // gmtime 대신 호출자 소유의 tm에 변환해 서로 다른 결과가 섞이지 않게 한다.
+        std::tm utc{};
+#if defined(_WIN32)
+        ::gmtime_s(&utc, &sec);
+#else
+        ::gmtime_r(&sec, &utc);
+#endif
 
         // <sstream>에 있는 타입.
         // std::cout처럼 << 연산자로 이것저것 이어 붙일 수 있는데 화면에 출력하는 대신 내부 버퍼에 문자열로 쌓아두는 객체.
@@ -29,7 +36,7 @@ namespace MetadataXmlBuilder {
         // 3. std::setw(3) : 바로 다음 값 하나만 최소 3자리 폭으로 찍으라는 설정
         // 4. msec : 위의 설정한 값을 반영
         // 5. "Z" : "Z" (ISO8601에서 UTC를 뜻하는 리터럴 문자)
-        ss << std::put_time(conv_time, "%FT%T.") << std::setfill('0') << std::setw(3) << msec << "Z";
+        ss << std::put_time(&utc, "%FT%T.") << std::setfill('0') << std::setw(3) << msec << "Z";
 
         // 작업대 위 결과물을 진짜 std::string으로 꺼내기
         return ss.str();
