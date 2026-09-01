@@ -86,3 +86,4 @@ detections_*.csv
 # 관제 센터 임시 산출물
 captures/
 *.log
+".claude/" 
